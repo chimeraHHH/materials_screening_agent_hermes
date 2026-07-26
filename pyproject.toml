@@ -5,11 +5,13 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "material-screening-agent"
 version = "0.1.0"
-description = "Auditable Materials Project retrieval and deterministic screening stage."
+description = "Durable material-screening Orchestrator with auditable Materials Project retrieval."
 readme = "README.md"
 requires-python = ">=3.11,<3.12"
 dependencies = [
   "emmet-core==0.86.2",
+  "langgraph==1.2.9",
+  "langgraph-checkpoint-sqlite==3.1.0",
   "mp-api==0.45.15",
   "pydantic==2.12.5",
   "pymatgen==2025.10.7",

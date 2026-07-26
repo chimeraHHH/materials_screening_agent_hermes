@@ -80,10 +80,12 @@ class RetrievalStageRunner:
         adapter: MaterialsSourceAdapter,
         artifact_store: LocalArtifactStore,
         policy: RetrievalPolicy | None = None,
+        clock: Callable[[], datetime] | None = None,
     ) -> None:
         self.adapter = adapter
         self.store = artifact_store
         self.policy = policy or RetrievalPolicy()
+        self.clock = clock or (lambda: datetime.now(UTC))
 
     def validate_input(
         self, context: RetrievalStageContext
@@ -197,6 +199,9 @@ class RetrievalStageRunner:
             source_metadata,
             self.policy,
         )
+        query_plan = query_plan.model_copy(
+            update={"created_at": self.clock()}
+        )
         idempotency_payload = (
             f"{stage_input.project_id}:{stage_input.run_id}:"
             f"{query_plan.query_fingerprint}"
@@ -276,7 +281,7 @@ class RetrievalStageRunner:
             requirement=requirement,
             stage_input=stage_input,
         )
-        started_at = datetime.now(UTC)
+        started_at = self.clock()
         stage_prefix = f"stages/agent01/{stage_input.run_id}"
         validation = self.validate_input(context)
         if not validation.valid:
@@ -530,7 +535,7 @@ class RetrievalStageRunner:
                     "is_mock": bool(getattr(self.adapter, "is_mock", False)),
                 },
                 started_at=started_at,
-                finished_at=datetime.now(UTC),
+                finished_at=self.clock(),
             )
             self.store.write_json(
                 f"{stage_prefix}/stage_result.json", result.model_dump(mode="json")
@@ -830,7 +835,7 @@ class RetrievalStageRunner:
                 message="immutable Stage Run output has different content",
             )
 
-        finished_at = datetime.now(UTC)
+        finished_at = self.clock()
         result = StageResultEnvelope(
             run_id=stage_input.run_id,
             status=status,
@@ -915,7 +920,7 @@ class RetrievalStageRunner:
             metrics={},
             provenance=provenance,
             started_at=started_at,
-            finished_at=datetime.now(UTC),
+            finished_at=self.clock(),
         )
         if persist:
             self.store.write_json(

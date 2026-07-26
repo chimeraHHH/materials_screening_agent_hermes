@@ -6,6 +6,8 @@ from pathlib import Path
 
 import pytest
 
+from material_agent.orchestrator.models import RunStatus
+from material_agent.orchestrator.runtime import OrchestratorRuntime
 from material_agent.retrieval.adapters import MaterialsProjectAdapter
 from material_agent.retrieval.models import (
     AGENT01_CONTRACT_VERSION,
@@ -84,6 +86,68 @@ def test_fixed_si_o_release_gate(tmp_path: Path, requirement) -> None:
             assert prop["unit"]
             assert prop["origin"]["database_version"]
             assert prop["origin"]["status"]
+
+    secret = api_key.encode("utf-8")
+    for path in tmp_path.rglob("*"):
+        if path.is_file():
+            assert secret not in path.read_bytes(), f"secret leaked into {path}"
+
+
+@pytest.mark.live_mp
+def test_orchestrator_real_mp_restart_release_gate(
+    tmp_path: Path, requirement
+) -> None:
+    api_key = os.environ.get("MP_API_KEY")
+    assert api_key, "MP_API_KEY must be set for --run-live-mp"
+
+    project_id = "project-orchestrator-live-release"
+    run_id = "run-orchestrator-live-si-o"
+    OrchestratorRuntime.create_project(tmp_path, project_id)
+    with OrchestratorRuntime.from_workspace(
+        tmp_path, project_id
+    ) as runtime:
+        waiting = runtime.start_run(
+            raw_request="structured Requirement input",
+            initial_requirement=requirement.model_dump(mode="json"),
+            run_id=run_id,
+        )
+        assert waiting.status is RunStatus.REQUIREMENT_REVIEW
+        approval_id = waiting.interrupts[0].value["approval_id"]
+
+    with OrchestratorRuntime.from_workspace(
+        tmp_path, project_id
+    ) as runtime:
+        completed = runtime.approve(
+            run_id=run_id,
+            approval_id=approval_id,
+            decision="approve",
+        )
+        assert completed.status in {RunStatus.SUCCEEDED, RunStatus.PARTIAL}
+        assert completed.stage_statuses["agent01"] in {
+            "SUCCEEDED",
+            "PARTIAL",
+        }
+        assert completed.report_uri
+        report = runtime.store.read_json(
+            f"artifact://reports/{run_id}/report.json"
+        )
+        native = runtime.store.read_json(
+            f"artifact://stages/agent01/{run_id}/stage_result.json"
+        )
+        assert report["stages"]["agent01"]["native_result_sha256"]
+        assert native["schema_version"] == AGENT01_CONTRACT_VERSION
+        operation_count = runtime.repository.connection.execute(
+            "SELECT COUNT(*) FROM operations WHERE run_id = ?", (run_id,)
+        ).fetchone()[0]
+        checkpoint_count = runtime.repository.connection.execute(
+            "SELECT COUNT(*) FROM checkpoints WHERE thread_id = ?", (run_id,)
+        ).fetchone()[0]
+        resumed = runtime.resume(run_id=run_id)
+        assert resumed == completed
+        assert runtime.repository.connection.execute(
+            "SELECT COUNT(*) FROM operations WHERE run_id = ?", (run_id,)
+        ).fetchone()[0] == operation_count == 1
+        assert checkpoint_count > 1
 
     secret = api_key.encode("utf-8")
     for path in tmp_path.rglob("*"):
