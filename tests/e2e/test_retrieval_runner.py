@@ -1,0 +1,55 @@
+from __future__ import annotations
+
+import json
+
+from material_agent.retrieval.models import RetrievalStageInput, StageStatus
+from material_agent.retrieval.runner import RetrievalStageRunner
+from material_agent.retrieval.storage import LocalArtifactStore
+
+
+def test_offline_si_o_e2e_is_auditable_and_idempotent(
+    tmp_path, requirement, requirement_hash, adapter, policy
+) -> None:
+    store = LocalArtifactStore(tmp_path)
+    requirement_ref = store.write_json(
+        "requirements/requirement.v1.json", requirement.model_dump(mode="json")
+    )
+    stage_input = RetrievalStageInput(
+        project_id="project-test",
+        run_id="run-test",
+        requirement_revision=1,
+        requirement_artifact_uri=requirement_ref.uri,
+        requirement_hash=requirement_hash,
+        retrieval_policy_version=policy.policy_version,
+        confirmed_by_user=True,
+    )
+    runner = RetrievalStageRunner(
+        adapter=adapter,
+        artifact_store=store,
+        policy=policy,
+    )
+
+    first = runner.run(requirement, stage_input)
+    second = runner.run(requirement, stage_input)
+
+    assert first == second
+    assert first.status is StageStatus.SUCCEEDED
+    assert first.metrics["database_returned"] == 1
+    assert first.metrics["passed"] == 1
+    assert first.metrics["published_downstream"] == 1
+    assert len(first.candidate_ids) == 1
+
+    manifest_path = tmp_path / "candidates" / "candidate_manifest.jsonl"
+    manifest = [json.loads(line) for line in manifest_path.read_text().splitlines()]
+    assert len(manifest) == 1
+    candidate = manifest[0]
+    assert candidate["source_material_id"] == "mp-fixture-1"
+    assert candidate["decision"] == "PASS"
+    assert candidate["evidence_level"] == "L1_RETRIEVED"
+    assert (tmp_path / candidate["structure_artifact_uri"].removeprefix("artifact://")).is_file()
+
+    report_path = tmp_path / "stages" / "agent01" / "run-test" / "retrieval_report.json"
+    report = json.loads(report_path.read_text())
+    assert report["limits"]["scan_truncated"] is False
+    assert "No result is claimed as ML" in report["evidence_statement"]
+

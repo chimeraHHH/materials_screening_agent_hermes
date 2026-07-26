@@ -1,0 +1,52 @@
+from __future__ import annotations
+
+import hashlib
+import json
+from pathlib import Path
+
+import pytest
+
+from material_agent.retrieval.adapters import InMemoryMaterialsAdapter
+from material_agent.retrieval.models import Requirement, RetrievalPolicy
+
+
+FIXTURE_DIR = Path(__file__).parent / "fixtures"
+
+
+@pytest.fixture
+def requirement() -> Requirement:
+    return Requirement.model_validate_json(
+        (FIXTURE_DIR / "requirement.si-o.json").read_text(encoding="utf-8")
+    )
+
+
+@pytest.fixture
+def fixture_payload() -> dict:
+    return json.loads(
+        (FIXTURE_DIR / "mp-summary.si-o.json").read_text(encoding="utf-8")
+    )
+
+
+@pytest.fixture
+def adapter(fixture_payload: dict) -> InMemoryMaterialsAdapter:
+    return InMemoryMaterialsAdapter(
+        fixture_payload["documents"],
+        database_version=fixture_payload["database_version"],
+        task_metadata=fixture_payload["task_metadata"],
+    )
+
+
+@pytest.fixture
+def policy() -> RetrievalPolicy:
+    return RetrievalPolicy(retry_base_seconds=0)
+
+
+@pytest.fixture
+def requirement_hash(requirement: Requirement) -> str:
+    payload = json.dumps(
+        requirement.model_dump(mode="json"),
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode()
+    return hashlib.sha256(payload).hexdigest()
+

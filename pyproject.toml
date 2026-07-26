@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "material-screening-agent"
+version = "0.1.0"
+description = "Auditable Materials Project retrieval and deterministic screening stage."
+readme = "README.md"
+requires-python = ">=3.11,<3.12"
+dependencies = [
+  "emmet-core==0.86.2",
+  "mp-api==0.45.15",
+  "pydantic==2.12.5",
+  "pymatgen==2025.10.7",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest==9.1.1",
+]
+
+[project.scripts]
+material-agent = "material_agent.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+addopts = "-ra"
+testpaths = ["tests"]

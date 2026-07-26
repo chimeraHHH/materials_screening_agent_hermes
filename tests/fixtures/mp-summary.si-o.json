@@ -1,0 +1,150 @@
+{
+  "database_version": "fixture-2026-07-25",
+  "task_metadata": {
+    "mp-task-structure-1": {
+      "task_id": "mp-task-structure-1",
+      "run_type": "GGA",
+      "task_type": "Structure Optimization",
+      "calc_type": "GGA Structure Optimization"
+    },
+    "mp-task-es-1": {
+      "task_id": "mp-task-es-1",
+      "run_type": "GGA",
+      "task_type": "NSCF Line",
+      "calc_type": "GGA NSCF Line"
+    },
+    "mp-task-energy-1": {
+      "task_id": "mp-task-energy-1",
+      "run_type": "GGA",
+      "task_type": "Static",
+      "calc_type": "GGA Static"
+    },
+    "mp-task-structure-2": {
+      "task_id": "mp-task-structure-2",
+      "run_type": "GGA",
+      "task_type": "Structure Optimization",
+      "calc_type": "GGA Structure Optimization"
+    },
+    "mp-task-es-2": {
+      "task_id": "mp-task-es-2",
+      "run_type": "GGA",
+      "task_type": "NSCF Line",
+      "calc_type": "GGA NSCF Line"
+    },
+    "mp-task-energy-2": {
+      "task_id": "mp-task-energy-2",
+      "run_type": "GGA",
+      "task_type": "Static",
+      "calc_type": "GGA Static"
+    }
+  },
+  "documents": [
+    {
+      "material_id": "mp-fixture-1",
+      "formula_pretty": "SiO",
+      "chemsys": "O-Si",
+      "elements": ["O", "Si"],
+      "nelements": 2,
+      "nsites": 2,
+      "structure": {
+        "@module": "pymatgen.core.structure",
+        "@class": "Structure",
+        "charge": 0,
+        "lattice": {
+          "matrix": [[4.2, 0.0, 0.0], [0.0, 4.2, 0.0], [0.0, 0.0, 4.2]],
+          "pbc": [true, true, true],
+          "a": 4.2,
+          "b": 4.2,
+          "c": 4.2,
+          "alpha": 90.0,
+          "beta": 90.0,
+          "gamma": 90.0,
+          "volume": 74.088
+        },
+        "properties": {},
+        "sites": [
+          {
+            "species": [{"element": "Si", "occu": 1}],
+            "abc": [0.0, 0.0, 0.0],
+            "properties": {},
+            "label": "Si"
+          },
+          {
+            "species": [{"element": "O", "occu": 1}],
+            "abc": [0.5, 0.5, 0.5],
+            "properties": {},
+            "label": "O"
+          }
+        ]
+      },
+      "band_gap": 0.8,
+      "energy_above_hull": 0.01,
+      "is_metal": false,
+      "deprecated": false,
+      "theoretical": true,
+      "origins": [
+        {"name": "structure", "task_id": "mp-task-structure-1"},
+        {"name": "electronic_structure", "task_id": "mp-task-es-1"},
+        {"name": "energy", "task_id": "mp-task-energy-1"}
+      ],
+      "last_updated": "2026-07-01T00:00:00Z"
+    },
+    {
+      "material_id": "mp-fixture-2",
+      "formula_pretty": "SiO2",
+      "chemsys": "O-Si",
+      "elements": ["O", "Si"],
+      "nelements": 2,
+      "nsites": 3,
+      "structure": {
+        "@module": "pymatgen.core.structure",
+        "@class": "Structure",
+        "charge": 0,
+        "lattice": {
+          "matrix": [[5.0, 0.0, 0.0], [0.0, 5.0, 0.0], [0.0, 0.0, 5.0]],
+          "pbc": [true, true, true],
+          "a": 5.0,
+          "b": 5.0,
+          "c": 5.0,
+          "alpha": 90.0,
+          "beta": 90.0,
+          "gamma": 90.0,
+          "volume": 125.0
+        },
+        "properties": {},
+        "sites": [
+          {
+            "species": [{"element": "Si", "occu": 1}],
+            "abc": [0.0, 0.0, 0.0],
+            "properties": {},
+            "label": "Si"
+          },
+          {
+            "species": [{"element": "O", "occu": 1}],
+            "abc": [0.25, 0.25, 0.25],
+            "properties": {},
+            "label": "O"
+          },
+          {
+            "species": [{"element": "O", "occu": 1}],
+            "abc": [0.75, 0.75, 0.75],
+            "properties": {},
+            "label": "O"
+          }
+        ]
+      },
+      "band_gap": 1.2,
+      "energy_above_hull": 0.02,
+      "is_metal": false,
+      "deprecated": false,
+      "theoretical": true,
+      "origins": [
+        {"name": "structure", "task_id": "mp-task-structure-2"},
+        {"name": "electronic_structure", "task_id": "mp-task-es-2"},
+        {"name": "energy", "task_id": "mp-task-energy-2"}
+      ],
+      "last_updated": "2026-07-01T00:00:00Z"
+    }
+  ]
+}
+

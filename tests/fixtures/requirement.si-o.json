@@ -1,0 +1,44 @@
+{
+  "requirement_id": "req_si_o_demo",
+  "revision": 1,
+  "target_class": "simple_semiconductor",
+  "hard_constraints": {
+    "include_elements": ["Si", "O"],
+    "exclude_elements": [],
+    "band_gap_ev": {
+      "min": 0.5,
+      "max": 1.0,
+      "unit": "eV"
+    },
+    "energy_above_hull_ev_atom": {
+      "min": null,
+      "max": 0.05,
+      "unit": "eV/atom"
+    },
+    "is_metal": false,
+    "dimensionality": null,
+    "max_num_sites": null
+  },
+  "scientific_targets": [],
+  "ranking_preferences": [
+    {
+      "property": "energy_above_hull",
+      "mode": "minimize",
+      "target": null
+    }
+  ],
+  "budget": {
+    "max_candidates": 200,
+    "allow_ml": true,
+    "allow_dft": false,
+    "allow_many_body": false
+  },
+  "data_sources": {
+    "materials_project": {
+      "include_gnome": false
+    }
+  },
+  "confirmed_by_user": true,
+  "policy_version": "requirement-policy-v1"
+}
+
