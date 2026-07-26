@@ -26,6 +26,7 @@ from material_agent.orchestrator.models import (
     ControlStageOutcome,
     LEGACY_ORCHESTRATOR_CONTRACT_VERSION,
     ORCHESTRATOR_CONTRACT_VERSION,
+    P01_ORCHESTRATOR_CONTRACT_VERSION,
     RuntimeInterrupt,
     RuntimeView,
     RunStatus,
@@ -98,7 +99,7 @@ class OrchestratorRuntime:
         )
         self.graph = self.orchestrator.build().compile(
             checkpointer=self.checkpointer,
-            name="material-screening-orchestrator-p0.1",
+            name="material-screening-orchestrator-p0.2",
         )
 
     def __enter__(self) -> OrchestratorRuntime:
@@ -314,7 +315,7 @@ class OrchestratorRuntime:
                 report_uri=row["report_uri"],
                 stage_statuses=row["stage_statuses"],
                 warnings=[
-                    "Legacy checkpoint is read-only under Orchestrator P0.1."
+                    "Legacy checkpoint is read-only under Orchestrator P0.2."
                 ],
             )
         snapshot = self.graph.get_state(self._config(selected_run_id))
@@ -575,6 +576,11 @@ class OrchestratorRuntime:
             "current_stage": "requirement",
             "stage_statuses": {},
             "stage_outcomes": {},
+            "stage_plan_refs": {},
+            "prepared_stage_plan": None,
+            "prepared_stage_plan_uri": None,
+            "prepared_stage_plan_sha256": None,
+            "stage_approval_required": None,
             "candidate_ids": [],
             "pending_interaction": None,
             "retrieval_fixture_uri": fixture_uri,
@@ -603,11 +609,15 @@ class OrchestratorRuntime:
             return
         if RunStatus(row["status"]) in _TERMINAL_RUN_STATUSES:
             raise CheckpointCompatibilityError(
-                "legacy completed runs are read-only; start a new P0.1 run"
+                "legacy completed runs are read-only; start a new P0.2 run"
             )
+        known_version = version or LEGACY_ORCHESTRATOR_CONTRACT_VERSION
+        if known_version == P01_ORCHESTRATOR_CONTRACT_VERSION:
+            label = "unfinished orchestrator-p0.1-v2"
+        else:
+            label = f"unfinished {known_version}"
         raise CheckpointCompatibilityError(
-            f"unfinished {version or LEGACY_ORCHESTRATOR_CONTRACT_VERSION} "
-            "checkpoint cannot be resumed by Orchestrator P0.1; preserve its "
+            f"{label} checkpoint cannot be resumed by Orchestrator P0.2; preserve its "
             "artifacts and start a new run"
         )
 

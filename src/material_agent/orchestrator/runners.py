@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import hashlib
 from collections.abc import Callable
+from datetime import UTC, datetime
 from typing import Any, Protocol, runtime_checkable
 
 from material_agent.orchestrator.models import (
@@ -13,18 +13,21 @@ from material_agent.orchestrator.models import (
     ControlOutcomeType,
     ControlStageOutcome,
     ExternalJobStatus,
+    PreparedStagePlan,
     StageCapability,
     StageExecutionContext,
     StageId,
     StageInputValidation,
     StageStatus,
     STAGE_TO_AGENT,
+    operation_input_sha256_for,
 )
 from material_agent.retrieval.models import (
     Requirement,
     RetrievalPolicy,
     RetrievalStageContext,
     RetrievalStageInput,
+    RetrievalStagePlan,
     StageOutcome as NativeStageOutcome,
     StageOutcomeType as NativeOutcomeType,
     StageStatus as NativeStageStatus,
@@ -45,13 +48,19 @@ class StageRunner(Protocol):
         self, context: StageExecutionContext
     ) -> StageInputValidation: ...
 
+    def prepare(self, context: StageExecutionContext) -> PreparedStagePlan: ...
+
     def start(
-        self, context: StageExecutionContext, idempotency_key: str
+        self,
+        context: StageExecutionContext,
+        prepared_plan: PreparedStagePlan,
+        idempotency_key: str,
     ) -> ControlStageOutcome: ...
 
     def reconcile(
         self,
         context: StageExecutionContext,
+        prepared_plan: PreparedStagePlan,
         external_job_ref: str,
         idempotency_key: str,
     ) -> ControlStageOutcome: ...
@@ -174,29 +183,102 @@ class Agent01RunnerAdapter:
             missing_fields=list(validation.missing_fields),
             errors=list(validation.errors),
             remediation=list(validation.remediation),
+            error_code=validation.error_category,
+            failure_status=(
+                StageStatus.BLOCKED_MISSING_INPUT
+                if validation.error_category == "MISSING_INPUT"
+                else (
+                    StageStatus.PERMANENT_FAILED
+                    if not validation.valid
+                    else None
+                )
+            ),
+        )
+
+    def prepare(self, context: StageExecutionContext) -> PreparedStagePlan:
+        input_snapshot = _require_input_snapshot(context)
+        native_uri = _native_plan_uri(context)
+        if self.store.exists(native_uri):
+            native_ref = self.store.inspect(
+                native_uri, media_type="application/json"
+            )
+            native_plan = RetrievalStagePlan.model_validate(
+                self.store.read_json(native_uri)
+            )
+            _validate_native_plan_context(native_plan, context)
+        else:
+            native_plan = self.native_runner.prepare(
+                self._native_context(context)
+            )
+            native_ref = self.store.write_json(
+                native_uri,
+                native_plan.model_dump(mode="json"),
+                immutable=True,
+            )
+        operation_hash = operation_input_sha256_for(
+            project_id=context.project_id,
+            run_id=context.run_id,
+            requirement_revision=context.requirement_revision,
+            stage=context.stage,
+            agent_id=context.agent_id,
+            attempt=context.attempt,
+            input_snapshot_sha256=input_snapshot.sha256,
+            native_plan_sha256=native_ref.sha256,
+            policy_version=native_plan.query_plan.policy_version,
+        )
+        return PreparedStagePlan(
+            project_id=context.project_id,
+            run_id=context.run_id,
+            requirement_revision=context.requirement_revision,
+            stage=context.stage,
+            agent_id=context.agent_id,
+            attempt=context.attempt,
+            input_snapshot_uri=input_snapshot.uri,
+            input_snapshot_sha256=input_snapshot.sha256,
+            native_plan_uri=native_ref.uri,
+            native_plan_sha256=native_ref.sha256,
+            operation_input_sha256=operation_hash,
+            approval_required=False,
+            resource_estimate={"class": "retrieval"},
+            policy_version=native_plan.query_plan.policy_version,
+            risk_summary="Read-only Materials Project retrieval.",
+            created_at=native_plan.query_plan.created_at,
         )
 
     def start(
-        self, context: StageExecutionContext, idempotency_key: str
+        self,
+        context: StageExecutionContext,
+        prepared_plan: PreparedStagePlan,
+        idempotency_key: str,
     ) -> ControlStageOutcome:
-        del idempotency_key
         try:
-            plan = self.native_runner.prepare(self._native_context(context))
+            _validate_prepared_plan_context(prepared_plan, context)
+            if not self.store.exists_with_hash(
+                prepared_plan.native_plan_uri,
+                prepared_plan.native_plan_sha256,
+            ):
+                raise ValueError("Agent01 native plan failed integrity check")
+            plan = RetrievalStagePlan.model_validate(
+                self.store.read_json(prepared_plan.native_plan_uri)
+            )
+            _validate_native_plan_context(plan, context)
             native = self.native_runner.start(plan, plan.idempotency_key)
         except Exception as exc:
-            return _exception_outcome(
+            return runner_exception_outcome(
                 context,
-                _generic_operation_key(context),
+                idempotency_key,
                 exc,
             )
-        return self._map_native(context, native, plan.idempotency_key)
+        return self._map_native(context, native, idempotency_key)
 
     def reconcile(
         self,
         context: StageExecutionContext,
+        prepared_plan: PreparedStagePlan,
         external_job_ref: str,
         idempotency_key: str,
     ) -> ControlStageOutcome:
+        _validate_prepared_plan_context(prepared_plan, context)
         native = self.native_runner.reconcile(external_job_ref)
         return self._map_native(context, native, idempotency_key)
 
@@ -369,26 +451,129 @@ class FixtureStageRunner:
         capability: StageCapability,
         artifact_store: LocalArtifactStore,
         status: StageStatus = StageStatus.SUCCEEDED,
+        candidate_count: int = 1,
+        approval_required: bool | None = None,
+        lifecycle_counters: dict[str, int] | None = None,
     ) -> None:
         if not capability.is_mock:
             raise ValueError("FixtureStageRunner requires is_mock=true")
+        if candidate_count < 0:
+            raise ValueError("candidate_count cannot be negative")
         self.capability = capability
         self.store = artifact_store
         self.status = status
+        self.candidate_count = candidate_count
+        self.approval_required = approval_required
+        self.lifecycle_counters = lifecycle_counters
 
     def validate_input(
         self, context: StageExecutionContext
     ) -> StageInputValidation:
+        self._count("validate")
         missing = _missing_inputs(context)
+        if self.candidate_count > 20:
+            return StageInputValidation(
+                valid=False,
+                errors=["fixture batch exceeds the 20-candidate hard limit"],
+                remediation=["reduce requested candidate count to 20 or fewer"],
+                error_code="BATCH_LIMIT_EXCEEDED",
+                failure_status=StageStatus.BLOCKED_MISSING_INPUT,
+            )
         return StageInputValidation(
             valid=not missing,
             missing_fields=missing,
             remediation=[f"provide {name}" for name in missing],
         )
 
+    def prepare(self, context: StageExecutionContext) -> PreparedStagePlan:
+        self._count("prepare")
+        input_snapshot = _require_input_snapshot(context)
+        native_uri = _native_plan_uri(context)
+        approval_required = (
+            self.approval_required
+            if self.approval_required is not None
+            else 6 <= self.candidate_count <= 20
+        )
+        native_payload = {
+            "schema_version": "orchestrator-fixture-native-plan-v2",
+            "project_id": context.project_id,
+            "run_id": context.run_id,
+            "requirement_revision": context.requirement_revision,
+            "stage": context.stage.value,
+            "agent_id": context.agent_id,
+            "attempt": context.attempt,
+            "input_snapshot_uri": input_snapshot.uri,
+            "input_snapshot_sha256": input_snapshot.sha256,
+            "candidate_count": self.candidate_count,
+            "is_mock": True,
+            "approval_required": approval_required,
+            "resource_estimate": {
+                "candidate_count": self.candidate_count,
+                "max_num_sites": 100,
+                "device": "fixture",
+                "relaxation_steps": 200,
+                "estimated_wall_time": "fixture-only",
+                "model": "fixture-no-scientific-model",
+            },
+            "policy_version": "orchestrator-fixture-plan-policy-v2",
+        }
+        if self.store.exists(native_uri):
+            existing = self.store.read_json(native_uri)
+            if existing != native_payload:
+                raise ValueError(
+                    "existing fixture native plan conflicts with current input"
+                )
+            native_ref = self.store.inspect(
+                native_uri, media_type="application/json"
+            )
+        else:
+            native_ref = self.store.write_json(
+                native_uri, native_payload, immutable=True
+            )
+        operation_hash = operation_input_sha256_for(
+            project_id=context.project_id,
+            run_id=context.run_id,
+            requirement_revision=context.requirement_revision,
+            stage=context.stage,
+            agent_id=context.agent_id,
+            attempt=context.attempt,
+            input_snapshot_sha256=input_snapshot.sha256,
+            native_plan_sha256=native_ref.sha256,
+            policy_version=native_payload["policy_version"],
+        )
+        return PreparedStagePlan(
+            project_id=context.project_id,
+            run_id=context.run_id,
+            requirement_revision=context.requirement_revision,
+            stage=context.stage,
+            agent_id=context.agent_id,
+            attempt=context.attempt,
+            input_snapshot_uri=input_snapshot.uri,
+            input_snapshot_sha256=input_snapshot.sha256,
+            native_plan_uri=native_ref.uri,
+            native_plan_sha256=native_ref.sha256,
+            operation_input_sha256=operation_hash,
+            approval_required=approval_required,
+            gate_type=(
+                "EXPENSIVE_BATCH_APPROVAL" if approval_required else None
+            ),
+            resource_estimate=native_payload["resource_estimate"],
+            policy_version=native_payload["policy_version"],
+            risk_summary=(
+                "Fixture-only batch used to validate control flow; "
+                "no scientific evidence is produced."
+            ),
+            created_at=datetime(2000, 1, 1, tzinfo=UTC),
+        )
+
     def start(
-        self, context: StageExecutionContext, idempotency_key: str
+        self,
+        context: StageExecutionContext,
+        prepared_plan: PreparedStagePlan,
+        idempotency_key: str,
     ) -> ControlStageOutcome:
+        self._count("start")
+        _validate_prepared_plan_context(prepared_plan, context)
         payload = {
             "schema_version": "orchestrator-fixture-result-v1",
             "run_id": context.run_id,
@@ -425,10 +610,11 @@ class FixtureStageRunner:
     def reconcile(
         self,
         context: StageExecutionContext,
+        prepared_plan: PreparedStagePlan,
         external_job_ref: str,
         idempotency_key: str,
     ) -> ControlStageOutcome:
-        del context, external_job_ref, idempotency_key
+        del context, prepared_plan, external_job_ref, idempotency_key
         raise RuntimeError("synchronous fixture runner cannot reconcile")
 
     def cancel(
@@ -439,6 +625,12 @@ class FixtureStageRunner:
             status=ExternalJobStatus.CANCELLED,
             idempotency_key=idempotency_key,
         )
+
+    def _count(self, operation: str) -> None:
+        if self.lifecycle_counters is not None:
+            self.lifecycle_counters[operation] = (
+                self.lifecycle_counters.get(operation, 0) + 1
+            )
 
 
 def _missing_inputs(context: StageExecutionContext) -> list[str]:
@@ -456,15 +648,75 @@ def _map_native_status(status: NativeStageStatus) -> StageStatus:
     return StageStatus(status.value)
 
 
-def _generic_operation_key(context: StageExecutionContext) -> str:
-    payload = (
-        f"{context.project_id}:{context.run_id}:{context.stage.value}:"
-        f"{context.attempt}:{context.requirement_artifact.sha256}"
-    ).encode("utf-8")
-    return hashlib.sha256(payload).hexdigest()
+def _require_input_snapshot(
+    context: StageExecutionContext,
+) -> ArtifactPointer:
+    if context.input_snapshot is None:
+        raise ValueError("stage preparation requires an input snapshot")
+    return context.input_snapshot
 
 
-def _exception_outcome(
+def _native_plan_uri(context: StageExecutionContext) -> str:
+    return (
+        f"plans/{context.run_id}/stages/{context.stage.value}/"
+        f"attempt-{context.attempt}.native.json"
+    )
+
+
+def _validate_prepared_plan_context(
+    prepared_plan: PreparedStagePlan,
+    context: StageExecutionContext,
+) -> None:
+    expected = (
+        context.project_id,
+        context.run_id,
+        context.requirement_revision,
+        context.stage,
+        context.agent_id,
+        context.attempt,
+    )
+    actual = (
+        prepared_plan.project_id,
+        prepared_plan.run_id,
+        prepared_plan.requirement_revision,
+        prepared_plan.stage,
+        prepared_plan.agent_id,
+        prepared_plan.attempt,
+    )
+    if actual != expected:
+        raise ValueError("prepared stage plan does not match execution context")
+    input_snapshot = _require_input_snapshot(context)
+    if (
+        prepared_plan.input_snapshot_uri != input_snapshot.uri
+        or prepared_plan.input_snapshot_sha256 != input_snapshot.sha256
+    ):
+        raise ValueError("prepared stage plan input snapshot changed")
+
+
+def _validate_native_plan_context(
+    native_plan: RetrievalStagePlan,
+    context: StageExecutionContext,
+) -> None:
+    stage_input = native_plan.context.stage_input
+    expected = (
+        context.project_id,
+        context.run_id,
+        context.requirement_revision,
+        context.requirement_artifact.uri,
+        context.requirement_artifact.sha256,
+    )
+    actual = (
+        stage_input.project_id,
+        stage_input.run_id,
+        stage_input.requirement_revision,
+        stage_input.requirement_artifact_uri,
+        stage_input.requirement_hash,
+    )
+    if actual != expected:
+        raise ValueError("Agent01 native plan does not match execution context")
+
+
+def runner_exception_outcome(
     context: StageExecutionContext,
     idempotency_key: str,
     exc: Exception,

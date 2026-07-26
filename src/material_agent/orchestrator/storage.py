@@ -574,6 +574,22 @@ class OrchestratorRepository:
                 raise RepositoryConflictError(
                     "stage attempt operation key is immutable"
                 )
+            if (
+                existing["plan_sha256"]
+                and record.plan_sha256
+                and existing["plan_sha256"] != record.plan_sha256
+            ):
+                raise RepositoryConflictError(
+                    "stage attempt plan hash changed"
+                )
+            if (
+                existing["plan_uri"]
+                and record.plan_uri
+                and existing["plan_uri"] != record.plan_uri
+            ):
+                raise RepositoryConflictError(
+                    "stage attempt plan URI changed"
+                )
             validate_stage_transition(existing["status"], record.status.value)
             if (
                 existing["result_sha256"]
@@ -619,6 +635,28 @@ class OrchestratorRepository:
             ),
         )
         self.connection.commit()
+
+    def get_stage_attempt(
+        self,
+        run_id: str,
+        stage: StageId | str,
+        attempt: int,
+    ) -> dict[str, Any] | None:
+        stage_id = stage.value if isinstance(stage, StageId) else stage
+        row = self.connection.execute(
+            """
+            SELECT * FROM stage_attempts
+            WHERE run_id = ? AND stage_id = ? AND attempt = ?
+            """,
+            (run_id, stage_id, attempt),
+        ).fetchone()
+        if row is None:
+            return None
+        result = dict(row)
+        result["error"] = (
+            json.loads(result["error_json"]) if result["error_json"] else None
+        )
+        return result
 
     def ensure_approval(
         self,

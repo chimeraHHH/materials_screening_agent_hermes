@@ -16,12 +16,15 @@ from material_agent.orchestrator.models import (
     ControlStageOutcome,
     ExternalJobStatus,
     LEGACY_ORCHESTRATOR_CONTRACT_VERSION,
+    P01_ORCHESTRATOR_CONTRACT_VERSION,
+    PreparedStagePlan,
     RunStatus,
     StageCapability,
     StageExecutionContext,
     StageId,
     StageInputValidation,
     StageStatus,
+    operation_input_sha256_for,
 )
 from material_agent.orchestrator.runners import (
     FixtureStageRunner,
@@ -55,6 +58,11 @@ def _complete_source_run(
             decision="approve",
         )
         assert completed.status is RunStatus.SUCCEEDED
+        report = runtime.store.read_json(
+            f"artifact://reports/{run_id}/report.json"
+        )
+        assert report["stages"]["agent01"]["stage_plan_uri"]
+        assert report["stages"]["agent01"]["stage_plan_sha256"]
         requirement_row = runtime.repository.get_requirement(run_id, 1)
         manifest = runtime.store.inspect(
             f"artifact://stages/agent01/{run_id}/candidate_manifest.jsonl",
@@ -243,6 +251,314 @@ def test_fixture_runner_uses_generic_stage_path_without_evidence_uplift(
     assert completed.stage_statuses == {"agent02": "SUCCEEDED"}
     assert report["stages"]["agent02"]["is_mock"] is True
     assert "evidence_level" not in report["stages"]["agent02"]
+    assert report["stages"]["agent02"]["stage_plan_uri"]
+    assert report["stages"]["agent02"]["stage_plan_sha256"]
+
+
+def _ml_fixture_registry(
+    project_root: Path,
+    *,
+    candidate_count: int,
+    counters: dict[str, int],
+    capability_requires_approval: bool = False,
+) -> StageRunnerRegistry:
+    capability = StageCapability(
+        stage=StageId.ML,
+        agent_id="agent02",
+        registered=True,
+        is_mock=True,
+        required_inputs=["requirement", "candidate_manifest"],
+        requires_approval=capability_requires_approval,
+    )
+    registry = StageRunnerRegistry()
+    registry.register(
+        StageId.ML,
+        lambda _context: FixtureStageRunner(
+            capability=capability,
+            artifact_store=LocalArtifactStore(project_root),
+            candidate_count=candidate_count,
+            lifecycle_counters=counters,
+        ),
+        capability,
+    )
+    return registry
+
+
+def test_ml_top_five_plan_starts_without_approval_once(
+    tmp_path, requirement, fixture_payload
+) -> None:
+    project_id = "project-ml-top-five"
+    requirement_row, manifest = _complete_source_run(
+        tmp_path,
+        requirement,
+        fixture_payload,
+        project_id=project_id,
+        run_id="run-source",
+    )
+    counters: dict[str, int] = {}
+    registry = _ml_fixture_registry(
+        tmp_path / project_id,
+        candidate_count=5,
+        counters=counters,
+    )
+    with OrchestratorRuntime.from_workspace(
+        tmp_path, project_id, runner_registry=registry
+    ) as runtime:
+        completed = runtime.start_stage_run(
+            stage=StageId.ML,
+            stage_input=_stage_input(
+                "run-source", requirement_row, manifest
+            ),
+            run_id="run-ml-five",
+        )
+        attempts = runtime.repository.connection.execute(
+            """
+            SELECT operation_key, plan_uri, plan_sha256
+            FROM stage_attempts
+            WHERE run_id = ? AND stage_id = ?
+            """,
+            ("run-ml-five", StageId.ML.value),
+        ).fetchall()
+
+    assert completed.status is RunStatus.SUCCEEDED
+    assert not completed.interrupts
+    assert counters == {"validate": 1, "prepare": 1, "start": 1}
+    assert len(attempts) == 1
+    assert attempts[0]["plan_uri"]
+    assert attempts[0]["plan_sha256"]
+
+
+def test_ml_six_candidate_plan_approval_survives_restart_without_reprepare(
+    tmp_path, requirement, fixture_payload
+) -> None:
+    project_id = "project-ml-six"
+    requirement_row, manifest = _complete_source_run(
+        tmp_path,
+        requirement,
+        fixture_payload,
+        project_id=project_id,
+        run_id="run-source",
+    )
+    counters: dict[str, int] = {}
+    registry = _ml_fixture_registry(
+        tmp_path / project_id,
+        candidate_count=6,
+        counters=counters,
+    )
+    with OrchestratorRuntime.from_workspace(
+        tmp_path, project_id, runner_registry=registry
+    ) as runtime:
+        waiting = runtime.start_stage_run(
+            stage=StageId.ML,
+            stage_input=_stage_input(
+                "run-source", requirement_row, manifest
+            ),
+            run_id="run-ml-six",
+        )
+        approval = waiting.interrupts[0].value
+        plan_uri = approval["payload"]["stage_plan_uri"]
+        plan_sha256 = approval["payload"]["stage_plan_sha256"]
+        prepared = runtime.store.read_json(plan_uri)
+        assert approval["payload"]["resource_estimate"][
+            "candidate_count"
+        ] == 6
+        assert approval["payload"]["resource_estimate"] == (
+            prepared["resource_estimate"]
+        )
+        assert approval["payload"]["input_snapshot_sha256"] == (
+            prepared["input_snapshot_sha256"]
+        )
+        assert approval["payload"]["operation_input_sha256"] == (
+            prepared["operation_input_sha256"]
+        )
+        assert runtime.store.exists_with_hash(plan_uri, plan_sha256)
+        assert counters == {"validate": 1, "prepare": 1}
+
+    with OrchestratorRuntime.from_workspace(
+        tmp_path, project_id, runner_registry=registry
+    ) as runtime:
+        completed = runtime.approve(
+            run_id="run-ml-six",
+            approval_id=approval["approval_id"],
+            decision="approve",
+        )
+        report = runtime.store.read_json(
+            "artifact://reports/run-ml-six/report.json"
+        )
+
+    assert completed.status is RunStatus.SUCCEEDED
+    assert counters == {"validate": 1, "prepare": 1, "start": 1}
+    assert report["stages"]["agent02"]["stage_plan_uri"] == plan_uri
+    assert report["stages"]["agent02"]["stage_plan_sha256"] == plan_sha256
+
+
+@pytest.mark.parametrize(
+    ("artifact_key", "error_pattern"),
+    [
+        ("stage_plan_uri", "approval input snapshot failed integrity"),
+        ("input_snapshot_uri", "stage input snapshot failed integrity"),
+    ],
+)
+def test_ml_approval_rejects_tampered_plan_or_input_snapshot(
+    tmp_path,
+    requirement,
+    fixture_payload,
+    artifact_key,
+    error_pattern,
+) -> None:
+    project_id = f"project-ml-tamper-{artifact_key}"
+    requirement_row, manifest = _complete_source_run(
+        tmp_path,
+        requirement,
+        fixture_payload,
+        project_id=project_id,
+        run_id="run-source",
+    )
+    counters: dict[str, int] = {}
+    registry = _ml_fixture_registry(
+        tmp_path / project_id,
+        candidate_count=6,
+        counters=counters,
+    )
+    with OrchestratorRuntime.from_workspace(
+        tmp_path, project_id, runner_registry=registry
+    ) as runtime:
+        waiting = runtime.start_stage_run(
+            stage=StageId.ML,
+            stage_input=_stage_input(
+                "run-source", requirement_row, manifest
+            ),
+            run_id="run-ml-tampered",
+        )
+        approval = waiting.interrupts[0].value
+        artifact_uri = approval["payload"][artifact_key]
+        artifact_path = runtime.project_root / artifact_uri.removeprefix(
+            "artifact://"
+        )
+        artifact_path.write_text("{}", encoding="utf-8")
+
+        with pytest.raises(ValueError, match=error_pattern):
+            runtime.approve(
+                run_id="run-ml-tampered",
+                approval_id=approval["approval_id"],
+                decision="approve",
+            )
+        stored_approval = runtime.repository.get_approval(
+            approval["approval_id"]
+        )
+
+    assert counters == {"validate": 1, "prepare": 1}
+    assert stored_approval["status"] == "PENDING"
+
+
+def test_ml_batch_over_twenty_blocks_before_plan_approval_or_start(
+    tmp_path, requirement, fixture_payload
+) -> None:
+    project_id = "project-ml-over-limit"
+    requirement_row, manifest = _complete_source_run(
+        tmp_path,
+        requirement,
+        fixture_payload,
+        project_id=project_id,
+        run_id="run-source",
+    )
+    counters: dict[str, int] = {}
+    registry = _ml_fixture_registry(
+        tmp_path / project_id,
+        candidate_count=21,
+        counters=counters,
+    )
+    with OrchestratorRuntime.from_workspace(
+        tmp_path, project_id, runner_registry=registry
+    ) as runtime:
+        blocked = runtime.start_stage_run(
+            stage=StageId.ML,
+            stage_input=_stage_input(
+                "run-source", requirement_row, manifest
+            ),
+            run_id="run-ml-over-limit",
+        )
+        approval_count = runtime.repository.connection.execute(
+            "SELECT COUNT(*) FROM approvals WHERE run_id = ?",
+            ("run-ml-over-limit",),
+        ).fetchone()[0]
+        plan_count = runtime.repository.connection.execute(
+            "SELECT COUNT(*) FROM stage_attempts WHERE run_id = ? AND plan_uri IS NOT NULL",
+            ("run-ml-over-limit",),
+        ).fetchone()[0]
+        report = runtime.store.read_json(
+            "artifact://reports/run-ml-over-limit/report.json"
+        )
+
+    assert blocked.status is RunStatus.PAUSED
+    assert blocked.stage_statuses == {
+        "agent02": StageStatus.BLOCKED_MISSING_INPUT.value
+    }
+    assert counters == {"validate": 1}
+    assert approval_count == 0
+    assert plan_count == 0
+    assert report["stages"]["agent02"]["errors"][0]["category"] == (
+        "BATCH_LIMIT_EXCEEDED"
+    )
+
+
+def test_runner_plan_identity_mismatch_fails_as_invalid_plan(
+    tmp_path, requirement, fixture_payload
+) -> None:
+    class InvalidPlanRunner(FixtureStageRunner):
+        def prepare(
+            self, context: StageExecutionContext
+        ) -> PreparedStagePlan:
+            prepared = super().prepare(context)
+            return prepared.model_copy(update={"run_id": "different-run"})
+
+    project_id = "project-invalid-ml-plan"
+    requirement_row, manifest = _complete_source_run(
+        tmp_path,
+        requirement,
+        fixture_payload,
+        project_id=project_id,
+        run_id="run-source",
+    )
+    counters: dict[str, int] = {}
+    capability = StageCapability(
+        stage=StageId.ML,
+        agent_id="agent02",
+        registered=True,
+        is_mock=True,
+        required_inputs=["requirement", "candidate_manifest"],
+    )
+    registry = StageRunnerRegistry()
+    registry.register(
+        StageId.ML,
+        lambda _context: InvalidPlanRunner(
+            capability=capability,
+            artifact_store=LocalArtifactStore(tmp_path / project_id),
+            candidate_count=5,
+            lifecycle_counters=counters,
+        ),
+        capability,
+    )
+    with OrchestratorRuntime.from_workspace(
+        tmp_path, project_id, runner_registry=registry
+    ) as runtime:
+        failed = runtime.start_stage_run(
+            stage=StageId.ML,
+            stage_input=_stage_input(
+                "run-source", requirement_row, manifest
+            ),
+            run_id="run-invalid-plan",
+        )
+        report = runtime.store.read_json(
+            "artifact://reports/run-invalid-plan/report.json"
+        )
+
+    assert failed.status is RunStatus.FAILED
+    assert failed.stage_statuses == {"agent02": "PERMANENT_FAILED"}
+    assert counters == {"validate": 1, "prepare": 1}
+    assert report["stages"]["agent02"]["errors"][0]["category"] == (
+        "INVALID_PLAN"
+    )
 
 
 def test_generic_graph_routes_agent01_output_into_sync_fixture_stage(
@@ -302,8 +618,63 @@ def test_generic_graph_routes_agent01_output_into_sync_fixture_stage(
     assert report["stages"]["agent03"]["status"] == "SKIPPED"
 
 
+def test_dynamic_ml_approval_rejection_preserves_agent01_partial_report(
+    tmp_path, requirement, fixture_payload
+) -> None:
+    project_id = "project-ml-rejected"
+    project = OrchestratorRuntime.create_project(tmp_path, project_id)
+    counters: dict[str, int] = {}
+    registry = _ml_fixture_registry(
+        Path(project["project_root"]),
+        candidate_count=6,
+        counters=counters,
+    )
+    payload = requirement.model_dump(mode="json")
+    payload["scientific_targets"] = [
+        {
+            "name": "control-flow ML fixture",
+            "required_evidence_level": "L2_ML_SCREENED",
+        }
+    ]
+    payload["budget"]["allow_ml"] = True
+    with OrchestratorRuntime.from_workspace(
+        tmp_path, project_id, runner_registry=registry
+    ) as runtime:
+        reviewing = runtime.start_run(
+            raw_request="structured",
+            initial_requirement=payload,
+            fixture_payload=fixture_payload,
+            run_id="run-ml-rejected",
+        )
+        waiting_ml = runtime.approve(
+            run_id="run-ml-rejected",
+            approval_id=reviewing.interrupts[0].value["approval_id"],
+            decision="approve",
+        )
+        assert waiting_ml.status is RunStatus.WAITING_APPROVAL
+        rejected = runtime.approve(
+            run_id="run-ml-rejected",
+            approval_id=waiting_ml.interrupts[0].value["approval_id"],
+            decision="reject",
+            reason="batch not approved",
+        )
+        report = runtime.store.read_json(
+            "artifact://reports/run-ml-rejected/report.json"
+        )
+
+    assert rejected.status is RunStatus.PARTIAL
+    assert rejected.stage_statuses == {
+        "agent01": "SUCCEEDED",
+        "agent02": "CANCELLED",
+    }
+    assert counters == {"validate": 1, "prepare": 1}
+    assert report["stages"]["agent01"]["native_result_uri"]
+    assert report["stages"]["agent02"]["status"] == "CANCELLED"
+
+
 @dataclass
 class _Backend:
+    prepares: int = 0
     submits: int = 0
     reconciles: int = 0
     cancels: int = 0
@@ -330,9 +701,68 @@ class _ExternalFixtureRunner:
     ) -> StageInputValidation:
         return StageInputValidation(valid=True)
 
+    def prepare(self, context: StageExecutionContext) -> PreparedStagePlan:
+        assert context.input_snapshot is not None
+        self.backend.prepares += 1
+        payload = {
+            "schema_version": "fixture-external-plan-v1",
+            "project_id": context.project_id,
+            "run_id": context.run_id,
+            "stage": context.stage.value,
+            "attempt": context.attempt,
+            "input_snapshot_uri": context.input_snapshot.uri,
+            "input_snapshot_sha256": context.input_snapshot.sha256,
+            "is_mock": True,
+        }
+        ref = self.store.write_json(
+            (
+                f"fixtures/external/{context.run_id}/"
+                f"attempt-{context.attempt}.plan.json"
+            ),
+            payload,
+            immutable=True,
+        )
+        policy_version = "fixture-external-policy-v1"
+        operation_hash = operation_input_sha256_for(
+            project_id=context.project_id,
+            run_id=context.run_id,
+            requirement_revision=context.requirement_revision,
+            stage=context.stage,
+            agent_id=context.agent_id,
+            attempt=context.attempt,
+            input_snapshot_sha256=context.input_snapshot.sha256,
+            native_plan_sha256=ref.sha256,
+            policy_version=policy_version,
+        )
+        return PreparedStagePlan(
+            project_id=context.project_id,
+            run_id=context.run_id,
+            requirement_revision=context.requirement_revision,
+            stage=context.stage,
+            agent_id=context.agent_id,
+            attempt=context.attempt,
+            input_snapshot_uri=context.input_snapshot.uri,
+            input_snapshot_sha256=context.input_snapshot.sha256,
+            native_plan_uri=ref.uri,
+            native_plan_sha256=ref.sha256,
+            operation_input_sha256=operation_hash,
+            approval_required=False,
+            resource_estimate={
+                "candidate_count": 1,
+                "backend": "fixture-external",
+            },
+            policy_version=policy_version,
+            risk_summary="Fixture external task.",
+            created_at=datetime(2026, 7, 26, tzinfo=UTC),
+        )
+
     def start(
-        self, context: StageExecutionContext, idempotency_key: str
+        self,
+        context: StageExecutionContext,
+        prepared_plan: PreparedStagePlan,
+        idempotency_key: str,
     ) -> ControlStageOutcome:
+        assert prepared_plan.run_id == context.run_id
         self.backend.submits += 1
         return ControlStageOutcome(
             stage=context.stage,
@@ -350,9 +780,11 @@ class _ExternalFixtureRunner:
     def reconcile(
         self,
         context: StageExecutionContext,
+        prepared_plan: PreparedStagePlan,
         external_job_ref: str,
         idempotency_key: str,
     ) -> ControlStageOutcome:
+        assert prepared_plan.run_id == context.run_id
         self.backend.reconciles += 1
         sequence = self.backend.reconciles + 1
         if self.backend.remaining_running > 0:
@@ -473,6 +905,11 @@ def test_external_stage_requires_gate_and_resumes_without_resubmit(
         assert approval_view.status is RunStatus.WAITING_APPROVAL
         approval = approval_view.interrupts[0].value
         assert approval["interaction_type"] == "EXPENSIVE_BATCH_APPROVAL"
+        prepared = runtime.store.read_json(
+            approval["payload"]["stage_plan_uri"]
+        )
+        assert prepared["approval_required"] is False
+        assert approval["payload"]["stage_plan_sha256"]
         waiting = runtime.approve(
             run_id="run-dft",
             approval_id=approval["approval_id"],
@@ -480,6 +917,7 @@ def test_external_stage_requires_gate_and_resumes_without_resubmit(
         )
         assert waiting.status is RunStatus.PAUSED
         assert waiting.stage_statuses == {"agent03": "RUNNING"}
+        assert backend.prepares == 1
         assert backend.submits == 1
         assert backend.reconciles == 0
 
@@ -492,6 +930,7 @@ def test_external_stage_requires_gate_and_resumes_without_resubmit(
         completed = runtime.resume(run_id="run-dft")
         assert completed.status is RunStatus.SUCCEEDED
         assert completed.stage_statuses == {"agent03": "SUCCEEDED"}
+        assert backend.prepares == 1
         assert backend.submits == 1
         assert backend.reconciles == 1
         assert runtime.resume(run_id="run-dft") == completed
@@ -694,10 +1133,25 @@ def test_external_identity_change_fails_closed(
     )
 
 
+@pytest.mark.parametrize(
+    ("version", "expected_label", "case_slug"),
+    [
+        (
+            LEGACY_ORCHESTRATOR_CONTRACT_VERSION,
+            f"unfinished {LEGACY_ORCHESTRATOR_CONTRACT_VERSION}",
+            "p0",
+        ),
+        (
+            P01_ORCHESTRATOR_CONTRACT_VERSION,
+            "unfinished orchestrator-p0.1-v2",
+            "p01",
+        ),
+    ],
+)
 def test_legacy_unfinished_checkpoint_is_readable_but_not_resumable(
-    tmp_path,
+    tmp_path, version, expected_label, case_slug
 ) -> None:
-    project_id = "project-legacy-checkpoint"
+    project_id = f"project-legacy-checkpoint-{case_slug}"
     OrchestratorRuntime.create_project(tmp_path, project_id)
     with OrchestratorRuntime.from_workspace(
         tmp_path, project_id
@@ -707,17 +1161,48 @@ def test_legacy_unfinished_checkpoint_is_readable_but_not_resumable(
             project_id=project_id,
             raw_request="legacy",
             status=RunStatus.PAUSED,
-            checkpoint_schema_version=(
-                LEGACY_ORCHESTRATOR_CONTRACT_VERSION
-            ),
+            checkpoint_schema_version=version,
         )
         local = runtime.status("run-legacy")
         assert local.status is RunStatus.PAUSED
         assert "read-only" in local.warnings[0]
         with pytest.raises(
-            CheckpointCompatibilityError, match="cannot be resumed"
+            CheckpointCompatibilityError,
+            match=f"{expected_label} checkpoint cannot be resumed",
         ):
             runtime.resume(run_id="run-legacy")
+
+
+def test_completed_p01_report_remains_readable_under_p02(tmp_path) -> None:
+    project_id = "project-p01-completed"
+    OrchestratorRuntime.create_project(tmp_path, project_id)
+    with OrchestratorRuntime.from_workspace(
+        tmp_path, project_id
+    ) as runtime:
+        report_text = "# Frozen Orchestrator P0.1 report\n"
+        report_ref = runtime.store.write_text(
+            "reports/run-p01/report.md",
+            report_text,
+            media_type="text/markdown",
+            immutable=True,
+        )
+        runtime.repository.create_run(
+            run_id="run-p01",
+            project_id=project_id,
+            raw_request="completed p0.1",
+            status=RunStatus.SUCCEEDED,
+            checkpoint_schema_version=P01_ORCHESTRATOR_CONTRACT_VERSION,
+        )
+        runtime.repository.update_run(
+            "run-p01", report_uri=report_ref.uri
+        )
+
+        local = runtime.status("run-p01")
+        restored = runtime.read_report("run-p01")
+
+    assert local.status is RunStatus.SUCCEEDED
+    assert "read-only" in local.warnings[0]
+    assert restored == report_text
 
 
 def test_project_lock_rejects_concurrent_advancement(

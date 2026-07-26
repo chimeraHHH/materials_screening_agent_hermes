@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
+from datetime import UTC, datetime
 
 import pytest
 from pydantic import ValidationError
@@ -9,8 +10,16 @@ from material_agent.orchestrator.models import (
     ControlOutcomeType,
     ControlStageOutcome,
     ORCHESTRATOR_CONTRACT_VERSION,
+    ORCHESTRATOR_REPORT_VERSION,
+    ORCHESTRATOR_STAGE_PLAN_VERSION,
+    PreparedStagePlan,
+    StageCapability,
+    StageInputValidation,
     StageId,
     StageStatus,
+    STAGE_TO_AGENT,
+    effective_stage_approval,
+    operation_input_sha256_for,
 )
 from material_agent.orchestrator.state_machine import (
     InvalidStateTransition,
@@ -22,6 +31,46 @@ from material_agent.orchestrator.storage import (
     OrchestratorRepository,
     RepositoryConflictError,
 )
+
+
+def _prepared_stage_plan(
+    *,
+    approval_required: bool,
+    stage: StageId = StageId.ML,
+) -> PreparedStagePlan:
+    agent_id = STAGE_TO_AGENT[stage]
+    operation_hash = operation_input_sha256_for(
+        project_id="project-1",
+        run_id="run-1",
+        requirement_revision=1,
+        stage=stage,
+        agent_id=agent_id,
+        attempt=1,
+        input_snapshot_sha256="input-hash",
+        native_plan_sha256="native-hash",
+        policy_version="ml-policy-v1",
+    )
+    return PreparedStagePlan(
+        project_id="project-1",
+        run_id="run-1",
+        requirement_revision=1,
+        stage=stage,
+        agent_id=agent_id,
+        attempt=1,
+        input_snapshot_uri="artifact://input.json",
+        input_snapshot_sha256="input-hash",
+        native_plan_uri="artifact://native-plan.json",
+        native_plan_sha256="native-hash",
+        operation_input_sha256=operation_hash,
+        approval_required=approval_required,
+        gate_type=(
+            "EXPENSIVE_BATCH_APPROVAL" if approval_required else None
+        ),
+        resource_estimate={"candidate_count": 6},
+        policy_version="ml-policy-v1",
+        risk_summary="fixture",
+        created_at=datetime(2026, 7, 26, tzinfo=UTC),
+    )
 
 
 def test_control_outcome_is_strict_and_separate_from_agent01_envelope() -> None:
@@ -57,6 +106,84 @@ def test_waiting_external_requires_running_stage_and_job_identity() -> None:
             outcome=ControlOutcomeType.WAITING_EXTERNAL,
             status=StageStatus.SUCCEEDED,
             idempotency_key="operation-key",
+        )
+
+
+def test_p02_contract_versions_and_prepared_plan_hash_are_frozen() -> None:
+    plan = _prepared_stage_plan(approval_required=True)
+    schema = PreparedStagePlan.model_json_schema()
+
+    assert ORCHESTRATOR_CONTRACT_VERSION == "orchestrator-p0.2-v3"
+    assert ORCHESTRATOR_STAGE_PLAN_VERSION == "orchestrator-stage-plan-v2"
+    assert ORCHESTRATOR_REPORT_VERSION == "orchestrator-report-p0.2-v3"
+    assert schema["additionalProperties"] is False
+    assert schema["properties"]["schema_version"]["const"] == (
+        "orchestrator-stage-plan-v2"
+    )
+    assert set(schema["properties"]) == set(PreparedStagePlan.model_fields)
+    assert PreparedStagePlan.model_validate_json(
+        plan.model_dump_json()
+    ) == plan
+    with pytest.raises(ValidationError, match="operation input hash"):
+        PreparedStagePlan.model_validate(
+            {
+                **plan.model_dump(mode="json"),
+                "operation_input_sha256": "changed",
+            }
+        )
+
+
+def test_dynamic_approval_merges_capability_floor_and_plan_request() -> None:
+    optional = StageCapability(
+        stage=StageId.ML,
+        agent_id="agent02",
+        registered=True,
+    )
+    mandatory = optional.model_copy(update={"requires_approval": True})
+    automatic = _prepared_stage_plan(approval_required=False)
+    gated = _prepared_stage_plan(approval_required=True)
+
+    assert effective_stage_approval(optional, automatic) is False
+    assert effective_stage_approval(optional, gated) is True
+    assert effective_stage_approval(mandatory, automatic) is True
+    for stage in (StageId.DFT, StageId.MANY_BODY):
+        capability = StageCapability(
+            stage=stage,
+            agent_id=STAGE_TO_AGENT[stage],
+            registered=True,
+            requires_approval=True,
+        )
+        plan = _prepared_stage_plan(
+            approval_required=False,
+            stage=stage,
+        )
+        assert effective_stage_approval(capability, plan) is True
+    with pytest.raises(ValueError, match="different stages"):
+        effective_stage_approval(
+            StageCapability(
+                stage=StageId.DFT,
+                agent_id="agent03",
+                registered=True,
+                requires_approval=True,
+            ),
+            automatic,
+        )
+
+
+def test_stage_input_validation_has_explicit_hard_limit_status() -> None:
+    validation = StageInputValidation(
+        valid=False,
+        errors=["batch too large"],
+        error_code="BATCH_LIMIT_EXCEEDED",
+        failure_status=StageStatus.BLOCKED_MISSING_INPUT,
+    )
+
+    assert validation.failure_status is StageStatus.BLOCKED_MISSING_INPUT
+    with pytest.raises(ValidationError, match="valid input"):
+        StageInputValidation(
+            valid=True,
+            error_code="SHOULD_NOT_EXIST",
+            failure_status=StageStatus.PERMANENT_FAILED,
         )
 
 

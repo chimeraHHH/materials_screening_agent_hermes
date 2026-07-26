@@ -23,6 +23,7 @@ from material_agent.orchestrator.models import (
     ORCHESTRATOR_REPORT_VERSION,
     OrchestratorState,
     PendingInteraction,
+    PreparedStagePlan,
     RunStatus,
     StageDisposition,
     StageExecutionContext,
@@ -32,6 +33,7 @@ from material_agent.orchestrator.models import (
     StageRoute,
     StageStatus,
     STAGE_TO_AGENT,
+    effective_stage_approval,
 )
 from material_agent.orchestrator.parser import (
     OfflineRequirementParser,
@@ -41,6 +43,7 @@ from material_agent.orchestrator.runners import (
     Agent01RunnerAdapter,
     StageRunner,
     StageRunnerRegistry,
+    runner_exception_outcome,
 )
 from material_agent.orchestrator.storage import (
     OrchestratorRepository,
@@ -111,7 +114,11 @@ class OrchestratorGraph:
         graph.add_node("build_execution_plan", self.build_execution_plan)
         graph.add_node("route_next_stage", self.route_next_stage)
         graph.add_node("validate_stage_input", self.validate_stage_input)
-        graph.add_node("prepare_stage", self.prepare_stage)
+        graph.add_node("prepare_stage_plan", self.prepare_stage_plan)
+        graph.add_node(
+            "decide_stage_approval", self.decide_stage_approval
+        )
+        graph.add_node("mark_stage_ready", self.mark_stage_ready)
         graph.add_node(
             "prepare_stage_approval", self.prepare_stage_approval
         )
@@ -178,8 +185,23 @@ class OrchestratorGraph:
             self.route_after_input_validation,
             {
                 "record": "record_stage_outcome",
+                "prepare": "prepare_stage_plan",
+            },
+        )
+        graph.add_conditional_edges(
+            "prepare_stage_plan",
+            self.route_after_stage_plan,
+            {
+                "record": "record_stage_outcome",
+                "decide": "decide_stage_approval",
+            },
+        )
+        graph.add_conditional_edges(
+            "decide_stage_approval",
+            self.route_after_approval_decision,
+            {
                 "approval": "prepare_stage_approval",
-                "ready": "prepare_stage",
+                "ready": "mark_stage_ready",
             },
         )
         graph.add_edge("prepare_stage_approval", "stage_approval_gate")
@@ -187,11 +209,11 @@ class OrchestratorGraph:
             "stage_approval_gate",
             self.route_after_stage_approval,
             {
-                "approve": "prepare_stage",
+                "approve": "mark_stage_ready",
                 "reject": "record_stage_outcome",
             },
         )
-        graph.add_edge("prepare_stage", "execute_or_reconcile_stage")
+        graph.add_edge("mark_stage_ready", "execute_or_reconcile_stage")
         graph.add_edge(
             "execute_or_reconcile_stage", "validate_stage_result"
         )
@@ -747,6 +769,11 @@ class OrchestratorGraph:
                 "route_cursor": cursor,
                 "current_route": route.model_dump(mode="json"),
                 "current_stage": route.agent_id,
+                "prepared_stage_plan": None,
+                "prepared_stage_plan_uri": None,
+                "prepared_stage_plan_sha256": None,
+                "stage_approval_required": None,
+                "stage_approval_decision": None,
                 "pending_control_outcome": (
                     pending.model_dump(mode="json") if pending else None
                 ),
@@ -756,6 +783,10 @@ class OrchestratorGraph:
             "route_cursor": cursor,
             "current_route": None,
             "current_stage": None,
+            "prepared_stage_plan": None,
+            "prepared_stage_plan_uri": None,
+            "prepared_stage_plan_sha256": None,
+            "stage_approval_required": None,
             "pending_control_outcome": None,
             "updated_at": self._now(),
         }
@@ -836,7 +867,7 @@ class OrchestratorGraph:
                 remediation=["inspect the immutable stage input artifacts"],
             )
         if not validation.valid:
-            status = (
+            status = validation.failure_status or (
                 StageStatus.BLOCKED_MISSING_INPUT
                 if validation.missing_fields
                 else StageStatus.PERMANENT_FAILED
@@ -857,12 +888,153 @@ class OrchestratorGraph:
     def route_after_input_validation(state: OrchestratorState) -> str:
         if state.get("pending_control_outcome") is not None:
             return "record"
-        route = StageRoute.model_validate(state["current_route"])
-        return "approval" if route.capability.requires_approval else "ready"
+        return "prepare"
 
-    def prepare_stage(self, state: OrchestratorState) -> dict[str, Any]:
+    def prepare_stage_plan(
+        self, state: OrchestratorState
+    ) -> dict[str, Any]:
         route = StageRoute.model_validate(state["current_route"])
         attempt = self._next_attempt(state, route)
+        context = self._stage_context(state, route, attempt)
+        input_ref = self._write_stage_input_snapshot(context)
+        context = context.model_copy(
+            update={
+                "input_snapshot": ArtifactPointer(
+                    uri=input_ref.uri,
+                    sha256=input_ref.sha256,
+                )
+            }
+        )
+        plan_relative_path = (
+            f"plans/{state['run_id']}/stages/{route.stage.value}/"
+            f"attempt-{attempt}.json"
+        )
+        has_frozen_plan = self.store.exists(plan_relative_path)
+        try:
+            if has_frozen_plan:
+                plan_ref = self.store.inspect(
+                    plan_relative_path, media_type="application/json"
+                )
+                prepared = PreparedStagePlan.model_validate(
+                    self.store.read_json(plan_relative_path)
+                )
+            else:
+                runner = self._runner(state, context)
+                prepared = runner.prepare(context)
+        except Exception as exc:
+            outcome = (
+                self._invalid_stage_plan_outcome(
+                    context, input_ref.sha256, exc
+                )
+                if has_frozen_plan
+                else runner_exception_outcome(
+                    context,
+                    _stable_id(
+                        "operation",
+                        context.project_id,
+                        context.run_id,
+                        context.stage.value,
+                        str(context.attempt),
+                        "prepare",
+                        input_ref.sha256,
+                    ),
+                    exc,
+                )
+            )
+            return {
+                "pending_control_outcome": outcome.model_dump(mode="json"),
+                "updated_at": self._now(),
+            }
+        try:
+            self._validate_prepared_stage_plan(
+                prepared, context, input_ref.sha256
+            )
+            if not self.store.exists_with_hash(
+                prepared.native_plan_uri,
+                prepared.native_plan_sha256,
+            ):
+                raise ValueError("native stage plan failed integrity check")
+        except Exception as exc:
+            outcome = self._invalid_stage_plan_outcome(
+                context, input_ref.sha256, exc
+            )
+            return {
+                "pending_control_outcome": outcome.model_dump(mode="json"),
+                "updated_at": self._now(),
+            }
+        if not self.store.exists(plan_relative_path):
+            plan_ref = self.store.write_json(
+                plan_relative_path,
+                prepared.model_dump(mode="json"),
+                immutable=True,
+            )
+        operation_key = self._stage_operation_key(prepared)
+        self.repository.record_stage_attempt(
+            StageExecutionRecord(
+                run_id=state["run_id"],
+                stage=route.stage,
+                agent_id=route.agent_id,
+                attempt=attempt,
+                operation_key=operation_key,
+                status=StageStatus.READY,
+                plan_uri=plan_ref.uri,
+                plan_sha256=plan_ref.sha256,
+                updated_at=self.clock.now(),
+            )
+        )
+        plan_refs = dict(state.get("stage_plan_refs", {}))
+        plan_refs[route.agent_id] = {
+            "uri": plan_ref.uri,
+            "sha256": plan_ref.sha256,
+        }
+        return {
+            "prepared_stage_plan": prepared.model_dump(mode="json"),
+            "prepared_stage_plan_uri": plan_ref.uri,
+            "prepared_stage_plan_sha256": plan_ref.sha256,
+            "stage_plan_refs": plan_refs,
+            "pending_control_outcome": None,
+            "updated_at": self._now(),
+        }
+
+    @staticmethod
+    def route_after_stage_plan(state: OrchestratorState) -> str:
+        return (
+            "record"
+            if state.get("pending_control_outcome") is not None
+            else "decide"
+        )
+
+    @staticmethod
+    def decide_stage_approval(
+        state: OrchestratorState,
+    ) -> dict[str, Any]:
+        route = StageRoute.model_validate(state["current_route"])
+        prepared = PreparedStagePlan.model_validate(
+            state["prepared_stage_plan"]
+        )
+        required = effective_stage_approval(route.capability, prepared)
+        return {
+            "stage_approval_required": required,
+            "stage_approval_decision": None,
+        }
+
+    @staticmethod
+    def route_after_approval_decision(state: OrchestratorState) -> str:
+        return (
+            "approval"
+            if state.get("stage_approval_required")
+            else "ready"
+        )
+
+    def mark_stage_ready(
+        self, state: OrchestratorState
+    ) -> dict[str, Any]:
+        route = StageRoute.model_validate(state["current_route"])
+        attempt = self._next_attempt(state, route)
+        prepared, _plan_ref = self._load_prepared_stage_plan(
+            state, route, attempt
+        )
+        operation_key = self._stage_operation_key(prepared)
         self.repository.upsert_stage_run(
             run_id=state["run_id"],
             stage=route.agent_id,
@@ -870,6 +1042,7 @@ class OrchestratorGraph:
             agent_id=route.agent_id,
             status=StageStatus.READY.value,
             attempt=attempt,
+            operation_key=operation_key,
             required=route.required,
             disposition=route.disposition.value,
         )
@@ -880,45 +1053,15 @@ class OrchestratorGraph:
     ) -> dict[str, Any]:
         route = StageRoute.model_validate(state["current_route"])
         attempt = self._next_attempt(state, route)
-        context = self._stage_context(state, route, attempt)
-        plan_payload = {
-            "schema_version": "orchestrator-stage-plan-v1",
-            "project_id": context.project_id,
-            "run_id": context.run_id,
-            "stage": context.stage.value,
-            "agent_id": context.agent_id,
-            "attempt": context.attempt,
-            "requirement_artifact": (
-                context.requirement_artifact.model_dump(mode="json")
-            ),
-            "input_artifacts": {
-                key: value.model_dump(mode="json")
-                for key, value in sorted(context.input_artifacts.items())
-            },
-            "capability": context.capability.model_dump(mode="json"),
-            "resource_estimate": {
-                "class": "expensive",
-                "exact_resources": "runner-specific",
-            },
-            "policy_version": ROUTING_POLICY_VERSION,
-            "risk": (
-                "This stage may submit work to an external compute backend."
-            ),
-        }
-        plan_hash = _sha256(plan_payload)
-        plan_ref = self.store.write_json(
-            (
-                f"plans/{state['run_id']}/stages/{route.stage.value}/"
-                f"attempt-{attempt}.{plan_hash[:16]}.json"
-            ),
-            plan_payload,
-            immutable=True,
+        prepared, plan_ref = self._load_prepared_stage_plan(
+            state, route, attempt
         )
+        gate_type = prepared.gate_type or "EXPENSIVE_BATCH_APPROVAL"
         approval_id = _stable_id(
             "approval",
             state["run_id"],
             route.stage.value,
-            "EXPENSIVE_BATCH_APPROVAL",
+            gate_type,
             plan_ref.sha256,
         )
         interaction_id = _stable_id(
@@ -932,15 +1075,23 @@ class OrchestratorGraph:
             prompt=f"是否批准 {route.agent_id} 的昂贵计算批次？",
             payload={
                 "approval_id": approval_id,
-                "gate_type": "EXPENSIVE_BATCH_APPROVAL",
+                "gate_type": gate_type,
                 "stage": route.stage.value,
                 "agent_id": route.agent_id,
                 "stage_plan_uri": plan_ref.uri,
                 "stage_plan_sha256": plan_ref.sha256,
-                "input_snapshot_sha256": plan_hash,
-                "resource_estimate": plan_payload["resource_estimate"],
-                "policy_version": ROUTING_POLICY_VERSION,
-                "risk": plan_payload["risk"],
+                "input_snapshot_uri": prepared.input_snapshot_uri,
+                "input_snapshot_sha256": (
+                    prepared.input_snapshot_sha256
+                ),
+                "native_plan_uri": prepared.native_plan_uri,
+                "native_plan_sha256": prepared.native_plan_sha256,
+                "operation_input_sha256": (
+                    prepared.operation_input_sha256
+                ),
+                "resource_estimate": prepared.resource_estimate,
+                "policy_version": prepared.policy_version,
+                "risk": prepared.risk_summary,
                 "allowed_decisions": ["approve", "reject"],
             },
         )
@@ -949,8 +1100,8 @@ class OrchestratorGraph:
             approval_id=approval_id,
             interaction_id=interaction_id,
             run_id=state["run_id"],
-            gate_type="EXPENSIVE_BATCH_APPROVAL",
-            input_sha256=plan_hash,
+            gate_type=gate_type,
+            input_sha256=plan_ref.sha256,
             payload=pending_payload,
         )
         self.repository.upsert_stage_run(
@@ -1007,17 +1158,16 @@ class OrchestratorGraph:
         }
         if decision == "reject":
             route = StageRoute.model_validate(state["current_route"])
+            attempt = self._next_attempt(state, route)
+            prepared, _plan_ref = self._load_prepared_stage_plan(
+                state, route, attempt
+            )
             updates["pending_control_outcome"] = ControlStageOutcome(
                 stage=route.stage,
                 agent_id=route.agent_id,
                 outcome=ControlOutcomeType.COMPLETED,
                 status=StageStatus.CANCELLED,
-                idempotency_key=_stable_id(
-                    "operation",
-                    state["run_id"],
-                    route.stage.value,
-                    "approval-rejected",
-                ),
+                idempotency_key=self._stage_operation_key(prepared),
                 errors=[
                     ControlError(
                         category="USER_REJECTED_STAGE",
@@ -1036,26 +1186,23 @@ class OrchestratorGraph:
         pending: dict[str, Any],
     ) -> None:
         snapshot = pending["payload"]
-        plan = self.store.read_json(snapshot["stage_plan_uri"])
         route = StageRoute.model_validate(state["current_route"])
         attempt = self._next_attempt(state, route)
-        context = self._stage_context(state, route, attempt)
+        prepared, plan_ref = self._load_prepared_stage_plan(
+            state, route, attempt
+        )
         expected = {
-            "stage": context.stage.value,
-            "agent_id": context.agent_id,
-            "attempt": context.attempt,
-            "requirement_artifact": (
-                context.requirement_artifact.model_dump(mode="json")
-            ),
-            "input_artifacts": {
-                key: value.model_dump(mode="json")
-                for key, value in sorted(context.input_artifacts.items())
-            },
-            "capability": context.capability.model_dump(mode="json"),
-            "policy_version": ROUTING_POLICY_VERSION,
+            "stage_plan_uri": plan_ref.uri,
+            "stage_plan_sha256": plan_ref.sha256,
+            "input_snapshot_uri": prepared.input_snapshot_uri,
+            "input_snapshot_sha256": prepared.input_snapshot_sha256,
+            "native_plan_uri": prepared.native_plan_uri,
+            "native_plan_sha256": prepared.native_plan_sha256,
+            "operation_input_sha256": prepared.operation_input_sha256,
+            "policy_version": prepared.policy_version,
         }
         for key, value in expected.items():
-            if plan.get(key) != value:
+            if snapshot.get(key) != value:
                 raise ValueError(
                     f"approved stage snapshot no longer matches {key}"
                 )
@@ -1074,14 +1221,18 @@ class OrchestratorGraph:
         route = StageRoute.model_validate(state["current_route"])
         attempt = self._next_attempt(state, route)
         context = self._stage_context(state, route, attempt)
-        operation_key = _stable_id(
-            "operation",
-            state["project_id"],
-            state["run_id"],
-            route.stage.value,
-            str(attempt),
-            state["execution_plan_sha256"],
+        prepared, plan_ref = self._load_prepared_stage_plan(
+            state, route, attempt
         )
+        context = context.model_copy(
+            update={
+                "input_snapshot": ArtifactPointer(
+                    uri=prepared.input_snapshot_uri,
+                    sha256=prepared.input_snapshot_sha256,
+                )
+            }
+        )
+        operation_key = self._stage_operation_key(prepared)
         self.repository.upsert_stage_run(
             run_id=state["run_id"],
             stage=route.agent_id,
@@ -1098,9 +1249,22 @@ class OrchestratorGraph:
             status=RunStatus.RUNNING,
             current_stage=route.agent_id,
         )
+        self.repository.record_stage_attempt(
+            StageExecutionRecord(
+                run_id=state["run_id"],
+                stage=route.stage,
+                agent_id=route.agent_id,
+                attempt=attempt,
+                operation_key=operation_key,
+                status=StageStatus.RUNNING,
+                plan_uri=plan_ref.uri,
+                plan_sha256=plan_ref.sha256,
+                updated_at=self.clock.now(),
+            )
+        )
         runner = self._runner(state, context)
         try:
-            outcome = runner.start(context, operation_key)
+            outcome = runner.start(context, prepared, operation_key)
         except Exception as exc:
             outcome = ControlStageOutcome(
                 stage=route.stage,
@@ -1114,6 +1278,23 @@ class OrchestratorGraph:
                         operation=route.agent_id,
                         public_message=(
                             f"runner failed ({type(exc).__name__})"
+                        ),
+                    )
+                ],
+            )
+        if outcome.idempotency_key != operation_key:
+            outcome = ControlStageOutcome(
+                stage=route.stage,
+                agent_id=route.agent_id,
+                outcome=ControlOutcomeType.FAILED,
+                status=StageStatus.PERMANENT_FAILED,
+                idempotency_key=operation_key,
+                errors=[
+                    ControlError(
+                        category="BACKEND_INCONSISTENT",
+                        operation="start",
+                        public_message=(
+                            "runner returned a different idempotency key"
                         ),
                     )
                 ],
@@ -1139,9 +1320,21 @@ class OrchestratorGraph:
             raise ValueError("current stage is not waiting for an external job")
         attempt = state.get("retry_counters", {}).get(route.agent_id, 1)
         context = self._stage_context(state, route, attempt)
+        prepared, _plan_ref = self._load_prepared_stage_plan(
+            state, route, attempt
+        )
+        context = context.model_copy(
+            update={
+                "input_snapshot": ArtifactPointer(
+                    uri=prepared.input_snapshot_uri,
+                    sha256=prepared.input_snapshot_sha256,
+                )
+            }
+        )
         runner = self._runner(state, context)
         outcome = runner.reconcile(
             context,
+            prepared,
             previous.external_job_ref or "",
             previous.idempotency_key,
         )
@@ -1183,6 +1376,17 @@ class OrchestratorGraph:
             raise ValueError("current stage is not waiting for an external job")
         attempt = state.get("retry_counters", {}).get(route.agent_id, 1)
         context = self._stage_context(state, route, attempt)
+        prepared, _plan_ref = self._load_prepared_stage_plan(
+            state, route, attempt
+        )
+        context = context.model_copy(
+            update={
+                "input_snapshot": ArtifactPointer(
+                    uri=prepared.input_snapshot_uri,
+                    sha256=prepared.input_snapshot_sha256,
+                )
+            }
+        )
         runner = self._runner(state, context)
         cancel_key = _stable_id(
             "cancel", previous.idempotency_key, previous.external_job_ref or ""
@@ -1322,6 +1526,7 @@ class OrchestratorGraph:
         else:
             retry_counters = dict(state.get("retry_counters", {}))
         primary_error = outcome.errors[0] if outcome.errors else None
+        plan_pointer = state.get("stage_plan_refs", {}).get(route.agent_id)
         external_record = None
         if outcome.external_job_ref and outcome.external_status:
             context = self._stage_context(state, route, attempt)
@@ -1385,8 +1590,8 @@ class OrchestratorGraph:
                 attempt=attempt,
                 operation_key=outcome.idempotency_key,
                 status=outcome.status,
-                plan_uri=state["execution_plan_uri"],
-                plan_sha256=state["execution_plan_sha256"],
+                plan_uri=(plan_pointer or {}).get("uri"),
+                plan_sha256=(plan_pointer or {}).get("sha256"),
                 result_uri=outcome.native_result_uri,
                 result_sha256=outcome.native_result_sha256,
                 error=primary_error,
@@ -1531,6 +1736,9 @@ class OrchestratorGraph:
         user_cancelled_stage = False
         for route in plan.routes:
             payload = state.get("stage_outcomes", {}).get(route.agent_id)
+            stage_plan = state.get("stage_plan_refs", {}).get(
+                route.agent_id, {}
+            )
             if payload:
                 outcome = ControlStageOutcome.model_validate(payload)
                 status = outcome.status
@@ -1573,6 +1781,8 @@ class OrchestratorGraph:
                     "status": status.value,
                     "native_result_uri": outcome.native_result_uri,
                     "native_result_sha256": outcome.native_result_sha256,
+                    "stage_plan_uri": stage_plan.get("uri"),
+                    "stage_plan_sha256": stage_plan.get("sha256"),
                     "operation_ref": outcome.operation_ref,
                     "external_job_ref": outcome.external_job_ref,
                     "candidate_ids": summary.get("candidate_ids", []),
@@ -1596,6 +1806,8 @@ class OrchestratorGraph:
                     "status": status.value,
                     "native_result_uri": None,
                     "native_result_sha256": None,
+                    "stage_plan_uri": stage_plan.get("uri"),
+                    "stage_plan_sha256": stage_plan.get("sha256"),
                     "operation_ref": None,
                     "external_job_ref": None,
                     "candidate_ids": [],
@@ -1695,13 +1907,134 @@ class OrchestratorGraph:
             "updated_at": self._now(),
         }
 
+    def _write_stage_input_snapshot(
+        self, context: StageExecutionContext
+    ) -> ArtifactPointer:
+        payload = {
+            "schema_version": "orchestrator-stage-input-v2",
+            "project_id": context.project_id,
+            "run_id": context.run_id,
+            "requirement_revision": context.requirement_revision,
+            "stage": context.stage.value,
+            "agent_id": context.agent_id,
+            "attempt": context.attempt,
+            "requirement_artifact": (
+                context.requirement_artifact.model_dump(mode="json")
+            ),
+            "input_artifacts": {
+                key: value.model_dump(mode="json")
+                for key, value in sorted(context.input_artifacts.items())
+            },
+            "capability": context.capability.model_dump(mode="json"),
+        }
+        ref = self.store.write_json(
+            (
+                f"plans/{context.run_id}/stages/{context.stage.value}/"
+                f"attempt-{context.attempt}.input.json"
+            ),
+            payload,
+            immutable=True,
+        )
+        return ArtifactPointer(uri=ref.uri, sha256=ref.sha256)
+
+    def _validate_prepared_stage_plan(
+        self,
+        prepared: PreparedStagePlan,
+        context: StageExecutionContext,
+        input_snapshot_sha256: str,
+    ) -> None:
+        expected = (
+            context.project_id,
+            context.run_id,
+            context.requirement_revision,
+            context.stage,
+            context.agent_id,
+            context.attempt,
+            context.input_snapshot.uri if context.input_snapshot else None,
+            input_snapshot_sha256,
+        )
+        actual = (
+            prepared.project_id,
+            prepared.run_id,
+            prepared.requirement_revision,
+            prepared.stage,
+            prepared.agent_id,
+            prepared.attempt,
+            prepared.input_snapshot_uri,
+            prepared.input_snapshot_sha256,
+        )
+        if actual != expected:
+            raise ValueError(
+                "prepared stage plan does not match its execution context"
+            )
+
+    def _load_prepared_stage_plan(
+        self,
+        state: OrchestratorState,
+        route: StageRoute,
+        attempt: int,
+    ) -> tuple[PreparedStagePlan, ArtifactPointer]:
+        uri = state.get("prepared_stage_plan_uri")
+        sha256 = state.get("prepared_stage_plan_sha256")
+        if not uri or not sha256:
+            pointer = state.get("stage_plan_refs", {}).get(route.agent_id, {})
+            uri = pointer.get("uri")
+            sha256 = pointer.get("sha256")
+        if not uri or not sha256:
+            record = self.repository.get_stage_attempt(
+                state["run_id"], route.stage, attempt
+            )
+            if record is not None:
+                uri = record.get("plan_uri")
+                sha256 = record.get("plan_sha256")
+        if (
+            not uri
+            or not sha256
+            or not self.store.exists_with_hash(uri, sha256)
+        ):
+            raise ValueError("prepared stage plan failed integrity check")
+        prepared = PreparedStagePlan.model_validate(self.store.read_json(uri))
+        context = self._stage_context(state, route, attempt).model_copy(
+            update={
+                "input_snapshot": ArtifactPointer(
+                    uri=prepared.input_snapshot_uri,
+                    sha256=prepared.input_snapshot_sha256,
+                )
+            }
+        )
+        self._validate_prepared_stage_plan(
+            prepared, context, prepared.input_snapshot_sha256
+        )
+        if not self.store.exists_with_hash(
+            prepared.input_snapshot_uri,
+            prepared.input_snapshot_sha256,
+        ):
+            raise ValueError("stage input snapshot failed integrity check")
+        if not self.store.exists_with_hash(
+            prepared.native_plan_uri,
+            prepared.native_plan_sha256,
+        ):
+            raise ValueError("native stage plan failed integrity check")
+        return prepared, ArtifactPointer(uri=uri, sha256=sha256)
+
+    @staticmethod
+    def _stage_operation_key(prepared: PreparedStagePlan) -> str:
+        return _stable_id(
+            "operation",
+            prepared.project_id,
+            prepared.run_id,
+            prepared.stage.value,
+            str(prepared.attempt),
+            prepared.operation_input_sha256,
+        )
+
     def _blocked_outcome(
         self,
         route: StageRoute,
         status: StageStatus,
         validation: StageInputValidation | None = None,
     ) -> ControlStageOutcome:
-        category = {
+        category = (validation.error_code if validation else None) or {
             StageStatus.BLOCKED_MISSING_INPUT: "BLOCKED_MISSING_INPUT",
             StageStatus.CAPABILITY_UNAVAILABLE: "CAPABILITY_UNAVAILABLE",
             StageStatus.PERMANENT_FAILED: "INVALID_STAGE_INPUT",
@@ -1738,6 +2071,38 @@ class OrchestratorGraph:
                     category=category,
                     operation="validate_stage_input",
                     public_message=detail,
+                )
+            ],
+        )
+
+    @staticmethod
+    def _invalid_stage_plan_outcome(
+        context: StageExecutionContext,
+        input_snapshot_sha256: str,
+        exc: Exception,
+    ) -> ControlStageOutcome:
+        return ControlStageOutcome(
+            stage=context.stage,
+            agent_id=context.agent_id,
+            outcome=ControlOutcomeType.FAILED,
+            status=StageStatus.PERMANENT_FAILED,
+            idempotency_key=_stable_id(
+                "operation",
+                context.project_id,
+                context.run_id,
+                context.stage.value,
+                str(context.attempt),
+                "invalid-plan",
+                input_snapshot_sha256,
+            ),
+            errors=[
+                ControlError(
+                    category="INVALID_PLAN",
+                    operation="prepare_stage_plan",
+                    public_message=(
+                        "runner produced an invalid stage plan "
+                        f"({type(exc).__name__})"
+                    ),
                 )
             ],
         )

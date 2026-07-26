@@ -80,6 +80,7 @@ _STAGE_TRANSITIONS: dict[StageStatus, set[StageStatus]] = {
         StageStatus.VALIDATING_INPUT,
         StageStatus.BLOCKED_MISSING_INPUT,
         StageStatus.CAPABILITY_UNAVAILABLE,
+        StageStatus.PERMANENT_FAILED,
         StageStatus.SKIPPED,
         StageStatus.CANCELLED,
     },
@@ -88,6 +89,8 @@ _STAGE_TRANSITIONS: dict[StageStatus, set[StageStatus]] = {
         StageStatus.CAPABILITY_UNAVAILABLE,
         StageStatus.WAITING_APPROVAL,
         StageStatus.READY,
+        StageStatus.RETRYABLE_FAILED,
+        StageStatus.PERMANENT_FAILED,
         StageStatus.CANCELLED,
     },
     StageStatus.BLOCKED_MISSING_INPUT: {

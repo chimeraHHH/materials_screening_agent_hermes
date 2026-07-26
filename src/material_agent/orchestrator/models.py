@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any, Literal, TypedDict
@@ -10,8 +12,10 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 LEGACY_ORCHESTRATOR_CONTRACT_VERSION = "orchestrator-p0-v1"
-ORCHESTRATOR_CONTRACT_VERSION = "orchestrator-p0.1-v2"
-ORCHESTRATOR_REPORT_VERSION = "orchestrator-report-p0.1-v2"
+P01_ORCHESTRATOR_CONTRACT_VERSION = "orchestrator-p0.1-v2"
+ORCHESTRATOR_CONTRACT_VERSION = "orchestrator-p0.2-v3"
+ORCHESTRATOR_STAGE_PLAN_VERSION = "orchestrator-stage-plan-v2"
+ORCHESTRATOR_REPORT_VERSION = "orchestrator-report-p0.2-v3"
 
 
 def utc_now() -> datetime:
@@ -157,7 +161,7 @@ class StageRoute(StrictModel):
 
 
 class ExecutionPlan(StrictModel):
-    schema_version: Literal["orchestrator-p0.1-v2"] = (
+    schema_version: Literal["orchestrator-p0.2-v3"] = (
         ORCHESTRATOR_CONTRACT_VERSION
     )
     plan_id: str
@@ -203,6 +207,24 @@ class StageInputValidation(StrictModel):
     missing_fields: list[str] = Field(default_factory=list)
     errors: list[str] = Field(default_factory=list)
     remediation: list[str] = Field(default_factory=list)
+    error_code: str | None = None
+    failure_status: StageStatus | None = None
+
+    @model_validator(mode="after")
+    def validate_failure_status(self) -> StageInputValidation:
+        allowed = {
+            StageStatus.BLOCKED_MISSING_INPUT,
+            StageStatus.PERMANENT_FAILED,
+        }
+        if self.failure_status is not None and self.failure_status not in allowed:
+            raise ValueError(
+                "failure_status must be BLOCKED_MISSING_INPUT or PERMANENT_FAILED"
+            )
+        if self.valid and (self.error_code or self.failure_status):
+            raise ValueError(
+                "valid input cannot carry error_code or failure_status"
+            )
+        return self
 
 
 class StageExecutionContext(StrictModel):
@@ -215,10 +237,102 @@ class StageExecutionContext(StrictModel):
     requirement_artifact: ArtifactPointer
     input_artifacts: dict[str, ArtifactPointer] = Field(default_factory=dict)
     capability: StageCapability
+    input_snapshot: ArtifactPointer | None = None
+
+
+def operation_input_sha256_for(
+    *,
+    project_id: str,
+    run_id: str,
+    requirement_revision: int,
+    stage: StageId,
+    agent_id: str,
+    attempt: int,
+    input_snapshot_sha256: str,
+    native_plan_sha256: str,
+    policy_version: str,
+) -> str:
+    payload = {
+        "schema_version": ORCHESTRATOR_STAGE_PLAN_VERSION,
+        "project_id": project_id,
+        "run_id": run_id,
+        "requirement_revision": requirement_revision,
+        "stage": stage.value,
+        "agent_id": agent_id,
+        "attempt": attempt,
+        "input_snapshot_sha256": input_snapshot_sha256,
+        "native_plan_sha256": native_plan_sha256,
+        "policy_version": policy_version,
+    }
+    encoded = json.dumps(
+        payload,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+class PreparedStagePlan(StrictModel):
+    schema_version: Literal["orchestrator-stage-plan-v2"] = (
+        ORCHESTRATOR_STAGE_PLAN_VERSION
+    )
+    project_id: str
+    run_id: str
+    requirement_revision: int = Field(ge=1)
+    stage: StageId
+    agent_id: str
+    attempt: int = Field(ge=1)
+    input_snapshot_uri: str
+    input_snapshot_sha256: str
+    native_plan_uri: str
+    native_plan_sha256: str
+    operation_input_sha256: str
+    approval_required: bool = False
+    gate_type: str | None = None
+    resource_estimate: dict[str, Any] = Field(default_factory=dict)
+    policy_version: str
+    risk_summary: str = ""
+    created_at: datetime
+
+    @model_validator(mode="after")
+    def validate_identity_and_hash(self) -> PreparedStagePlan:
+        if STAGE_TO_AGENT[self.stage] != self.agent_id:
+            raise ValueError("prepared plan stage and agent_id are inconsistent")
+        if self.approval_required and not self.gate_type:
+            raise ValueError("approval-required plan must provide gate_type")
+        expected = operation_input_sha256_for(
+            project_id=self.project_id,
+            run_id=self.run_id,
+            requirement_revision=self.requirement_revision,
+            stage=self.stage,
+            agent_id=self.agent_id,
+            attempt=self.attempt,
+            input_snapshot_sha256=self.input_snapshot_sha256,
+            native_plan_sha256=self.native_plan_sha256,
+            policy_version=self.policy_version,
+        )
+        if self.operation_input_sha256 != expected:
+            raise ValueError("prepared plan operation input hash is invalid")
+        return self
+
+
+def effective_stage_approval(
+    capability: StageCapability,
+    prepared_plan: PreparedStagePlan,
+) -> bool:
+    """Merge the immutable capability floor with a runner-owned plan decision."""
+
+    if (
+        capability.stage != prepared_plan.stage
+        or capability.agent_id != prepared_plan.agent_id
+    ):
+        raise ValueError("capability and prepared plan target different stages")
+    return capability.requires_approval or prepared_plan.approval_required
 
 
 class ControlStageOutcome(StrictModel):
-    schema_version: Literal["orchestrator-p0.1-v2"] = (
+    schema_version: Literal["orchestrator-p0.2-v3"] = (
         ORCHESTRATOR_CONTRACT_VERSION
     )
     stage: StageId
@@ -271,6 +385,16 @@ class StageExecutionRecord(StrictModel):
     error: ControlError | None = None
     updated_at: datetime
 
+    @model_validator(mode="after")
+    def validate_identity_and_references(self) -> StageExecutionRecord:
+        if STAGE_TO_AGENT[self.stage] != self.agent_id:
+            raise ValueError("stage execution stage and agent_id are inconsistent")
+        if bool(self.plan_uri) != bool(self.plan_sha256):
+            raise ValueError("stage plan URI and hash must be provided together")
+        if bool(self.result_uri) != bool(self.result_sha256):
+            raise ValueError("stage result URI and hash must be provided together")
+        return self
+
 
 class ExternalJobRecord(StrictModel):
     run_id: str
@@ -294,7 +418,7 @@ class CancelOutcome(StrictModel):
 
 
 class StageStartInput(StrictModel):
-    schema_version: Literal["orchestrator-p0.1-v2"] = (
+    schema_version: Literal["orchestrator-p0.2-v3"] = (
         ORCHESTRATOR_CONTRACT_VERSION
     )
     source_run_id: str
@@ -363,6 +487,11 @@ class OrchestratorState(TypedDict, total=False):
     route_cursor: int
     current_route: dict[str, Any] | None
     stage_input_validation: dict[str, Any] | None
+    prepared_stage_plan: dict[str, Any] | None
+    prepared_stage_plan_uri: str | None
+    prepared_stage_plan_sha256: str | None
+    stage_plan_refs: dict[str, dict[str, str]]
+    stage_approval_required: bool | None
     pending_control_outcome: dict[str, Any] | None
     run_status: str
     current_stage: str | None

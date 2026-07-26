@@ -10,12 +10,14 @@ from material_agent.orchestrator.models import (
     ExecutionPlan,
     InteractionType,
     OrchestratorState,
+    PreparedStagePlan,
     RunStatus,
     StageCapability,
     StageDisposition,
     StageId,
     StageRoute,
     StageStatus,
+    effective_stage_approval,
 )
 from material_agent.orchestrator.runtime import OrchestratorRuntime
 from material_agent.orchestrator.runners import StageRunnerRegistry
@@ -29,6 +31,7 @@ __all__ = [
     "InteractionType",
     "OrchestratorRuntime",
     "OrchestratorState",
+    "PreparedStagePlan",
     "RunStatus",
     "StageCapability",
     "StageDisposition",
@@ -36,4 +39,5 @@ __all__ = [
     "StageRoute",
     "StageRunnerRegistry",
     "StageStatus",
+    "effective_stage_approval",
 ]
