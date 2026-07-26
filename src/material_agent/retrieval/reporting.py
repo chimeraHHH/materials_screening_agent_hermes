@@ -28,6 +28,9 @@ def build_report(
     reason_counts = Counter(
         reason for candidate in candidates for reason in candidate.decision_reasons
     )
+    quality_flag_counts = Counter(
+        flag for candidate in candidates for flag in candidate.data_quality_flags
+    )
     published = [candidate for candidate in candidates if candidate.published_downstream]
     unresolved_properties = sum(
         1
@@ -74,6 +77,7 @@ def build_report(
         "data_quality": {
             "unresolved_property_origins": unresolved_properties,
             "reason_counts": dict(sorted(reason_counts.items())),
+            "quality_flag_counts": dict(sorted(quality_flag_counts.items())),
             "exact_duplicate_group_count": len(exact_duplicate_groups),
             "similarity_cluster_count": len(similarity_clusters),
         },
@@ -164,4 +168,3 @@ def _pretty_json(value: Any) -> str:
     import json
 
     return json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True)
-

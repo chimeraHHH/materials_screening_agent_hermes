@@ -13,6 +13,24 @@ from material_agent.retrieval.models import Requirement, RetrievalPolicy
 FIXTURE_DIR = Path(__file__).parent / "fixtures"
 
 
+def pytest_addoption(parser) -> None:
+    parser.addoption(
+        "--run-live-mp",
+        action="store_true",
+        default=False,
+        help="run opt-in Materials Project API release tests",
+    )
+
+
+def pytest_collection_modifyitems(config, items) -> None:
+    if config.getoption("--run-live-mp"):
+        return
+    marker = pytest.mark.skip(reason="requires explicit --run-live-mp")
+    for item in items:
+        if "live_mp" in item.keywords:
+            item.add_marker(marker)
+
+
 @pytest.fixture
 def requirement() -> Requirement:
     return Requirement.model_validate_json(
@@ -49,4 +67,3 @@ def requirement_hash(requirement: Requirement) -> str:
         separators=(",", ":"),
     ).encode()
     return hashlib.sha256(payload).hexdigest()
-

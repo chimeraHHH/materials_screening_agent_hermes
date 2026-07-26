@@ -291,6 +291,11 @@ Stage 0 不是独立 Agent，而是 Orchestrator 内的确定性模块加可选 
 
 v1 只接 Materials Project。
 
+详细的数据契约、确定性筛选政策、Artifact 布局、恢复语义和验收 Gate
+见 `material-screening-agent01-plan.md`。元素、带隙、稳定性、原子数、
+结构有效性、维度、去重聚类和确定性排序归 Agent 01；Agent 02 只消费
+Agent 01 发布的候选执行 ML/MLIP 处理，不重复这些确定性规则。
+
 内部模块：
 
 - Query Planner；

@@ -29,3 +29,6 @@ where = ["src"]
 [tool.pytest.ini_options]
 addopts = "-ra"
 testpaths = ["tests"]
+markers = [
+  "live_mp: opt-in Materials Project release test requiring network and MP_API_KEY",
+]

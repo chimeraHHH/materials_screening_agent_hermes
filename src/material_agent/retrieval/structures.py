@@ -5,12 +5,14 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import warnings
 from dataclasses import dataclass
 from typing import Any
 
 from pymatgen.analysis.dimensionality import get_dimensionality_larsen
 from pymatgen.analysis.local_env import CrystalNN
-from pymatgen.core import Lattice, Structure
+from pymatgen.analysis.structure_matcher import StructureMatcher
+from pymatgen.core import Composition, Lattice, Structure
 from pymatgen.io.cif import CifWriter
 
 from material_agent.retrieval.models import RetrievalPolicy
@@ -42,6 +44,7 @@ class ProcessedStructure:
     elements: list[str]
     num_sites: int
     data_quality_flags: list[str]
+    data_quality_warnings: list[str]
 
 
 @dataclass(slots=True)
@@ -49,6 +52,7 @@ class DimensionalityResult:
     value: int | None
     method: str
     error: str | None = None
+    warnings: list[str] | None = None
 
 
 def process_structure(
@@ -56,13 +60,18 @@ def process_structure(
     *,
     summary_elements: list[Any] | None,
     summary_num_sites: int | None,
+    summary_formula: str | None = None,
     policy: RetrievalPolicy,
 ) -> ProcessedStructure:
     structure = _coerce_structure(raw_structure)
     _validate_structure(structure)
 
     canonical = _canonical_structure(structure)
-    payload = _canonical_payload(canonical, policy.canonical_float_digits)
+    payload = _canonical_payload(
+        canonical,
+        policy.canonical_float_digits,
+        policy.canonicalization_policy_version,
+    )
     serialized = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode(
         "utf-8"
     )
@@ -77,35 +86,61 @@ def process_structure(
             flags.append("SOURCE_ELEMENT_SET_MISMATCH")
     if summary_num_sites is not None and int(summary_num_sites) != len(canonical):
         flags.append("SOURCE_NSITES_MISMATCH")
+    if summary_formula:
+        try:
+            summary_composition = Composition(summary_formula)
+        except Exception:
+            flags.append("SOURCE_FORMULA_INVALID")
+        else:
+            if not _stoichiometry_matches(
+                summary_composition, canonical.composition
+            ):
+                flags.append("SOURCE_FORMULA_MISMATCH")
+
+    cif_text = str(CifWriter(canonical, symprec=None))
+    round_trip_warnings = _validate_cif_round_trip(cif_text, canonical)
+    if round_trip_warnings:
+        flags.append("CIF_ROUND_TRIP_WARNING")
 
     return ProcessedStructure(
         structure=canonical,
         structure_id=structure_id,
         canonical_payload=payload,
         source_payload=structure.as_dict(),
-        cif_text=str(CifWriter(canonical, symprec=None)),
+        cif_text=cif_text,
         reduced_formula=canonical.composition.reduced_formula,
         elements=elements,
         num_sites=len(canonical),
         data_quality_flags=flags,
+        data_quality_warnings=round_trip_warnings,
     )
 
 
 def calculate_dimensionality(structure: Structure) -> DimensionalityResult:
     method = "pymatgen.CrystalNN+get_dimensionality_larsen"
     try:
-        bonded_structure = CrystalNN(**CRYSTAL_NN_PARAMETERS).get_bonded_structure(
-            structure
-        )
-        value = int(get_dimensionality_larsen(bonded_structure))
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            bonded_structure = CrystalNN(
+                **CRYSTAL_NN_PARAMETERS
+            ).get_bonded_structure(structure)
+            value = int(get_dimensionality_larsen(bonded_structure))
         if value not in {0, 1, 2, 3}:
             raise ValueError(f"unexpected dimensionality result: {value}")
-        return DimensionalityResult(value=value, method=method)
+        warning_messages = sorted(
+            {f"{item.category.__name__}: {item.message}" for item in caught}
+        )
+        return DimensionalityResult(
+            value=value,
+            method=method,
+            warnings=warning_messages,
+        )
     except Exception as exc:
         return DimensionalityResult(
             value=None,
             method=method,
             error=f"{type(exc).__name__}: {exc}",
+            warnings=[],
         )
 
 
@@ -170,9 +205,11 @@ def _canonical_structure(structure: Structure) -> Structure:
     )
 
 
-def _canonical_payload(structure: Structure, digits: int) -> dict[str, Any]:
+def _canonical_payload(
+    structure: Structure, digits: int, policy_version: str
+) -> dict[str, Any]:
     return {
-        "policy_version": "canonical-structure-v1",
+        "policy_version": policy_version,
         "lattice": [
             [_normalize_float(value, digits) for value in row]
             for row in structure.lattice.matrix
@@ -199,3 +236,75 @@ def _normalize_float(value: float, digits: int) -> float:
     rounded = round(float(value), digits)
     return 0.0 if rounded == 0 else rounded
 
+
+def _composition_matches(first: Composition, second: Composition) -> bool:
+    first_values = first.get_el_amt_dict()
+    second_values = second.get_el_amt_dict()
+    elements = set(first_values) | set(second_values)
+    return all(
+        math.isclose(
+            float(first_values.get(element, 0.0)),
+            float(second_values.get(element, 0.0)),
+            rel_tol=0,
+            abs_tol=1e-8,
+        )
+        for element in elements
+    )
+
+
+def _stoichiometry_matches(first: Composition, second: Composition) -> bool:
+    first_values = first.fractional_composition.get_el_amt_dict()
+    second_values = second.fractional_composition.get_el_amt_dict()
+    elements = set(first_values) | set(second_values)
+    return all(
+        math.isclose(
+            float(first_values.get(element, 0.0)),
+            float(second_values.get(element, 0.0)),
+            rel_tol=0,
+            abs_tol=1e-8,
+        )
+        for element in elements
+    )
+
+
+def _validate_cif_round_trip(cif_text: str, expected: Structure) -> list[str]:
+    try:
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            restored = Structure.from_str(cif_text, fmt="cif")
+    except Exception as exc:
+        raise StructureValidationError(
+            f"canonical CIF cannot be read: {type(exc).__name__}"
+        ) from exc
+    if len(restored) != len(expected):
+        raise StructureValidationError("canonical CIF changed the site count")
+    if not _composition_matches(restored.composition, expected.composition):
+        raise StructureValidationError("canonical CIF changed the composition")
+    for restored_value, expected_value in zip(
+        (*restored.lattice.abc, *restored.lattice.angles),
+        (*expected.lattice.abc, *expected.lattice.angles),
+        strict=True,
+    ):
+        if not math.isclose(
+            float(restored_value),
+            float(expected_value),
+            rel_tol=1e-9,
+            abs_tol=1e-6,
+        ):
+            raise StructureValidationError(
+                "canonical CIF changed the lattice parameters"
+            )
+    matcher = StructureMatcher(
+        ltol=1e-5,
+        stol=1e-3,
+        angle_tol=1e-4,
+        primitive_cell=False,
+        scale=False,
+        attempt_supercell=False,
+        allow_subset=False,
+    )
+    if not matcher.fit(expected, restored):
+        raise StructureValidationError("canonical CIF changed the atomic structure")
+    return sorted(
+        {f"{item.category.__name__}: {item.message}" for item in caught}
+    )

@@ -50,6 +50,22 @@ def validate_element_symbols(requirement: Requirement) -> None:
             raise QueryPlanningError(f"invalid element symbol: {symbol}") from exc
 
 
+def validate_requirement_contract(requirement: Requirement) -> None:
+    """Validate constraints that must fail before any external API call."""
+
+    validate_element_symbols(requirement)
+    hard = requirement.hard_constraints
+    if hard.band_gap_ev is not None and hard.band_gap_ev.unit != "eV":
+        raise QueryPlanningError("band_gap_ev unit must be exactly 'eV'")
+    if (
+        hard.energy_above_hull_ev_atom is not None
+        and hard.energy_above_hull_ev_atom.unit != "eV/atom"
+    ):
+        raise QueryPlanningError(
+            "energy_above_hull_ev_atom unit must be exactly 'eV/atom'"
+        )
+
+
 def build_query_plan(
     requirement: Requirement,
     requirement_hash: str,
@@ -58,7 +74,7 @@ def build_query_plan(
 ) -> RetrievalQueryPlan:
     if not requirement.confirmed_by_user:
         raise QueryPlanningError("requirement must be confirmed before retrieval")
-    validate_element_symbols(requirement)
+    validate_requirement_contract(requirement)
 
     missing_fields = sorted(set(CORE_FIELDS) - set(metadata.available_fields))
     if missing_fields:

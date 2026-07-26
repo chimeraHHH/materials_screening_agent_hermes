@@ -12,6 +12,8 @@ from material_agent.retrieval.query import CORE_FIELDS, assert_mp_client_contrac
 
 
 class MaterialsSourceAdapter(Protocol):
+    is_mock: bool
+
     def metadata(self) -> SourceMetadata: ...
 
     def search(self, plan: RetrievalQueryPlan) -> list[dict[str, Any]]: ...
@@ -23,6 +25,8 @@ class MaterialsSourceAdapter(Protocol):
 
 class MaterialsProjectAdapter:
     """Official mp-api backed adapter with no persisted credentials."""
+
+    is_mock = False
 
     def __init__(self, api_key: str | None = None) -> None:
         self._api_key = api_key
@@ -96,6 +100,8 @@ class MaterialsProjectAdapter:
                         if task_id:
                             resolved[task_id] = plain
                 except Exception as exc:  # endpoint schema varies by MP release
+                    if _is_transient_or_auth_error(exc):
+                        raise
                     warnings.append(f"task metadata batch failed: {type(exc).__name__}")
 
             unresolved = set(unique_task_ids) - set(resolved)
@@ -120,6 +126,8 @@ class MaterialsProjectAdapter:
                                         "task_type": _enum_value(task_types.get(task_id)),
                                     }
                     except Exception as exc:
+                        if _is_transient_or_auth_error(exc):
+                            raise
                         warnings.append(
                             f"core calculation-map batch failed: {type(exc).__name__}"
                         )
@@ -159,6 +167,8 @@ class MaterialsProjectAdapter:
                                         ),
                                     }
                     except Exception as exc:
+                        if _is_transient_or_auth_error(exc):
+                            raise
                         warnings.append(
                             f"thermo origin batch failed: {type(exc).__name__}"
                         )
@@ -168,6 +178,8 @@ class MaterialsProjectAdapter:
 
 class InMemoryMaterialsAdapter:
     """Offline adapter used by fixtures and deterministic E2E tests."""
+
+    is_mock = True
 
     def __init__(
         self,
@@ -278,3 +290,19 @@ def _in_range(value: Any, bounds: Sequence[float]) -> bool:
     if value is None:
         return False
     return float(bounds[0]) <= float(value) <= float(bounds[1])
+
+
+def _is_transient_or_auth_error(exc: Exception) -> bool:
+    status_code = getattr(exc, "status_code", None)
+    response = getattr(exc, "response", None)
+    if response is not None:
+        status_code = getattr(response, "status_code", status_code)
+    if status_code in {401, 403, 429}:
+        return True
+    if isinstance(status_code, int) and status_code >= 500:
+        return True
+    text = str(exc).lower()
+    return any(
+        token in text
+        for token in ("timeout", "rate limit", "temporar", "unauthorized", "forbidden")
+    )

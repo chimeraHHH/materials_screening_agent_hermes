@@ -9,6 +9,9 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
+AGENT01_CONTRACT_VERSION = "agent01-contract-v1"
+
+
 def utc_now() -> datetime:
     return datetime.now(UTC)
 
@@ -52,6 +55,13 @@ class StageStatus(StrEnum):
     PARTIAL = "PARTIAL"
     SUCCEEDED = "SUCCEEDED"
     CANCELLED = "CANCELLED"
+
+
+class StageOutcomeType(StrEnum):
+    COMPLETED = "Completed"
+    WAITING_EXTERNAL = "WaitingExternal"
+    BLOCKED = "Blocked"
+    FAILED = "Failed"
 
 
 class ProvenanceStatus(StrEnum):
@@ -190,11 +200,19 @@ class RetrievalStageInput(StrictModel):
     confirmed_by_user: bool
 
 
+class RetrievalStageContext(StrictModel):
+    requirement: Requirement
+    stage_input: RetrievalStageInput
+
+
 class StageInputValidation(StrictModel):
     valid: bool
     missing_fields: list[str] = Field(default_factory=list)
     errors: list[str] = Field(default_factory=list)
     remediation: list[str] = Field(default_factory=list)
+    error_category: str | None = None
+    requirement_artifact_uri: str | None = None
+    requirement_artifact_sha256: str | None = None
 
 
 class SourceMetadata(StrictModel):
@@ -224,6 +242,13 @@ class RetrievalQueryPlan(StrictModel):
     query_fingerprint: str
     client_version: str
     created_at: datetime = Field(default_factory=utc_now)
+
+
+class RetrievalStagePlan(StrictModel):
+    context: RetrievalStageContext
+    query_plan: RetrievalQueryPlan
+    source_metadata: SourceMetadata
+    idempotency_key: str
 
 
 class PropertyOrigin(StrictModel):
@@ -271,6 +296,7 @@ class ScientificTargetEvaluation(StrictModel):
 
 
 class CandidateAuditRecord(StrictModel):
+    schema_version: Literal["agent01-contract-v1"] = AGENT01_CONTRACT_VERSION
     candidate_id: str
     formula: str
     source_database: Literal["materials_project"] = "materials_project"
@@ -280,7 +306,9 @@ class CandidateAuditRecord(StrictModel):
     query_id: str
     structure_id: str | None = None
     structure_artifact_uri: str | None = None
+    structure_artifact_sha256: str | None = None
     structure_source_artifact_uri: str | None = None
+    structure_source_artifact_sha256: str | None = None
     reduced_formula: str | None = None
     elements: list[str] = Field(default_factory=list)
     num_sites: int | None = None
@@ -319,11 +347,14 @@ class ErrorRecord(StrictModel):
 
 
 class StageResultEnvelope(StrictModel):
+    schema_version: Literal["agent01-contract-v1"] = AGENT01_CONTRACT_VERSION
     run_id: str
     stage: Literal["agent01"] = "agent01"
     status: StageStatus
     input_snapshot_uri: str
+    input_snapshot_sha256: str | None = None
     output_artifacts: list[ArtifactRef]
+    candidate_manifest: ArtifactRef | None = None
     candidate_ids: list[str]
     warnings: list[str] = Field(default_factory=list)
     errors: list[ErrorRecord] = Field(default_factory=list)
@@ -331,3 +362,21 @@ class StageResultEnvelope(StrictModel):
     provenance: dict[str, Any] = Field(default_factory=dict)
     started_at: datetime
     finished_at: datetime
+
+
+class OperationRecord(StrictModel):
+    """Immutable completion record used to validate resumable stage output."""
+
+    operation_id: str
+    query_fingerprint: str
+    result: StageResultEnvelope
+    registered_artifacts: list[ArtifactRef]
+
+
+class StageOutcome(StrictModel):
+    schema_version: Literal["agent01-contract-v1"] = AGENT01_CONTRACT_VERSION
+    outcome: StageOutcomeType
+    status: StageStatus
+    operation_ref: str | None = None
+    result: StageResultEnvelope | None = None
+    errors: list[ErrorRecord] = Field(default_factory=list)

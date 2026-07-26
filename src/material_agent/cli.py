@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import sys
 from pathlib import Path
@@ -51,13 +50,12 @@ def _run_retrieval(arguments: argparse.Namespace) -> int:
         sort_keys=True,
         separators=(",", ":"),
     ).encode("utf-8")
-    requirement_hash = hashlib.sha256(requirement_bytes).hexdigest()
-
     store = LocalArtifactStore(arguments.output)
     requirement_ref = store.write_bytes(
         f"requirements/requirement.v{requirement.revision}.json",
         requirement_bytes,
         "application/json",
+        immutable=True,
     )
     if arguments.fixture:
         fixture_payload = json.loads(arguments.fixture.read_text(encoding="utf-8"))
@@ -77,7 +75,7 @@ def _run_retrieval(arguments: argparse.Namespace) -> int:
         run_id=arguments.run_id,
         requirement_revision=requirement.revision,
         requirement_artifact_uri=requirement_ref.uri,
-        requirement_hash=requirement_hash,
+        requirement_hash=requirement_ref.sha256,
         retrieval_policy_version=policy.policy_version,
         confirmed_by_user=requirement.confirmed_by_user,
     )
@@ -97,4 +95,3 @@ def _run_retrieval(arguments: argparse.Namespace) -> int:
 
 if __name__ == "__main__":  # pragma: no cover
     sys.exit(main())
-

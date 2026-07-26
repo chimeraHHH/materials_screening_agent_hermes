@@ -1,14 +1,14 @@
 # Agent 01：Materials Project 材料检索与确定性筛选实施计划
 
-版本：v0.2  
-日期：2026-07-25  
-最近进度更新：2026-07-26  
-工期：总计划 Day 3–5，约 18–21 小时  
-依据：`material-screening-agent-system-plan.md` 与 `material-screening-orchestrator-plan.md`
+- 版本：v0.4
+- 日期：2026-07-25
+- 最近进度更新：2026-07-26
+- 工期：总计划 Day 3–5，约 18–21 小时
+- 依据：`material-screening-agent-system-plan.md` 与 `material-screening-orchestrator-plan.md`
 
 ## 0. 当前实施进度
 
-当前状态：**P0 已实现并通过离线测试与真实 Materials Project API 验收；P1 性能和扩展项尚未开始。**
+当前状态：**Agent 01 P0 与第 8 节增强 Gate 已完成，公共契约已冻结为 `agent01-contract-v1`，可以开始 Orchestrator P0。P1 性能和扩展项尚未开始。**
 
 ### 0.1 已完成
 
@@ -30,20 +30,42 @@
 - [x] 实现 resume 时对数据库版本、Requirement revision 和 policy 变化的拒绝检查；
 - [x] API key 仅通过 `MP_API_KEY` 读取，未写入源码、配置、报告或其他项目产物；
 - [x] 清理真实 API 运行产物、Python/pytest 缓存和安装元数据；运行目录可在下次执行时自动重建。
+- [x] 创建首次 Git 基线提交 `bcaf8fc`，`.venv`、`workspace/`、环境文件、密钥和缓存均未进入版本控制；
+- [x] 将 Requirement URI、SHA-256、revision 和规范化内容作为真实输入完整性边界，失败时不调用外部 Adapter；
+- [x] 将权威 candidate manifest 调整为 `stages/agent01/<run_id>/candidate_manifest.jsonl`；
+- [x] 为 Candidate 和 StageResultEnvelope 增加结构/manifest/input snapshot 的 URI 与 SHA-256 lineage；
+- [x] 完成 operation 增加不可变 artifact registry；已登记产物缺失、损坏或冲突时返回 `BACKEND_INCONSISTENT`，不静默重查；
+- [x] 查询成功但报告阶段中断时，从已校验 raw-response checkpoint 恢复，不重复执行数据库 search；
+- [x] metadata、summary search 和 origin resolution 使用统一有限瞬时重试；
+- [x] 结构派生 formula 成为规范化真源，summary formula 仅保留于 provenance 并参与一致性检查；
+- [x] canonical CIF 回读校验、0D/1D/2D/3D 固定结构基准和 CrystalNN/Larsen warning 质量标记已落地；
+- [x] 加入默认不访问网络的 `live_mp` opt-in release test；
+- [x] README 已补充离线运行、真实验收、测试、Artifact 布局、恢复语义和已知限制；
+- [x] 系统总 Plan 已补充 Agent 01 详细计划链接和与 Agent 02 的职责边界。
+- [x] 使用 macOS Keychain 临时注入轮换后的 API key，当前最终代码的真实 Materials Project release test 已通过；
+- [x] 冻结 `validate_input/prepare/start/reconcile` StageRunner 生命周期以及 Candidate、PropertyValue、StageResultEnvelope 公共契约，版本为 `agent01-contract-v1`；
+- [x] 生成 44 KB 最小离线冻结契约 fixture，包含 1 条候选、source JSON、CIF、manifest、StageResult 与 JSON Schema，并验证 artifact hash 和逐字节确定性重建；
 
 ### 0.2 验证状态
 
-- 自动化测试：`27 passed`，覆盖 unit、contract、integration 和离线 E2E；
-- 清理运行产物后再次以禁止生成 bytecode/pytest cache 的方式执行全量测试，仍为 `27/27` 通过；
-- 固定 Si/O 用例已使用真实 Materials Project API 验收：
+- 当前自动化测试收集 82 项：无网络默认运行结果为 `81 passed, 1 skipped`，覆盖 unit、contract、integration、offline E2E、CLI、冻结契约 fixture 和 0D/1D/2D/3D 结构基准；
+- 唯一跳过项为显式 opt-in 的 `tests/live/test_live_mp_release.py`，默认测试不会读取 `MP_API_KEY` 或访问网络；
+- `pip check` 当前通过；
+- 2026-07-26 使用当前最终代码和独立 `live_mp` 流程完成固定 Si/O 真实 release Gate：
+  - 测试结果：`1 passed`；
+  - 公共契约版本：`agent01-contract-v1`；
   - Materials Project database version：`2026.04.13`；
+  - `mp-api==0.45.15`，`pymatgen==2025.10.7`；
   - 数据库返回并规范化 81 条候选；
   - 81 条全部通过 Si/O、0.5–1.0 eV band gap、energy above hull ≤ 0.05 eV/atom 和非金属约束；
   - 约束违规、结构文件缺失、结构文件为空、规范化失败、来源未解析均为 0；
   - 405 项候选性质 origin 状态全部为 `RESOLVED`；
-  - 未发生扫描截断或发布截断。
+  - 未发生扫描截断或发布截断；
+  - 同一 run 的第二次执行完全复用已校验结果，没有重复查询；
+  - 81 条 dimensionality warning 和 7 条 CIF round-trip warning 作为质量标记保留，没有被误判为结构失败；
+  - 对测试临时目录逐文件检查，API key 字节泄漏为 0。
 
-上述真实 API 验收数据只用于联调确认。其原始响应、候选 CIF、manifest 和筛选报告已按项目清理要求删除，不进入 Git；需要审计复现时使用相同 Requirement 和数据库版本重新运行。
+真实 API 的 raw response、候选 CIF、manifest 和筛选报告只存在于 pytest 系统临时目录，不进入项目或 Git；记录 Gate 指标后删除。仓库中的冻结契约 fixture 只由离线数据生成。
 
 ### 0.3 尚未完成
 
@@ -55,8 +77,8 @@
 - [ ] P1：多数据库 Adapter；
 - [ ] P1：科学 silver set 扩充；
 - [ ] P1：用户可配置的扫描上限提升审批；
-- [ ] 将 Agent 01 详细计划链接补入总系统计划对应章节；
-- [ ] 创建项目首次 Git 提交；当前源码、测试和计划文件尚未提交。
+- [ ] Orchestrator P0：实现 `Requirement 确认与冻结 → ExecutionPlan → Agent 01 → Envelope 校验 → Report → checkpoint/resume`；
+- [x] 完成 Gate 后提交本轮完整性、测试和文档增强变更。
 
 ## 1. 目标、边界与完成标准
 
@@ -693,7 +715,7 @@ Agent 01 阶段目录按需生成：
 - 默认排除 deprecated 和 GNoME，保留理论材料。
 - Agent 01 必须在 Day 3–5 P0 时间内交付，性能增强延至 P1。
 - 当前仓库已包含 Agent 01 源码、测试、fixture、依赖锁文件和独立实施计划；已使用仓库本地 Python 3.11.13 `.venv`，不依赖本机默认 Python 3.13.2。
-- 已新增独立 `material-screening-agent01-plan.md`；总计划的 Agent 01 小节仍需补充该文档链接和“确定性筛选归 Agent 01、ML 归 Agent 02”的职责说明，不覆盖原总计划。
+- 已新增独立 `material-screening-agent01-plan.md`；总计划的 Agent 01 小节已补充该文档链接和“确定性筛选归 Agent 01、ML 归 Agent 02”的职责说明，未覆盖原总计划。
 
 ## 8. 下一步实施规划与 Orchestrator 进入 Gate
 
@@ -703,33 +725,28 @@ Agent 01 阶段目录按需生成：
 
 当前仓库已经具备：
 
-- 独立 Git 仓库，但 `main` 尚无首次提交；
+- 独立 Git 仓库，`main` 已建立首次可回退基线提交 `bcaf8fc`；
 - Python 3.11.13 仓库本地 `.venv`；
 - 锁定依赖且 `pip check` 通过；
 - Agent 01 查询、Adapter、规范化、结构处理、筛选、排序、去重聚类、报告、CLI 和本地 Artifact Store；
 - 固定 Si/O 离线 fixture；
-- unit、contract、integration 和 offline E2E 共 27 个测试，当前全部通过。
+- 当前收集 82 个测试；默认无网络运行 `81 passed, 1 skipped`，唯一跳过项为 opt-in `live_mp` release test；
+- 当前最终代码的真实 MP release Gate 已通过；
+- Agent 01 公共契约已冻结为 `agent01-contract-v1`，最小输出 fixture 已提交并可逐字节重建。
 
-当前实现还不能视为 Agent 01 完成，原因包括：
-
-- 尚未通过真实 Materials Project API 验收；
-- `RetrievalStageInput` 中的 Requirement URI/hash 尚未作为真实输入完整性边界校验；
-- 权威候选 manifest 尚未按 Stage Run 隔离；
-- 完成 operation 的 artifact 损坏后，当前恢复语义仍可能重新执行，而不是停止并报告不一致；
-- 计划要求的单位、结构、失败注入和边界测试尚未全部覆盖；
-- Agent 02 和 Orchestrator 将消费的公共输出契约尚未冻结。
+当前 Agent 01 可以视为完成第 8 节 Gate；后续工作进入 Orchestrator P0，不在 Agent 01 内先展开 Agent 02–04。
 
 ### 8.2 执行顺序
 
 下一步固定按以下顺序实施，不先展开完整 LangGraph Orchestrator：
 
-1. 建立当前通过测试状态的 Git 基线，确认 `.venv`、`workspace/`、环境文件、密钥和缓存未进入版本控制。
-2. 修复 Requirement 输入、快照、manifest 和 operation artifact 的完整性与不可变语义。
-3. 补齐单位、结构、筛选、排序、API 错误、恢复和报告测试。
-4. 使用环境变量 `MP_API_KEY` 执行固定 Si/O 真实查询。
-5. 冻结 Agent 01 对 Agent 02 和 Orchestrator 的公共输出契约。
-6. 生成一份由冻结契约校验过的 Agent 01 输出 fixture。
-7. Agent 01 通过本节 Gate 后，再实现 Orchestrator 的真实 `Stage 0 → Agent 01 → Report` 链路。
+1. [x] 建立当前通过测试状态的 Git 基线，确认 `.venv`、`workspace/`、环境文件、密钥和缓存未进入版本控制。
+2. [x] 修复 Requirement 输入、快照、manifest 和 operation artifact 的完整性与不可变语义。
+3. [x] 补齐单位、结构、筛选、排序、API 错误、恢复和报告测试。
+4. [x] 使用仅对测试进程可见的 `MP_API_KEY` 执行固定 Si/O 真实查询。
+5. [x] 冻结 Agent 01 对 Agent 02 和 Orchestrator 的公共输出契约。
+6. [x] 生成一份由冻结契约校验过的 Agent 01 输出 fixture。
+7. [ ] Agent 01 通过本节 Gate 后，再实现 Orchestrator 的真实 `Stage 0 → Agent 01 → Report` 链路。
 
 本阶段允许实现 Orchestrator 所需的 `StageRunner` 接口语义，但不实现 LangGraph 状态图、SQLite checkpoint、审批流程或 Agent 02–04 路由。
 
@@ -804,7 +821,7 @@ Agent 01 保留独立 CLI 的 `run(requirement, stage_input)` 包装，同时对
 
 ```text
 validate_input(context) -> StageInputValidation
-prepare(context) -> RetrievalQueryPlan
+prepare(context) -> RetrievalStagePlan
 start(plan, idempotency_key) -> StageOutcome
 reconcile(operation_ref) -> StageOutcome
 ```
@@ -893,6 +910,11 @@ Agent 02 和 Orchestrator 可依赖的冻结输出至少包括：
 - workspace、报告和日志中不得出现 API key。
 
 真实查询返回零候选仍属于 `SCIENTIFIC_NO_MATCH` 和 Stage `SUCCEEDED`，不能为了演示而修改查询结果或伪造候选。
+
+2026-07-26 验收结果：真实 test `1 passed`；database version
+`2026.04.13`；返回、规范化并发布 81 条候选；失败、拒绝、证据不确定、
+扫描截断、发布截断和 API key 泄漏均为 0；同一 run 第二次执行复用相同
+StageResult。真实产物在指标提取后删除，不作为公共 fixture。
 
 ### 8.8 Agent 01 完成 Gate
 

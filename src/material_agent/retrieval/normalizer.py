@@ -42,7 +42,9 @@ def normalize_candidate(
     query_plan: RetrievalQueryPlan,
     processed_structure: ProcessedStructure,
     source_uri: str,
+    source_sha256: str,
     structure_uri: str,
+    structure_sha256: str,
     retrieved_at: datetime,
 ) -> CandidateAuditRecord:
     material_id = str(document["material_id"])
@@ -83,14 +85,16 @@ def normalize_candidate(
     ]
     return CandidateAuditRecord(
         candidate_id=candidate_id_for(project_id, material_id),
-        formula=str(document.get("formula_pretty") or processed_structure.reduced_formula),
+        formula=processed_structure.reduced_formula,
         source_database_version=query_plan.database_version,
         source_material_id=material_id,
         source_last_updated=_parse_datetime(document.get("last_updated")),
         query_id=query_plan.query_id,
         structure_id=processed_structure.structure_id,
         structure_artifact_uri=structure_uri,
+        structure_artifact_sha256=structure_sha256,
         structure_source_artifact_uri=source_uri,
+        structure_source_artifact_sha256=source_sha256,
         reduced_formula=processed_structure.reduced_formula,
         elements=processed_structure.elements,
         num_sites=processed_structure.num_sites,
@@ -102,6 +106,9 @@ def normalize_candidate(
             "source_endpoint": query_plan.endpoint,
             "database_version": query_plan.database_version,
             "query_fingerprint": query_plan.query_fingerprint,
+            "requirement_hash": query_plan.requirement_hash,
+            "retrieval_policy_version": query_plan.policy_version,
+            "summary_formula": document.get("formula_pretty"),
         },
     )
 
@@ -114,12 +121,15 @@ def add_dimensionality_property(
     policy_version: str,
     database_version: str,
     retrieved_at: datetime,
+    warning_messages: list[str] | None = None,
 ) -> CandidateAuditRecord:
     structure_origin = _property_lookup(candidate, "num_sites").origin
     origin = structure_origin.model_copy()
     flags = list(candidate.data_quality_flags)
     if value is None:
         flags.append("DIMENSIONALITY_EVALUATION_FAILED")
+    if warning_messages:
+        flags.append("DIMENSIONALITY_WARNING")
     prop = PropertyValue(
         name="structural_dimensionality",
         value=value,
@@ -173,9 +183,18 @@ def apply_task_metadata(
                     "status": status,
                 }
             )
-            properties.append(prop.model_copy(update={"origin": origin, "method": method}))
+            properties.append(
+                prop.model_copy(update={"origin": origin, "method": method})
+            )
         else:
-            properties.append(prop)
+            origin = prop.origin
+            if task_id:
+                origin = origin.model_copy(
+                    update={"status": ProvenanceStatus.UNRESOLVED}
+                )
+            properties.append(
+                prop.model_copy(update={"origin": origin, "method": None})
+            )
     return candidate.model_copy(update={"properties": properties})
 
 
@@ -263,4 +282,3 @@ def _text(value: Any) -> str | None:
     if value is None:
         return None
     return str(getattr(value, "value", value))
-
