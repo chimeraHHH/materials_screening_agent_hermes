@@ -8,7 +8,7 @@
 
 ## 0. 当前实施进度
 
-当前状态：**Agent 01 P0 与第 8 节增强 Gate 已完成，公共契约已冻结为 `agent01-contract-v1`，可以开始 Orchestrator P0。P1 性能和扩展项尚未开始。**
+当前状态：**Agent 01 P0 与第 8 节增强 Gate 已完成，公共契约已冻结为 `agent01-contract-v1`；Orchestrator P0.1 已基于该契约实现并形成代码基线提交 `d681de8`。P1 性能和扩展项尚未开始。**
 
 ### 0.1 已完成
 
@@ -45,6 +45,7 @@
 - [x] 使用 macOS Keychain 临时注入轮换后的 API key，当前最终代码的真实 Materials Project release test 已通过；
 - [x] 冻结 `validate_input/prepare/start/reconcile` StageRunner 生命周期以及 Candidate、PropertyValue、StageResultEnvelope 公共契约，版本为 `agent01-contract-v1`；
 - [x] 生成 44 KB 最小离线冻结契约 fixture，包含 1 条候选、source JSON、CIF、manifest、StageResult 与 JSON Schema，并验证 artifact hash 和逐字节确定性重建；
+- [x] Orchestrator P0.1 通过 `Agent01RunnerAdapter` 使用冻结契约，代码、依赖和测试基线提交为 `d681de8`；
 
 ### 0.2 验证状态
 
@@ -77,7 +78,7 @@
 - [ ] P1：多数据库 Adapter；
 - [ ] P1：科学 silver set 扩充；
 - [ ] P1：用户可配置的扫描上限提升审批；
-- [ ] Orchestrator P0：实现 `Requirement 确认与冻结 → ExecutionPlan → Agent 01 → Envelope 校验 → Report → checkpoint/resume`；
+- [x] Orchestrator P0：实现 `Requirement 确认与冻结 → ExecutionPlan → Agent 01 → Envelope 校验 → Report → checkpoint/resume`；
 - [x] 完成 Gate 后提交本轮完整性、测试和文档增强变更。
 
 ## 1. 目标、边界与完成标准
@@ -746,7 +747,7 @@ Agent 01 阶段目录按需生成：
 4. [x] 使用仅对测试进程可见的 `MP_API_KEY` 执行固定 Si/O 真实查询。
 5. [x] 冻结 Agent 01 对 Agent 02 和 Orchestrator 的公共输出契约。
 6. [x] 生成一份由冻结契约校验过的 Agent 01 输出 fixture。
-7. [ ] Agent 01 通过本节 Gate 后，再实现 Orchestrator 的真实 `Stage 0 → Agent 01 → Report` 链路。
+7. [x] Agent 01 通过本节 Gate 后，实现 Orchestrator 的真实 `Stage 0 → Agent 01 → Report` 链路。
 
 本阶段允许实现 Orchestrator 所需的 `StageRunner` 接口语义，但不实现 LangGraph 状态图、SQLite checkpoint、审批流程或 Agent 02–04 路由。
 
@@ -932,7 +933,7 @@ StageResult。真实产物在指标提取后删除，不作为公共 fixture。
 - README 包含离线、真实查询、测试、artifact 布局和已知限制；
 - 系统总 Plan 补充 Agent 01 详细计划链接和职责边界。
 
-通过 Gate 后的下一项工作固定为 Orchestrator P0：
+通过 Gate 后的下一项工作 Orchestrator P0 已完成：
 
 > Requirement 确认与冻结 → ExecutionPlan → Agent 01 → Envelope 校验 → Report → checkpoint/resume
 

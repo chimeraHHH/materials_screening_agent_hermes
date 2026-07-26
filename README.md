@@ -1,7 +1,15 @@
 # Material Screening Agent
 
-This repository implements the material-retrieval stage described in
+This repository implements the durable Orchestrator P0.1 control plane and
+the deterministic Materials Project retrieval stage described in
+`material-screening-orchestrator-plan.md` and
 `material-screening-agent01-plan.md`.
+
+The execution plan always contains the ordered
+`retrieval → ml → dft → many_body` routes. Agent 01 is the only production
+scientific runner today; Agent 02–04 expose capability descriptors and are
+reported as skipped, blocked, or unavailable rather than producing mock
+scientific results.
 
 ## Development environment
 
@@ -17,7 +25,120 @@ environment:
 The Materials Project API key is read from `MP_API_KEY`. It must not be placed
 in project configuration or artifacts.
 
-## Run the offline demo
+## Run the Orchestrator P0.1 offline demo
+
+Create a project:
+
+```bash
+material-agent project create \
+  --workspace workspace \
+  --project-id demo
+```
+
+Start the fixed acceptance request with the offline Materials Project fixture:
+
+```bash
+material-agent run \
+  --workspace workspace \
+  --project demo \
+  --run-id run-demo \
+  --request "从 Materials Project 中寻找同时包含 Si 和 O、带隙为 0.5–1.0 eV、energy above hull 不超过 0.05 eV/atom 的非金属材料。" \
+  --fixture tests/fixtures/mp-summary.si-o.json
+```
+
+The command stops at the durable Requirement confirmation Gate and prints an
+`approval_id`. Resume the same checkpoint, including from a new process:
+
+```bash
+material-agent approve \
+  --workspace workspace \
+  --project demo \
+  --run run-demo \
+  --approval <approval_id> \
+  --decision approve
+
+material-agent status \
+  --workspace workspace \
+  --project demo \
+  --run run-demo
+
+material-agent report \
+  --workspace workspace \
+  --project demo \
+  --run run-demo
+```
+
+Unknown requests stop at a clarification interaction instead of inventing
+scientific thresholds. Use `material-agent respond --json ...` with the
+interaction ID and a complete Requirement or a recursive `changes` object.
+
+`status` is strictly local and read-only. For a stage that is waiting on an
+external backend, only an explicit `resume` performs reconciliation:
+
+```bash
+material-agent resume \
+  --workspace workspace \
+  --project demo \
+  --run <run_id>
+```
+
+An explicitly selected external job is cancelled through its runner contract,
+not by overwriting local state:
+
+```bash
+material-agent cancel \
+  --workspace workspace \
+  --project demo \
+  --run <run_id>
+```
+
+Each project owns a SQLite business-state/checkpoint database at
+`state/orchestrator.sqlite3`. Orchestrator-owned tables use an explicit
+versioned migration; LangGraph-owned checkpoint tables are not modified by
+that migration. LangGraph state contains only small JSON control values and
+URI/hash references; scientific data and reports remain in the project
+Artifact Store.
+
+## Start one stage from explicit inputs
+
+`run-stage` never discovers the “latest” artifact. It creates a new Run from
+an explicit source Run, Requirement revision, and immutable artifact hashes:
+
+```json
+{
+  "schema_version": "orchestrator-p0.1-v2",
+  "source_run_id": "run-demo",
+  "requirement_revision": 1,
+  "requirement_artifact_uri": "artifact://requirements/run-demo/requirement.v1.json",
+  "requirement_artifact_sha256": "<sha256>",
+  "artifacts": {
+    "candidate_manifest": {
+      "uri": "artifact://stages/agent01/run-demo/candidate_manifest.jsonl",
+      "sha256": "<sha256>"
+    }
+  }
+}
+```
+
+```bash
+material-agent run-stage ml \
+  --workspace workspace \
+  --project demo \
+  --input ml-stage-input.json \
+  --run-id run-ml
+```
+
+Missing prerequisite artifacts produce an auditable
+`BLOCKED_MISSING_INPUT`/`PAUSED` Run. A complete input for an unregistered
+production capability produces `CAPABILITY_UNAVAILABLE`; neither case
+fabricates a result.
+
+Registered expensive capabilities stop at an
+`EXPENSIVE_BATCH_APPROVAL` bound to the immutable stage-plan hash. A
+`WaitingExternal` result is stored as Stage `RUNNING` plus Run `PAUSED`, so a
+new process can reconcile the same external job without submitting it again.
+
+## Run Agent 01 standalone
 
 ```bash
 material-agent retrieval \
@@ -50,8 +171,13 @@ MPLCONFIGDIR=/tmp/material-agent-mpl \
 .venv/bin/python -m pytest -q -p no:cacheprovider
 ```
 
-The real Materials Project release test is opt-in and requires both network
-access and `MP_API_KEY`:
+The Orchestrator P0.1 code, dependencies, and tests are frozen at commit
+`d681de8`. The release baseline and a clean-directory rebuild both report
+`116 passed, 2 skipped`; the skipped tests are the two explicit `live_mp`
+Gates. `pip check` reports no broken requirements.
+
+The standalone Agent01 and Orchestrator-restart Materials Project release
+Gates are opt-in and require both network access and `MP_API_KEY`:
 
 ```bash
 agent_mp_key="$(security find-generic-password \
@@ -82,6 +208,11 @@ wrapper. Frozen JSON Schemas and a deterministic one-candidate reference output
 are committed under `tests/fixtures/contracts/agent01-v1/`. The fixture is
 generated from offline test data and contains no live Materials Project data.
 
+The Orchestrator does not reuse this native envelope as its own public
+contract. `Agent01RunnerAdapter` validates `agent01-contract-v1`, stores its
+URI/hash, and maps only control state into
+`ControlStageOutcome(orchestrator-p0.1-v2)`.
+
 ## Artifact integrity and resume behavior
 
 - The Requirement URI, SHA-256, revision, and normalized content are checked
@@ -92,17 +223,30 @@ generated from offline test data and contains no live Materials Project data.
   matches its recorded SHA-256.
 - Missing or modified completed artifacts return `BACKEND_INCONSISTENT`; the
   runner does not silently query again or overwrite historical evidence.
+- External job reference changes, status-sequence regressions, and result-hash
+  changes fail closed as `BACKEND_INCONSISTENT`.
+- A non-blocking project-level lock permits only one CLI process to advance
+  any Run in a Project at a time.
+- Unfinished `orchestrator-p0-v1` checkpoints are readable but explicitly
+  rejected for P0.1 resume; completed reports and artifacts remain readable.
 - If report generation is interrupted after raw retrieval, a retry reuses the
   validated raw-response checkpoint rather than repeating the database search.
 
 ## Known limits
 
+- P0.1 has a replaceable Parser protocol and a deterministic offline default;
+  an LLM Provider is not connected yet.
+- Agent 01 is the only real scientific stage in the graph. Agent 02–04 remain
+  unregistered production capabilities; test-only fixture runners are
+  explicitly `is_mock=true` and cannot raise evidence.
+- Execution is synchronous and single-project. Long-running background workers,
+  multi-user access, and Postgres checkpointing are server-stage work.
 - P0 uses at most ten 500-record chunks and reports `PARTIAL` when the
   5,000-record scan ceiling is reached.
 - True cursor-level checkpointing, parallel structure analysis, large-scale
   StructureMatcher optimization, and additional database adapters remain P1.
 - CrystalNN/Larsen warnings are preserved as data-quality warnings. They do not
   automatically reject a candidate.
-- Agent 02–04 and the complete LangGraph Orchestrator are outside the current
-  Agent 01 repository scope; the next planned milestone is the Orchestrator P0
-  `Requirement → Agent 01 → Report` path.
+- Agent 02–04 scientific implementations and real DFT/many-body backends remain
+  later milestones. The approval and external-job lifecycle are implemented
+  against injected runner contracts and covered with non-scientific fixtures.
