@@ -1,0 +1,5 @@
+data_SiO2_contract_fixture
+_chemical_formula_sum 'Si O2'
+_cell_length_a 5.0
+_cell_length_b 5.0
+_cell_length_c 5.0
