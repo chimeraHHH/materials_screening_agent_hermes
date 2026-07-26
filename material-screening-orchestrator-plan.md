@@ -1,12 +1,12 @@
 # 材料筛选 Agent：Orchestrator v1 实施计划
 
-版本：v0.7
+版本：v0.8
 日期：2026-07-26
 依据：`material-screening-agent-system-plan.md`
 
 ## 0. 当前实施进度
 
-当前状态：**Orchestrator P0.1a/P0.1b 已实现并形成发布基线提交 `d681de8`，已通过离线回归、干净目录重建与真实 MP 发布 Gate；下一步完成第 8 节的 Orchestrator P0.2 Agent02 契约桥接。**
+当前状态：**Orchestrator P0.2 已完成：P0.1 发布基线为 `d681de8`，runner-owned StagePlan 与动态审批桥接提交为 `701857c`；默认回归、干净目录重建和真实 MP 发布 Gate 均已通过。下一步切换到 Agent02 原生契约与科学实现。**
 
 已完成：
 
@@ -24,7 +24,10 @@
 - [x] 实现显式 `run-stage`、输入阻塞及 capability unavailable 语义；
 - [x] 实现昂贵任务审批、`WaitingExternal/reconcile/cancel` 和幂等冲突检测；
 - [x] 实现 Parser Protocol、固定 Clock/IdFactory 和测试专用 fixture runner；
-- [x] 全仓默认测试结果为 `116 passed, 2 skipped`（均为 `live_mp`），`pip check` 通过。
+- [x] 冻结 `PreparedStagePlan(orchestrator-stage-plan-v2)`、阶段输入快照和 runner-owned native plan；
+- [x] 实现 capability 审批下限与 runner 动态审批的 OR 合并规则；
+- [x] 实现真实阶段计划引用、计划/输入篡改防护及 P0.1 checkpoint 兼容策略；
+- [x] 全仓默认测试结果为 `129 passed, 2 skipped`（均为 `live_mp`），`pip check` 通过。
 
 剩余工作：
 
@@ -34,7 +37,7 @@
 - [x] 增加 Agent 02–04 capability 骨架和测试专用 fixture runner；
 - [x] Orchestrator 真实 MP 人工 opt-in 发布 Gate 已通过；
 - [x] 按第 8.2 节形成真实、可审阅的 P0.1 代码/测试提交与文档提交；
-- [ ] 完成第 8.3 节的 `orchestrator-p0.2-v3` runner-owned `StagePlan` 与动态审批桥接；
+- [x] 完成第 8.3 节的 `orchestrator-p0.2-v3` runner-owned `StagePlan` 与动态审批桥接；
 - [ ] 在后续服务器阶段迁移 Postgres checkpointer、后台 worker 和多用户权限。
 
 ## 1. 目标与完成标准
@@ -283,7 +286,7 @@ material-agent report --project <id> --run <id>
 
 ### 7.1 实施背景与当前结论
 
-本节记录从 Orchestrator P0 继续推进 P0.1a/P0.1b 的实施依据和执行结果。P0.1a/P0.1b 的代码与技术门禁现已完成；在正式切换到 Agent02 科学实现前，仍应先把初始混合工作区整理为可审阅提交，并完成第 8 节定义的窄契约桥接。
+本节记录从 Orchestrator P0 继续推进 P0.1a/P0.1b 的实施依据和执行结果。P0.1a/P0.1b 的代码与技术门禁已经完成；初始混合工作区随后已整理为可审阅提交，第 8 节定义的窄契约桥接也已完成。
 
 实施依据：
 
@@ -297,7 +300,7 @@ material-agent report --project <id> --run <id>
 - `Orchestrator P0.1a`：公共控制契约、schema migration、runner registry、通用同步路由、`run-stage` 和 Agent01 Adapter；
 - `Orchestrator P0.1b`：昂贵任务审批、外部任务 `WaitingExternal/reconcile/cancel`、不一致检测和发布门禁。
 
-P0.1a 和 P0.1b 的技术退出门禁已经通过，发布基线已形成代码提交 `d681de8` 和独立文档提交。第 8 节契约桥接完成后，主线切换到 `material-screening-ml-agent-plan.md` 实现 Agent02；除非集成暴露 `agent01-contract-v1` 缺陷，否则不开展 Agent01 P1。
+P0.1a 和 P0.1b 的技术退出门禁已经通过，发布基线已形成代码提交 `d681de8` 和独立文档提交。第 8 节契约桥接现已完成，主线切换到 `material-screening-ml-agent-plan.md` 实现 Agent02；除非集成暴露 `agent01-contract-v1` 缺陷，否则不开展 Agent01 P1。
 
 ### 7.2 实施前差距与当前处理结果
 
@@ -484,7 +487,7 @@ build_execution_plan
 - [x] README、本计划的实际进度、契约版本和测试数字同步完成；
 - [x] README 与 plan 的发布记录形成独立文档提交。
 
-P0.1a 和 P0.1b 的技术门禁与发布提交均已完成。正式切换到 Agent02 科学实现前，只剩第 8 节的动态 StagePlan/审批桥接。
+P0.1a、P0.1b 和 P0.2 的技术门禁与发布提交均已完成。Orchestrator 本地 MVP 控制流冻结，正式切换到 Agent02 科学实现。
 
 ### 7.5 实施结果（2026-07-26）
 
@@ -507,11 +510,11 @@ P0.1a 和 P0.1b 的技术门禁与发布提交均已完成。正式切换到 Age
 - 只建立可替换 Parser provider 接口，不把联网 LLM Provider 作为切换 Agent02 的阻塞项；
 - 不迁移 PostgreSQL，不增加后台 worker、Web API 或多用户权限。
 
-## 8. 下一步实施规划：P0.1 发布冻结与 Orchestrator P0.2 契约桥接
+## 8. 已完成：P0.1 发布冻结与 Orchestrator P0.2 契约桥接
 
 ### 8.1 重扫后的决策
 
-Orchestrator P0.1 的通用路由、恢复、审批、外部任务和真实 MP 技术门禁已经完成，不再继续扩展新的编排功能。下一步只完成两项收尾工作：
+Orchestrator P0.1 的通用路由、恢复、审批、外部任务和真实 MP 技术门禁完成后，本节只完成了两项收尾工作：
 
 1. 将当前未提交实现冻结为真实、可审阅、可回退的 P0.1 发布基线；
 2. 以 Orchestrator P0.2 补齐 Agent02 接入暴露出的通用 `StagePlan` 与动态审批缺口。
@@ -567,7 +570,7 @@ Agent02 计划要求：
 - 超过 20 个候选直接阻塞；
 - 审批 payload 必须包含实际候选数、最大原子数、设备、弛豫步数、资源估算、模型、policy 和输入快照 hash。
 
-当前 Orchestrator 的审批只由静态 `StageCapability.requires_approval` 决定，审批计划中的资源估算也是通用占位值；当前 `StageRunner` 也没有在审批前生成 runner-owned plan 的步骤。若直接注册 Agent02，只能让所有 ML 批次都审批，或让超过 5 个候选的批次绕过审批，二者都不符合冻结的 Agent02 规则。
+P0.1 基线的审批只由静态 `StageCapability.requires_approval` 决定，审批计划中的资源估算也是通用占位值；当时的 `StageRunner` 也没有在审批前生成 runner-owned plan 的步骤。若直接注册 Agent02，只能让所有 ML 批次都审批，或让超过 5 个候选的批次绕过审批，二者都不符合冻结的 Agent02 规则。
 
 #### 8.3.2 新增控制契约
 
@@ -577,7 +580,7 @@ Agent02 计划要求：
 - stage plan contract：`orchestrator-stage-plan-v1` → `orchestrator-stage-plan-v2`；
 - report contract：`orchestrator-report-p0.1-v2` → `orchestrator-report-p0.2-v3`。
 
-业务 SQLite schema 继续使用 version 2；现有 `stage_executions.plan_uri/plan_sha256` 已能保存真实阶段计划引用，不为本桥接增加无必要的表迁移。新 Run 写入 `orchestrator-p0.2-v3`；已完成的 P0.1 report/artifact 保持可读。由于图拓扑、StageRunner 生命周期和 checkpoint state 均发生变化，所有未完成的 `orchestrator-p0.1-v2` checkpoint 必须显式拒绝 P0.2 恢复，并返回重新创建 Run 的说明，不进行原地 checkpoint 迁移。
+业务 SQLite schema 继续使用 version 2；现有 `stage_attempts.plan_uri/plan_sha256` 已能保存真实阶段计划引用，不为本桥接增加无必要的表迁移。新 Run 写入 `orchestrator-p0.2-v3`；已完成的 P0.1 report/artifact 保持可读。由于图拓扑、StageRunner 生命周期和 checkpoint state 均发生变化，所有未完成的 `orchestrator-p0.1-v2` checkpoint 必须显式拒绝 P0.2 恢复，并返回重新创建 Run 的说明，不进行原地 checkpoint 迁移。
 
 P0.2 同时为 `StageInputValidation` 增加可选的 `error_code` 和 `failure_status`。`failure_status` 仅允许 `BLOCKED_MISSING_INPUT` 或 `PERMANENT_FAILED`；未提供时继续按 missing fields 推导，保证 Agent01 Adapter 简单兼容。硬批次上限使用 `error_code=BATCH_LIMIT_EXCEEDED`、`failure_status=BLOCKED_MISSING_INPUT`，不把它伪装成缺失字段。
 
@@ -710,17 +713,31 @@ validate_stage_input
 
 退出条件：
 
-- [ ] `orchestrator-p0.2-v3`、`orchestrator-stage-plan-v2`、`orchestrator-report-p0.2-v3`、`PreparedStagePlan`、更新后的 StageRunner Protocol 和 JSON Schema 冻结；
-- [ ] 动态审批和 capability `requires_approval` 下限合并规则通过纯函数测试；
-- [ ] Agent01 离线与真实 MP Gate 无回归；
-- [ ] 审批前后跨进程恢复不重新规划、不重复启动；
-- [ ] 默认测试、`pip check`、path/hash/secret 检查通过；
-- [ ] 契约桥接代码与测试形成独立、可回退提交；
-- [ ] README 和本计划记录新契约版本、测试数字与提交 ID。
+- [x] `orchestrator-p0.2-v3`、`orchestrator-stage-plan-v2`、`orchestrator-report-p0.2-v3`、`PreparedStagePlan`、更新后的 StageRunner Protocol 和 JSON Schema 冻结；
+- [x] 动态审批和 capability `requires_approval` 下限合并规则通过纯函数测试；
+- [x] Agent01 离线与真实 MP Gate 无回归；
+- [x] 审批前后跨进程恢复不重新规划、不重复启动；
+- [x] 默认测试、`pip check`、path/hash/secret 检查通过；
+- [x] 契约桥接代码与测试形成独立、可回退提交 `701857c`；
+- [x] README 和本计划记录新契约版本、测试数字与提交 ID。
+
+### 8.5.1 实施结果（2026-07-26）
+
+- checkpoint/control、stage plan 和 report 契约分别冻结为 `orchestrator-p0.2-v3`、`orchestrator-stage-plan-v2` 和 `orchestrator-report-p0.2-v3`；
+- `prepare_stage_plan` 在审批前冻结 Orchestrator `PreparedStagePlan`、runner native plan 和阶段输入快照，stage attempt 与通用报告均保存真实 stage plan URI/hash；
+- `operation_input_sha256` 使用固定 canonical JSON 字段计算，阶段 operation key 绑定 project、run、stage、attempt 和该 hash；
+- 动态审批使用 `StageCapability.requires_approval OR PreparedStagePlan.approval_required`；DFT/Many-Body capability 下限不可由 runner 降级；
+- fixture ML 覆盖 1–5 自动执行、6–20 审批和超过 20 在 `validate_input()` 阶段阻塞；fixture 不注册为生产 Agent02；
+- 审批拒绝保留 Agent01 结果并形成 `PARTIAL`；审批、外部任务和跨 runtime 恢复复用同一计划，不重复 `prepare/start`；
+- 计划/输入篡改、runner plan 身份不一致、plan URI/hash 或 operation key 冲突均停止推进；
+- 已完成 P0.1 report 保持可读，未完成的 `orchestrator-p0.1-v2` checkpoint 明确拒绝 P0.2 恢复；
+- P0.2 代码与测试提交为 `701857c`，全仓默认结果为 `129 passed, 2 skipped`、`106 warnings`，`pip check` 与 `git diff --check` 通过；
+- 从 `701857c` 导出到全新临时目录、按 `requirements.lock` 建立独立 Python 3.11 环境后，结果仍为 `129 passed, 2 skipped`，`pip check` 通过；
+- Agent01 standalone 与 Orchestrator restart 两个真实 MP Gate 均通过：`2 passed`，耗时 `78.10s`；密钥和真实运行产物均未进入仓库。
 
 ### 8.6 完成后的主线切换
 
-第 8.2 与 8.5 节退出条件全部通过后：
+第 8.2 与 8.5 节退出条件已经全部通过，后续执行顺序固定为：
 
 1. Agent02 的生产 capability 继续保持 unavailable；第 8 节只冻结可供后续 Adapter 注入的通用接口，测试 fixture 不改变生产注册状态；
 2. 下一实施计划只写入 `material-screening-ml-agent-plan.md`；

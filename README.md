@@ -1,6 +1,6 @@
 # Material Screening Agent
 
-This repository implements the durable Orchestrator P0.1 control plane and
+This repository implements the durable Orchestrator P0.2 control plane and
 the deterministic Materials Project retrieval stage described in
 `material-screening-orchestrator-plan.md` and
 `material-screening-agent01-plan.md`.
@@ -25,7 +25,7 @@ environment:
 The Materials Project API key is read from `MP_API_KEY`. It must not be placed
 in project configuration or artifacts.
 
-## Run the Orchestrator P0.1 offline demo
+## Run the Orchestrator P0.2 offline demo
 
 Create a project:
 
@@ -106,7 +106,7 @@ an explicit source Run, Requirement revision, and immutable artifact hashes:
 
 ```json
 {
-  "schema_version": "orchestrator-p0.1-v2",
+  "schema_version": "orchestrator-p0.2-v3",
   "source_run_id": "run-demo",
   "requirement_revision": 1,
   "requirement_artifact_uri": "artifact://requirements/run-demo/requirement.v1.json",
@@ -133,10 +133,19 @@ Missing prerequisite artifacts produce an auditable
 production capability produces `CAPABILITY_UNAVAILABLE`; neither case
 fabricates a result.
 
-Registered expensive capabilities stop at an
-`EXPENSIVE_BATCH_APPROVAL` bound to the immutable stage-plan hash. A
-`WaitingExternal` result is stored as Stage `RUNNING` plus Run `PAUSED`, so a
-new process can reconcile the same external job without submitting it again.
+Before execution, every registered runner freezes a native plan and an
+Orchestrator-owned `PreparedStagePlan(orchestrator-stage-plan-v2)`. The
+approval decision is the logical OR of the capability's mandatory approval
+floor and the runner plan's dynamic requirement. Any approval directly binds
+the stage plan, native plan, operation input, resource estimate, policy, and
+input snapshot hashes.
+
+The P0.2 fixture contract verifies automatic batches of 1–5 candidates,
+approval for 6–20, and pre-plan blocking above the 20-candidate hard limit.
+Agent02's production runner remains unavailable until its native adapter is
+implemented. A `WaitingExternal` result is stored as Stage `RUNNING` plus Run
+`PAUSED`, so a new process can reconcile the same external job and frozen plan
+without preparing or submitting it again.
 
 ## Run Agent 01 standalone
 
@@ -171,9 +180,10 @@ MPLCONFIGDIR=/tmp/material-agent-mpl \
 .venv/bin/python -m pytest -q -p no:cacheprovider
 ```
 
-The Orchestrator P0.1 code, dependencies, and tests are frozen at commit
-`d681de8`. The release baseline and a clean-directory rebuild both report
-`116 passed, 2 skipped`; the skipped tests are the two explicit `live_mp`
+The Orchestrator P0.1 baseline is commit `d681de8`. The P0.2 stage-planning
+bridge and tests are frozen at commit `701857c`. The working-tree Gate and a
+fresh lockfile installation from that commit both report
+`129 passed, 2 skipped`; the skipped tests are the two explicit `live_mp`
 Gates. `pip check` reports no broken requirements.
 
 The standalone Agent01 and Orchestrator-restart Materials Project release
@@ -190,6 +200,10 @@ unset agent_mp_key
 This macOS example keeps the key out of shell history and clears the temporary
 shell variable after the test. On another operating system, inject the key from
 its secret store or an already configured process environment.
+
+The P0.2 release run completed both real Materials Project Gates with
+`2 passed` in `78.10s`; no API key or live run artifact was retained in the
+repository.
 
 ## Frozen Agent 01 contract
 
@@ -210,8 +224,8 @@ generated from offline test data and contains no live Materials Project data.
 
 The Orchestrator does not reuse this native envelope as its own public
 contract. `Agent01RunnerAdapter` validates `agent01-contract-v1`, stores its
-URI/hash, and maps only control state into
-`ControlStageOutcome(orchestrator-p0.1-v2)`.
+URI/hash, wraps its frozen native plan in `PreparedStagePlan`, and maps only
+control state into `ControlStageOutcome(orchestrator-p0.2-v3)`.
 
 ## Artifact integrity and resume behavior
 
@@ -227,14 +241,15 @@ URI/hash, and maps only control state into
   changes fail closed as `BACKEND_INCONSISTENT`.
 - A non-blocking project-level lock permits only one CLI process to advance
   any Run in a Project at a time.
-- Unfinished `orchestrator-p0-v1` checkpoints are readable but explicitly
-  rejected for P0.1 resume; completed reports and artifacts remain readable.
+- Unfinished `orchestrator-p0-v1` and `orchestrator-p0.1-v2` checkpoints are
+  readable but explicitly rejected for P0.2 resume; completed reports and
+  artifacts remain readable.
 - If report generation is interrupted after raw retrieval, a retry reuses the
   validated raw-response checkpoint rather than repeating the database search.
 
 ## Known limits
 
-- P0.1 has a replaceable Parser protocol and a deterministic offline default;
+- P0.2 has a replaceable Parser protocol and a deterministic offline default;
   an LLM Provider is not connected yet.
 - Agent 01 is the only real scientific stage in the graph. Agent 02–04 remain
   unregistered production capabilities; test-only fixture runners are
