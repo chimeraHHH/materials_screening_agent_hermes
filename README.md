@@ -7,9 +7,9 @@ the deterministic Materials Project retrieval stage described in
 
 The execution plan always contains the ordered
 `retrieval → ml → dft → many_body` routes. Agent 01 is the only production
-scientific runner today; Agent 02–04 expose capability descriptors and are
-reported as skipped, blocked, or unavailable rather than producing mock
-scientific results.
+scientific runner today. Agent03 has a test-only, explicitly registered mock
+controller for lifecycle integration; it is not a production capability and
+does not produce scientific DFT values.
 
 ## Development environment
 
@@ -127,6 +127,53 @@ material-agent run-stage ml \
   --input ml-stage-input.json \
   --run-id run-ml
 ```
+
+### Agent03 v1 mock controller
+
+Agent03 v1 verifies only the control chain: immutable input and plan hashes,
+approval, mock submit/status/cancel/fetch, operation idempotency, external-job
+waiting, restart/reconcile, and non-scientific reports. It does not run VASP or
+VASPilot and does not create band gaps, total energies, magnetic moments, or
+`L3_DFT_VALIDATED` evidence. The frozen reference fixture is
+`tests/fixtures/contracts/agent03-v1/`.
+
+The CLI accepts the stage route and the existing lifecycle commands:
+
+```bash
+material-agent run-stage dft --workspace workspace --project demo \
+  --input dft-stage-input.json --run-id run-dft
+material-agent approve --workspace workspace --project demo --run run-dft \
+  --approval <approval_id> --decision approve
+material-agent status --workspace workspace --project demo --run run-dft
+material-agent resume --workspace workspace --project demo --run run-dft
+material-agent cancel --workspace workspace --project demo --run run-dft
+material-agent report --workspace workspace --project demo --run run-dft
+```
+
+The default production registry intentionally leaves Agent03 unavailable, so a
+direct CLI `run-stage dft` currently reports `CAPABILITY_UNAVAILABLE`. The
+successful mock lifecycle is reproduced offline through the explicit test
+registry in `tests/integration/test_dft_runner_orchestrator.py` and the
+cross-process E2E test; the command sequence above documents the shared CLI
+surface and recovery semantics, not a real DFT execution.
+
+Run the Agent03 contract, failure-injection, integration, and E2E coverage with:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 MPLCONFIGDIR=/tmp/material-agent-mpl \
+.venv/bin/python -m pytest -q -p no:cacheprovider \
+  tests/contract/test_frozen_agent03_fixture.py \
+  tests/contract/test_dft_mock_backend.py \
+  tests/integration/test_dft_failure_injection.py \
+  tests/integration/test_dft_runner_orchestrator.py \
+  tests/e2e/test_dft_cross_process.py
+```
+
+Real DFT remains unsupported. Before P2, the project needs a licensed and
+validated VASP/POTCAR setup, an authenticated Slurm/backend bridge, a frozen
+group method policy, expert approval, and the required security and scientific
+validation Gates. Mock artifacts remain lifecycle evidence only and must not be
+promoted to scientific evidence.
 
 Missing prerequisite artifacts produce an auditable
 `BLOCKED_MISSING_INPUT`/`PAUSED` Run. A complete input for an unregistered

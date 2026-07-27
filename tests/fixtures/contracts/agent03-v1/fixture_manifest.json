@@ -1,0 +1,22 @@
+{
+  "schema_version": "agent03-mock-fixture-manifest-v1",
+  "is_mock": true,
+  "files": [
+    {
+      "path": "inputs/mock-request.json",
+      "sha256": "0f41635b7dcd208ff186c9b4214400a3d280e21c2a2cd2293d1c09ed8644e182"
+    },
+    {
+      "path": "plans/mock-workflow-plan.json",
+      "sha256": "56acd26e5d1cdb55a273202a1be9d7b9471fc19b5e11b76b716bbf168597a5c3"
+    },
+    {
+      "path": "backend/mock-lifecycle.json",
+      "sha256": "aa98eadcde92796c4a17e802c218c330decf9f0c64858c23f5d072fa6784d4af"
+    },
+    {
+      "path": "results/mock-result-envelope.json",
+      "sha256": "dbdd6f947c23363cfe2d9b9c74254547766ee8fc20b0f990ad4f8caf11ba9871"
+    }
+  ]
+}

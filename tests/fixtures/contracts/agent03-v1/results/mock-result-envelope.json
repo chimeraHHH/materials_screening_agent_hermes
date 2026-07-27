@@ -1,0 +1,20 @@
+{
+  "schema_version": "1.0.0",
+  "request_id": "dftreq_fixture",
+  "terminal_status": "SUCCEEDED",
+  "external_job_ref": "extjob_fixture",
+  "scientific_results": null,
+  "claim_results": [
+    {
+      "claim_type": "workflow_lifecycle",
+      "status": "NOT_EVALUATED_MOCK",
+      "evidence_level": "L1_RETRIEVED",
+      "is_mock": true
+    }
+  ],
+  "provenance": {
+    "backend": "mock-dft",
+    "is_mock": true
+  },
+  "is_mock": true
+}
