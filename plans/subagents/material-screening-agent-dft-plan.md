@@ -45,7 +45,7 @@ Task 4 开发前冻结的范围与验收：
 - 覆盖缺输入、审批拒绝、重复 start、运行中、成功、失败、超时、取消、篡改和最小跨进程恢复；mock 不产生科学数值、不提升 evidence、且不注册生产 capability。
 - 若发现必须修改公共控制契约、checkpoint 语义或业务 schema，停止并报告最小变更与影响；默认方案不应产生共享契约变更。
 
-验收边界：mock 只产生生命周期、错误和空结果 envelope；结果显式 `is_mock=true`，claim 只能为 `NOT_EVALUATED_MOCK`，不会产生或暗示 band gap、总能、磁矩等科研数值。Task 4–6 尚未实现；Orchestrator 接入等待 Agent02 8.2 合并后再进行。
+验收边界：mock 只产生生命周期、错误和空结果 envelope；结果显式 `is_mock=true`，claim 只能为 `NOT_EVALUATED_MOCK`，不会产生或暗示 band gap、总能、磁矩等科研数值。Task 4–6 已在同一 mock 边界内实现；真实 backend 仍等待 P2 Gate。
 
 实际完成与验证（2026-07-27）：
 
@@ -57,7 +57,7 @@ Task 4 开发前冻结的范围与验收：
 - [x] `.venv/bin/python -m pip check`：通过；`git diff --check`：通过。
 - [x] Task 4：实现 `DFTStageRunner` 并通过显式 mock registry 接入既有 `PreparedStagePlan`、审批、operation/external-job ledger、WaitingExternal、resume、Artifact/hash 校验和报告路径；默认生产 capability 仍未注册。
 - [x] Task 5：补齐 Agent03 错误分类/状态映射与确定性 mock 报告；覆盖输入阻塞、配置错误、瞬时外部错误、backend 不一致、无效响应、不适用、mock failure/timeout/cancel、审批拒绝和恢复时 Artifact/hash 篡改。报告明确冻结输入/plan、backend/job 生命周期、Artifact/provenance、claim 状态、失败 remediation 和 mock 证据上限。
-- [ ] Task 6：尚未实现；不注册生产 capability，不接入真实 backend、VASP、VASPilot、Slurm、POTCAR 或 CLI。
+- [x] Task 6：补齐 failure injection、状态不一致 fail-closed、冻结 mock fixture、CLI 运行说明和已知限制；不注册生产 capability，不接入真实 backend、VASP、VASPilot、Slurm、POTCAR 或 P2/P3 功能。
 
 Task 4 实际完成与验证（2026-07-27）：
 
@@ -77,6 +77,16 @@ Task 5 实际完成与验证（2026-07-27）：
 - [x] 定向 Agent03 unit/contract/integration/E2E：`16 passed`；完整离线 Gate、`pip check` 与 `git diff --check` 待本任务完成前执行。
 
 Task 5 限制与跨 agent 影响：未修改 `orchestrator-p0.2-v3`、checkpoint、业务数据库 schema、Agent01/02 契约或生产 capability registry；`ControlError` 没有 remediation 字段，因此 remediation 保存在 Agent03 `summary` 和报告中。真实 DFT 错误、真实响应解析、真实 scheduler 状态及科学 claim 验证仍属于 Task 6/后续真实 backend Gate；不适用在 mock 控制链中保留为部分结果和证据缺口，不产生科学结论。
+
+Task 6 实际完成与验证（2026-07-27）：
+
+- [x] `tests/integration/test_dft_failure_injection.py` 覆盖 submit 前异常、submit 后响应丢失、瞬时 status/fetch 错误重放、UNKNOWN/倒退状态、永不结束、重复 submit/recovery 不产生第二个 mock job；既有测试覆盖 failure、timeout、cancel race、无效 envelope、输入/plan/result hash 篡改及审批拒绝。
+- [x] runner 对 backend `UNKNOWN` 与状态倒退 fail closed 为 `BACKEND_INCONSISTENT`；瞬时重试继续使用同一 operation/idempotency key，不创建新 external job。报告 URI 使用确定性内容 hash，避免不同瞬时故障覆盖 immutable 报告。
+- [x] 冻结 `tests/fixtures/contracts/agent03-v1/` 最小 mock request/plan/backend lifecycle/result manifest；manifest 对权威文件记录真实 SHA-256，fixture 不含真实 VASP 输出、POTCAR、绝对路径、密钥、traceback 或科学数值。
+- [x] README 补充实际 CLI 命令面、默认 production registry 对 Agent03 的 `CAPABILITY_UNAVAILABLE` 限制、mock 复现测试命令、证据边界和 P2 前置条件。
+- [x] Task 6 failure-injection/fixture contract/Agent03 integration/E2E、完整离线 Gate、`pip check` 与 `git diff --check` 在收尾命令中执行并记录。
+
+Task 6 限制与下一步：默认 CLI registry 仍不注册 Agent03；成功的 mock lifecycle 只能通过显式测试 registry 复现。永不结束 scenario 由调用方负责设置有限 reconcile 次数，v1 不引入后台 scheduler 或 sleep。真实 VASP/POTCAR/Slurm、方法 policy 冻结、专家审批和安全/科学验证 Gate 保持 P2 前置条件，P2/P3 状态不在本任务修改。
 
 完成每个 v1/P2 任务后，只更新本计划的完成证据、测试、限制、方法/后端版本和待专家确认项；公共 claim/Artifact 契约变更须同步 Orchestrator、下游 Agent04 计划及相应 contract/integration/E2E 设计，不得修改外部后端状态真源。
 
@@ -3293,19 +3303,19 @@ P2/P3：
 
 ### 29.1 v1 DoD
 
-- [ ] Schema 完整；
-- [ ] lifecycle template；
-- [ ] mock deterministic；
-- [ ] submit/status/cancel/fetch；
-- [ ] operation ledger；
-- [ ] approval；
-- [ ] resume；
-- [ ] error classification；
-- [ ] claim `NOT_EVALUATED_MOCK`；
-- [ ] 无伪科研数值；
-- [ ] StageResultEnvelope；
-- [ ] contract/integration/E2E tests；
-- [ ] CLI demo。
+- [x] Schema 完整；
+- [x] lifecycle template；
+- [x] mock deterministic；
+- [x] submit/status/cancel/fetch；
+- [x] operation ledger；
+- [x] approval；
+- [x] resume；
+- [x] error classification；
+- [x] claim `NOT_EVALUATED_MOCK`；
+- [x] 无伪科研数值；
+- [x] StageResultEnvelope；
+- [x] contract/integration/E2E tests；
+- [x] CLI surface documented; default production registry remains unavailable by design。
 
 ### 29.2 P2 DoD
 

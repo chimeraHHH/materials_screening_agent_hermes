@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime
+from hashlib import sha256
 from typing import Any, Callable
 
 from material_agent.orchestrator.models import (
@@ -253,6 +254,7 @@ class DFTStageRunner:
                 request, ref, polls=sequence, status=previous
             )
             observed = self.backend.status(ref)
+            self._validate_status_transition(previous, observed)
             sequence += 1
             snapshot_ref = self.store.write_json(
                 self._status_uri(context, idempotency_key, sequence),
@@ -423,10 +425,44 @@ class DFTStageRunner:
         status = JobStatus(operation["status"])
         while self.store.exists(self._status_uri(context, key, sequence + 1)):
             sequence += 1
-            status = JobStatus(
+            next_status = JobStatus(
                 self.store.read_json(self._status_uri(context, key, sequence))["status"]
             )
+            self._validate_status_transition(status, next_status)
+            status = next_status
         return status, sequence
+
+    @staticmethod
+    def _validate_status_transition(previous: JobStatus, observed: JobStatus) -> None:
+        """Fail closed on unknown or non-monotonic backend observations."""
+        if observed is JobStatus.UNKNOWN:
+            raise ValueError("backend status is unknown")
+        order = {
+            JobStatus.CREATED: 0,
+            JobStatus.SUBMITTING: 1,
+            JobStatus.QUEUED: 2,
+            JobStatus.RUNNING: 3,
+            JobStatus.COMPLETING: 4,
+            JobStatus.SUCCEEDED: 5,
+            JobStatus.FAILED: 5,
+            JobStatus.TIMEOUT: 5,
+            JobStatus.CANCEL_REQUESTED: 4,
+            JobStatus.CANCELLED: 5,
+        }
+        terminal = {
+            JobStatus.SUCCEEDED,
+            JobStatus.FAILED,
+            JobStatus.TIMEOUT,
+            JobStatus.CANCELLED,
+        }
+        if previous in terminal and observed is not previous:
+            raise ValueError(
+                f"backend status changed after terminal state: {previous.value} -> {observed.value}"
+            )
+        if order[observed] < order[previous]:
+            raise ValueError(
+                f"backend status regression: {previous.value} -> {observed.value}"
+            )
 
     def _waiting(self, context, key, ref, sequence, status, snapshot_uri=None):
         return ControlStageOutcome(stage=context.stage, agent_id=context.agent_id, outcome=ControlOutcomeType.WAITING_EXTERNAL, status=StageStatus.RUNNING, idempotency_key=key, operation_ref=key, external_job_ref=ref.external_job_ref_id, external_status=self._external_status(status.value), external_status_sequence=sequence, summary={"is_mock": True, "status_snapshot_uri": snapshot_uri, "message": "Mock lifecycle only; no DFT calculation was executed."})
@@ -456,7 +492,7 @@ class DFTStageRunner:
             return "MISSING_INPUT", StageStatus.BLOCKED_MISSING_INPUT, False
         if any(token in text for token in ("invalid", "json", "envelope", "validation error", "schema")):
             return "INVALID_RESPONSE", StageStatus.PERMANENT_FAILED, False
-        if any(token in text for token in ("hash", "integrity", "conflict", "external job reference", "does not match", "reference")):
+        if any(token in text for token in ("hash", "integrity", "conflict", "external job reference", "does not match", "reference", "status regression", "status is unknown", "terminal state")):
             return "BACKEND_INCONSISTENT", StageStatus.PERMANENT_FAILED, False
         if "not applicable" in text:
             return "NOT_APPLICABLE", StageStatus.PARTIAL, False
@@ -491,7 +527,8 @@ class DFTStageRunner:
         payload = {"project_id": context.project_id, "run_id": context.run_id, "stage_status": status.value if isinstance(status, StageStatus) else (status or "NOT_STARTED"), "reason_code": reason_code, "public_message": public_message, "remediation": remediation, "backend": {"id": ref.backend_id if ref else self.backend.backend_id, "version": ref.backend_version if ref else self.backend.backend_version}, "external_job": {"id": ref.external_job_ref_id if ref else "not-submitted", "status": result.terminal_status.value if result else "NOT_SUBMITTED"}, "references": refs, "claims": claims, "next_step": "保持 mock 结果为非证据状态；真实 DFT 需要单独的生产 capability、方法 policy、审批和后端 Gate。"}
         text = render_mock_report(payload)
         suffix = "success" if reason_code == "NONE" else reason_code.lower()
-        return self.store.write_text(f"reports/{context.run_id}/agent03-attempt-{context.attempt}-{suffix}.md", text, "text/markdown", immutable=True)
+        report_hash = sha256(text.encode("utf-8")).hexdigest()[:12]
+        return self.store.write_text(f"reports/{context.run_id}/agent03-attempt-{context.attempt}-{suffix}-{report_hash}.md", text, "text/markdown", immutable=True)
 
     def _find_ref(self, external_job_ref: str, key: str) -> ExternalJobRef:
         # cancel is called through the durable operation artifact, not memory.

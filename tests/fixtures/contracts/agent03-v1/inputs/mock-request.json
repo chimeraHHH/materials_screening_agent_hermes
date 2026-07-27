@@ -1,0 +1,14 @@
+{
+  "schema_version": "agent03-dft-request-fixture-v1",
+  "request_id": "dftreq_fixture",
+  "execution_mode": "MOCK",
+  "backend_id": "mock-dft",
+  "candidate_id": "cand_fixture",
+  "structure_artifact": "artifact://candidates/structure.cif",
+  "structure_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "requested_claims": [
+    "workflow_lifecycle"
+  ],
+  "scientific_results": null,
+  "is_mock": true
+}

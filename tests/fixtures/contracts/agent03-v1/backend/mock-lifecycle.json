@@ -1,0 +1,15 @@
+{
+  "schema_version": "agent03-mock-backend-lifecycle-v1",
+  "backend_id": "mock-dft",
+  "backend_version": "1.0.0",
+  "adapter_version": "agent03-mock-adapter-v1",
+  "scenario": "mock_success",
+  "statuses": [
+    "CREATED",
+    "QUEUED",
+    "RUNNING",
+    "SUCCEEDED"
+  ],
+  "external_job_ref": "extjob_fixture",
+  "is_mock": true
+}
