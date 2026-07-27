@@ -1,0 +1,19 @@
+{
+  "schema_version": "effective-model/v1",
+  "model_id": "invalid_missing_provenance",
+  "revision": 1,
+  "name": "invalid fixture",
+  "model_family": "SINGLE_BAND_HUBBARD",
+  "fixture": true,
+  "is_mock": true,
+  "geometry": null,
+  "basis": null,
+  "one_body": null,
+  "interactions": [],
+  "state_points": [],
+  "conventions_version": "agent04-conventions-v1",
+  "material_linkage": null,
+  "provenance": [],
+  "artifacts": [],
+  "package_hash": "not-a-hash"
+}

@@ -1,0 +1,54 @@
+{
+  "schema_version": "effective-model/v1",
+  "model_id": "em_fixture_1d_chain",
+  "revision": 1,
+  "name": "one-dimensional Hubbard chain fixture",
+  "model_family": "SINGLE_BAND_HUBBARD",
+  "fixture": true,
+  "is_mock": true,
+  "geometry": {
+    "schema_version": "agent04-geometry-v1",
+    "geometry_id": "geom_fixture_1d_2site",
+    "geometry_type": "FINITE_GRAPH",
+    "dimension": 1,
+    "num_sites": 2,
+    "site_ids": ["s0", "s1"],
+    "edges": [{"edge_id": "e0", "source_site": "s0", "target_site": "s1", "wrap": [0]}],
+    "boundary_condition": "OPEN",
+    "coordinates": [[0.0], [1.0]]
+  },
+  "basis": {
+    "schema_version": "agent04-basis-v1",
+    "basis_id": "basis_fixture_1d_single_orbital",
+    "orbitals": [
+      {"orbital_id": "o0", "site_id": "s0", "label": "active", "active": true},
+      {"orbital_id": "o1", "site_id": "s1", "label": "active", "active": true}
+    ],
+    "spin_convention": "UP_DOWN",
+    "fock_ordering": "ALL_UP_THEN_ALL_DOWN",
+    "index_base": 0,
+    "conventions_version": "agent04-conventions-v1",
+    "complex_phase_convention": "real-positive-basis",
+    "includes_soc": false,
+    "nambu_doubling": false
+  },
+  "one_body": {
+    "schema_version": "agent04-one-body-v1",
+    "hamiltonian_id": "h_fixture_1d",
+    "energy_unit": "eV",
+    "onsite_terms": [],
+    "hopping_terms": [{"term_id": "t0", "source_orbital": "o0", "target_orbital": "o1", "value": -1.0, "unit": "eV", "directed": true}],
+    "is_complex": false,
+    "stores_hermitian_conjugate": false,
+    "sparse_format": "COO_JSON",
+    "matrix_artifact": null,
+    "numerical_zero_tolerance": 1e-12
+  },
+  "interactions": [{"schema_version": "agent04-interaction-v1", "term_id": "u0", "kind": "ONSITE_HUBBARD_U", "site_ids": ["s0"], "orbital_ids": ["o0"], "value": 4.0, "unit": "eV", "index_convention": "site-orbital-spin-v1", "density_density": true, "spin_flip": false, "pair_hopping": false, "provenance_id": "prov_fixture"}],
+  "state_points": [{"schema_version": "agent04-state-point-v1", "state_point_id": "sp_half_filling", "ensemble": "CANONICAL", "temperature_definition": "ZERO_T", "n_up": 1, "n_down": 1, "n_total": 2, "sz": 0.0, "beta": null, "temperature": null, "chemical_potential": null, "unit": "eV", "provenance_id": "prov_fixture"}],
+  "conventions_version": "agent04-conventions-v1",
+  "material_linkage": null,
+  "provenance": [{"provenance_id": "prov_fixture", "source_type": "FIXTURE", "source_uri": "artifact://fixtures/agent04/provenance.json", "source_artifact": null, "method": "structured fixture declaration", "software_version": null, "notes": "abstract model only"}],
+  "artifacts": [],
+  "package_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+}
