@@ -34,6 +34,24 @@
 
 跨 agent 依赖：输入依赖 Agent01/02 的结构与 provenance；控制面依赖 Orchestrator 的阶段计划、审批和外部任务契约；Agent04 只能消费经验证且明确 scope 的 DFT Artifact。当前阻塞为尚无 DFT 源码、Slurm/合法 VASP/POTCAR bridge 及课题组 functional/U/J/磁序等科学 policy，不能用 mock 越过这些阻塞。
 
+### 本次 Agent03 v1 实施范围（Task 1–3）
+
+本次独立 worktree 仅实现第 26.1 节 Task 1–3：Agent03 原生 Pydantic 契约与安全枚举、最低输入校验和确定性 mock planner、纯数据审批 payload，以及不接入 Orchestrator 的 `MockDFTBackend` 生命周期。实现放在 `src/material_agent/dft/`，测试放在 Agent03 自有 unit/contract 测试文件中；不修改 Orchestrator、Agent01、Agent02、全局依赖或生产 capability registry。
+
+验收边界：mock 只产生生命周期、错误和空结果 envelope；结果显式 `is_mock=true`，claim 只能为 `NOT_EVALUATED_MOCK`，不会产生或暗示 band gap、总能、磁矩等科研数值。Task 4–6 尚未实现；Orchestrator 接入等待 Agent02 8.2 合并后再进行。
+
+实际完成与验证（2026-07-27）：
+
+- [x] Task 1：在 `src/material_agent/dft/models.py` 实现严格、独立的 Agent03 v1 Pydantic 契约、Job/Cancel/Claim 状态、URI/hash/路径/finite-number 校验及 mock/real 证据护栏。
+- [x] Task 2：在 `planner.py` 实现最低输入 `StageInputValidator`、mock capability、确定性 `mock_dft_lifecycle_v1` planner、unsupported claim/blocker 语义和纯数据审批 payload。
+- [x] Task 3：在 `mock_backend.py` 实现无 sleep 的 deterministic `MockDFTBackend`，覆盖幂等 submit、status、cancel、fetch 以及 success/failure/timeout/cancel 场景；mock 只返回空科学结果和 `NOT_EVALUATED_MOCK` claim。
+- [x] Agent03 自有 schema/planner/backend contract tests：`8 passed`。
+- [x] 完整离线 Gate：`258 passed, 2 skipped`；跳过项为需要显式 `--run-live-mp` 和密钥/网络的两个 live MP 测试。
+- [x] `.venv/bin/python -m pip check`：通过；`git diff --check`：通过。
+- [ ] Task 4–6：尚未实现；没有生产 capability 注册、Orchestrator runner/control-flow/checkpoint 接入、真实 backend、报告或 CLI 接入。
+
+依赖限制：等待 Agent02 8.2 合并后再做 Orchestrator 接入；当前不修改 Orchestrator 公共控制契约、Agent01/02 文件、全局依赖或 capability registry。真实 functional、U/J、磁序、SOC、k 点、收敛参数及 VASP/POTCAR/Slurm policy 仍待专家冻结。
+
 完成每个 v1/P2 任务后，只更新本计划的完成证据、测试、限制、方法/后端版本和待专家确认项；公共 claim/Artifact 契约变更须同步 Orchestrator、下游 Agent04 计划及相应 contract/integration/E2E 设计，不得修改外部后端状态真源。
 
 ## 0. 执行结论
