@@ -4,7 +4,37 @@
 - 日期：2026-07-25
 - 最近进度更新：2026-07-26
 - 工期：总计划 Day 3–5，约 18–21 小时
-- 依据：`material-screening-agent-system-plan.md` 与 `material-screening-orchestrator-plan.md`
+- 依据：[`docs/system-plan.md`](../../docs/system-plan.md)、[`docs/architecture.md`](../../docs/architecture.md) 与 [`Orchestrator 计划`](material-screening-orchestrator-plan.md)
+
+## 开始开发前必读
+
+- [README](../../README.md)：当前 Agent01 CLI、数据源、测试和 Artifact 限制。
+- [系统蓝图](../../docs/system-plan.md)：证据等级、Materials Project 数值边界和安全 Gate。
+- [技术架构 Agent01 边界](../../docs/architecture.md#53-agent-01公开数据库检索与确定性筛选)：模块职责、公共控制契约和下游关系。
+- [主计划](../master.md)：当前状态、跨 agent 依赖和系统验收。
+- [Orchestrator 计划](material-screening-orchestrator-plan.md)：StageRunner 生命周期与控制面适配边界。
+- [原始系统总方案](../../docs/system-plan-original.md)：仅用于历史追溯。
+
+### 模块职责与边界
+
+- **职责：** Materials Project 查询、原始响应归档、结构规范化、确定性硬约束、去重/聚类、排序、Candidate manifest、报告和 provenance。
+- **输入：** 已确认且不可变的 Requirement revision、查询 policy、MP 凭据（仅环境/secret store）和可校验 Artifact 引用。
+- **输出：** 带 URI/hash 的原始数据、结构、PropertyValue、`PASS/REJECT/UNCERTAIN/FAILED` 判定、manifest、StageResultEnvelope 和报告。
+- **不负责：** ML/DFT/多体计算、LLM 决策、生成新结构、替换实验值或改变上游科学阈值。
+- **不可修改范围：** Agent02 的 pre-filter/适用域、Orchestrator 控制契约、冻结 fixture、公共依赖和其他 agent 计划。
+
+当前没有独立 integration Markdown；Materials Project 外部数据源边界以本计划和[技术架构](../../docs/architecture.md)为准。
+
+### 当前下一步、依赖与阻塞
+
+1. 为逐页 cursor checkpoint 写一个独立的分页契约/遗漏与重叠测试，并在测试通过前保持现有 chunk 语义。
+2. 为大规模 StructureMatcher 性能优化建立可重复 benchmark，先记录基线再实现优化。
+3. 将并行结构分析、dimensionality 交叉验证和 Similarity endpoint 对照分别拆成独立可回退任务。
+4. 扩充科学 silver set、多数据库 Adapter 和扫描上限提升审批；每项都必须保留 provenance 和原有状态语义。
+
+跨 agent 依赖：Agent02 只消费 Agent01 发布的不可变 manifest/结构/性质 provenance；Orchestrator 只依赖冻结的 Agent01 原生 Envelope。当前无实现阻塞，P1 性能/扩展项不应改变 P0 契约或把 `REJECT` 重新发布为候选。
+
+完成每个任务后，只在本计划记录实际完成项、测试证据、限制和对 Agent02/Orchestrator 的影响；公共契约或阈值变更需先同步相关 agent plan、fixture、contract test，并按职责更新主计划或技术架构。
 
 ## 0. 当前实施进度
 
@@ -49,7 +79,7 @@
 
 ### 0.2 验证状态
 
-- 当前自动化测试收集 82 项：无网络默认运行结果为 `81 passed, 1 skipped`，覆盖 unit、contract、integration、offline E2E、CLI、冻结契约 fixture 和 0D/1D/2D/3D 结构基准；
+- 这里记录的 `82 项 / 81 passed, 1 skipped` 是历史验证快照；当前测试集合已扩展，实际结果以当前工作树执行的离线 Gate 为准；
 - 唯一跳过项为显式 opt-in 的 `tests/live/test_live_mp_release.py`，默认测试不会读取 `MP_API_KEY` 或访问网络；
 - `pip check` 当前通过；
 - 2026-07-26 使用当前最终代码和独立 `live_mp` 流程完成固定 Si/O 真实 release Gate：
@@ -716,7 +746,7 @@ Agent 01 阶段目录按需生成：
 - 默认排除 deprecated 和 GNoME，保留理论材料。
 - Agent 01 必须在 Day 3–5 P0 时间内交付，性能增强延至 P1。
 - 当前仓库已包含 Agent 01 源码、测试、fixture、依赖锁文件和独立实施计划；已使用仓库本地 Python 3.11.13 `.venv`，不依赖本机默认 Python 3.13.2。
-- 已新增独立 `material-screening-agent01-plan.md`；总计划的 Agent 01 小节已补充该文档链接和“确定性筛选归 Agent 01、ML 归 Agent 02”的职责说明，未覆盖原总计划。
+- 已新增独立 [`plans/subagents/material-screening-agent01-plan.md`](material-screening-agent01-plan.md)；总计划的 Agent 01 小节已补充该文档链接和“确定性筛选归 Agent 01、ML 归 Agent 02”的职责说明，未覆盖原总计划。
 
 ## 8. 下一步实施规划与 Orchestrator 进入 Gate
 
@@ -731,7 +761,7 @@ Agent 01 阶段目录按需生成：
 - 锁定依赖且 `pip check` 通过；
 - Agent 01 查询、Adapter、规范化、结构处理、筛选、排序、去重聚类、报告、CLI 和本地 Artifact Store；
 - 固定 Si/O 离线 fixture；
-- 当前收集 82 个测试；默认无网络运行 `81 passed, 1 skipped`，唯一跳过项为 opt-in `live_mp` release test；
+- 这里记录的 `82 个测试 / 81 passed, 1 skipped` 是历史验证快照；当前测试集合已扩展，实际结果以当前工作树执行的离线 Gate 为准；
 - 当前最终代码的真实 MP release Gate 已通过；
 - Agent 01 公共契约已冻结为 `agent01-contract-v1`，最小输出 fixture 已提交并可逐字节重建。
 

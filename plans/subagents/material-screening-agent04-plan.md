@@ -3,7 +3,38 @@
 版本：v0.1  
 日期：2026-07-25  
 适用范围：总计划 Day 11 的可实施 MVP，以及后续首个真实多体求解器  
-依据：`material-screening-agent-system-plan.md`、`material-screening-orchestrator-plan.md`  
+依据：[`docs/system-plan.md`](../../docs/system-plan.md)、[`docs/architecture.md`](../../docs/architecture.md)、[`Orchestrator 计划`](material-screening-orchestrator-plan.md)
+
+## 开始开发前必读
+
+- [README](../../README.md)：当前仅有控制链/fixture 的实现边界和默认 Gate。
+- [系统蓝图](../../docs/system-plan.md)：L4 证据边界、专家审批、安全和科学措辞约束。
+- [技术架构 Agent04 边界](../../docs/architecture.md#56-agent-04many-body-controller)：模型输入、数值验证、材料映射和证据边界。
+- [技术架构后端规则](../../docs/architecture.md#7-adapter-与-backend-规则)：ManyBodyBackend 的所有权、幂等、恢复和错误语义。
+- [主计划](../master.md)：当前状态、跨 agent 依赖、阻塞和系统 DoD。
+- [Orchestrator 计划](material-screening-orchestrator-plan.md)：阶段输入、审批、恢复和统一 StageRunner 契约。
+- [原始系统总方案](../../docs/system-plan-original.md)：仅用于历史追溯。
+
+### 模块职责与边界
+
+- **职责：** `EffectiveModelPackage` 校验、solver capability/routing、资源估计、ManyBodyRequest、审批、backend 生命周期、数值验证、模型—材料 linkage 和 claim 级证据。
+- **输入：** 专家提供且带 hash 的有效模型、参数/provenance、目标 claim、solver registry、预算和上游 DFT/材料引用（如适用）。
+- **输出：** 路由/阻塞结果、冻结请求、backend job/artifact 引用、数值验证报告、模型级与材料映射级证据及 StageResultEnvelope。
+- **不负责：** 从结构/能带/自然语言猜模型或 U/J、自动生成 solver 代码、静默更换方法、热力学极限外推或把 mock/fixture 晋级 L4。
+- **不可修改范围：** Agent01/02/03 权威 Artifact、Orchestrator 控制契约、专家未确认的模型/方法 policy、外部 backend 状态真源和其他 agent 计划。
+
+仓库没有单独的 integration Markdown；真实 solver/backend 依照[技术架构后端规则](../../docs/architecture.md#7-adapter-与-backend-规则)接入，本计划第 8–10、13 节保留具体契约与实施边界。
+
+### 当前下一步、依赖与阻塞
+
+1. 实现并测试 `EffectiveModelPackage` Schema、单位/自由度/边界条件和 provenance 完整性校验。
+2. 为 Hubbard fixture 实现确定性 capability registry、适用性路由、资源估算和审批 payload。
+3. 实现 `MockManyBodyBackend` 生命周期、幂等 ledger、失败注入、恢复和不提升 L4 的 contract/E2E 测试。
+4. 在 MVP 控制链稳定后，逐项实现 ED basis/operator/Hamiltonian/solver/observable，并用固定 benchmark 验证。
+
+跨 agent 依赖：模型必须由专家或上游明确提供；Agent03 仅提供有 scope 的 DFT 派生输入，不能替代模型构建；Orchestrator 提供统一阶段审批、恢复和 Artifact 引用。当前阻塞为真实材料模型 linkage、首个科学目标、solver policy 和高级方法审批尚未冻结，且尚无生产多体 backend；fixture/mock 不得解除这些阻塞。
+
+完成每个 MVP/P1 任务后，只更新本计划的实际状态、benchmark/测试证据、数值限制、provenance 和待专家确认项；公共契约或 evidence ceiling 变更须同步 Orchestrator、Agent03 计划及冻结 contract/integration/E2E 设计。
 
 ## 0. 执行结论
 

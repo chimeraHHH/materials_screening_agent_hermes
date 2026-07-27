@@ -2,8 +2,39 @@
 
 版本：v0.1  
 日期：2026-07-25  
-依据：`material-screening-agent-system-plan.md`、`material-screening-orchestrator-plan.md`  
+依据：[`docs/system-plan.md`](../../docs/system-plan.md)、[`docs/architecture.md`](../../docs/architecture.md)、[`Orchestrator 计划`](material-screening-orchestrator-plan.md)
 适用路线：v1 Mock → P2 单体系真实计算 → P3 固定 DFT 工作流  
+
+## 开始开发前必读
+
+- [README](../../README.md)：当前实现状态、默认离线 Gate、Artifact 和已知限制。
+- [系统蓝图](../../docs/system-plan.md)：L3 证据边界、科学 policy、审批和安全原则。
+- [技术架构 Agent03 边界](../../docs/architecture.md#55-agent-03-dft-controller)：StageRunner、Artifact、证据和后端所有权。
+- [技术架构后端集成](../../docs/architecture.md#11-vaspilot与未来后端集成)：VASPilot/外部后端的集成拓扑和 Gate。
+- [主计划](../master.md)：当前里程碑、依赖、阻塞和系统 DoD。
+- [Orchestrator 计划](material-screening-orchestrator-plan.md)：控制面输入、审批、恢复和 `PreparedStagePlan`。
+- [原始系统总方案](../../docs/system-plan-original.md)：仅用于历史追溯。
+
+### 模块职责与边界
+
+- **职责：** DFT claim/workflow 规划、方法 policy 快照、输入校验、资源估计、审批材料、唯一 `DFTBackend` 生命周期、结果验证、claim 级证据和 provenance。
+- **输入：** 候选与结构 Artifact、目标/证据缺口、冻结 policy、backend capability、预算和审批上下文。
+- **输出：** `DFTRequest`/workflow plan、backend job/artifact 引用、验证结果、claim 级 `L3_DFT_VALIDATED` 或明确未支持状态、StageResultEnvelope。
+- **不负责：** 自由发明泛函/U/磁序/求解器、直接管理 LangGraph/Slurm、保存 POTCAR、自动构造缺失结构或把 mock 数值写成科研证据。
+- **不可修改范围：** Orchestrator 控制契约、Agent01/02 权威输入、课题组未冻结的科学 policy、外部 backend 状态真源、其他 agent 计划。
+
+仓库没有单独的 integration Markdown；涉及 VASPilot 或未来 DFT 后端时，以[技术架构后端集成章节](../../docs/architecture.md#11-vaspilot与未来后端集成)和本计划第 16 节为准。
+
+### 当前下一步、依赖与阻塞
+
+1. 先实现 v1 的契约/枚举、`StageInputValidator`、确定性 planner 和最小 policy snapshot 测试。
+2. 分别实现 `MockDFTBackend` 的幂等 submit/status/cancel/fetch 与失败注入，不产生科学数值。
+3. 接入 `StageRunner`/Orchestrator 的审批、等待外部任务、恢复、Envelope 校验和报告测试。
+4. 只有 v1 mock 控制链通过后，才为 P2 单体系冻结课题组方法 policy、资源和 VASPilot bridge Gate。
+
+跨 agent 依赖：输入依赖 Agent01/02 的结构与 provenance；控制面依赖 Orchestrator 的阶段计划、审批和外部任务契约；Agent04 只能消费经验证且明确 scope 的 DFT Artifact。当前阻塞为尚无 DFT 源码、Slurm/合法 VASP/POTCAR bridge 及课题组 functional/U/J/磁序等科学 policy，不能用 mock 越过这些阻塞。
+
+完成每个 v1/P2 任务后，只更新本计划的完成证据、测试、限制、方法/后端版本和待专家确认项；公共 claim/Artifact 契约变更须同步 Orchestrator、下游 Agent04 计划及相应 contract/integration/E2E 设计，不得修改外部后端状态真源。
 
 ## 0. 执行结论
 

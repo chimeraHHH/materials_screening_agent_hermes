@@ -4,7 +4,37 @@
 
 日期：2026-07-26
 
-上位设计：`material-screening-agent-system-plan.md`、`material-screening-orchestrator-plan.md`
+上位设计：[`docs/system-plan.md`](../../docs/system-plan.md)、[`docs/architecture.md`](../../docs/architecture.md)、[`Orchestrator 计划`](material-screening-orchestrator-plan.md)
+
+## 开始开发前必读
+
+- [README](../../README.md)：当前轻量默认环境、测试、worker 限制和运行方式。
+- [系统蓝图](../../docs/system-plan.md)：L2 证据边界、审批、安全和科学措辞约束。
+- [技术架构 Agent02 边界](../../docs/architecture.md#54-agent-02机器学习筛选)：主环境/独立 worker、Artifact 和 StageRunner 关系。
+- [主计划](../master.md)：当前 Step 2 状态、依赖、阻塞和发布 Gate。
+- [Orchestrator 计划](material-screening-orchestrator-plan.md)：`orchestrator-p0.2-v3`、PreparedStagePlan 和动态审批桥接。
+- [原始系统总方案](../../docs/system-plan-original.md)：仅用于历史追溯。
+
+### 模块职责与边界
+
+- **职责：** 防御性 pre-filter、模型适用域、冻结候选批次、独立 JSON worker 边界、结构 QC、双轨 lineage、候选级完成记录和 Agent02 原生 Envelope。
+- **输入：** Agent01 不可变 manifest/结构/性质 provenance、StageExecutionContext、版本化 request/policy/model registry 和 health snapshot。
+- **输出：** `PreparedStagePlan`、worker 结果、QC/适用域状态、ML Artifact、`PASS/REJECT/UNCERTAIN/FAILED` 和可审计的 L2 资格信息。
+- **不负责：** 重新查询或翻转 Agent01 的 `REJECT`、生成新结构、DFT/多体结论、模型/阈值的 LLM 选择或修改 Orchestrator 通用控制流/schema。
+- **不可修改范围：** Agent01 权威记录、Orchestrator 控制契约、主环境重型依赖、冻结 fixture、科学 policy 和其他 agent 计划。
+
+当前没有独立 integration Markdown；真实 CHGNet 通过独立 worker/JSON 边界接入，相关通用后端规则见[技术架构](../../docs/architecture.md#7-adapter-与-backend-规则)。
+
+### 当前下一步、依赖与阻塞
+
+1. 完成第 8.2 节 P0.2 Adapter：逐候选完成记录、stage artifact 布局、幂等 ledger 和恢复语义。
+2. 用 Fake worker 覆盖 1–5 自动、显式 6–20 审批、超过 20 阻塞，并完成 `run-stage ml` 与要求 L2 的整图 fixture E2E。
+3. 在独立 Python 3.11 环境冻结 worker protocol、依赖 lock、模型/health snapshot 和 CPU smoke test。
+4. 通过真实 CPU、目标 Mac health、CPU/MPS parity、Top-5、崩溃恢复和安全 Gate 后，才评估生产 capability 注册。
+
+跨 agent 依赖：输入依赖 Agent01 的不可变 manifest 和 lineage；控制面依赖 Orchestrator P0.2 的 PreparedStagePlan/审批契约；Agent03 只能消费通过 QC 的 ML 结构。当前阻塞为真实 CHGNet/Torch/ASE 环境、checkpoint/model card hash 和目标 Mac Gate 尚未完成；Fake 不得解除该阻塞或提升真实证据。
+
+完成每个 Step 后，只更新本计划的状态、测试数字、fixture/hash、限制和跨 agent 影响；涉及 Agent02 原生契约时同步更新 Orchestrator 计划、冻结 fixture 和 contract test，涉及长期架构时才更新主计划/架构文档。
 
 当前状态：**第 8.1 节与第 8.1.1 节已完成：Agent02 原生契约、Fake Adapter/Fake Worker、确定性策略、契约加固和冻结 fixture 已形成代码基线 `408cec3`，默认回归为 `242 passed, 2 skipped`。下一步为第 8.2 节的 P0.2 Adapter、审批和恢复；生产 capability 仍未注册，真实 CHGNet/Torch/ASE 仍未安装或接入。**
 

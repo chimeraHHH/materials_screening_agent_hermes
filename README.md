@@ -2,8 +2,8 @@
 
 This repository implements the durable Orchestrator P0.2 control plane and
 the deterministic Materials Project retrieval stage described in
-`material-screening-orchestrator-plan.md` and
-`material-screening-agent01-plan.md`.
+`plans/subagents/material-screening-orchestrator-plan.md` and
+`plans/subagents/material-screening-agent01-plan.md`.
 
 The execution plan always contains the ordered
 `retrieval → ml → dft → many_body` routes. Agent 01 is the only production
@@ -17,7 +17,7 @@ The project targets Python 3.11 and uses a repository-local virtual
 environment:
 
 ```bash
-/opt/anaconda3/envs/py311/bin/python -m venv .venv
+python3.11 -m venv .venv
 .venv/bin/pip install -r requirements.lock
 .venv/bin/pip install --no-deps -e .
 ```
@@ -181,10 +181,10 @@ MPLCONFIGDIR=/tmp/material-agent-mpl \
 ```
 
 The Orchestrator P0.1 baseline is commit `d681de8`. The P0.2 stage-planning
-bridge and tests are frozen at commit `701857c`. The working-tree Gate and a
-fresh lockfile installation from that commit both report
-`129 passed, 2 skipped`; the skipped tests are the two explicit `live_mp`
-Gates. `pip check` reports no broken requirements.
+bridge and tests are frozen at commit `701857c`; that release snapshot reported
+`129 passed, 2 skipped`, with the skipped tests being the two explicit
+`live_mp` Gates. Run the command above against the current working tree for the
+current result. `pip check` was clean for that release snapshot.
 
 The standalone Agent01 and Orchestrator-restart Materials Project release
 Gates are opt-in and require both network access and `MP_API_KEY`:

@@ -2,7 +2,35 @@
 
 版本：v0.8
 日期：2026-07-26
-依据：`material-screening-agent-system-plan.md`
+依据：[`docs/system-plan.md`](../../docs/system-plan.md)、[`docs/architecture.md`](../../docs/architecture.md)
+
+## 开始开发前必读
+
+- [README](../../README.md)：当前可运行能力、环境、CLI、测试和限制。
+- [系统蓝图](../../docs/system-plan.md)：产品边界、证据等级、审批与安全原则。
+- [技术架构](../../docs/architecture.md)：控制/执行/数据平面、状态真源、StageRunner、Artifact 和后端边界。
+- [主计划](../master.md)：当前里程碑、跨 agent 依赖、阻塞项和验收状态。
+- [原始系统总方案](../../docs/system-plan-original.md)：仅用于历史追溯，不作为当前接口依据。
+
+### 模块职责与边界
+
+- **职责：** 维护需求确认、阶段路由、审批、持久化、恢复、幂等、外部任务生命周期和汇总报告。
+- **输入：** 已确认的 Requirement revision、显式阶段输入、Artifact URI/hash、版本化 policy 和 runner capability。
+- **输出：** JSON 控制状态、ExecutionPlan/PreparedStagePlan 引用、StageExecutionRecord、审批/操作审计和通用报告。
+- **不负责：** 检索、ML/DFT/多体科学计算、模型或方法参数选择、解析科学结果；不得把 fixture runner 注册为生产能力。
+- **不可修改范围：** Agent 原生契约、科学阈值/模型/泛函/U/磁序/求解器、冻结 fixture、业务代码之外的其他 agent 计划。
+
+涉及外部 DFT/多体后端时，遵循[技术架构的后端与 VASPilot 集成章节](../../docs/architecture.md#11-vaspilot与未来后端集成)；仓库当前没有单独的 integration Markdown 文档。
+
+### 当前下一步、依赖与阻塞
+
+1. 以离线契约测试验证后续 Agent Adapter 不破坏既有 `agent01-contract-v1` 和 P0.2 控制契约。
+2. 在服务器阶段单独设计 Postgres checkpointer、后台 worker 和多用户权限迁移；每项都应有 schema/恢复测试和回滚边界。
+3. 只有 Agent02/03/04 原生契约和 Adapter 明确可用后，才逐个切换生产 capability 注册状态。
+
+当前阻塞是服务器基础设施尚未就绪；Agent02 的真实 worker、Agent03/04 的生产 backend 也尚未提供，不能由 Orchestrator 代为实现或伪造结果。
+
+完成每个控制面任务后，只更新本计划的实际状态、契约版本、测试证据、限制和依赖；公共契约变更须同步检查对应 agent plan、fixture、contract test 和 `docs/architecture.md`，不得在本计划复制科学实现细节。
 
 ## 0. 当前实施进度
 
