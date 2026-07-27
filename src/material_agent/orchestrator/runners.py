@@ -773,3 +773,14 @@ def _is_retryable_external(exc: Exception) -> bool:
         token in message
         for token in ("timeout", "rate limit", "429", "temporar")
     )
+
+
+# Agent02 remains opt-in: importing the adapter does not register a runner or
+# alter default_capabilities(). The lazy attribute avoids a control-plane ↔
+# Agent02 import cycle while allowing explicit test imports.
+def __getattr__(name: str):
+    if name == "Agent02RunnerAdapter":
+        from material_agent.ml_screening.runner import Agent02RunnerAdapter
+
+        return Agent02RunnerAdapter
+    raise AttributeError(name)

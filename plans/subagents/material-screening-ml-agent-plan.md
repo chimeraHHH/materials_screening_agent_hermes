@@ -36,7 +36,7 @@
 
 完成每个 Step 后，只更新本计划的状态、测试数字、fixture/hash、限制和跨 agent 影响；涉及 Agent02 原生契约时同步更新 Orchestrator 计划、冻结 fixture 和 contract test，涉及长期架构时才更新主计划/架构文档。
 
-当前状态：**第 8.1 节与第 8.1.1 节已完成：Agent02 原生契约、Fake Adapter/Fake Worker、确定性策略、契约加固和冻结 fixture 已形成代码基线 `408cec3`，默认回归为 `242 passed, 2 skipped`。下一步为第 8.2 节的 P0.2 Adapter、审批和恢复；生产 capability 仍未注册，真实 CHGNet/Torch/ASE 仍未安装或接入。**
+当前状态：**第 8.1 节与第 8.1.1 节已完成；第 8.2 节已实现轻量 P0.2 Adapter 与 Fake Worker 恢复测试，生产 capability 仍未注册，真实 CHGNet/Torch/ASE 仍未安装或接入。**
 
 ## 1. 执行摘要
 
@@ -1487,9 +1487,26 @@ Fake Worker 与真实 Worker 使用同一协议模型。默认测试增加恶意
    - 默认生产 `default_capabilities()[StageId.ML]` 继续保持
      `registered=false`。
 
-退出条件：P0.2 图能够通过测试 capability 完整驱动 Agent02，但默认生产 capability
-仍不可用；无 Orchestrator 控制流、checkpoint 或业务数据库 schema 变更。第 8.2
-节实现与测试必须形成独立提交后，才能进入第 8.3 节。
+实际状态（本工作树，未提交）：`Agent02RunnerAdapter` 已位于
+`src/material_agent/ml_screening/runner.py`，通过 Artifact Store 重新计算并验证
+requirement、Agent01 manifest/结构、policy、registry、health 和可选 request 的
+URI/hash/schema；实现 native/control plan 原子冻结、动态审批字段、候选 operation
+completion artifact、重复 start、partial failure、跨 attempt 可复用的 immutable
+完成记录和篡改 fail-closed。Fake Worker 输出会被 Adapter 写成真实内容 hash 的
+stage artifact；Fake 结果保持 L1，未接入真实 worker，也没有改变 Agent01、公共
+Orchestrator schema/checkpoint 或冻结 Agent02 v1 fixture。`reconcile()` 返回
+`UNSUPPORTED_OPERATION`；`cancel()` 保留协议兼容并明确说明同步 v1 没有可取消的
+external job。测试 registry 通过显式注入使用，`default_capabilities()[ML]` 仍为
+`registered=false`。
+
+已验证：第 8.2 Adapter 定向测试 `6 passed`，原有 Agent02 契约/加固测试 `37 passed`，
+相关 Orchestrator P0.2/P0.1 与 CLI 测试 `35 passed`，新增 runtime Fake E2E 与
+L2-target fail-closed 整图 fixture `2 passed`。冻结的 Agent02 v1 fixture 未修改，
+fixture/hash contract tests 通过。显式 `run-stage ml` 的 CLI 入口仍未接入测试
+registry，因此本工作树用 runtime API 的显式 registry E2E 覆盖同一 P0.2 图路径；生产
+CLI 仍按要求报告 ML capability unavailable。L2-target 整图测试验证 Fake 不能解除
+后续证据 Gate；当前 Orchestrator 的整图路由也不会凭空补造 Agent01→Agent02 manifest。
+在不修改通用控制流的限制下，不应把 Fake 结果宣称为 L2 或宣称生产 ML 已可用。
 
 ### 8.3 Step 3：独立 Worker 和真实 CPU Gate
 
