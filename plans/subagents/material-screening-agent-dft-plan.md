@@ -56,7 +56,8 @@ Task 4 开发前冻结的范围与验收：
 - [x] 完整离线 Gate：`258 passed, 2 skipped`；跳过项为需要显式 `--run-live-mp` 和密钥/网络的两个 live MP 测试。
 - [x] `.venv/bin/python -m pip check`：通过；`git diff --check`：通过。
 - [x] Task 4：实现 `DFTStageRunner` 并通过显式 mock registry 接入既有 `PreparedStagePlan`、审批、operation/external-job ledger、WaitingExternal、resume、Artifact/hash 校验和报告路径；默认生产 capability 仍未注册。
-- [ ] Task 5–6：尚未实现；没有生产 capability 注册、真实 backend、报告或 CLI 接入。
+- [x] Task 5：补齐 Agent03 错误分类/状态映射与确定性 mock 报告；覆盖输入阻塞、配置错误、瞬时外部错误、backend 不一致、无效响应、不适用、mock failure/timeout/cancel、审批拒绝和恢复时 Artifact/hash 篡改。报告明确冻结输入/plan、backend/job 生命周期、Artifact/provenance、claim 状态、失败 remediation 和 mock 证据上限。
+- [ ] Task 6：尚未实现；不注册生产 capability，不接入真实 backend、VASP、VASPilot、Slurm、POTCAR 或 CLI。
 
 Task 4 实际完成与验证（2026-07-27）：
 
@@ -66,7 +67,16 @@ Task 4 实际完成与验证（2026-07-27）：
 - [x] 缺输入、审批拒绝、artifact/native plan 篡改、成功/失败/超时/取消和跨进程恢复测试通过；mock result 只含生命周期消息，claim 保持 `NOT_EVALUATED_MOCK`，无 band gap/总能/磁矩和 L3 evidence。
 - [x] 定向 Agent03/Orchestrator/E2E 通过：`19 passed`；完整离线 Gate：`269 passed, 2 skipped`；`.venv/bin/python -m pip check` 通过；`git diff --check` 通过。
 
-Task 4 限制与跨 agent 影响：仅支持显式注册的单候选 mock lifecycle；真实 functional/U/J/磁序/SOC/k-point/收敛 policy、VASP/POTCAR/Slurm 和真实 backend 仍阻塞，Task 5 的完整错误/报告增强尚未实现。未修改 Orchestrator 公共控制契约、checkpoint 语义、业务 schema、Agent01/02 权威输入或默认生产 capability registry；Agent04 只能消费明确标记为 mock/未评估的结果。
+Task 4 限制与跨 agent 影响：仅支持显式注册的单候选 mock lifecycle；真实 functional/U/J/磁序/SOC/k-point/收敛 policy、VASP/POTCAR/Slurm 和真实 backend 仍阻塞。Task 5 在同一边界内补齐错误与报告，不扩大科学能力。未修改 Orchestrator 公共控制契约、checkpoint 语义、业务 schema、Agent01/02 权威输入或默认生产 capability registry；Agent04 只能消费明确标记为 mock/未评估的结果。
+
+Task 5 实际完成与验证（2026-07-27）：
+
+- [x] `DFTStageRunner` 将错误映射为结构化 `reason_code`、既有 Stage 状态、retryable 标志、用户可读 remediation 和 Agent03 报告引用；错误包含 `MISSING_INPUT`、`PERMANENT_CONFIGURATION`、`TRANSIENT_EXTERNAL`、`BACKEND_INCONSISTENT`、`INVALID_RESPONSE`、`NOT_APPLICABLE`、`MOCK_BACKEND_FAILED`、`MOCK_TIMEOUT`、`MOCK_CANCELLED` 与 `APPROVAL_DECLINED` 语义。
+- [x] 新增确定性 `src/material_agent/dft/reporting.py`；mock success、failure、timeout、cancel、错误和部分/取消控制面报告均明确写出仅验证工程控制链、未运行真实 DFT/VASP、没有科学数值、claim 为 `NOT_EVALUATED_MOCK` 且不得提升到 `L3_DFT_VALIDATED`。
+- [x] 终端结果恢复额外校验已登记 result Artifact 的 URI/SHA-256；篡改 fail closed 为 `BACKEND_INCONSISTENT`。审批拒绝继续由既有 Orchestrator 生成 `CANCELLED` stage 与保留上游的部分/取消 run 报告。
+- [x] 定向 Agent03 unit/contract/integration/E2E：`16 passed`；完整离线 Gate、`pip check` 与 `git diff --check` 待本任务完成前执行。
+
+Task 5 限制与跨 agent 影响：未修改 `orchestrator-p0.2-v3`、checkpoint、业务数据库 schema、Agent01/02 契约或生产 capability registry；`ControlError` 没有 remediation 字段，因此 remediation 保存在 Agent03 `summary` 和报告中。真实 DFT 错误、真实响应解析、真实 scheduler 状态及科学 claim 验证仍属于 Task 6/后续真实 backend Gate；不适用在 mock 控制链中保留为部分结果和证据缺口，不产生科学结论。
 
 完成每个 v1/P2 任务后，只更新本计划的完成证据、测试、限制、方法/后端版本和待专家确认项；公共 claim/Artifact 契约变更须同步 Orchestrator、下游 Agent04 计划及相应 contract/integration/E2E 设计，不得修改外部后端状态真源。
 

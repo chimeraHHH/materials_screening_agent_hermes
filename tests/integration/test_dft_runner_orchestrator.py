@@ -106,6 +106,10 @@ def test_dft_approval_rejects_without_submit(tmp_path, requirement, fixture_payl
         )
         assert rejected.stage_statuses["agent03"] == "CANCELLED"
         assert not (tmp_path / project_id / "stages/agent03/operations").exists()
+        report = runtime.read_report("run-dft-reject")
+        assert "USER_REJECTED_STAGE" in report
+        assert "PARTIAL" in report or "CANCELLED" in report
+        assert "upstream" not in report.lower() or "agent01" in report
 
 
 @pytest.mark.parametrize(
