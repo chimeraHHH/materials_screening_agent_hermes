@@ -2259,6 +2259,22 @@ material-agent report \
 - 两个合法 fixture；
 - 一组非法 fixture。
 
+**实际状态（2026-07-28）：已完成。** 新增 `material_agent.many_body` 的 Agent04
+原生 Pydantic v2 领域模型、canonical JSON/hash 工具和
+`tests/fixtures/contracts/agent04-v1/` 的 1D/2×2 Hubbard 结构化 fixture 及非法
+fixture。契约测试覆盖 schema 校验、严格数值/单位/ID/URI、JSON round-trip、稳定
+canonical hash、manifest hash 和 mock/fixture evidence ceiling；没有生成 solver
+结果、observable、运行产物或 L4 证据。模型只记录独立的 model definition、solver
+validation、material linkage 和 evidence scope/level 状态。
+
+测试证据：
+`PYTHONDONTWRITEBYTECODE=1 MPLCONFIGDIR=/tmp/material-agent-mpl .venv/bin/python -m pytest -q -p no:cacheprovider tests/contract/test_agent04_domain_schema.py`
+（12 passed）。本任务没有修改 Agent01/02/03、Orchestrator 公共契约、数据库或依赖。
+限制：artifact 内容读取、实际 hash 对账、capability routing 和缺失输入 reason
+code 属于任务 2 及后续任务，尚未实现。
+
+下一步：任务 2“最小输入验证”。
+
 #### 任务 2：最小输入验证，约 1.5 小时
 
 - artifact/hash；

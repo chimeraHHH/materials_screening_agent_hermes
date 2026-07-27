@@ -1,0 +1,10 @@
+{
+  "contract_version": "agent04-many-body-domain-v1",
+  "is_mock": true,
+  "files": [
+    {"path": "README.md", "sha256": "cdab8ec61bddb4ee0a91ce49161c37a1dc21bae389acb1752d9635f314ad29f9"},
+    {"path": "one-dimensional-hubbard.json", "sha256": "f8f6def3812da6277364ac1926bc7c705a5ea874481fe9f53a987d24159c03db"},
+    {"path": "two-dimensional-2x2-hubbard.json", "sha256": "526f21fc34d8f512072c81baa7430812cce7088bb84d5ad6acd0b527d9757206"},
+    {"path": "invalid-missing-provenance.json", "sha256": "69cc8f8e56308d975093a3b396d8c825c0bdabe67ec050b223f1d6231ce0e34d"}
+  ]
+}
