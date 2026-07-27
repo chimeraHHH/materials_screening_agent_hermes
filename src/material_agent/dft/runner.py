@@ -36,6 +36,21 @@ from .models import (
     canonical_hash,
 )
 from .planner import DFTPlanner, StageInputValidator, build_approval_payload
+from .reporting import render_mock_report
+
+
+_REMEDIATION = {
+    "MISSING_INPUT": ["补齐不可变 Requirement、candidate manifest、structure URI 与 SHA-256 后重新创建阶段运行。"],
+    "PERMANENT_CONFIGURATION": ["修正 capability、backend、execution mode 或冻结 policy；变更后生成新 plan 并重新审批。"],
+    "TRANSIENT_EXTERNAL": ["稍后通过 resume/reconcile 重试同一 operation；不要修改已批准的输入或 plan。"],
+    "BACKEND_INCONSISTENT": ["停止恢复，保留现有 Artifact；检查 operation、external job、plan 和 SHA-256，并创建新 attempt。"],
+    "INVALID_RESPONSE": ["保留原始响应并检查 backend envelope/schema；修复 backend 后以新 attempt 重跑。"],
+    "NOT_APPLICABLE": ["保留证据缺口；提供适用的已批准方法或将该 claim 标记为不适用。"],
+    "MOCK_BACKEND_FAILED": ["这是 mock failure 注入；修复测试 scenario 或以新 operation 重试，不能解释为科学失败。"],
+    "MOCK_TIMEOUT": ["这是 mock timeout 注入；按 retryable 语义恢复同一控制链，不能修改科学参数。"],
+    "MOCK_CANCELLED": ["该 mock job 已取消；如需继续，创建新的 attempt 并重新取得审批。"],
+    "APPROVAL_DECLINED": ["阶段已取消；上游结果保留。如需执行，提交新的冻结 plan 并重新审批。"],
+}
 
 
 class DFTStageRunner:
@@ -99,12 +114,13 @@ class DFTStageRunner:
                 )
             return StageInputValidation(valid=True)
         except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            code = self._classify_exception(exc)[0]
             return StageInputValidation(
                 valid=False,
                 errors=[str(exc)],
-                error_code="INPUT_INTEGRITY_ERROR",
-                failure_status=StageStatus.PERMANENT_FAILED,
-                remediation=["repair the immutable requirement, manifest, or structure references"],
+                error_code=code,
+                failure_status=(StageStatus.BLOCKED_MISSING_INPUT if code == "MISSING_INPUT" else StageStatus.PERMANENT_FAILED),
+                remediation=self._remediation(code),
             )
 
     def prepare(self, context: StageExecutionContext) -> PreparedStagePlan:
@@ -179,6 +195,9 @@ class DFTStageRunner:
         try:
             self._validate_prepared(context, prepared_plan)
             native = self._load_native(prepared_plan)
+            blockers = native.get("workflow_plan", {}).get("blockers", [])
+            if blockers:
+                raise ValueError("NOT_APPLICABLE: " + "; ".join(blockers))
             operation_uri = self._operation_uri(context, idempotency_key)
             terminal_uri = self._terminal_operation_uri(context, idempotency_key)
             if self.store.exists(terminal_uri):
@@ -205,7 +224,7 @@ class DFTStageRunner:
             self.store.write_json(operation_uri, operation, immutable=True)
             return self._waiting(context, idempotency_key, ref, 0, JobStatus.CREATED)
         except Exception as exc:
-            return self._failed(context, idempotency_key, "start", exc)
+            return self._failed(context, idempotency_key, "start", exc, prepared=prepared_plan)
 
     def reconcile(
         self,
@@ -243,7 +262,9 @@ class DFTStageRunner:
             if observed not in {JobStatus.SUCCEEDED, JobStatus.FAILED, JobStatus.TIMEOUT, JobStatus.CANCELLED}:
                 return self._waiting(context, idempotency_key, ref, sequence, observed, snapshot_ref.uri)
             result = self.backend.fetch_result(ref)
-            result = DFTResultEnvelope.model_validate(result.model_dump(mode="json"))
+            result = DFTResultEnvelope.model_validate(
+                result.model_dump(mode="json") if hasattr(result, "model_dump") else result
+            )
             if result.workflow_plan_hash != request.workflow_plan_hash or result.external_job_ref != ref:
                 raise ValueError("DFT result envelope does not match frozen request")
             result_ref = self.store.write_json(
@@ -255,10 +276,9 @@ class DFTStageRunner:
             terminal_ref = self.store.write_json(
                 self._terminal_operation_uri(context, idempotency_key), final_operation, immutable=True
             )
-            return self._terminal_outcome(context, idempotency_key, ref, observed, sequence, result_ref, idempotency_key)
+            return self._terminal_outcome(context, idempotency_key, ref, observed, sequence, result_ref, idempotency_key, prepared_plan, result)
         except Exception as exc:
-            category = "BACKEND_INCONSISTENT" if any(token in str(exc).lower() for token in ("hash", "integrity", "conflict", "missing", "match")) else "DFT_RECONCILE_FAILED"
-            return self._failed(context, idempotency_key, "reconcile", exc, category=category)
+            return self._failed(context, idempotency_key, "reconcile", exc, prepared=prepared_plan)
 
     def cancel(self, external_job_ref: str, idempotency_key: str) -> CancelOutcome:
         ref = self._find_ref(external_job_ref, idempotency_key)
@@ -388,8 +408,13 @@ class DFTStageRunner:
         ref = ExternalJobRef.model_validate(operation["external_job_ref"])
         status = JobStatus(operation["status"])
         if operation.get("result"):
-            result_ref = ArtifactPointer.model_validate(operation["result"])
-            return self._terminal_outcome(context, operation["idempotency_key"], ref, status, int(operation.get("status_sequence", 0)), result_ref, operation["result"]["uri"])
+            result_ref = ArtifactPointer(
+                uri=operation["result"]["uri"], sha256=operation["result"]["sha256"]
+            )
+            if not self.store.exists_with_hash(result_ref.uri, result_ref.sha256):
+                raise ValueError("result artifact failed integrity check")
+            result = DFTResultEnvelope.model_validate(self.store.read_json(result_ref.uri))
+            return self._terminal_outcome(context, operation["idempotency_key"], ref, status, int(operation.get("status_sequence", 0)), result_ref, operation["result"]["uri"], prepared, result)
         status, sequence = self._latest_status(context, operation["idempotency_key"], operation)
         return self._waiting(context, operation["idempotency_key"], ref, sequence, status)
 
@@ -406,13 +431,67 @@ class DFTStageRunner:
     def _waiting(self, context, key, ref, sequence, status, snapshot_uri=None):
         return ControlStageOutcome(stage=context.stage, agent_id=context.agent_id, outcome=ControlOutcomeType.WAITING_EXTERNAL, status=StageStatus.RUNNING, idempotency_key=key, operation_ref=key, external_job_ref=ref.external_job_ref_id, external_status=self._external_status(status.value), external_status_sequence=sequence, summary={"is_mock": True, "status_snapshot_uri": snapshot_uri, "message": "Mock lifecycle only; no DFT calculation was executed."})
 
-    def _terminal_outcome(self, context, key, ref, status, sequence, result_ref, operation_ref):
+    def _terminal_outcome(self, context, key, ref, status, sequence, result_ref, operation_ref, prepared, result):
         mapped = {JobStatus.SUCCEEDED: StageStatus.SUCCEEDED, JobStatus.FAILED: StageStatus.PERMANENT_FAILED, JobStatus.TIMEOUT: StageStatus.RETRYABLE_FAILED, JobStatus.CANCELLED: StageStatus.CANCELLED}[status]
         outcome_type = ControlOutcomeType.COMPLETED if mapped in {StageStatus.SUCCEEDED, StageStatus.CANCELLED} else ControlOutcomeType.FAILED
-        return ControlStageOutcome(stage=context.stage, agent_id=context.agent_id, outcome=outcome_type, status=mapped, idempotency_key=key, native_result_uri=result_ref.uri, native_result_sha256=result_ref.sha256, operation_ref=operation_ref, external_job_ref=ref.external_job_ref_id, external_status=self._external_status(status.value), external_status_sequence=sequence, summary={"is_mock": True, "claim_status": "NOT_EVALUATED_MOCK", "message": "Mock lifecycle only; no DFT calculation was executed."})
+        reason = {JobStatus.SUCCEEDED: "NONE", JobStatus.FAILED: "MOCK_BACKEND_FAILED", JobStatus.TIMEOUT: "MOCK_TIMEOUT", JobStatus.CANCELLED: "MOCK_CANCELLED"}[status]
+        report = self._write_report(context, prepared, result=result, result_ref=result_ref, ref=ref, status=mapped, reason_code=reason, remediation=self._remediation(reason), public_message=(None if status is JobStatus.SUCCEEDED else f"Mock lifecycle ended with {status.value}; no DFT calculation was executed."))
+        return ControlStageOutcome(stage=context.stage, agent_id=context.agent_id, outcome=outcome_type, status=mapped, idempotency_key=key, native_result_uri=result_ref.uri, native_result_sha256=result_ref.sha256, operation_ref=operation_ref, external_job_ref=ref.external_job_ref_id, external_status=self._external_status(status.value), external_status_sequence=sequence, summary=self._summary(ref, result, reason, report, prepared, remediation=self._remediation(reason)))
 
-    def _failed(self, context, key, operation, exc, *, category="DFT_EXECUTION_FAILED"):
-        return ControlStageOutcome(stage=context.stage, agent_id=context.agent_id, outcome=ControlOutcomeType.FAILED, status=StageStatus.PERMANENT_FAILED, idempotency_key=key, errors=[ControlError(category=category, operation=operation, public_message=str(exc))])
+    def _failed(self, context, key, operation, exc, *, prepared=None):
+        category, status, retryable = self._classify_exception(exc)
+        report = self._write_report(context, prepared, status=status, reason_code=category, remediation=self._remediation(category), public_message=str(exc))
+        return ControlStageOutcome(stage=context.stage, agent_id=context.agent_id, outcome=ControlOutcomeType.BLOCKED if status is StageStatus.BLOCKED_MISSING_INPUT else ControlOutcomeType.FAILED, status=status, idempotency_key=key, operation_ref=key, summary={"is_mock": True, "reason_code": category, "remediation": self._remediation(category), "report_uri": report.uri, "report_sha256": report.sha256, "message": str(exc)}, errors=[ControlError(category=category, retryable=retryable, operation=operation, public_message=str(exc))])
+
+    @staticmethod
+    def _remediation(category: str) -> list[str]:
+        return list(_REMEDIATION.get(category, ["检查结构化错误、保留 Artifact，并按报告建议创建新 attempt。"]))
+
+    @staticmethod
+    def _classify_exception(exc: Exception) -> tuple[str, StageStatus, bool]:
+        text = str(exc).lower()
+        if isinstance(exc, (TimeoutError, ConnectionError)) or any(token in text for token in ("timeout", "temporarily", "429", "503", "unavailable")):
+            return "TRANSIENT_EXTERNAL", StageStatus.RETRYABLE_FAILED, True
+        if any(token in text for token in ("missing input", "missing required", "structure artifact", "requirement artifact", "candidate manifest")):
+            return "MISSING_INPUT", StageStatus.BLOCKED_MISSING_INPUT, False
+        if any(token in text for token in ("invalid", "json", "envelope", "validation error", "schema")):
+            return "INVALID_RESPONSE", StageStatus.PERMANENT_FAILED, False
+        if any(token in text for token in ("hash", "integrity", "conflict", "external job reference", "does not match", "reference")):
+            return "BACKEND_INCONSISTENT", StageStatus.PERMANENT_FAILED, False
+        if "not applicable" in text:
+            return "NOT_APPLICABLE", StageStatus.PARTIAL, False
+        if "configuration" in text or "not implemented" in text or "requires mock" in text or "requires" in text:
+            return "PERMANENT_CONFIGURATION", StageStatus.PERMANENT_FAILED, False
+        if "timeout" in text:
+            return "MOCK_TIMEOUT", StageStatus.RETRYABLE_FAILED, True
+        if "cancel" in text:
+            return "MOCK_CANCELLED", StageStatus.CANCELLED, False
+        return "MOCK_BACKEND_FAILED", StageStatus.PERMANENT_FAILED, False
+
+    def _summary(self, ref, result, reason, report, prepared, *, remediation):
+        return {"is_mock": True, "claim_status": "NOT_EVALUATED_MOCK", "reason_code": reason, "remediation": remediation, "report_uri": report.uri, "report_sha256": report.sha256, "backend_id": ref.backend_id, "backend_version": ref.backend_version, "external_job_ref": ref.external_job_ref_id, "workflow_plan_hash": result.workflow_plan_hash, "message": "Mock lifecycle only; no DFT calculation was executed."}
+
+    def _write_report(self, context, prepared, *, result=None, result_ref=None, ref=None, status=None, reason_code, remediation, public_message=None):
+        if prepared is None:
+            refs = {}
+        else:
+            refs = {"input_snapshot_uri": prepared.input_snapshot_uri, "input_snapshot_sha256": prepared.input_snapshot_sha256, "native_plan_uri": prepared.native_plan_uri, "native_plan_sha256": prepared.native_plan_sha256}
+        claims = [claim.model_dump(mode="json") for claim in (result.claim_results if result else ())]
+        if prepared is not None:
+            try:
+                native = self.store.read_json(prepared.native_plan_uri)
+                workflow = native.get("workflow_plan", {})
+                refs["workflow_plan_hash"] = workflow.get("plan_hash")
+                refs["approved_input_artifacts"] = native.get("request_payload", {}).get("candidates", [])
+            except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+                refs["approved_input_artifacts"] = []
+        if result_ref is not None:
+            refs["result_uri"] = result_ref.uri
+            refs["result_sha256"] = result_ref.sha256
+        payload = {"project_id": context.project_id, "run_id": context.run_id, "stage_status": status.value if isinstance(status, StageStatus) else (status or "NOT_STARTED"), "reason_code": reason_code, "public_message": public_message, "remediation": remediation, "backend": {"id": ref.backend_id if ref else self.backend.backend_id, "version": ref.backend_version if ref else self.backend.backend_version}, "external_job": {"id": ref.external_job_ref_id if ref else "not-submitted", "status": result.terminal_status.value if result else "NOT_SUBMITTED"}, "references": refs, "claims": claims, "next_step": "保持 mock 结果为非证据状态；真实 DFT 需要单独的生产 capability、方法 policy、审批和后端 Gate。"}
+        text = render_mock_report(payload)
+        suffix = "success" if reason_code == "NONE" else reason_code.lower()
+        return self.store.write_text(f"reports/{context.run_id}/agent03-attempt-{context.attempt}-{suffix}.md", text, "text/markdown", immutable=True)
 
     def _find_ref(self, external_job_ref: str, key: str) -> ExternalJobRef:
         # cancel is called through the durable operation artifact, not memory.

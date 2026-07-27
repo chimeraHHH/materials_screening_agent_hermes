@@ -128,7 +128,18 @@ def test_dft_runner_maps_failure_and_timeout_without_scientific_claims(tmp_path)
         runner.reconcile(context, prepared, waiting.external_job_ref or "", waiting.idempotency_key)
         terminal = runner.reconcile(context, prepared, waiting.external_job_ref or "", waiting.idempotency_key)
         assert terminal.status.value == expected
-        assert terminal.summary == {"is_mock": True, "claim_status": "NOT_EVALUATED_MOCK", "message": "Mock lifecycle only; no DFT calculation was executed."}
+        assert terminal.summary["is_mock"] is True
+        assert terminal.summary["claim_status"] == "NOT_EVALUATED_MOCK"
+        assert terminal.summary["reason_code"] in {"MOCK_BACKEND_FAILED", "MOCK_TIMEOUT"}
+        assert "agent03-attempt-1-" in terminal.summary["report_uri"]
+        report = store.read_bytes(terminal.summary["report_uri"]).decode()
+        assert "mock-dft" in report
+        assert "External job" in report
+        assert "Approved inputs and plan" in report
+        assert "Artifact and provenance references" in report
+        assert "NOT_EVALUATED_MOCK" in report
+        assert "未运行真实 DFT/VASP" in report
+        assert "不得提升任何候选到 L3_DFT_VALIDATED" in report
 
 
 def test_dft_runner_cancel_is_terminal_and_idempotent(tmp_path):
@@ -139,3 +150,46 @@ def test_dft_runner_cancel_is_terminal_and_idempotent(tmp_path):
     assert cancelled.status.value == "CANCELLED"
     again = runner.cancel(waiting.external_job_ref or "", waiting.idempotency_key)
     assert again.status.value == "CANCELLED"
+
+
+def test_dft_runner_reports_missing_input_with_reason_and_remediation(tmp_path):
+    _store, runner, context = _setup(tmp_path)
+    invalid = context.model_copy(update={"input_artifacts": {}})
+    validation = runner.validate_input(invalid)
+    assert validation.error_code == "MISSING_INPUT"
+    assert validation.failure_status.value == "BLOCKED_MISSING_INPUT"
+    assert validation.remediation
+
+
+def test_dft_runner_detects_terminal_result_tampering(tmp_path):
+    store, runner, context = _setup(tmp_path)
+    prepared = runner.prepare(context)
+    waiting = runner.start(context, prepared, "operation-result-tamper")
+    for _ in range(3):
+        terminal = runner.reconcile(context, prepared, waiting.external_job_ref or "", waiting.idempotency_key)
+    result_path = store.root / terminal.native_result_uri.removeprefix("artifact://")
+    result_path.write_text("{\"tampered\":true}", encoding="utf-8")
+    failed = runner.start(context, prepared, waiting.idempotency_key)
+    assert failed.status.value == "PERMANENT_FAILED"
+    assert failed.errors[0].category == "BACKEND_INCONSISTENT"
+    assert "result artifact failed integrity" in failed.errors[0].public_message
+
+
+def test_dft_runner_maps_transient_external_and_invalid_response(tmp_path):
+    _store, runner, context = _setup(tmp_path / "transient")
+    prepared = runner.prepare(context)
+    waiting = runner.start(context, prepared, "operation-transient")
+    runner.backend.status = lambda _ref: (_ for _ in ()).throw(TimeoutError("external timeout"))
+    transient = runner.reconcile(context, prepared, waiting.external_job_ref or "", waiting.idempotency_key)
+    assert transient.status.value == "RETRYABLE_FAILED"
+    assert transient.errors[0].category == "TRANSIENT_EXTERNAL"
+    assert transient.errors[0].retryable is True
+
+    _store2, runner2, context2 = _setup(tmp_path / "invalid")
+    prepared2 = runner2.prepare(context2)
+    waiting2 = runner2.start(context2, prepared2, "operation-invalid")
+    runner2.backend.fetch_result = lambda _ref: {"not_a_result": True}
+    for _ in range(2):
+        runner2.reconcile(context2, prepared2, waiting2.external_job_ref or "", waiting2.idempotency_key)
+    invalid = runner2.reconcile(context2, prepared2, waiting2.external_job_ref or "", waiting2.idempotency_key)
+    assert invalid.errors[0].category == "INVALID_RESPONSE"
