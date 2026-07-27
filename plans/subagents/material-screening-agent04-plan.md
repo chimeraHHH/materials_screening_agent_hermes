@@ -2324,6 +2324,27 @@ backend、solver 或任何 observable；未产生 L4 或科学数值。artifact 
 - fixture/mock evidence ceiling；
 - L4 防误晋级。
 
+**实际状态（2026-07-28）：已完成任务 3范围。** 新增不可变、版本化的内置
+`many-body-capability-registry/v1`，注册可执行但仅用于控制链的
+`mock-many-body/v1`，以及可匹配但未注册、不可执行的
+`exact-diagonalization/v1-planned`。registry 以 canonical JSON 和 SHA-256 snapshot
+固定 capability 内容，不能由用户偏好或 LLM 改写。
+
+新增纯函数 routing：基于任务 2 的 `ModelFeatures` 对 model family、geometry/dimension、
+hopping、SOC、interaction、ensemble/temperature、boundary、claim 和资源上限逐字段匹配，
+输出科学匹配、可执行科学 solver、control-flow simulator、推荐项、状态、审批要求、reason
+code、field path、限制、remediation 和 registry snapshot hash。mock 只可作为显式控制链
+route；planned ED 只展示物理匹配，不表示 ED 已运行，也不会静默 fallback 或自动换 solver。
+
+新增 evidence ceiling guard：fixture/mock 最高保持低级检索/控制链证据，planned ED、缺失或
+不完整 material linkage、未完成真实数值验证均拒绝直接声明
+`L4_MANY_BODY_VALIDATED`。本任务未生成 backend、observable、科学数值或 L4 证据。
+
+测试证据：Agent04 定向测试 `27 passed`；完整离线 Gate `306 passed, 2 skipped`（仅两个
+显式 live Materials Project Gate）；`.venv/bin/python -m pip check` 通过；`git diff --check`
+通过。未运行 live MP，因未获用户批准且本任务不需要网络或 secret。下一步：任务 4“Mock
+backend”。
+
 #### 任务 4：Mock backend，约 1 小时
 
 - submit/status/cancel/fetch；

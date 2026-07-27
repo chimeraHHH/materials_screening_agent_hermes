@@ -385,13 +385,34 @@ class SolverCapability(StrictModel):
     backend_version: str = Field(min_length=1)
     is_mock: bool
     lifecycle: Literal["PLANNED", "AVAILABLE"]
+    registered: bool = False
+    executable: bool = False
     supported_model_families: tuple[ModelFamily, ...] = Field(min_length=1)
     supported_geometry_types: tuple[GeometryType, ...] = Field(min_length=1)
+    supported_dimensions: tuple[int, ...] = ()
+    supports_real_hopping: bool = False
+    supports_complex_hopping: bool = False
+    supports_soc: bool = False
     supported_interaction_kinds: tuple[InteractionKind, ...] = ()
     supported_ensembles: tuple[Literal["CANONICAL", "GRAND_CANONICAL"], ...] = ()
+    supported_temperatures: tuple[Literal["ZERO_T", "FINITE_T"], ...] = ()
+    supported_boundaries: tuple[BoundaryCondition, ...] = ()
     supported_observables: tuple[str, ...] = ()
+    max_sites: int | None = Field(default=None, ge=1)
+    max_active_orbitals: int | None = Field(default=None, ge=1)
+    evidence_ceiling: EvidenceLevel = EvidenceLevel.L1_RETRIEVED
     limitations: tuple[str, ...] = ()
     registry_snapshot: ArtifactRef
+
+    @model_validator(mode="after")
+    def capability_guard(self) -> SolverCapability:
+        if self.lifecycle == "PLANNED" and (self.registered or self.executable):
+            raise ValueError("planned capability cannot be registered or executable")
+        if self.executable and not self.registered:
+            raise ValueError("executable capability must be registered")
+        if self.is_mock and self.evidence_ceiling in (EvidenceLevel.L4_MANY_BODY_VALIDATED, EvidenceLevel.L5_EXPERT_REVIEWED):
+            raise ValueError("mock capability cannot have an L4/L5 evidence ceiling")
+        return self
 
 
 class SolverRoutingDecision(StrictModel):
@@ -402,8 +423,18 @@ class SolverRoutingDecision(StrictModel):
     applicable_solver_ids: tuple[str, ...] = ()
     inapplicable_solver_ids: tuple[str, ...] = ()
     recommended_solver_id: str | None = None
+    status: Literal["READY", "NOT_APPLICABLE", "BLOCKED"] = "BLOCKED"
+    executable: bool = False
+    requires_approval: bool = False
+    scientific_capability_matches: tuple[str, ...] = ()
+    available_scientific_solvers: tuple[str, ...] = ()
+    control_flow_simulators: tuple[str, ...] = ()
+    capability_matches: dict[str, dict[str, Any]] = Field(default_factory=dict)
     reason_codes: tuple[str, ...] = ()
+    field_paths: tuple[str, ...] = ()
     missing_input: tuple[str, ...] = ()
+    limitations: tuple[str, ...] = ()
+    remediation: tuple[str, ...] = ()
     policy_version: str = Field(min_length=1)
     registry_snapshot: ArtifactRef
 
@@ -413,6 +444,10 @@ class SolverRoutingDecision(StrictModel):
         _unique(self.inapplicable_solver_ids, "inapplicable solver IDs")
         if self.recommended_solver_id is not None and self.recommended_solver_id not in self.applicable_solver_ids:
             raise ValueError("recommended solver must be applicable")
+        if self.status == "READY" and self.recommended_solver_id is None:
+            raise ValueError("READY routing requires a recommended solver")
+        if self.executable and not (self.available_scientific_solvers or self.control_flow_simulators):
+            raise ValueError("executable routing requires an available solver or control simulator")
         return self
 
 
@@ -451,6 +486,8 @@ class ManyBodyResultEnvelope(StrictModel):
         if self.evidence_scope is EvidenceScope.MATERIAL_CANDIDATE and self.material_linkage_status is not MaterialLinkageStatus.EXPERT_APPROVED:
             raise ValueError("material scope requires expert-approved linkage")
         if self.evidence_level is EvidenceLevel.L4_MANY_BODY_VALIDATED:
+            if self.backend_id == "exact-diagonalization" and "planned" in self.backend_version.lower():
+                raise ValueError("planned ED capability cannot claim L4_MANY_BODY_VALIDATED")
             if self.is_mock or self.fixture or self.model_definition_status is not ModelDefinitionStatus.VALIDATED_MODEL or self.solver_validation_status not in (SolverValidationStatus.NUMERICALLY_VALIDATED, SolverValidationStatus.BENCHMARK_VALIDATED) or self.material_linkage_status is not MaterialLinkageStatus.EXPERT_APPROVED:
                 raise ValueError("L4 requires real, validated model/solver and expert-approved linkage")
         return self

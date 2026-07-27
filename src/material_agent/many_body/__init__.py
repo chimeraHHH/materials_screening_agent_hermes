@@ -6,3 +6,6 @@ many-body controller.
 """
 
 from .models import *
+from .evidence import *
+from .registry import *
+from .routing import *
