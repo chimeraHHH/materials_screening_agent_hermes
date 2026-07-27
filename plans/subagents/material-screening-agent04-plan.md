@@ -2293,6 +2293,28 @@ code 属于任务 2 及后续任务，尚未实现。
 - 缺 \(U\)/sector/boundary 的 fixture 为 `BLOCKED_MISSING_INPUT`；
 - SOC/finite-T 等为 `NOT_APPLICABLE`。
 
+**实际状态（2026-07-28）：已完成任务 2范围。** 新增纯验证模块
+`material_agent.many_body.validation`，只读校验 schema/必填字段、canonical
+package hash、artifact URI 与实际 SHA-256、revision/model identity（可选期望值）、
+provenance 引用、geometry/basis/hopping/onsite-U/sector、零温 canonical 和边界条件，
+并提取后续 capability routing 所需的确定性模型特征。验证器拒绝绝对路径、路径穿越、
+symlink、pickle/npz/可执行或任意表达式输入；验证失败不创建审批、operation、backend
+job 或其他控制面对象。任务 1 的两个 Agent04 fixture 的 package hash 已按既有
+`package_content_hash` 规则改为真实 canonical hash，并同步 fixture manifest 文件哈希。
+
+测试证据：
+`PYTHONDONTWRITEBYTECODE=1 MPLCONFIGDIR=/tmp/material-agent-mpl .venv/bin/python -m pytest -q -p no:cacheprovider tests/unit/test_many_body_validation.py tests/contract/test_agent04_domain_schema.py`
+（18 passed）。验证覆盖 1D/2×2 Hubbard、缺 U/sector/boundary、非法 index、非
+Hermitian hopping、非有限数值/单位、artifact hash mismatch、SOC/finite-T/多轨道/
+非局域相互作用、稳定重复结果和无控制面副作用。
+
+限制：本任务只返回 `READY`、`BLOCKED_MISSING_INPUT`、`PERMANENT_FAILED` 或
+`NOT_APPLICABLE` 及特征，不实现 registry/routing、资源估算、审批、StageRunner、
+backend、solver 或任何 observable；未产生 L4 或科学数值。artifact 内容校验需要调用方
+提供受信任 artifact root；没有 root 时不能声称已验证外部 artifact 内容。
+
+下一步：任务 3“Registry、routing 与 evidence ceiling”。
+
 #### 任务 3：Registry、routing 与 evidence ceiling，约 1 小时
 
 - 注册 mock；

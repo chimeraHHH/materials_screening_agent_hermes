@@ -50,5 +50,5 @@
   "material_linkage": null,
   "provenance": [{"provenance_id": "prov_fixture", "source_type": "FIXTURE", "source_uri": "artifact://fixtures/agent04/provenance.json", "source_artifact": null, "method": "structured fixture declaration", "software_version": null, "notes": "abstract model only"}],
   "artifacts": [],
-  "package_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  "package_hash": "cdab2fb5d16298d07734dea475533c6bc5f463bfb2f7757c2e377f91c90df98c"
 }
