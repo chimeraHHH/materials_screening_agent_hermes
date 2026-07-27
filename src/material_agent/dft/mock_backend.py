@@ -63,6 +63,34 @@ class MockDFTBackend:
         self._jobs[idempotency_key] = _Job(request, ref, self.scenario)
         return ref
 
+    def restore_job(
+        self,
+        request: DFTRequest,
+        ref: ExternalJobRef,
+        *,
+        polls: int,
+        status: JobStatus,
+    ) -> None:
+        """Rehydrate the deterministic mock from durable controller artifacts.
+
+        This is deliberately not a second ledger: the runner owns the durable
+        operation/status artifacts, while the backend only rebuilds its
+        in-memory execution view after a new process starts.
+        """
+        self.validate_input(request)
+        if ref.idempotency_key not in self._jobs:
+            self._jobs[ref.idempotency_key] = _Job(
+                request=request,
+                ref=ref,
+                scenario=self.scenario,
+                polls=polls,
+                status=status,
+            )
+        else:
+            existing = self._jobs[ref.idempotency_key]
+            if existing.ref != ref or existing.request.workflow_plan_hash != request.workflow_plan_hash:
+                raise ValueError("mock job restore conflicts with the frozen request")
+
     def status(self, job: ExternalJobRef) -> JobStatus:
         record = self._find(job)
         record.polls += 1

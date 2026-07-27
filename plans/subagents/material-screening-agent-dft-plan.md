@@ -34,9 +34,16 @@
 
 跨 agent 依赖：输入依赖 Agent01/02 的结构与 provenance；控制面依赖 Orchestrator 的阶段计划、审批和外部任务契约；Agent04 只能消费经验证且明确 scope 的 DFT Artifact。当前阻塞为尚无 DFT 源码、Slurm/合法 VASP/POTCAR bridge 及课题组 functional/U/J/磁序等科学 policy，不能用 mock 越过这些阻塞。
 
-### 本次 Agent03 v1 实施范围（Task 1–3）
+### 本次 Agent03 v1 实施范围（Task 1–4）
 
-本次独立 worktree 仅实现第 26.1 节 Task 1–3：Agent03 原生 Pydantic 契约与安全枚举、最低输入校验和确定性 mock planner、纯数据审批 payload，以及不接入 Orchestrator 的 `MockDFTBackend` 生命周期。实现放在 `src/material_agent/dft/`，测试放在 Agent03 自有 unit/contract 测试文件中；不修改 Orchestrator、Agent01、Agent02、全局依赖或生产 capability registry。
+本次分支仅实现第 26.1 节 Task 4：在既有 Task 1–3 原生契约、确定性 planner 和 `MockDFTBackend` 之上接入现有 Orchestrator 的 `PreparedStagePlan`、审批、operation/external-job ledger、Artifact Store、checkpoint/resume 和通用报告路径。实现放在 `src/material_agent/dft/`，测试放在 Agent03 自有 unit/integration/E2E 文件中；不修改 Orchestrator 公共控制契约、Agent01、Agent02、全局依赖或默认生产 capability registry。
+
+Task 4 开发前冻结的范围与验收：
+
+- `DFTStageRunner` 复用 Orchestrator 既有 runner 生命周期，native plan 和控制面 `PreparedStagePlan` 使用同一输入快照及 hash；审批拒绝或 plan/hash 变化不得调用 backend。
+- mock 首次 `start` 只幂等提交并返回 `WaitingExternal`；`reconcile` 从持久化 artifact/job 引用恢复，终态后校验 native envelope、artifact/hash 并返回控制面 outcome。
+- 覆盖缺输入、审批拒绝、重复 start、运行中、成功、失败、超时、取消、篡改和最小跨进程恢复；mock 不产生科学数值、不提升 evidence、且不注册生产 capability。
+- 若发现必须修改公共控制契约、checkpoint 语义或业务 schema，停止并报告最小变更与影响；默认方案不应产生共享契约变更。
 
 验收边界：mock 只产生生命周期、错误和空结果 envelope；结果显式 `is_mock=true`，claim 只能为 `NOT_EVALUATED_MOCK`，不会产生或暗示 band gap、总能、磁矩等科研数值。Task 4–6 尚未实现；Orchestrator 接入等待 Agent02 8.2 合并后再进行。
 
@@ -48,9 +55,18 @@
 - [x] Agent03 自有 schema/planner/backend contract tests：`8 passed`。
 - [x] 完整离线 Gate：`258 passed, 2 skipped`；跳过项为需要显式 `--run-live-mp` 和密钥/网络的两个 live MP 测试。
 - [x] `.venv/bin/python -m pip check`：通过；`git diff --check`：通过。
-- [ ] Task 4–6：尚未实现；没有生产 capability 注册、Orchestrator runner/control-flow/checkpoint 接入、真实 backend、报告或 CLI 接入。
+- [x] Task 4：实现 `DFTStageRunner` 并通过显式 mock registry 接入既有 `PreparedStagePlan`、审批、operation/external-job ledger、WaitingExternal、resume、Artifact/hash 校验和报告路径；默认生产 capability 仍未注册。
+- [ ] Task 5–6：尚未实现；没有生产 capability 注册、真实 backend、报告或 CLI 接入。
 
-依赖限制：等待 Agent02 8.2 合并后再做 Orchestrator 接入；当前不修改 Orchestrator 公共控制契约、Agent01/02 文件、全局依赖或 capability registry。真实 functional、U/J、磁序、SOC、k 点、收敛参数及 VASP/POTCAR/Slurm policy 仍待专家冻结。
+Task 4 实际完成与验证（2026-07-27）：
+
+- [x] `DFTStageRunner.validate_input/prepare/start/reconcile/cancel` 复用 Orchestrator 既有 runner protocol；native plan、审批 payload、控制面 `PreparedStagePlan` 和 operation/job/status/result artifact 均绑定冻结输入 hash。
+- [x] `start` 通过 `MockDFTBackend` 以幂等键提交并返回 `WaitingExternal`；重复 start 复用既有 operation/job；新 runtime 从 operation/status artifact 恢复 mock backend，不重新规划或产生第二 job。
+- [x] `reconcile` 覆盖 queued/running/success、backend failed、timeout、cancel；终态校验 DFT result envelope、plan/job/hash 一致性并交给通用 Orchestrator stage result/report 路径。
+- [x] 缺输入、审批拒绝、artifact/native plan 篡改、成功/失败/超时/取消和跨进程恢复测试通过；mock result 只含生命周期消息，claim 保持 `NOT_EVALUATED_MOCK`，无 band gap/总能/磁矩和 L3 evidence。
+- [x] 定向 Agent03/Orchestrator/E2E 通过：`19 passed`；完整离线 Gate：`269 passed, 2 skipped`；`.venv/bin/python -m pip check` 通过；`git diff --check` 通过。
+
+Task 4 限制与跨 agent 影响：仅支持显式注册的单候选 mock lifecycle；真实 functional/U/J/磁序/SOC/k-point/收敛 policy、VASP/POTCAR/Slurm 和真实 backend 仍阻塞，Task 5 的完整错误/报告增强尚未实现。未修改 Orchestrator 公共控制契约、checkpoint 语义、业务 schema、Agent01/02 权威输入或默认生产 capability registry；Agent04 只能消费明确标记为 mock/未评估的结果。
 
 完成每个 v1/P2 任务后，只更新本计划的完成证据、测试、限制、方法/后端版本和待专家确认项；公共 claim/Artifact 契约变更须同步 Orchestrator、下游 Agent04 计划及相应 contract/integration/E2E 设计，不得修改外部后端状态真源。
 
