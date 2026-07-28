@@ -47,11 +47,11 @@ Agent01/02/03 权威 Artifact；不实现 ED/DMFT/DMRG；完整离线 Gate、`pi
 当前状态：**Agent04 MVP mock 控制链（任务 1–6）已完成；默认 production
 many-body capability 未注册，真实 ED/DMFT/DMRG 均未实现。**
 
-P0 收口验证（2026-07-28）：四阶段综合安全回归确认固定 route 顺序和默认
-production many-body capability 未注册。完整离线 Gate 为 `325 passed, 2 skipped`，
-跳过项仅为显式 live MP Gate；`pip check` 和 `git diff --check` 通过。fixture/mock
-继续显式 `is_mock=true`、空 observables、不得晋级 L4；未运行 live MP、网络或真实
-多体求解。
+P2 系统 v1 收尾验证（2026-07-28）：四阶段综合安全回归确认固定 route 顺序和默认
+production many-body capability 未注册。完整离线 Gate 为 `337 passed, 7 skipped`（两个
+live MP、五个 real-ML/Metal opt-in）；`pip check` 和 `git diff --check` 通过。
+fixture/mock 继续显式 `is_mock=true`、空 observables、不得晋级 L4；未运行 live MP、
+网络或真实多体求解。benchmark 与真实 solver/backend 不属于本次 P2 系统收尾。
 
 ## 0. 执行结论
 
