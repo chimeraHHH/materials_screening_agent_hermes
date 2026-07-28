@@ -1,12 +1,8 @@
-"""Agent04 domain-only contracts.
-
-This package deliberately has no solver, backend, runner, or Orchestrator
-integration.  It contains only the versioned input/output boundary for the
-many-body controller.
-"""
+"""Agent04 domain contracts and the explicit task-5 mock control adapter."""
 
 from .models import *
 from .evidence import *
 from .registry import *
 from .routing import *
 from .mock_backend import *
+from .runner import ManyBodyStageRunner

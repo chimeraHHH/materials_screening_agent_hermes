@@ -2382,6 +2382,38 @@ Materials Project Gate）；`.venv/bin/python -m pip check` 通过；`git diff -
 - artifact snapshot；
 - operation ledger。
 
+**实际状态（2026-07-28）：已完成任务 5范围。** 新增
+`material_agent.many_body.runner.ManyBodyStageRunner`，精确复用 P0.2
+`StageExecutionContext`、`PreparedStagePlan`、`ControlStageOutcome`、
+`WaitingExternal`、operation key 和 `LocalArtifactStore`。`validate_input()` 只读校验
+`model_package` artifact、任务 2 完整性/最小物理输入和任务 3 mock routing；缺失输入、
+完整性失败和不适用分别保留结构化错误语义，失败前不创建 plan/approval/operation/job。
+
+`prepare()` 原子冻结 Agent04 native request、model artifact ref、routing、registry
+snapshot、resource estimate、mock scenario 和 approval payload，并以 immutable URI/hash
+复用重复 prepare；payload 明确模型 ID/revision/hash、routing、backend、资源、evidence
+ceiling 及“仅 mock 控制链、无科学数值、不会产生 L4”的限制。`start()` 只使用既有冻结
+plan，在 Orchestrator 审批通过后经 operation artifact 和 idempotency key 调用
+`MockManyBodyBackend.submit()`；重复 start 不重复提交。`reconcile()` 以 mock backend
+为状态真源，追加状态 snapshot，检测 status regression，terminal success 后才 fetch，
+验证 request/input/result hash 和 `ManyBodyResultEnvelope`，失败/timeout/cancel/hash
+mismatch 映射到既有控制错误语义。补充的 `restore_job()` 只从 operation ledger
+rehydrate 新进程内存 backend，不提交第二个 job。
+
+测试证据：
+`tests/integration/test_many_body_runner_orchestrator.py`（4 passed）覆盖 1D/2×2
+fixture、冻结与重复复用、缺失/篡改输入、queued→running→success、重复 start、结果
+hash mismatch 和 mock envelope；
+`tests/e2e/test_many_body_cross_process.py`（1 passed）覆盖审批后退出进程、status、
+resume、恢复同一 job 和最终 envelope。mock 结果保持 `is_mock=true`、`MOCK_ONLY`、
+空 observables、L1/native control-only 限制，Orchestrator summary 使用 L0 parsed
+控制记录以避免误称科学证据；没有生成科学数值或 L4。生产 many-body capability
+registry 未修改，仍未注册。
+
+限制：任务 5 仍只提供显式测试 registry 下的 mock backend；没有真实 ED/DMFT/DMRG、
+科学 observable、CLI 新命令或生产 capability。backend rehydrate 是确定性 mock 的
+进程恢复适配，不是持久化科学计算 backend。下一步：任务 6“核心测试与演示”。
+
 #### 任务 6：核心测试与演示，约 1 小时
 
 - 1D/2D fixture；

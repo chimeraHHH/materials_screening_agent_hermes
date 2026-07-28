@@ -203,6 +203,37 @@ class MockManyBodyBackend:
         self._jobs[idempotency_key] = _Job(request, ref, self.scenario)
         return ref
 
+    def restore_job(
+        self,
+        request: ManyBodyRequest,
+        ref: ExternalJobRef,
+        *,
+        polls: int,
+        status: JobStatus,
+    ) -> None:
+        """Rehydrate the backend view from the runner's durable operation ledger.
+
+        The operation ledger remains owned by the runner.  This method only
+        reconstructs the deterministic in-memory backend state after a new
+        process starts; it never submits a second job.
+        """
+        self.validate_input(request)
+        if ref.idempotency_key in self._jobs:
+            existing = self._jobs[ref.idempotency_key]
+            if existing.ref != ref or canonical_hash(existing.request) != canonical_hash(request):
+                raise MockBackendError(
+                    BackendErrorCode.REFERENCE_MISMATCH,
+                    "restored mock job conflicts with the frozen request",
+                )
+            return
+        if polls < 0:
+            raise MockBackendError(BackendErrorCode.INVALID_INPUT, "invalid durable mock job state")
+        job = _Job(request, ref, self.scenario, polls=polls, current=status)
+        job.history = [StatusObservation(0, JobStatus.CREATED)]
+        if status is not JobStatus.CREATED:
+            job.history.append(StatusObservation(polls, status))
+        self._jobs[ref.idempotency_key] = job
+
     def status(self, external_job_ref: ExternalJobRef) -> JobStatus:
         job = self._find(external_job_ref)
         if job.current in _TERMINAL:
