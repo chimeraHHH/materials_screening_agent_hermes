@@ -212,6 +212,20 @@ The expected result is `DRY_RUN_ONLY` with
 `evidence_level=NONE`, and `scientific_conclusion=false` until an
 expert-approved reference artifact is supplied.
 
+The benchmark metric formulas can be exercised independently with an
+explicitly synthetic two-site fixture. This command validates units, shapes,
+finite values, structure/calculation-level identity and the six deterministic
+metric definitions without using a real material reference:
+
+```bash
+.venv/bin/python scripts/run_agent02_benchmark_metric_synthetic.py \
+  --input tests/fixtures/benchmarks/agent02-benchmark-v1-synthetic-metrics.json
+```
+
+Its result is always `is_synthetic=true`, `evaluation_status=TEST_ONLY`,
+`evidence_level=NONE`, and `scientific_conclusion=false`; it must not be used
+to claim model accuracy or expand the Agent02 applicability domain.
+
 ### Agent03 v1 mock controller
 
 Agent03 v1 verifies only the control chain: immutable input and plan hashes,

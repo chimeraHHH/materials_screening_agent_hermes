@@ -114,6 +114,14 @@ dry-run；现有
 方法元数据和科学 claim 防护测试；实际 benchmark 数据、误差指标和适用域结论仍等待
 课题组审核的 DFT benchmark。
 
+P1.1 Task 1（2026-07-28）已完成：新增独立纯函数 synthetic metric kernel，冻结
+有符号每原子能量差、全笛卡尔分量力 MAE、逐原子最大力误差范数、3×3 应力 MAE、
+晶格 Frobenius 相对误差和已对齐笛卡尔坐标最大位移的定义。输入严格校验单位、shape、
+有限数、对称应力、位点数、结构 hash 和 reference calculation level；fixture 和输出
+固定 `is_synthetic=true`、`evaluation_status=TEST_ONLY`、`evidence_level=NONE`、
+`scientific_conclusion=false`。该任务只证明指标数学和数据边界，不构成 Si/CHGNet
+benchmark，不改变 production Agent02 契约或适用域。
+
 ## 1. 执行摘要
 
 Agent02 是一个确定性、可恢复、可审计的机器学习筛选阶段，不是让 LLM 自主选择模型或科学阈值的对话 Agent。

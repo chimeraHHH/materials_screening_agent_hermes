@@ -1,0 +1,47 @@
+{
+  "schema_version": "agent02-benchmark-metric-input-v1",
+  "case_id": "synthetic-two-site-metric-kernel-v1",
+  "is_synthetic": true,
+  "evaluation_status": "TEST_ONLY",
+  "reference_calculation_level_id": "synthetic-reference-level-v1",
+  "expected_reference_calculation_level_id": "synthetic-reference-level-v1",
+  "reference_structure_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+  "prediction_structure_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+  "num_sites": 2,
+  "stress_convention": "cartesian_symmetric_3x3_gpa",
+  "positions_aligned": true,
+  "reference_energy": {"unit": "eV/atom", "value": -5.0},
+  "prediction_energy": {"unit": "eV/atom", "value": -4.9},
+  "reference_forces": {
+    "unit": "eV/angstrom",
+    "value": [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0]]
+  },
+  "prediction_forces": {
+    "unit": "eV/angstrom",
+    "value": [[0.1, 0.0, 0.0], [0.0, 0.2, 0.0]]
+  },
+  "reference_stress": {
+    "unit": "GPa",
+    "value": [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]]
+  },
+  "prediction_stress": {
+    "unit": "GPa",
+    "value": [[1.0, 0.0, 0.0], [0.0, 2.0, 0.0], [0.0, 0.0, 3.0]]
+  },
+  "reference_lattice": {
+    "unit": "angstrom",
+    "value": [[4.0, 0.0, 0.0], [0.0, 4.0, 0.0], [0.0, 0.0, 4.0]]
+  },
+  "prediction_lattice": {
+    "unit": "angstrom",
+    "value": [[4.04, 0.0, 0.0], [0.0, 4.04, 0.0], [0.0, 0.0, 4.04]]
+  },
+  "reference_positions": {
+    "unit": "angstrom",
+    "value": [[0.0, 0.0, 0.0], [1.0, 1.0, 1.0]]
+  },
+  "prediction_positions": {
+    "unit": "angstrom",
+    "value": [[0.0, 0.0, 0.0], [1.1, 1.0, 1.0]]
+  }
+}
