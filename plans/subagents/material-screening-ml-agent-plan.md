@@ -27,24 +27,22 @@
 
 ### 当前下一步、依赖与阻塞
 
-1. P0 收口复核第 8.2 节已实现的 P0.2 Fake Adapter、候选级完成记录、stage artifact
-   布局、幂等 ledger、恢复和篡改 fail-closed 语义。
-2. 复核 Fake worker 的 1–5 自动、显式 6–20 审批、超过 20 阻塞和要求 L2 时
-   fail-closed；默认 production ML capability 继续保持未注册。
-3. P0 收口完成后，下一实现里程碑才是第 8.3 节：在独立 Python 3.11 环境实现真实
-   worker，冻结依赖 lock、模型/health snapshot 并运行 CPU smoke Gate。
-4. 只有真实 CPU、目标 Mac health、CPU/MPS parity、Top-5、崩溃恢复和安全 Gate
-   全部通过后，才评估 production capability 注册。
+1. P1 工程接入（第 8.3–8.5 节）已完成：保持轻量默认环境，并仅通过已校验的显式
+   Worker 配置注册生产 capability。
+2. 下一科学里程碑是第 10 节的 benchmark、OOD/不确定性与扩展适用域；在独立评测
+   完成前，L2 release 范围仍限于 elemental 3D Si。
+3. 继续复核 Fake worker 的 1–5 自动、显式 6–20 审批、超过 20 阻塞和要求 L2 时
+   fail-closed，且不得让 Fake 影响生产 factory 或真实证据。
 
 本次 P0 收口验收：不修改 Agent02 原生冻结契约、公共 Orchestrator/checkpoint
 schema 或数据库迁移；Fake/fixture 保持 `is_mock=true` 和最高 L1；完整离线 Gate、
 `pip check` 与 `git diff --check` 通过。
 
-跨 agent 依赖：输入依赖 Agent01 的不可变 manifest 和 lineage；控制面依赖 Orchestrator P0.2 的 PreparedStagePlan/审批契约；Agent03 只能消费通过 QC 的 ML 结构。当前阻塞为真实 CHGNet/Torch/ASE 环境、checkpoint/model card hash 和目标 Mac Gate 尚未完成；Fake 不得解除该阻塞或提升真实证据。
+跨 agent 依赖：输入依赖 Agent01 的不可变 manifest 和 lineage；控制面依赖 Orchestrator P0.2 的 PreparedStagePlan/审批契约；Agent03 只能消费通过 QC 的 ML 结构。当前科学阻塞是受评测元素范围、benchmark 与校准不确定性尚未完成；Fake 不得解除该阻塞或提升真实证据。
 
 完成每个 Step 后，只更新本计划的状态、测试数字、fixture/hash、限制和跨 agent 影响；涉及 Agent02 原生契约时同步更新 Orchestrator 计划、冻结 fixture 和 contract test，涉及长期架构时才更新主计划/架构文档。
 
-当前状态：**第 8.1 节与第 8.1.1 节已完成；第 8.2 节已实现轻量 P0.2 Adapter 与 Fake Worker 恢复测试，生产 capability 仍未注册，真实 CHGNet/Torch/ASE 仍未安装或接入。**
+当前状态：**第 8.1–8.5 节的 P1 工程接入已完成。主环境仍不安装或导入 Torch/CHGNet/ASE；当且仅当显式 Worker 配置、lock 和 model card 校验通过时，真实 Agent02 production capability 才注册。**
 
 P0 收口验证（2026-07-28）：Agent02 P0.2 Fake Adapter 保持完成状态；Fake
 Artifact/结果显式 `is_mock=true` 且不超过 `L1_RETRIEVED`，要求 L2 时 fail closed；
@@ -93,15 +91,14 @@ P1 当前进度（2026-07-28）：
   串行执行；在第 3 个候选前模拟宿主进程终止后，前两个已提交 ledger 被复用，恢复
   仅执行候选 3–5，最终五个候选均为 `PASS / L2_ML_SCREENED`。每个 worker 结果
   记录 wall time 和平台归一化的 `peak_rss_bytes`。
-- 当前目标机为 macOS 14.7.4 arm64；PyTorch 报告
-  `mps.is_built() == true`、`mps.is_available() == false`。因此 Step 4 的
-  CPU/MPS parity、MPS→CPU 单次回退和目标 Mac Release Gate 尚未完成，
-  真实 production capability 继续保持未注册，且不会回退 Fake Worker。
-- P1 当前验证：完整默认离线 Gate `329 passed, 5 skipped`，其中两个 skip 为
-  `live_mp`、三个为 opt-in `real_ml/slow_real_ml/mps_ml`；显式真实 Gate 为
-  `2 passed, 1 skipped`，skip 原因为 MPS runtime 不可用。主环境与独立 worker
-  环境的 `pip check`、`git diff --check` 均通过；未运行 live MP、未读取
-  `MP_API_KEY`，未提交模型缓存、虚拟环境或真实运行 Artifact。
+- 目标机为 macOS 14.7.4 arm64；非受限 Terminal 的 PyTorch 报告
+  `mps.is_built() == true`、`mps.is_available() == true`。CPU/MPS parity、MPS→CPU
+  单次回退和目标 Mac Release Gate 已完成；Codex sandbox 的 MPS 不可用仅为进程权限
+  限制。真实 worker 不会回退 Fake Worker。
+- P1 当前验证：完整默认离线 Gate `337 passed, 7 skipped`；非受限 Metal 进程的
+  显式真实 Gate 为 `5 passed`。主环境与独立 worker 环境的 `pip check`、
+  `git diff --check` 均通过；未运行 live MP、未读取 `MP_API_KEY`，未提交模型缓存、
+  虚拟环境或真实运行 Artifact。
 
 ## 1. 执行摘要
 
@@ -1617,6 +1614,26 @@ Gate、Mac Gate 和安全 Gate 均保留可单独执行。
 - 冻结可再分发 demo 结构、JSON Schema fixture、model card 和环境 lockfile；
 - 记录精确测试命令、结果、目标机器、契约版本和代码提交 ID；
 - 确认仓库不包含模型缓存、真实运行产物、API key、虚拟环境或 traceback 泄漏。
+
+#### 2026-07-28 Step 4/5 实际收口记录
+
+- 目标 arm64 Mac 的非受限 Terminal 验证 `torch.backends.mps.is_built()` 与
+  `is_available()` 均为 `True`，并可创建 `device="mps"` tensor；Codex sandbox
+  不可用是进程权限边界，不是机器、PyTorch 或独立环境故障。
+- `tests/real_ml --run-real-ml` 在可访问 Metal 的进程中为 **5 passed**（27.69s）：
+  覆盖 MPS health、CPU/MPS Si 弛豫 release tolerance、真实 CPU worker、Top-5
+  候选级终止恢复，以及生产 CLI `run-stage ml` 的 L2 输出。
+- MPS only 的分类失败可清理 MPS cache 后对同一候选精确回退一次 CPU；实际设备、请求
+  设备和 warning 均写入结果。CPU 失败、非 MPS 错误、health/fingerprint 漂移及任何
+  Artifact 不一致仍 fail-closed，绝不回退 Fake Worker。
+- `configure_agent02_production()` 只在绝对且可执行的
+  `MATERIAL_AGENT_ML_WORKER_PYTHON`、lock SHA-256 和 model card 都通过校验时注册
+  `StageId.ML`；否则保留 `registered=false` 并给 remediation。已配置的 capability
+  为 `is_mock=false`、`supports_external=false`，且每次运行仍要求 Requirement、
+  Candidate Manifest、policy、registry 和 health 的冻结引用。
+- 默认轻量 Gate 为 **337 passed, 7 skipped**；同一 sandbox 内真实 Gate 为
+  **3 passed, 2 skipped**（Metal 不可见）。`pymatgen` 现有 `gcd` FutureWarning
+  不影响结果。
 
 ## 9. v1 Definition of Done
 

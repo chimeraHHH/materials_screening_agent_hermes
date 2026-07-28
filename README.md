@@ -7,12 +7,13 @@ test-only mock control adapters for the downstream stages described in
 `plans/subagents/material-screening-agent01-plan.md`.
 
 The execution plan always contains the ordered
-`retrieval → ml → dft → many_body` routes. Agent 01 is the only production
-scientific runner today. Agent02 has both the P0.2 Fake path and an opt-in,
-independent CHGNet CPU worker whose release Gate is not yet complete. Agent03
-has a v1 mock controller, and Agent04 has an MVP mock controller. Agent02–04
-remain absent from the default production registry; only the explicitly
-configured real Agent02 worker may produce L2 ML evidence in its opt-in Gate.
+`retrieval → ml → dft → many_body` routes. Agent 01 is the only default
+production scientific runner. Agent02 has both the P0.2 Fake path and an
+opt-in independent CHGNet worker. It is registered as a production capability
+only when a validated dedicated Worker executable is explicitly configured;
+otherwise it remains fail-closed and unavailable. Agent03 has a v1 mock
+controller, and Agent04 has an MVP mock controller. Only the real, configured
+Agent02 worker may produce L2 ML evidence; every test fixture remains mock.
 
 ## Development environment
 
@@ -170,12 +171,29 @@ The main process supplies the repository `src/` directory through a sanitized
 dependency metadata. `MATERIAL_AGENT_ML_WORKER_PYTHON` may point the Gate at a
 different dedicated Python executable.
 
-The default production registry intentionally still leaves Agent02
-unavailable. The current Mac reports PyTorch MPS support as built but not
-runtime-available, so CPU/MPS parity, MPS fallback and production registration
-remain Step 4 work. The CPU release Gate covers serial Top-5 execution,
-candidate-level interruption recovery, wall time and peak-RSS recording. The
-real worker never falls back to the Fake Worker.
+The target arm64 Mac Release Gate passed with a non-sandboxed Terminal process:
+MPS was both built and runtime-available, CPU/MPS Si relaxation outputs met the
+release tolerances, and the full real Gate passed. An MPS runtime failure that
+matches the explicit MPS/Metal failure policy clears the MPS cache and retries
+the same candidate exactly once on CPU. It records the requested and actual
+device plus a warning; any CPU failure or unrelated error still fails closed.
+It never falls back to the Fake Worker.
+
+To enable the real production capability for a direct ML stage, set the
+absolute path to the dedicated executable in the process that launches the
+CLI:
+
+```bash
+export MATERIAL_AGENT_ML_WORKER_PYTHON="$PWD/.venv-agent02/bin/python"
+material-agent run-stage ml --workspace workspace --project PROJECT --input stage-input.json
+```
+
+The production factory verifies the executable, repository lock hash and model
+card before registration. The frozen `policy`, `registry`, `health`, Candidate
+Manifest and Requirement Artifact references are still mandatory per run; an
+absent or invalid configuration leaves `ml` unavailable with remediation.
+The release Gate covers serial Top-5 execution, candidate-level interruption
+recovery, wall time and peak-RSS recording.
 
 ### Agent03 v1 mock controller
 
@@ -305,9 +323,10 @@ bridge baseline is commit `701857c`, and P0 closeout is commit `505ac55`.
 The P0 closeout run reported `325 passed, 2 skipped`; the skipped tests were
 the two explicit `live_mp` Gates. P1 adds separate `real_ml`, `slow_real_ml`,
 and `mps_ml` markers so the default offline Gate remains independent of the
-heavy worker environment. The current P1 branch reports
-`329 passed, 5 skipped` for the default Gate and `2 passed, 1 skipped` for the
-explicit real-ML Gate; the latter skip is the unavailable MPS runtime.
+heavy worker environment. The current P1 branch reports `337 passed, 7 skipped`
+for the default offline Gate. In the Codex sandbox the two MPS tests skip
+because Metal is unavailable; the same full `tests/real_ml --run-real-ml` Gate
+in a non-sandboxed target-Mac process reports `5 passed` (27.69s).
 
 The standalone Agent01 and Orchestrator-restart Materials Project release
 Gates are opt-in and require both network access and `MP_API_KEY`:
@@ -374,10 +393,12 @@ control state into `ControlStageOutcome(orchestrator-p0.2-v3)`.
 
 - P0.2 has a replaceable Parser protocol and a deterministic offline default;
   an LLM Provider is not connected yet.
-- Agent 01 is the only registered production scientific stage in the graph.
-  Agent 02–04 remain unregistered production capabilities. Agent02's opt-in
-  independent CPU Gate can create validated L2 ML evidence, while every
-  test-only fixture runner stays `is_mock=true` and cannot raise evidence.
+- Agent 01 is the only production scientific stage registered by default.
+  Agent02 is additionally registered only when
+  `MATERIAL_AGENT_ML_WORKER_PYTHON` passes the production factory checks;
+  Agent03/04 remain unregistered. Agent02 currently audits only elemental Si
+  for L2 release use, while every test-only fixture runner stays `is_mock=true`
+  and cannot raise evidence.
 - The four ordered routes and fail-closed boundaries are covered end to end,
   but there is no default four-stage scientific success path. In particular,
   Agent04 requires an explicit expert-supplied `EffectiveModelPackage`; mock DFT
@@ -390,8 +411,9 @@ control state into `ControlStageOutcome(orchestrator-p0.2-v3)`.
   StructureMatcher optimization, and additional database adapters remain P1.
 - CrystalNN/Larsen warnings are preserved as data-quality warnings. They do not
   automatically reject a candidate.
-- Agent02's real CPU worker, serial Top-5, recovery and resource recording
-  Gates exist, but its MPS parity, fallback and production registration remain
-  incomplete. All real Agent03/04 scientific backends remain later
-  milestones. Fake/mock adapters remain unregistered and validate control
-  behavior only.
+- Agent02's real CPU/MPS, serial Top-5, recovery, resource-recording and
+  direct-stage CLI Gates are complete. Its L2 applicability audit is presently
+  limited to elemental 3D Si; scientific benchmarks, broader domain coverage,
+  calibrated uncertainty and any model migration remain later P1 work. All
+  real Agent03/04 scientific backends remain later milestones. Fake/mock
+  adapters remain unregistered and validate control behavior only.

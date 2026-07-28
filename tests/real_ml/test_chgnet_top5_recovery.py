@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from material_agent.cli import main
 from material_agent.ml_screening.models import ModelHealthSnapshot
 from material_agent.ml_screening.real_resources import real_registry
 from material_agent.ml_screening.resources import default_policy
@@ -19,7 +20,11 @@ from material_agent.orchestrator.models import (
     StageId,
     StageStatus,
 )
+from material_agent.orchestrator.runtime import OrchestratorRuntime
+from material_agent.retrieval.models import Requirement
 from material_agent.retrieval.storage import LocalArtifactStore
+
+from tests.integration.test_orchestrator_p01 import _complete_source_run
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
@@ -127,10 +132,89 @@ def test_real_cpu_top5_resumes_after_third_candidate_termination(
     assert len(list(completion_root.glob("*/operation-complete.json"))) == 5
 
 
+@pytest.mark.real_ml
+def test_cli_run_stage_uses_explicit_real_agent02_factory(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    requirement,
+    fixture_payload,
+) -> None:
+    """Exercise the default CLI registry with one real, auditable Si result."""
+
+    project_id = "project-real-cli"
+    source_run_id = "run-source"
+    source_requirement_payload = requirement.model_dump(mode="json")
+    source_requirement_payload["hard_constraints"]["include_elements"] = ["Si"]
+    requirement_row, _manifest = _complete_source_run(
+        tmp_path,
+        Requirement.model_validate(source_requirement_payload),
+        fixture_payload,
+        project_id=project_id,
+        run_id=source_run_id,
+    )
+    worker_python = Path(
+        os.environ.get(
+            "MATERIAL_AGENT_ML_WORKER_PYTHON",
+            REPOSITORY_ROOT / ".venv-agent02/bin/python",
+        )
+    )
+    assert worker_python.is_file(), "dedicated Agent02 Python is missing"
+    _store, context, _health = _real_top5_context(
+        tmp_path, worker_python, project_id=project_id
+    )
+    monkeypatch.setenv("MATERIAL_AGENT_ML_WORKER_PYTHON", str(worker_python))
+    stage_input = {
+        "source_run_id": source_run_id,
+        "requirement_revision": requirement_row["revision"],
+        "requirement_artifact_uri": requirement_row["artifact_uri"],
+        "requirement_artifact_sha256": requirement_row["artifact_sha256"],
+        "artifacts": {
+            name: {"uri": ref.uri, "sha256": ref.sha256}
+            for name, ref in context.input_artifacts.items()
+        },
+    }
+    input_path = tmp_path / "real-ml-stage-input.json"
+    input_path.write_text(json.dumps(stage_input), encoding="utf-8")
+
+    assert (
+        main(
+            [
+                "run-stage",
+                "ml",
+                "--workspace",
+                str(tmp_path),
+                "--project",
+                project_id,
+                "--input",
+                str(input_path),
+                "--run-id",
+                "run-real-cli",
+            ]
+        )
+        == 0
+    )
+    response = json.loads(capsys.readouterr().out)
+    assert response["status"] == "SUCCEEDED"
+    assert response["stage_statuses"] == {"agent02": "SUCCEEDED"}
+    project_root = tmp_path / project_id
+    store = LocalArtifactStore(project_root)
+    result = store.read_json(
+        "artifact://stages/agent02/run-real-cli/attempt-1/stage-result.json"
+    )
+    assert result["provenance"]["is_mock"] is False
+    manifest = store.read_jsonl(result["candidate_manifest"]["uri"])
+    assert len(manifest) == 5
+    assert all(
+        item["candidate"]["evidence_level"] == "L2_ML_SCREENED"
+        for item in manifest
+    )
+
+
 def _real_top5_context(
-    tmp_path: Path, worker_python: Path
+    tmp_path: Path, worker_python: Path, *, project_id: str = "project"
 ) -> tuple[LocalArtifactStore, StageExecutionContext, ModelHealthSnapshot]:
-    store = LocalArtifactStore(tmp_path / "project")
+    store = LocalArtifactStore(tmp_path / project_id)
     structure_ref = store.write_bytes(
         "candidates/structures/si.cif",
         STRUCTURE_FIXTURE.read_bytes(),
@@ -202,7 +286,7 @@ def _real_top5_context(
         required_inputs=["requirement", "candidate_manifest"],
     )
     context = StageExecutionContext(
-        project_id="project-real-top5",
+        project_id=project_id,
         run_id="run-real-top5",
         stage=StageId.ML,
         agent_id="agent02",

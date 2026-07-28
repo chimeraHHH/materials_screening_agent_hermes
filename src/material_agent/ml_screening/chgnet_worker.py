@@ -69,6 +69,7 @@ from material_agent.ml_screening.resources import (
     default_policy,
     environment_fingerprint_sha256,
 )
+from material_agent.ml_screening.runtime import run_with_mps_fallback
 from material_agent.ml_screening.worker_protocol import validate_worker_inputs
 
 
@@ -238,33 +239,13 @@ def _run_candidate(
     ):
         raise ValueError("parsed structure elements differ from frozen input")
 
-    device = plan.device_policy
-    if device not in _available_devices():
-        raise ValueError(f"requested device is unavailable: {device}")
-    # Third-party initialization writes informational text to stdout.  Keep
-    # protocol stdout clean by redirecting it to stderr.
-    with contextlib.redirect_stdout(sys.stderr):
-        model = CHGNet.load(
-            model_name=CHGNET_MODEL_NAME,
-            use_device=device,
-            verbose=False,
-        )
-        prediction = model.predict_structure(structure, task="efsm")
-        optimizer = StructOptimizer(
-            model=model,
-            optimizer_class="FIRE",
-            use_device=device,
-            on_isolated_atoms="error",
-        )
-        relaxation = optimizer.relax(
-            structure,
-            fmax=0.1,
-            steps=200,
-            relax_cell=True,
-            ase_filter="FrechetCellFilter",
-            verbose=False,
-            assign_magmoms=True,
-        )
+    execution = run_with_mps_fallback(
+        requested_device=plan.device_policy,
+        run_once=lambda device: _run_chgnet(structure, device),
+        clear_mps_cache=_clear_mps_cache,
+    )
+    device = execution.device
+    prediction, relaxation = execution.value
 
     direct_energy_ev_atom = _finite_scalar(prediction["e"], "static energy")
     direct_forces = _finite_array(prediction["f"], (len(structure), 3), "forces")
@@ -514,7 +495,10 @@ def _run_candidate(
             "minimum_distance_angstrom": minimum_distance,
         },
         qc_passed=qc_passed,
-        warnings=[] if qc_passed else ["relaxation did not pass every frozen soft QC"],
+        warnings=(
+            ([execution.fallback_warning] if execution.fallback_warning else [])
+            + ([] if qc_passed else ["relaxation did not pass every frozen soft QC"])
+        ),
         wall_time_seconds=time.monotonic() - started,
         is_mock=False,
         provenance={
@@ -524,6 +508,10 @@ def _run_candidate(
             "max_steps": 200,
             "energy_semantics": "MLIP potential energy",
             "peak_rss_bytes": _peak_rss_bytes(),
+            "requested_device": plan.device_policy,
+            "fallback_from_device": (
+                "mps" if execution.fallback_warning else None
+            ),
         },
     )
     lineage = build_structure_lineage(
@@ -614,6 +602,45 @@ def _available_devices() -> list[str]:
     if torch.backends.mps.is_available():
         devices.append("mps")
     return devices
+
+
+def _run_chgnet(structure: Structure, device: str) -> tuple[Any, Any]:
+    if device not in _available_devices():
+        raise RuntimeError(f"requested {device} device is unavailable")
+    # Third-party initialization writes informational text to stdout.  Keep
+    # protocol stdout clean by redirecting it to stderr.
+    with contextlib.redirect_stdout(sys.stderr):
+        model = CHGNet.load(
+            model_name=CHGNET_MODEL_NAME,
+            use_device=device,
+            verbose=False,
+        )
+        prediction = model.predict_structure(structure, task="efsm")
+        optimizer = StructOptimizer(
+            model=model,
+            optimizer_class="FIRE",
+            use_device=device,
+            on_isolated_atoms="error",
+        )
+        relaxation = optimizer.relax(
+            structure,
+            fmax=0.1,
+            steps=200,
+            relax_cell=True,
+            ase_filter="FrechetCellFilter",
+            verbose=False,
+            assign_magmoms=True,
+        )
+    return prediction, relaxation
+
+
+def _clear_mps_cache() -> None:
+    try:
+        torch.mps.empty_cache()
+    except Exception:
+        # Cache cleanup is best-effort; the subsequent CPU execution remains
+        # the sole fallback attempt and will surface any failure itself.
+        pass
 
 
 def _sandbox_path(root: Path, relative: str) -> Path:

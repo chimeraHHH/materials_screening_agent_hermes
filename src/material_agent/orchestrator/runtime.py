@@ -35,7 +35,10 @@ from material_agent.orchestrator.models import (
     StageStatus,
 )
 from material_agent.orchestrator.parser import RequirementParser
-from material_agent.orchestrator.runners import StageRunnerRegistry
+from material_agent.orchestrator.runners import (
+    StageRunnerRegistry,
+    configure_agent02_production,
+)
 from material_agent.orchestrator.storage import OrchestratorRepository
 from material_agent.retrieval.storage import LocalArtifactStore
 
@@ -90,11 +93,16 @@ class OrchestratorRuntime:
         self.checkpointer = SqliteSaver(
             self._checkpoint_connection, serde=serializer
         )
+        selected_registry = runner_registry or StageRunnerRegistry()
+        if runner_registry is None:
+            configure_agent02_production(
+                selected_registry, project_root=self.project_root
+            )
         self.orchestrator = OrchestratorGraph(
             repository=self.repository,
             artifact_store=self.store,
             parser=parser,
-            runner_registry=runner_registry,
+            runner_registry=selected_registry,
             clock=self.clock,
         )
         self.graph = self.orchestrator.build().compile(

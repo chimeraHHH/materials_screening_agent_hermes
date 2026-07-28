@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from datetime import UTC, datetime
+import hashlib
+import os
+from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
 from material_agent.orchestrator.models import (
@@ -90,6 +93,14 @@ class StageRunnerRegistry:
         self._capabilities[stage] = capability
         self._factories[stage] = factory
 
+    def set_unavailable(self, capability: StageCapability) -> None:
+        """Set an explicit fail-closed capability snapshot without a runner."""
+
+        if capability.registered:
+            raise ValueError("unavailable capability must not be registered")
+        self._capabilities[capability.stage] = capability
+        self._factories.pop(capability.stage, None)
+
     def capability(self, stage: StageId) -> StageCapability:
         return self._capabilities[stage].model_copy(deep=True)
 
@@ -143,6 +154,121 @@ def default_capabilities() -> dict[StageId, StageCapability]:
             unavailable_reason="Agent04 many-body capability is not implemented",
         ),
     }
+
+
+def configure_agent02_production(
+    registry: StageRunnerRegistry,
+    *,
+    project_root: Path,
+) -> None:
+    """Optionally register the real Agent02 worker from explicit runtime config.
+
+    The environment variable is an opt-in switch, not a fallback mechanism.
+    All run-specific registry, policy and health Artifact checks remain in the
+    Adapter's frozen-plan validation path.
+    """
+
+    worker_value = os.environ.get("MATERIAL_AGENT_ML_WORKER_PYTHON")
+    if not worker_value:
+        registry.set_unavailable(
+            _agent02_unavailable_capability(
+                "set MATERIAL_AGENT_ML_WORKER_PYTHON to a validated "
+                "dedicated Python 3.11 executable"
+            )
+        )
+        return
+    try:
+        worker_python = Path(worker_value)
+        if not worker_python.is_absolute():
+            raise ValueError("MATERIAL_AGENT_ML_WORKER_PYTHON must be absolute")
+        worker_python = worker_python.resolve(strict=True)
+        if not worker_python.is_file() or not os.access(worker_python, os.X_OK):
+            raise ValueError("configured Agent02 worker Python is not executable")
+        repository_root = Path(__file__).resolve().parents[3]
+        source_root = repository_root / "src"
+        lock_path = repository_root / "requirements-agent02.lock"
+        model_card_path = (
+            repository_root / "config/agent02/chgnet-0.3.0-model-card.json"
+        )
+        if not source_root.is_dir() or not lock_path.is_file():
+            raise ValueError("Agent02 repository resources are unavailable")
+        from material_agent.ml_screening.models import ModelCard
+        from material_agent.ml_screening.real_resources import (
+            AGENT02_PACKAGE_LOCK_SHA256,
+            real_model_card,
+            real_model_spec,
+        )
+        from material_agent.ml_screening.resources import sha256_payload
+
+        if _sha256_file(lock_path) != AGENT02_PACKAGE_LOCK_SHA256:
+            raise ValueError("Agent02 package lock hash does not match registry")
+        card = ModelCard.model_validate_json(model_card_path.read_text("utf-8"))
+        if (
+            card != real_model_card()
+            or sha256_payload(card) != real_model_spec().model_card_sha256
+        ):
+            raise ValueError("Agent02 model card does not match registry")
+    except (OSError, ValueError) as exc:
+        registry.set_unavailable(
+            _agent02_unavailable_capability(f"Agent02 configuration invalid: {exc}")
+        )
+        return
+
+    capability = StageCapability(
+        stage=StageId.ML,
+        agent_id=STAGE_TO_AGENT[StageId.ML],
+        registered=True,
+        is_mock=False,
+        required_inputs=[
+            "requirement",
+            "candidate_manifest",
+            "policy",
+            "registry",
+            "health",
+        ],
+        requires_approval=False,
+        supports_external=False,
+    )
+
+    def factory(_context: StageExecutionContext):
+        from material_agent.ml_screening.runner import Agent02RunnerAdapter
+        from material_agent.ml_screening.worker_client import SubprocessWorkerClient
+
+        return Agent02RunnerAdapter(
+            artifact_store=LocalArtifactStore(project_root),
+            capability=capability,
+            worker=SubprocessWorkerClient(
+                python_executable=worker_python,
+                artifact_root=project_root,
+                package_lock_path=lock_path,
+                source_root=source_root,
+            ),
+        )
+
+    registry.register(StageId.ML, factory, capability)
+
+
+def _agent02_unavailable_capability(reason: str) -> StageCapability:
+    return StageCapability(
+        stage=StageId.ML,
+        agent_id=STAGE_TO_AGENT[StageId.ML],
+        registered=False,
+        is_mock=False,
+        # Preserve the default control-plane boundary: without an explicit
+        # production worker, a complete legacy stage input reaches the
+        # capability-unavailable outcome rather than being reclassified as a
+        # missing real-worker artifact.
+        required_inputs=["requirement", "candidate_manifest"],
+        unavailable_reason=reason,
+    )
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        while chunk := handle.read(1024 * 1024):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 class Agent01RunnerAdapter:
