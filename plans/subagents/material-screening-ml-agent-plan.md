@@ -122,6 +122,14 @@ P1.1 Task 1（2026-07-28）已完成：新增独立纯函数 synthetic metric ke
 `scientific_conclusion=false`。该任务只证明指标数学和数据边界，不构成 Si/CHGNet
 benchmark，不改变 production Agent02 契约或适用域。
 
+P1.1 Task 2（2026-07-28）已完成：新增 `agent02-benchmark-summary-v1` synthetic
+多 case 汇总契约、确定性 request hash/逐 case result hash、MEAN/MAX/RMSE 聚合和 warning-first
+Markdown 报告。汇总严格要求完整且有序的 case 集、唯一 case ID、结果 hash、全部六项
+指标和单一 reference calculation level；缺失/重复 case、混合层级、单位冲突或篡改
+均 fail closed。`TEST_ONLY_COMPLETE/PARTIAL/BLOCKED/FAILED` 保留全部 case 状态，
+仅对完成 case 聚合且不隐藏失败。输出继续固定 synthetic/NONE/no-conclusion；该任务不
+使用真实参考数据，不构成科学 benchmark 或证据晋级。
+
 ## 1. 执行摘要
 
 Agent02 是一个确定性、可恢复、可审计的机器学习筛选阶段，不是让 LLM 自主选择模型或科学阈值的对话 Agent。

@@ -123,6 +123,7 @@ class SyntheticBenchmarkMetricResult(StrictFrozenModel):
     )
     case_id: str = Field(min_length=1)
     input_sha256: Sha256
+    reference_calculation_level_id: str = Field(min_length=1)
     is_synthetic: Literal[True] = True
     evaluation_status: Literal["TEST_ONLY"] = "TEST_ONLY"
     metrics: list[BenchmarkMetricValue] = Field(min_length=1)
@@ -222,11 +223,21 @@ def compute_synthetic_benchmark_metrics(
     return SyntheticBenchmarkMetricResult(
         case_id=data.case_id,
         input_sha256=canonical_metric_input_sha256(data),
+        reference_calculation_level_id=data.reference_calculation_level_id,
         metrics=values,
     )
 
 
 def canonical_metric_input_sha256(data: SyntheticBenchmarkMetricInput) -> str:
+    payload = json.dumps(
+        data.model_dump(mode="json"),
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
+def canonical_metric_result_sha256(data: SyntheticBenchmarkMetricResult) -> str:
     payload = json.dumps(
         data.model_dump(mode="json"),
         sort_keys=True,

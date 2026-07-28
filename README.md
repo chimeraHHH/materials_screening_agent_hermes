@@ -226,6 +226,20 @@ Its result is always `is_synthetic=true`, `evaluation_status=TEST_ONLY`,
 `evidence_level=NONE`, and `scientific_conclusion=false`; it must not be used
 to claim model accuracy or expand the Agent02 applicability domain.
 
+Aggregate a zero-error case and the known-offset synthetic case with the
+frozen benchmark aggregation definitions:
+
+```bash
+.venv/bin/python scripts/run_agent02_benchmark_summary_synthetic.py \
+  --manifest tests/fixtures/benchmarks/agent02-benchmark-v1-si.json \
+  --input tests/fixtures/benchmarks/agent02-benchmark-v1-synthetic-metrics.json
+```
+
+Use `--format markdown` for the deterministic warning-first report. Complete,
+blocked and failed case records remain visible; aggregates never hide a case
+failure. This summary is also permanently `TEST_ONLY` with no evidence or
+scientific conclusion.
+
 ### Agent03 v1 mock controller
 
 Agent03 v1 verifies only the control chain: immutable input and plan hashes,
