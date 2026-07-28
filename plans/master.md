@@ -31,8 +31,8 @@ DMFT 或 DMRG。
 
 当前主里程碑：
 
-> **P0 控制链已收口；Agent02 Step 3 独立真实 worker 与 CPU Gate 已实现，当前
-> 里程碑是补齐目标 Mac MPS/Top-5/恢复 Release Gate，完成前不注册生产能力。**
+> **P0 控制链已收口；Agent02 的独立真实 worker、CPU Top-5 与恢复 Gate 已实现，
+> 当前里程碑是补齐目标 Mac MPS Release Gate，完成前不注册生产能力。**
 
 ### 1.1 已确认基线
 
@@ -41,7 +41,7 @@ DMFT 或 DMRG。
 | Orchestrator | P0.2 已完成；控制、阶段计划和报告契约已冻结 | [`Orchestrator 计划`](subagents/material-screening-orchestrator-plan.md) |
 | Agent 01 | P0 与增强 Gate 已完成；`agent01-contract-v1` 已冻结 | [`Agent 01 计划`](subagents/material-screening-agent01-plan.md) |
 | Agent 02 | Step 1/1.1、P0.2 Fake 路径及 Step 3 独立 CHGNet worker/CPU Gate 已完成 | [`Agent 02 计划`](subagents/material-screening-ml-agent-plan.md) |
-| Agent 02 生产接入 | 目标 Mac MPS parity/fallback、真实 Top-5、恢复/性能 Gate 和 production 注册尚未完成 | [`Agent 02 计划`](subagents/material-screening-ml-agent-plan.md) |
+| Agent 02 生产接入 | CPU Top-5/恢复/资源记录已完成；目标 Mac MPS parity/fallback 与 production 注册尚未完成 | [`Agent 02 计划`](subagents/material-screening-ml-agent-plan.md) |
 | Agent 03 | v1 mock 控制链、审批、恢复、失败注入、报告与 fixture 已完成；真实 DFT backend 未实现或注册 | [`Agent 03 计划`](subagents/material-screening-agent-dft-plan.md) |
 | Agent 04 | MVP mock 控制链、模型校验/路由、审批、恢复、报告与 fixture 已完成；真实 ED/多体 backend 未实现或注册 | [`Agent 04 计划`](subagents/material-screening-agent04-plan.md) |
 | 联网 LLM | Parser Protocol 与离线默认已存在；联网 Provider 尚未接入 | [`README.md`](../README.md) |
@@ -140,7 +140,8 @@ v1 的系统级退出目标是：
 - [x] 完成 1–5 自动、6–20 动态审批、超过 20 预先阻塞的 Fake/控制面测试。
 - [x] 建立独立 Python 3.11 ML worker 环境并锁定依赖。
 - [x] 完成真实 CHGNet CPU 小样例和标准 200 步上限 Gate。
-- [ ] 完成目标 Mac MPS Gate 和真实 Top-5。
+- [x] 完成真实 CPU Top-5、候选级恢复和资源记录。
+- [ ] 完成目标 Mac MPS Gate。
 - [ ] 通过全部 Gate 后显式注册生产 ML capability。
 
 交付目标：L2 接口、可解释筛选漏斗和受控真实 ML 基础能力。
@@ -259,7 +260,8 @@ job、跨进程恢复、Artifact/hash 与 evidence ceiling 测试。新增的四
 ### 4.2 尚未满足
 
 - [x] 独立真实 ML worker和 CHGNet CPU Gate 通过。
-- [ ] 目标 Mac MPS Gate 和 Top-5 E2E 通过。
+- [x] 真实 CPU Top-5 E2E、候选级恢复和资源记录通过。
+- [ ] 目标 Mac MPS Gate 通过。
 - [ ] 生产 ML capability 仅在全部真实与安全 Gate 后显式注册。
 - [ ] 最终 v1 README、演示、已知限制和资源申请清单冻结。
 
@@ -359,7 +361,7 @@ flowchart LR
 
 | 类型 | 事项 | 当前处理 |
 |---|---|---|
-| 当前工程风险 | Agent02 CPU worker 已通过单候选 Gate，但 Top-5、崩溃恢复和性能证据未完成 | Step 4 补齐前保持默认未注册 |
+| 当前工程风险 | Agent02 CPU Top-5/recovery 已通过，但目标 MPS parity/fallback 尚无证据 | Step 4 补齐前保持默认未注册 |
 | 当前工程阻塞 | 当前 Mac 为 `mps.is_built=true`、`mps.is_available=false`，无法完成 MPS parity/fallback | 在 MPS 可用的目标 Mac 生成 health 并运行 Release Gate |
 | 能力缺口 | Agent03/04 只有 mock 控制 Runner，真实生产 backend 未实现或注册 | 保持 `CAPABILITY_UNAVAILABLE`，不得用 fixture 代替 |
 | 基础设施阻塞 | 当前无可用 Slurm、合法 VASP/POTCAR 和通过安全 Gate 的 bridge | 真实 DFT 延后到服务器 P2 |

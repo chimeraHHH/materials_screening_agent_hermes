@@ -145,6 +145,7 @@ def test_real_cpu_worker_produces_valid_l2_artifacts(tmp_path: Path) -> None:
     assert result.relaxation_result is not None
     assert result.relaxation_result.qc_passed
     assert result.relaxation_result.device == "cpu"
+    assert result.relaxation_result.provenance["peak_rss_bytes"] > 0
     assert all(not prop.is_mock for prop in result.ml_properties)
     assert "torch" not in sys.modules
     for artifact in response.produced_artifacts:

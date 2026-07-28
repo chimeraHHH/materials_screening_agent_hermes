@@ -172,8 +172,9 @@ different dedicated Python executable.
 
 The default production registry intentionally still leaves Agent02
 unavailable. The current Mac reports PyTorch MPS support as built but not
-runtime-available, so CPU/MPS parity, MPS fallback, real Top-5, recovery,
-performance recording, and production registration remain Step 4 work. The
+runtime-available, so CPU/MPS parity, MPS fallback and production registration
+remain Step 4 work. The CPU release Gate covers serial Top-5 execution,
+candidate-level interruption recovery, wall time and peak-RSS recording. The
 real worker never falls back to the Fake Worker.
 
 ### Agent03 v1 mock controller
@@ -305,7 +306,7 @@ The P0 closeout run reported `325 passed, 2 skipped`; the skipped tests were
 the two explicit `live_mp` Gates. P1 adds separate `real_ml`, `slow_real_ml`,
 and `mps_ml` markers so the default offline Gate remains independent of the
 heavy worker environment. The current P1 branch reports
-`329 passed, 4 skipped` for the default Gate and `1 passed, 1 skipped` for the
+`329 passed, 5 skipped` for the default Gate and `2 passed, 1 skipped` for the
 explicit real-ML Gate; the latter skip is the unavailable MPS runtime.
 
 The standalone Agent01 and Orchestrator-restart Materials Project release
@@ -389,8 +390,8 @@ control state into `ControlStageOutcome(orchestrator-p0.2-v3)`.
   StructureMatcher optimization, and additional database adapters remain P1.
 - CrystalNN/Larsen warnings are preserved as data-quality warnings. They do not
   automatically reject a candidate.
-- Agent02's real CPU worker exists, but its MPS parity, fallback, Top-5,
-  recovery/performance release Gate, and production registration are still
+- Agent02's real CPU worker, serial Top-5, recovery and resource recording
+  Gates exist, but its MPS parity, fallback and production registration remain
   incomplete. All real Agent03/04 scientific backends remain later
   milestones. Fake/mock adapters remain unregistered and validate control
   behavior only.

@@ -89,13 +89,17 @@ P1 当前进度（2026-07-28）：
   主进程校验无 shell 启动、环境 handshake、sandbox、路径、hash/size、stdout、
   超时和数值 artifact 后，固定 diamond-Si fixture 产生
   `PASS / L2_ML_SCREENED`。
+- CPU Top-5/recovery Gate 已完成：相同 source CIF 的五个独立 candidate operation
+  串行执行；在第 3 个候选前模拟宿主进程终止后，前两个已提交 ledger 被复用，恢复
+  仅执行候选 3–5，最终五个候选均为 `PASS / L2_ML_SCREENED`。每个 worker 结果
+  记录 wall time 和平台归一化的 `peak_rss_bytes`。
 - 当前目标机为 macOS 14.7.4 arm64；PyTorch 报告
   `mps.is_built() == true`、`mps.is_available() == false`。因此 Step 4 的
-  CPU/MPS parity、MPS→CPU 单次回退、Top-5、恢复/性能 Release Gate 尚未完成，
+  CPU/MPS parity、MPS→CPU 单次回退和目标 Mac Release Gate 尚未完成，
   真实 production capability 继续保持未注册，且不会回退 Fake Worker。
-- P1 当前验证：完整默认离线 Gate `329 passed, 4 skipped`，其中两个 skip 为
-  `live_mp`、两个为 opt-in `real_ml/mps_ml`；显式真实 Gate 为
-  `1 passed, 1 skipped`，skip 原因为 MPS runtime 不可用。主环境与独立 worker
+- P1 当前验证：完整默认离线 Gate `329 passed, 5 skipped`，其中两个 skip 为
+  `live_mp`、三个为 opt-in `real_ml/slow_real_ml/mps_ml`；显式真实 Gate 为
+  `2 passed, 1 skipped`，skip 原因为 MPS runtime 不可用。主环境与独立 worker
   环境的 `pip check`、`git diff --check` 均通过；未运行 live MP、未读取
   `MP_API_KEY`，未提交模型缓存、虚拟环境或真实运行 Artifact。
 

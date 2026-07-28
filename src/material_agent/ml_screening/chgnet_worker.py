@@ -12,6 +12,7 @@ import hashlib
 import io
 import math
 import platform
+import resource
 import sys
 import time
 import zipfile
@@ -522,6 +523,7 @@ def _run_candidate(
             "fmax_ev_angstrom": 0.1,
             "max_steps": 200,
             "energy_semantics": "MLIP potential energy",
+            "peak_rss_bytes": _peak_rss_bytes(),
         },
     )
     lineage = build_structure_lineage(
@@ -705,6 +707,15 @@ def _sha256_file(path: Path) -> str:
         while chunk := handle.read(1024 * 1024):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _peak_rss_bytes() -> int:
+    """Return the platform-normalized process peak resident-set size."""
+
+    peak = int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
+    # macOS reports bytes while Linux and the common BSD test runners report
+    # KiB.  Preserve an explicit byte unit in the provenance payload.
+    return peak if sys.platform == "darwin" else peak * 1024
 
 
 if __name__ == "__main__":
