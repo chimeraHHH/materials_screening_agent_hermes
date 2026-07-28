@@ -285,7 +285,7 @@ job、跨进程恢复、Artifact/hash 与 evidence ceiling 测试。新增的四
 - [x] Orchestrator 的审批、计划和输入快照通过不可变 hash 绑定。
 - [x] `status` 只读；只有 `resume` 对账外部任务。
 - [x] fixture/mock 不得提升真实证据的控制面测试已存在。
-- [ ] Agent 02 真实与 Fake 路径通过同一 Adapter/Worker 契约和恢复矩阵。
+- [x] Agent 02 真实与 Fake 路径通过同一 Adapter/Worker 契约和恢复矩阵。
 - [x] Agent 03/04 原生 mock 不产生科学数值，并通过各自 evidence ceiling 测试。
 - [ ] 全系统 Requirement Schema 校验通过率在冻结评测集达到 100%。
 - [ ] 全系统硬约束翻译在冻结回归集达到 100%。
@@ -331,8 +331,8 @@ P0/控制面已明确覆盖：
 
 仍需补齐：
 
-- [ ] Agent 02 模型不支持元素、健康快照过期、worker handshake/路径/大小/超时失败；
-- [ ] Agent 02 第 N 个候选中断后的候选级恢复；
+- [x] Agent 02 模型不支持元素、健康快照过期、worker handshake/路径/大小/超时失败；
+- [x] Agent 02 第 N 个候选中断后的候选级恢复；
 - [ ] Agent 03 backend completed 但科学 validator 拒绝；
 - [x] Agent 03 submit 响应丢失、取消竞态和结果不完整；
 - [x] Agent 04 模型缺字段、solver 不适用、资源拒绝和 mock 证据上限；

@@ -195,6 +195,21 @@ absent or invalid configuration leaves `ml` unavailable with remediation.
 The release Gate covers serial Top-5 execution, candidate-level interruption
 recovery, wall time and peak-RSS recording.
 
+Run the Agent02 benchmark-v1 metadata-only dry-run against the existing Si
+fixture. This validates the manifest, structure hash/size and parsed metadata;
+it does not load CHGNet, evaluate reference values, or produce scientific
+evidence:
+
+```bash
+.venv/bin/python scripts/run_agent02_benchmark_dry_run.py \
+  --manifest tests/fixtures/benchmarks/agent02-benchmark-v1-si.json \
+  --case-id si-diamond-release-v1 \
+  --structure tests/fixtures/real_ml/si-diamond.cif
+```
+
+The expected result is `DRY_RUN_ONLY` with `evidence_level=NONE` and
+`scientific_conclusion=false`.
+
 ### Agent03 v1 mock controller
 
 Agent03 v1 verifies only the control chain: immutable input and plan hashes,

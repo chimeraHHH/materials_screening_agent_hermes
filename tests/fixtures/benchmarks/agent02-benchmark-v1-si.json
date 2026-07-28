@@ -1,0 +1,62 @@
+{
+  "schema_version": "agent02-benchmark-v1",
+  "benchmark_id": "agent02-release-fixture",
+  "revision": 1,
+  "description": "Metadata-only dry-run fixture for the Agent02 benchmark contract.",
+  "metrics": [
+    {
+      "metric": "energy_delta_ev_atom",
+      "unit": "eV/atom",
+      "aggregation": "MEAN",
+      "description": "Difference between model and reference energy per atom; not evaluated in dry-run."
+    },
+    {
+      "metric": "force_mae_ev_angstrom",
+      "unit": "eV/angstrom",
+      "aggregation": "MEAN",
+      "description": "Mean absolute force error; not evaluated in dry-run."
+    },
+    {
+      "metric": "force_max_ev_angstrom",
+      "unit": "eV/angstrom",
+      "aggregation": "MAX",
+      "description": "Maximum force error; not evaluated in dry-run."
+    },
+    {
+      "metric": "stress_mae_gpa",
+      "unit": "GPa",
+      "aggregation": "MEAN",
+      "description": "Mean absolute stress error; not evaluated in dry-run."
+    },
+    {
+      "metric": "lattice_relative_error",
+      "unit": "dimensionless",
+      "aggregation": "MEAN",
+      "description": "Relative lattice error; not evaluated in dry-run."
+    },
+    {
+      "metric": "structure_drift_angstrom",
+      "unit": "angstrom",
+      "aggregation": "MAX",
+      "description": "Maximum structure drift; not evaluated in dry-run."
+    }
+  ],
+  "cases": [
+    {
+      "case_id": "si-diamond-release-v1",
+      "split": "VALIDATION",
+      "structure_artifact": {
+        "uri": "artifact://benchmarks/agent02-benchmark-v1/si-diamond.cif",
+        "sha256": "60949c406df4f5bb757fed161d11d0229441121eea6f950ca077aedc97546ed1",
+        "size_bytes": 857,
+        "media_type": "chemical/x-cif"
+      },
+      "structure_id": "structure-si-diamond-release-v1",
+      "formula": "Si2",
+      "elements": ["Si"],
+      "num_sites": 2,
+      "dimensionality": 3,
+      "reference": null
+    }
+  ]
+}

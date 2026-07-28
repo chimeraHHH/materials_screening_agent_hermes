@@ -102,6 +102,16 @@ P1 当前进度（2026-07-28）：
   `git diff --check` 均通过；未运行 live MP、未读取 `MP_API_KEY`，未提交模型缓存、
   虚拟环境或真实运行 Artifact。
 
+P1.1 Task 0（2026-07-28）已完成：冻结独立的 `agent02-benchmark-v1` 评测契约，
+不修改 Agent02 生产 request/stage/worker 公共契约。新增 benchmark manifest、指标
+名称/单位/聚合定义、结构 Artifact/hash、参考方法 provenance 占位和 metadata-only
+dry-run；现有
+`tests/fixtures/real_ml/si-diamond.cif` 已通过 dry-run，校验结构 hash、大小、公式、
+元素和位点数。dry-run 明确输出 `DRY_RUN_ONLY`、`evidence_level=NONE`、
+`scientific_conclusion=false`，不读取参考科学值、不调用 CHGNet/DFT、不产生 L2 或
+其他科学 claim。新增 hash/size/metadata 篡改和科学 claim 防护测试；实际 benchmark
+数据、误差指标和适用域结论仍等待课题组审核的 DFT benchmark。
+
 ## 1. 执行摘要
 
 Agent02 是一个确定性、可恢复、可审计的机器学习筛选阶段，不是让 LLM 自主选择模型或科学阈值的对话 Agent。
