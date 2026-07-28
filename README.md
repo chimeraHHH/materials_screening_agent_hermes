@@ -1,15 +1,17 @@
 # Material Screening Agent
 
-This repository implements the durable Orchestrator P0.2 control plane and
-the deterministic Materials Project retrieval stage described in
+This repository implements the durable Orchestrator P0.2 control plane,
+the deterministic Materials Project retrieval stage, and explicitly
+test-only mock control adapters for the downstream stages described in
 `plans/subagents/material-screening-orchestrator-plan.md` and
 `plans/subagents/material-screening-agent01-plan.md`.
 
 The execution plan always contains the ordered
 `retrieval → ml → dft → many_body` routes. Agent 01 is the only production
-scientific runner today. Agent03 has a test-only, explicitly registered mock
-controller for lifecycle integration; it is not a production capability and
-does not produce scientific DFT values.
+scientific runner today. Agent02 has a P0.2 Fake Adapter/Worker path, Agent03
+has a v1 mock controller, and Agent04 has an MVP mock controller. All three are
+available only through an explicitly injected test registry; none is registered
+as a default production capability or allowed to raise scientific evidence.
 
 ## Development environment
 
@@ -128,6 +130,19 @@ material-agent run-stage ml \
   --run-id run-ml
 ```
 
+### Agent02 P0.2 Fake Adapter
+
+Agent02's P0.2 Adapter is implemented and covered offline with an explicitly
+registered Fake Worker. It validates immutable Agent01 inputs, freezes native
+and control plans, applies the 1–5/6–20/>20 batch policy, writes candidate- and
+stage-level completion records, reuses completed operations, and fails closed
+on Artifact/hash conflicts. Fake results are always `is_mock=true` and remain
+at L1; they cannot satisfy an L2 target.
+
+The default production registry intentionally leaves Agent02 unavailable.
+There is no real CHGNet worker, independent heavy-dependency environment,
+validated checkpoint/model health snapshot, or production registration yet.
+
 ### Agent03 v1 mock controller
 
 Agent03 v1 verifies only the control chain: immutable input and plan hashes,
@@ -212,10 +227,11 @@ input snapshot hashes.
 
 The P0.2 fixture contract verifies automatic batches of 1–5 candidates,
 approval for 6–20, and pre-plan blocking above the 20-candidate hard limit.
-Agent02's production runner remains unavailable until its native adapter is
-implemented. A `WaitingExternal` result is stored as Stage `RUNNING` plus Run
-`PAUSED`, so a new process can reconcile the same external job and frozen plan
-without preparing or submitting it again.
+Agent02's production runner remains unavailable until the independent real
+worker and its CPU/Mac, recovery, security, and release Gates are complete.
+A `WaitingExternal` result is stored as Stage `RUNNING` plus Run `PAUSED`, so a
+new process can reconcile the same external job and frozen plan without
+preparing or submitting it again.
 
 ## Run Agent 01 standalone
 
@@ -250,11 +266,11 @@ MPLCONFIGDIR=/tmp/material-agent-mpl \
 .venv/bin/python -m pytest -q -p no:cacheprovider
 ```
 
-The Orchestrator P0.1 baseline is commit `d681de8`. The P0.2 stage-planning
-bridge and tests are frozen at commit `701857c`; that release snapshot reported
-`129 passed, 2 skipped`, with the skipped tests being the two explicit
-`live_mp` Gates. Run the command above against the current working tree for the
-current result. `pip check` was clean for that release snapshot.
+The Orchestrator P0.1 baseline is commit `d681de8`, and the P0.2 stage-planning
+bridge baseline is commit `701857c`. The 2026-07-28 P0 closeout run against the
+current source reports `325 passed, 2 skipped`; the skipped tests are the two
+explicit `live_mp` Gates. `.venv/bin/python -m pip check` and
+`git diff --check` also pass.
 
 The standalone Agent01 and Orchestrator-restart Materials Project release
 Gates are opt-in and require both network access and `MP_API_KEY`:
@@ -324,6 +340,10 @@ control state into `ControlStageOutcome(orchestrator-p0.2-v3)`.
 - Agent 01 is the only real scientific stage in the graph. Agent 02–04 remain
   unregistered production capabilities; test-only fixture runners are
   explicitly `is_mock=true` and cannot raise evidence.
+- The four ordered routes and fail-closed boundaries are covered end to end,
+  but there is no default four-stage scientific success path. In particular,
+  Agent04 requires an explicit expert-supplied `EffectiveModelPackage`; mock DFT
+  output is not converted into a many-body model.
 - Execution is synchronous and single-project. Long-running background workers,
   multi-user access, and Postgres checkpointing are server-stage work.
 - P0 uses at most ten 500-record chunks and reports `PARTIAL` when the
@@ -332,6 +352,6 @@ control state into `ControlStageOutcome(orchestrator-p0.2-v3)`.
   StructureMatcher optimization, and additional database adapters remain P1.
 - CrystalNN/Larsen warnings are preserved as data-quality warnings. They do not
   automatically reject a candidate.
-- Agent 02–04 scientific implementations and real DFT/many-body backends remain
-  later milestones. The approval and external-job lifecycle are implemented
-  against injected runner contracts and covered with non-scientific fixtures.
+- Agent 02's real worker and all real Agent03/04 scientific backends remain
+  later milestones. The Fake/mock adapters validate control behavior only and
+  remain unregistered in the default production registry.

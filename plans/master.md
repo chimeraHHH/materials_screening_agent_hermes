@@ -7,16 +7,32 @@
 > **来源说明：** 本计划由原始总方案的项目管理章节拆分而来，并根据
 > [README](../README.md)、[Orchestrator 计划](subagents/material-screening-orchestrator-plan.md)、
 > [Agent 01 计划](subagents/material-screening-agent01-plan.md)和
-> [Agent 02 计划](subagents/material-screening-ml-agent-plan.md)中明确记录的状态更新。当前可运行能力以 README、源码、配置和测试为准。
+> [Agent 02 计划](subagents/material-screening-ml-agent-plan.md)、
+> [Agent 03 计划](subagents/material-screening-agent-dft-plan.md)及
+> [Agent 04 计划](subagents/material-screening-agent04-plan.md)中明确记录的状态更新。当前可运行能力以 README、源码、配置和测试为准。
 > 只有这些仓库文档明确确认完成的事项才标为 `[x]`；无法确认的事项保持 `[ ]`。
 
-状态基准日期：2026-07-27
+状态基准日期：2026-07-28
+
+### 本次 P0 收口范围
+
+本次工作只对齐仓库已经存在的实现、测试和文档，不扩展真实科学计算能力。验收范围
+包括：核对 `retrieval → ml → dft → many_body` 固定路由；确认 Agent02 P0.2 Fake
+Adapter、Agent03 v1 mock 控制链和 Agent04 MVP mock 控制链的实际状态；复核缺输入、
+未注册 capability、审批拒绝、跨进程恢复、重复提交、Artifact/hash 篡改与 mock
+evidence ceiling；运行完整离线 Gate、`pip check` 和 `git diff --check`。
+
+依赖与边界：Agent01 仍是唯一生产科学 Runner；Agent02/03/04 只允许通过显式测试
+registry 使用 mock，默认 production capability 必须保持未注册；不修改公共
+Orchestrator/checkpoint schema 或数据库迁移，不接入真实 CHGNet、VASP、Slurm、ED、
+DMFT 或 DMRG。
 
 ## 1. 当前里程碑
 
 当前主里程碑：
 
-> **Agent 02 Step 2：实现 P0.2 Adapter、审批和恢复；生产 ML capability 在全部发布 Gate 通过前保持未注册。**
+> **P0 控制链收口：Agent02 P0.2 Fake Adapter、Agent03 v1 mock 和 Agent04 MVP
+> mock 已完成；下一候选里程碑是 Agent02 Step 3 真实独立 worker。**
 
 ### 1.1 已确认基线
 
@@ -24,22 +40,23 @@
 |---|---|---|
 | Orchestrator | P0.2 已完成；控制、阶段计划和报告契约已冻结 | [`Orchestrator 计划`](subagents/material-screening-orchestrator-plan.md) |
 | Agent 01 | P0 与增强 Gate 已完成；`agent01-contract-v1` 已冻结 | [`Agent 01 计划`](subagents/material-screening-agent01-plan.md) |
-| Agent 02 | Step 1/1.1 原生契约、确定性骨架、Fake Adapter/Worker 和 fixture 已完成 | [`Agent 02 计划`](subagents/material-screening-ml-agent-plan.md) |
-| Agent 02 生产接入 | P0.2 Adapter、真实独立 worker、真实 CHGNet 和生产注册尚未完成 | [`Agent 02 计划`](subagents/material-screening-ml-agent-plan.md) |
-| Agent 03 | 详细计划已存在；生产科学 Runner/真实 DFT backend 尚未实现或注册 | [`Agent 03 计划`](subagents/material-screening-agent-dft-plan.md) |
-| Agent 04 | 详细计划已存在；生产科学 Runner/真实多体 backend 尚未实现或注册 | [`Agent 04 计划`](subagents/material-screening-agent04-plan.md) |
+| Agent 02 | Step 1/1.1 原生契约与 P0.2 Fake Adapter/Worker、审批/恢复测试和 fixture 已完成 | [`Agent 02 计划`](subagents/material-screening-ml-agent-plan.md) |
+| Agent 02 生产接入 | 真实独立 worker、CHGNet CPU/Mac Gate、真实 Top-5 和 production 注册尚未完成 | [`Agent 02 计划`](subagents/material-screening-ml-agent-plan.md) |
+| Agent 03 | v1 mock 控制链、审批、恢复、失败注入、报告与 fixture 已完成；真实 DFT backend 未实现或注册 | [`Agent 03 计划`](subagents/material-screening-agent-dft-plan.md) |
+| Agent 04 | MVP mock 控制链、模型校验/路由、审批、恢复、报告与 fixture 已完成；真实 ED/多体 backend 未实现或注册 | [`Agent 04 计划`](subagents/material-screening-agent04-plan.md) |
 | 联网 LLM | Parser Protocol 与离线默认已存在；联网 Provider 尚未接入 | [`README.md`](../README.md) |
 
-当前 README 记录的 P0.2 发布基线为：
+2026-07-28 P0 收口验证基线为：
 
-- 默认回归：`129 passed, 2 skipped`；
+- 完整离线 Gate：`325 passed, 2 skipped`；
 - 两个跳过项为显式 opt-in 的 `live_mp` Gate；
-- `pip check` 无破损依赖；
-- Agent 01 standalone 与 Orchestrator restart 的真实 Materials Project Gate 已通过；
+- `pip check` 无破损依赖，`git diff --check` 通过；
+- 本次没有运行 live Materials Project 测试、访问网络或读取/生成 `MP_API_KEY`；
 - Agent 01 是当前唯一生产科学 Runner；
 - Agent 02–04 未注册生产 capability，不得用测试 fixture 冒充科学结果。
 
-Agent 02 分计划记录了后续 Step 1 基线 `242 passed, 2 skipped`，但 Step 2 仍未完成。测试数字用于标识已有记录，不替代本计划下方的系统级退出条件。
+历史分计划中的较小测试数字只记录当时任务快照；当前 P0 状态以上述完整离线 Gate
+和仓库现有实现为准。P0 控制链收口不等于系统 v1 或真实 ML/DFT/多体科学能力完成。
 
 ### 1.2 当前 v1 验收目标
 
@@ -118,9 +135,9 @@ v1 的系统级退出目标是：
 - [x] 实现 Model Registry、适用域、证据和结构 lineage 纯函数。
 - [x] 实现 Fake Model Adapter/Fake Worker 与冻结 fixture。
 - [x] 保证 mock/fixture 不能晋级 L2。
-- [ ] 实现 `Agent02RunnerAdapter` 的 P0.2 五方法生命周期。
-- [ ] 实现候选级 operation ledger、重复 start、跨 attempt 恢复和篡改检测。
-- [ ] 完成 1–5 自动、6–20 审批、超过 20 阻塞的真实 Adapter E2E。
+- [x] 实现 `Agent02RunnerAdapter` 的 P0.2 五方法生命周期。
+- [x] 实现候选级 operation ledger、重复 start、跨 attempt 复用和篡改检测。
+- [x] 完成 1–5 自动、6–20 动态审批、超过 20 预先阻塞的 Fake/控制面测试。
 - [ ] 建立独立 Python 3.11 ML worker 环境并锁定依赖。
 - [ ] 完成真实 CHGNet CPU 小样例、Mac Gate 和真实 Top-5。
 - [ ] 通过全部 Gate 后显式注册生产 ML capability。
@@ -130,11 +147,11 @@ v1 的系统级退出目标是：
 ### Day 10：Agent 03 Adapter
 
 - [x] Orchestrator 已提供通用昂贵任务审批、`WaitingExternal`、reconcile 和 cancel 控制能力。
-- [ ] 实现 Agent 03 原生 `DFTRequest`、claim、workflow plan 和结果契约。
-- [ ] 实现 DFT 输入校验、方法 policy、参数 diff 和资源估计。
-- [ ] 实现 `MockDFTBackend` 的 submit/status/cancel/fetch。
-- [ ] 实现 Agent 03 Runner/Adapter、幂等、审批和恢复。
-- [ ] 冻结不产生伪科研数值的 DFT fixture、报告和测试。
+- [x] 实现 Agent 03 v1 原生 `DFTRequest`、claim、workflow plan 和结果契约。
+- [x] 实现 v1 mock 输入校验、确定性 plan 和控制级资源估计。
+- [x] 实现 `MockDFTBackend` 的 submit/status/cancel/fetch。
+- [x] 实现 Agent 03 Runner/Adapter、幂等、审批和恢复。
+- [x] 冻结不产生伪科研数值的 DFT fixture、报告和测试。
 - [ ] 实现并评审 VASPilot structured bridge mapping；真实接入属于未来 P2。
 
 交付目标：不冒充真实计算的 DFT 状态链路。
@@ -142,12 +159,12 @@ v1 的系统级退出目标是：
 ### Day 11：Agent 04 Adapter
 
 - [x] Orchestrator 已提供 many-body capability descriptor、输入阻塞和测试生命周期控制能力。
-- [ ] 实现 `EffectiveModelPackage` 与多体原生契约。
-- [ ] 实现物理完整性、linkage 和证据范围校验。
-- [ ] 实现 Solver Capability Registry、路由和资源估计。
-- [ ] 实现 `MockManyBodyBackend` 和缺输入/不适用演示。
-- [ ] 实现 Agent 04 Runner/Adapter、审批、恢复和报告。
-- [ ] 冻结 1D Hubbard 与 2D 小格点 fixture。
+- [x] 实现 `EffectiveModelPackage` 与多体原生契约。
+- [x] 实现物理完整性、linkage 和证据范围校验。
+- [x] 实现 Solver Capability Registry、路由和资源估计。
+- [x] 实现 `MockManyBodyBackend` 和缺输入/不适用演示。
+- [x] 实现 Agent 04 Runner/Adapter、审批、恢复和报告。
+- [x] 冻结 1D Hubbard 与 2D 小格点 fixture。
 
 交付目标：多体阶段接口、输入边界和不晋级伪 L4 的控制链。
 
@@ -158,15 +175,15 @@ v1 的系统级退出目标是：
 - [x] 实现有限 retry、状态倒退和 backend 不一致防线。
 - [x] 实现 Project 级推进锁和 status 只读语义。
 - [ ] 完成 Agent 02 阶段专用 worker sandbox、输出大小和超时恢复 Gate。
-- [ ] 完成 Agent 03/04 原生 Artifact、安全和失败注入 Gate。
+- [x] 完成 Agent 03/04 mock 原生 Artifact、安全和失败注入 Gate。
 
 ### Day 13：综合测试与文档
 
 - [x] 完成 P0 的 unit、contract、integration、E2E 和 opt-in live Gate。
 - [ ] 完成 Agent 02 生产接入后的分层 Fake/real CPU/Mac/E2E Gate。
-- [ ] 完成 Agent 03/04 控制链 contract/integration/E2E Gate。
-- [ ] 完成四阶段综合回归和任意阶段启动矩阵。
-- [ ] 更新 README 中最终 v1 配置、演示脚本和限制。
+- [x] 完成 Agent 03/04 mock 控制链 contract/integration/E2E Gate。
+- [x] 完成四阶段 P0 安全回归和任意阶段启动矩阵。
+- [x] 更新 README 中 P0 配置、mock 演示和限制。
 
 ### Day 14：缓冲与展示
 
@@ -175,22 +192,41 @@ v1 的系统级退出目标是：
 - [ ] 生成最终架构说明、运行证据和结果报告。
 - [ ] 列出并确认下一阶段资源申请清单。
 
-## 3. 当前第一批任务
+## 3. P0 收口已完成项
 
-当前第一批任务只覆盖 Agent 02 Step 2，不提前扩展真实 CHGNet、DFT 或多体后端：
+Agent 02 Step 2 已在不扩展真实 CHGNet、DFT 或多体后端的边界内完成：
 
-- [ ] 从 `StageExecutionContext` 安全加载 Requirement、Agent 01 manifest、来源结构和可选 `stage_request`。
-- [ ] 重算并验证全部 Artifact URI/hash、Schema、revision 和结构引用。
-- [ ] 实现 `Agent02RunnerAdapter.validate_input()`，区分缺失、完整性失败和 21+ 候选硬上限。
-- [ ] 实现幂等 `prepare()`，依次冻结 `MLStagePlan` 与 `PreparedStagePlan`。
-- [ ] 将 1–5 无审批、显式 6–20 审批、超过 20 阻塞映射到控制面。
-- [ ] 实现 `start()` 的双计划复核、Fake Worker 调用和 Adapter 权威 Artifact finalization。
-- [ ] 实现候选级和阶段级 `operation-complete.json`，覆盖重复 start 与跨 attempt 复用。
-- [ ] 对完成记录缺失、篡改或冲突返回 `BACKEND_INCONSISTENT`，不得静默重算。
-- [ ] 为同步 v1 的 `reconcile/cancel` 返回明确 unsupported 语义。
-- [ ] 完成显式 `run-stage ml` Fake CLI E2E 和要求 L2 的整图 fixture E2E。
-- [ ] 确认默认生产 `StageId.ML` 仍为 `registered=false`。
-- [ ] 将 Agent 02 Step 2 代码/测试形成独立、可回退提交后，再进入真实 worker 阶段。
+- [x] 从 `StageExecutionContext` 安全加载 Requirement、Agent 01 manifest、来源结构和可选 `stage_request`。
+- [x] 重算并验证全部 Artifact URI/hash、Schema、revision 和结构引用。
+- [x] 实现 `Agent02RunnerAdapter.validate_input()`，区分缺失、完整性失败和 21+ 候选硬上限。
+- [x] 实现幂等 `prepare()`，依次冻结 `MLStagePlan` 与 `PreparedStagePlan`。
+- [x] 将 1–5 无审批、显式 6–20 审批、超过 20 阻塞映射到控制面。
+- [x] 实现 `start()` 的双计划复核、Fake Worker 调用和 Adapter 权威 Artifact finalization。
+- [x] 实现候选级和阶段级 `operation-complete.json`，覆盖重复 start 与跨 attempt 复用。
+- [x] 对完成记录缺失、篡改或冲突返回 `BACKEND_INCONSISTENT`，不得静默重算。
+- [x] 为同步 v1 的 `reconcile/cancel` 返回明确 unsupported 语义。
+- [x] 完成显式 runtime `run-stage ml` Fake E2E 和要求 L2 的整图 fail-closed E2E；
+  默认 CLI 不注入测试 registry，继续报告 capability unavailable。
+- [x] 确认默认 production `StageId.ML` 仍为 `registered=false`。
+
+Agent03 v1 和 Agent04 MVP mock 控制链也已完成各自契约、审批、operation/external
+job、跨进程恢复、Artifact/hash 与 evidence ceiling 测试。新增的四阶段综合安全回归
+确认固定 route 顺序，并确认默认 registry 对 Agent02/03/04 全部
+`CAPABILITY_UNAVAILABLE`、不创建下游 native result。
+
+| P0 边界 | 当前明确行为 |
+|---|---|
+| 缺输入 | 在 prepare/submit 前返回 `BLOCKED_MISSING_INPUT` 或完整性失败，不补造 Artifact |
+| 未注册 capability | 默认 Agent02/03/04 返回 `CAPABILITY_UNAVAILABLE`，不调用 Fake/mock |
+| 审批拒绝 | Stage 为 `CANCELLED`，不创建 backend operation/job；已有上游结果可形成 `PARTIAL` |
+| 跨进程恢复 | Orchestrator/Agent01 checkpoint 可恢复；Agent03/04 从冻结 plan、operation 和 external ref 对账；Agent02 同步路径复用完成记录 |
+| 重复提交 | 同一 operation/idempotency key 复用既有结果或 external job，冲突 fail closed |
+| Artifact/hash 篡改 | 返回 `BACKEND_INCONSISTENT`/完整性失败，不静默重算 |
+| mock evidence ceiling | Agent02 不超过 L1；Agent03 不产生 L3；Agent04 不产生 L4 且 observables 为空 |
+
+限制：固定四阶段 route 与各阶段显式启动/安全失败已验证，但默认 production registry
+不会形成四阶段科学成功链。Agent03 也不能替代专家生成 Agent04 所需的
+`EffectiveModelPackage`；真实阶段间数据交付仍属于后续科学里程碑。
 
 详细输入、Artifact 和退出条件见
 [Agent 02 计划第 8.2 节](subagents/material-screening-ml-agent-plan.md#82-step-2p02-adapter审批和恢复)。
@@ -213,19 +249,21 @@ v1 的系统级退出目标是：
 - [x] secret 不进入源码、fixture 或项目 Artifact。
 - [x] P0 核心 unit、contract、integration、E2E 和真实 MP Gate 已通过。
 - [x] README 能让另一名开发者复现 P0。
+- [x] Agent 02 P0.2 Fake Adapter 完成并通过显式测试 registry 的 runtime E2E。
+- [x] Agent 03 v1 mock 输入、计划、claim、backend、审批、恢复和报告链完成。
+- [x] Agent 04 MVP EffectiveModel、路由、mock backend、审批、恢复和报告链完成。
+- [x] DFT/多体 mock 明确 `is_mock=true`、无伪科研数值且无法晋级 L3/L4。
+- [x] 四阶段 route、安全边界、失败注入和报告措辞 P0 Gate 通过。
 
 ### 4.2 尚未满足
 
-- [ ] Agent 02 P0.2 Adapter 完成并通过 Fake E2E。
 - [ ] 独立真实 ML worker、CHGNet CPU/Mac Gate 和 Top-5 E2E 通过。
 - [ ] 生产 ML capability 仅在全部真实与安全 Gate 后显式注册。
-- [ ] Agent 03 的输入、计划、claim、Mock backend、审批、恢复和报告链完成。
-- [ ] Agent 04 的 EffectiveModel、路由、Mock backend、审批、恢复和报告链完成。
-- [ ] DFT/多体测试结果明确 `is_mock=true`、无伪科研数值且无法晋级 L3/L4。
-- [ ] 四阶段综合测试、失败注入和报告措辞 Gate 通过。
 - [ ] 最终 v1 README、演示、已知限制和资源申请清单冻结。
 
 只有第 4.1 与第 4.2 节全部完成，系统 v1 才可宣告完成。
+真实 DFT 与多体 backend、科学 benchmark 和对应生产注册属于后续 P2/P1 科学
+里程碑，不是系统 v1 的退出条件，也不能由 P0 mock 控制链替代。
 
 ## 5. 工程指标、评测集与失败注入
 
@@ -240,11 +278,11 @@ v1 的系统级退出目标是：
 - [x] `status` 只读；只有 `resume` 对账外部任务。
 - [x] fixture/mock 不得提升真实证据的控制面测试已存在。
 - [ ] Agent 02 真实与 Fake 路径通过同一 Adapter/Worker 契约和恢复矩阵。
-- [ ] Agent 03/04 原生 mock 不产生科学数值，并通过各自 evidence ceiling 测试。
+- [x] Agent 03/04 原生 mock 不产生科学数值，并通过各自 evidence ceiling 测试。
 - [ ] 全系统 Requirement Schema 校验通过率在冻结评测集达到 100%。
 - [ ] 全系统硬约束翻译在冻结回归集达到 100%。
-- [ ] 四阶段所有人工审批都具有不可变记录和过期快照测试。
-- [ ] 四阶段核心单元、契约、集成和 E2E 测试全部通过。
+- [x] P0 mock 控制链的人工审批具有不可变记录和篡改/过期快照测试。
+- [x] 四阶段 P0 核心单元、契约、集成和 E2E 测试全部通过。
 
 ### 5.2 初始评测集
 
@@ -260,8 +298,8 @@ v1 的系统级退出目标是：
 - [x] 用户拒绝审批；
 - [x] 测试外部 backend 的超时、失败、取消与状态倒退；
 - [ ] Agent 02 真实模型适用域、数值和恢复集；
-- [ ] Agent 03 原生 DFT 控制链评测集；
-- [ ] Agent 04 原生多体控制链评测集。
+- [x] Agent 03 v1 mock DFT 控制链评测集；
+- [x] Agent 04 MVP mock 多体控制链评测集。
 
 科学数据集：
 
@@ -288,8 +326,8 @@ P0/控制面已明确覆盖：
 - [ ] Agent 02 模型不支持元素、健康快照过期、worker handshake/路径/大小/超时失败；
 - [ ] Agent 02 第 N 个候选中断后的候选级恢复；
 - [ ] Agent 03 backend completed 但科学 validator 拒绝；
-- [ ] Agent 03 submit 响应丢失、取消竞态和结果不完整；
-- [ ] Agent 04 模型缺字段、solver 不适用、资源拒绝和 mock 证据上限；
+- [x] Agent 03 submit 响应丢失、取消竞态和结果不完整；
+- [x] Agent 04 模型缺字段、solver 不适用、资源拒绝和 mock 证据上限；
 - [ ] 最终四阶段报告生成中断和重建。
 
 ## 6. 跨模块依赖
@@ -297,11 +335,11 @@ P0/控制面已明确覆盖：
 ```mermaid
 flowchart LR
     O["Orchestrator P0.2<br/>已冻结"] --> A1["Agent 01 contract v1<br/>已冻结"]
-    A1 --> A2["Agent 02 Step 2<br/>当前里程碑"]
-    A2 --> ML["真实 ML Worker / Release Gate<br/>下一里程碑"]
-    ML --> A3["Agent 03 控制链<br/>计划"]
+    A1 --> A2["Agent 02 P0.2 Fake Adapter<br/>已完成"]
+    A2 --> ML["Agent 02 Step 3<br/>真实 Worker / CPU Gate"]
+    ML --> A3["Agent 03 v1 mock 控制链<br/>已完成"]
     A3 --> MCP["ModelConstructionPackage<br/>未来"]
-    MCP --> A4["Agent 04 控制链与真实 solver<br/>计划"]
+    MCP --> A4["Agent 04 MVP mock 已完成<br/>真实 solver 属于 P1"]
     INF["服务器 / Slurm / VASP / POTCAR / 专家 policy"] --> A3
     EXP["专家模型、linkage 与 benchmark"] --> A4
 ```
@@ -319,9 +357,9 @@ flowchart LR
 
 | 类型 | 事项 | 当前处理 |
 |---|---|---|
-| 当前工程风险 | Agent 02 Step 2 尚未建立真实 Artifact ledger 和 Adapter E2E | 当前第一批任务只聚焦该窄范围 |
-| 当前工程阻塞 | 真实 CHGNet 独立环境、lock、checkpoint 与 Mac health snapshot 尚未建立 | Step 2 完成后进入 Step 3/4 |
-| 能力缺口 | Agent 03/04 生产 Runner 未实现或注册 | 保持 `CAPABILITY_UNAVAILABLE`，不得用 fixture 代替 |
+| 当前工程风险 | Agent02 Fake Adapter 已完成，但没有真实 worker 路径的性能、崩溃和安全证据 | Step 3 在独立环境实现并保留默认未注册 |
+| 当前工程阻塞 | 真实 CHGNet 独立环境、lock、checkpoint 与 Mac health snapshot 尚未建立 | 进入 Step 3/4 前冻结环境与 Release Gate |
+| 能力缺口 | Agent03/04 只有 mock 控制 Runner，真实生产 backend 未实现或注册 | 保持 `CAPABILITY_UNAVAILABLE`，不得用 fixture 代替 |
 | 基础设施阻塞 | 当前无可用 Slurm、合法 VASP/POTCAR 和通过安全 Gate 的 bridge | 真实 DFT 延后到服务器 P2 |
 | 科学阻塞 | 课题组 DFT 方法 profile、POTCAR mapping、U/J、磁序等未冻结 | 真实 DFT backend 不得执行 |
 | 科学阻塞 | 多体模型构建链、材料 linkage 和首个真实材料目标未冻结 | Agent 04 只能接受完整专家输入；不自动猜测 |
@@ -338,15 +376,17 @@ flowchart LR
 - [ ] 首个真实多体材料目标、模型构建方法和专家审查人。
 - [ ] gold set 的维护人、来源与判定流程。
 
-这些事项不阻塞当前 Agent 02 Step 2，但会阻塞真实 DFT、多体和科学验收。
+这些事项不影响已完成的 P0 mock 控制链，但会阻塞真实 DFT、多体和科学验收。
 
 ## 8. 下一步
 
-1. [ ] 完成第 3 节 Agent 02 Step 2，并形成独立代码/测试基线。
-2. [ ] 在独立 Python 3.11 环境实现已冻结 JSON worker 协议和真实 CHGNet CPU Gate。
+1. [x] 完成 Agent02 Step 2、Agent03 v1 mock、Agent04 MVP mock 和四阶段 P0
+   安全回归。
+2. [ ] 若批准进入下一里程碑，在独立 Python 3.11 环境实现已冻结 JSON worker 协议
+   和真实 CHGNet CPU Gate；主环境不得加入 Torch/CHGNet/ASE。
 3. [ ] 完成目标 Mac health、CPU/MPS parity、真实 Top-5、崩溃恢复和安全 Gate。
-4. [ ] 审核文档、model card、许可和限制后，显式注册生产 ML capability。
-5. [ ] 回到系统 v1 范围，实现 Agent 03 原生契约、Mock backend 和控制链。
-6. [ ] 实现 Agent 04 EffectiveModel、Mock backend 和控制链。
-7. [ ] 执行四阶段综合失败注入、报告措辞和新环境复现 Gate。
-8. [ ] 冻结 v1 演示与资源申请清单，再决定服务器 P2 和真实科学后端排期。
+4. [ ] 审核文档、model card、许可和限制后，再评估显式注册 production ML capability。
+5. [ ] 真实 Agent03 进入 P2 前冻结 VASP/POTCAR、方法 policy、Slurm/bridge 和专家 Gate。
+6. [ ] Agent04 真实 ED 作为独立 P1，以科学规格和 benchmark 为先，不实现
+   DMFT/DMRG/自动模型猜测。
+7. [ ] 冻结最终 v1 演示与资源申请清单，再决定服务器 P2 和真实科学后端排期。

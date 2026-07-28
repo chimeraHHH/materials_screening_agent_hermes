@@ -24,9 +24,11 @@
 
 ### 当前下一步、依赖与阻塞
 
-1. 以离线契约测试验证后续 Agent Adapter 不破坏既有 `agent01-contract-v1` 和 P0.2 控制契约。
+1. 以离线契约和四阶段安全回归持续验证 Agent02 P0.2 Fake Adapter、Agent03 v1 mock
+   和 Agent04 MVP mock 不破坏既有 `agent01-contract-v1` 与 P0.2 控制契约。
 2. 在服务器阶段单独设计 Postgres checkpointer、后台 worker 和多用户权限迁移；每项都应有 schema/恢复测试和回滚边界。
-3. 只有 Agent02/03/04 原生契约和 Adapter 明确可用后，才逐个切换生产 capability 注册状态。
+3. 只有各 Agent 的真实 worker/backend、科学验证和安全 Release Gate 全部通过后，
+   才逐个评估 production capability 注册；mock 完成不改变默认注册状态。
 
 当前阻塞是服务器基础设施尚未就绪；Agent02 的真实 worker、Agent03/04 的生产 backend 也尚未提供，不能由 Orchestrator 代为实现或伪造结果。
 
@@ -34,7 +36,10 @@
 
 ## 0. 当前实施进度
 
-当前状态：**Orchestrator P0.2 已完成：P0.1 发布基线为 `d681de8`，runner-owned StagePlan 与动态审批桥接提交为 `701857c`；默认回归、干净目录重建和真实 MP 发布 Gate 均已通过。下一步切换到 Agent02 原生契约与科学实现。**
+当前状态：**Orchestrator P0.2 已完成：P0.1 发布基线为 `d681de8`，runner-owned
+StagePlan 与动态审批桥接提交为 `701857c`；Agent02/03/04 的 Fake/mock 控制链均已
+通过显式测试 registry 接入，默认 production registry 仍只提供 Agent01 科学 Runner。
+下一候选里程碑是 Agent02 Step 3 真实独立 worker，不属于 P0。**
 
 已完成：
 
@@ -55,7 +60,8 @@
 - [x] 冻结 `PreparedStagePlan(orchestrator-stage-plan-v2)`、阶段输入快照和 runner-owned native plan；
 - [x] 实现 capability 审批下限与 runner 动态审批的 OR 合并规则；
 - [x] 实现真实阶段计划引用、计划/输入篡改防护及 P0.1 checkpoint 兼容策略；
-- [x] 全仓默认测试结果为 `129 passed, 2 skipped`（均为 `live_mp`），`pip check` 通过。
+- [x] 2026-07-28 P0 收口完整离线 Gate 为 `325 passed, 2 skipped`（均为显式
+  `live_mp`），`pip check` 与 `git diff --check` 通过。
 
 剩余工作：
 

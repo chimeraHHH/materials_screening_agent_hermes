@@ -27,14 +27,31 @@
 
 ### 当前下一步、依赖与阻塞
 
-1. 实现并测试 `EffectiveModelPackage` Schema、单位/自由度/边界条件和 provenance 完整性校验。
-2. 为 Hubbard fixture 实现确定性 capability registry、适用性路由、资源估算和审批 payload。
-3. 实现 `MockManyBodyBackend` 生命周期、幂等 ledger、失败注入、恢复和不提升 L4 的 contract/E2E 测试。
-4. 在 MVP 控制链稳定后，逐项实现 ED basis/operator/Hamiltonian/solver/observable，并用固定 benchmark 验证。
+1. P0 收口复核已完成的 `EffectiveModelPackage`、输入/Artifact 完整性校验、
+   deterministic registry/routing、资源估算和审批 payload。
+2. 复核 `MockManyBodyBackend` 与 `ManyBodyStageRunner` 的幂等 lifecycle、失败注入、
+   跨进程恢复、结果 hash 校验和不提升 L4 的 contract/integration/E2E。
+3. 确认默认 production many-body capability 未注册，fixture/mock 始终
+   `is_mock=true`、空 observables，且不生成真实 solver 结果。
+4. P0 收口后，真实 ED 仍是独立 P1：先冻结科学规格和 benchmark，再逐项实现
+   basis/operator/Hamiltonian/solver/observable。
+
+本次 P0 收口验收：不修改公共 Orchestrator/checkpoint schema、数据库迁移或
+Agent01/02/03 权威 Artifact；不实现 ED/DMFT/DMRG；完整离线 Gate、`pip check`
+与 `git diff --check` 通过。
 
 跨 agent 依赖：模型必须由专家或上游明确提供；Agent03 仅提供有 scope 的 DFT 派生输入，不能替代模型构建；Orchestrator 提供统一阶段审批、恢复和 Artifact 引用。当前阻塞为真实材料模型 linkage、首个科学目标、solver policy 和高级方法审批尚未冻结，且尚无生产多体 backend；fixture/mock 不得解除这些阻塞。
 
 完成每个 MVP/P1 任务后，只更新本计划的实际状态、benchmark/测试证据、数值限制、provenance 和待专家确认项；公共契约或 evidence ceiling 变更须同步 Orchestrator、Agent03 计划及冻结 contract/integration/E2E 设计。
+
+当前状态：**Agent04 MVP mock 控制链（任务 1–6）已完成；默认 production
+many-body capability 未注册，真实 ED/DMFT/DMRG 均未实现。**
+
+P0 收口验证（2026-07-28）：四阶段综合安全回归确认固定 route 顺序和默认
+production many-body capability 未注册。完整离线 Gate 为 `325 passed, 2 skipped`，
+跳过项仅为显式 live MP Gate；`pip check` 和 `git diff --check` 通过。fixture/mock
+继续显式 `is_mock=true`、空 observables、不得晋级 L4；未运行 live MP、网络或真实
+多体求解。
 
 ## 0. 执行结论
 

@@ -27,12 +27,23 @@
 
 ### 当前下一步、依赖与阻塞
 
-1. 先实现 v1 的契约/枚举、`StageInputValidator`、确定性 planner 和最小 policy snapshot 测试。
-2. 分别实现 `MockDFTBackend` 的幂等 submit/status/cancel/fetch 与失败注入，不产生科学数值。
-3. 接入 `StageRunner`/Orchestrator 的审批、等待外部任务、恢复、Envelope 校验和报告测试。
-4. 只有 v1 mock 控制链通过后，才为 P2 单体系冻结课题组方法 policy、资源和 VASPilot bridge Gate。
+1. P0 收口复核已完成的 v1 契约/枚举、`StageInputValidator`、确定性 planner、
+   `MockDFTBackend`、`DFTStageRunner`、审批、恢复、Envelope/hash 校验和报告。
+2. 确认缺输入、审批拒绝、重复提交、跨进程 resume、Artifact/hash 篡改和 mock
+   evidence ceiling 均保持 fail-closed，且默认 production DFT capability 未注册。
+3. P0 收口后只保留 P2 前置工作：冻结课题组方法 policy、合法 VASP/POTCAR、资源、
+   专家审批和结构化 VASPilot/Slurm bridge Gate。
+4. 在这些 P2 Gate 通过前，不实现或注册真实 DFT backend。
 
-跨 agent 依赖：输入依赖 Agent01/02 的结构与 provenance；控制面依赖 Orchestrator 的阶段计划、审批和外部任务契约；Agent04 只能消费经验证且明确 scope 的 DFT Artifact。当前阻塞为尚无 DFT 源码、Slurm/合法 VASP/POTCAR bridge 及课题组 functional/U/J/磁序等科学 policy，不能用 mock 越过这些阻塞。
+本次 P0 收口验收：不修改公共 Orchestrator/checkpoint schema、数据库迁移或
+Agent01/02 权威输入；mock 始终 `is_mock=true`、不产生科研数值或
+`L3_DFT_VALIDATED`；完整离线 Gate、`pip check` 与 `git diff --check` 通过。
+
+跨 agent 依赖：输入依赖 Agent01/02 的结构与 provenance；控制面依赖 Orchestrator
+的阶段计划、审批和外部任务契约；Agent04 只能消费经验证且明确 scope 的 DFT
+Artifact。Agent03 v1 mock 源码和控制链已经存在；当前阻塞仅指真实 DFT：尚无
+Slurm/合法 VASP/POTCAR bridge，课题组 functional/U/J/磁序等科学 policy 也未冻结，
+不能用 mock 越过这些阻塞。
 
 ### 本次 Agent03 v1 实施范围（Task 1–4）
 
@@ -87,6 +98,12 @@ Task 6 实际完成与验证（2026-07-27）：
 - [x] Task 6 failure-injection/fixture contract/Agent03 integration/E2E、完整离线 Gate、`pip check` 与 `git diff --check` 在收尾命令中执行并记录。
 
 Task 6 限制与下一步：默认 CLI registry 仍不注册 Agent03；成功的 mock lifecycle 只能通过显式测试 registry 复现。永不结束 scenario 由调用方负责设置有限 reconcile 次数，v1 不引入后台 scheduler 或 sleep。真实 VASP/POTCAR/Slurm、方法 policy 冻结、专家审批和安全/科学验证 Gate 保持 P2 前置条件，P2/P3 状态不在本任务修改。
+
+P0 收口验证（2026-07-28）：Agent03 v1 mock 控制链保持完成状态；四阶段综合安全
+回归确认固定 route 顺序和默认 production DFT capability 未注册。完整离线 Gate 为
+`325 passed, 2 skipped`，跳过项仅为显式 live MP Gate；`pip check` 和
+`git diff --check` 通过。mock 继续显式 `is_mock=true`、无科研数值且不能产生
+`L3_DFT_VALIDATED`；未运行 live MP、真实 VASP/Slurm 或网络操作。
 
 完成每个 v1/P2 任务后，只更新本计划的完成证据、测试、限制、方法/后端版本和待专家确认项；公共 claim/Artifact 契约变更须同步 Orchestrator、下游 Agent04 计划及相应 contract/integration/E2E 设计，不得修改外部后端状态真源。
 

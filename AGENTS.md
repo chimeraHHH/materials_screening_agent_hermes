@@ -37,12 +37,16 @@
 | `src/material_agent/orchestrator/` | LangGraph 控制流、控制契约、SQLite/checkpoint、审批、恢复和 runner registry |
 | `src/material_agent/retrieval/` | Agent01：数据源、查询、结构、确定性判定、排序、Artifact 和报告 |
 | `src/material_agent/ml_screening/` | Agent02：轻量原生契约、pre-filter、适用域、计划、数值/worker 校验和 Fake 实现 |
+| `src/material_agent/dft/` | Agent03：v1 mock DFT 控制契约、计划、backend 生命周期、runner 和非科研报告 |
+| `src/material_agent/many_body/` | Agent04：MVP 模型契约、验证、路由、mock backend、runner 和 evidence ceiling |
 | `scripts/`、`tests/fixtures/contracts/` | 冻结契约 fixture 的生成与参考输出 |
 | `tests/{unit,contract,integration,e2e,live}/` | 相应层级的验证 |
 
-Agent01 是当前唯一已注册的生产科学 runner。Agent02 尚无生产 Orchestrator Adapter
-或真实 CHGNet worker；Agent03/04 尚无源码。测试用 `FixtureStageRunner`、Fake
-Adapter/Worker 不得注册或描述为生产科学能力。
+Agent01 是当前唯一已注册的生产科学 runner。Agent02 P0.2 Fake Adapter、Agent03 v1
+mock 控制链和 Agent04 MVP mock 控制链已有源码，但 Agent02 尚无真实 CHGNet worker，
+Agent03/04 尚无真实科学 backend。Agent02–04 默认 production capability 均未注册；
+测试用 `FixtureStageRunner`、Fake Adapter/Worker 和 mock backend 不得注册或描述为
+生产科学能力。
 
 修改应留在负责模块及对应测试内。跨模块修改遵守以下规则：
 

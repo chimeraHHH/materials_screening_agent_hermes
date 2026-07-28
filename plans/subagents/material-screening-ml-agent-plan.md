@@ -27,16 +27,30 @@
 
 ### 当前下一步、依赖与阻塞
 
-1. 完成第 8.2 节 P0.2 Adapter：逐候选完成记录、stage artifact 布局、幂等 ledger 和恢复语义。
-2. 用 Fake worker 覆盖 1–5 自动、显式 6–20 审批、超过 20 阻塞，并完成 `run-stage ml` 与要求 L2 的整图 fixture E2E。
-3. 在独立 Python 3.11 环境冻结 worker protocol、依赖 lock、模型/health snapshot 和 CPU smoke test。
-4. 通过真实 CPU、目标 Mac health、CPU/MPS parity、Top-5、崩溃恢复和安全 Gate 后，才评估生产 capability 注册。
+1. P0 收口复核第 8.2 节已实现的 P0.2 Fake Adapter、候选级完成记录、stage artifact
+   布局、幂等 ledger、恢复和篡改 fail-closed 语义。
+2. 复核 Fake worker 的 1–5 自动、显式 6–20 审批、超过 20 阻塞和要求 L2 时
+   fail-closed；默认 production ML capability 继续保持未注册。
+3. P0 收口完成后，下一实现里程碑才是第 8.3 节：在独立 Python 3.11 环境实现真实
+   worker，冻结依赖 lock、模型/health snapshot 并运行 CPU smoke Gate。
+4. 只有真实 CPU、目标 Mac health、CPU/MPS parity、Top-5、崩溃恢复和安全 Gate
+   全部通过后，才评估 production capability 注册。
+
+本次 P0 收口验收：不修改 Agent02 原生冻结契约、公共 Orchestrator/checkpoint
+schema 或数据库迁移；Fake/fixture 保持 `is_mock=true` 和最高 L1；完整离线 Gate、
+`pip check` 与 `git diff --check` 通过。
 
 跨 agent 依赖：输入依赖 Agent01 的不可变 manifest 和 lineage；控制面依赖 Orchestrator P0.2 的 PreparedStagePlan/审批契约；Agent03 只能消费通过 QC 的 ML 结构。当前阻塞为真实 CHGNet/Torch/ASE 环境、checkpoint/model card hash 和目标 Mac Gate 尚未完成；Fake 不得解除该阻塞或提升真实证据。
 
 完成每个 Step 后，只更新本计划的状态、测试数字、fixture/hash、限制和跨 agent 影响；涉及 Agent02 原生契约时同步更新 Orchestrator 计划、冻结 fixture 和 contract test，涉及长期架构时才更新主计划/架构文档。
 
 当前状态：**第 8.1 节与第 8.1.1 节已完成；第 8.2 节已实现轻量 P0.2 Adapter 与 Fake Worker 恢复测试，生产 capability 仍未注册，真实 CHGNet/Torch/ASE 仍未安装或接入。**
+
+P0 收口验证（2026-07-28）：Agent02 P0.2 Fake Adapter 保持完成状态；Fake
+Artifact/结果显式 `is_mock=true` 且不超过 `L1_RETRIEVED`，要求 L2 时 fail closed；
+默认 production ML capability 仍为 `registered=false`。完整离线 Gate 为
+`325 passed, 2 skipped`，跳过项仅为显式 live MP Gate；`pip check` 和
+`git diff --check` 通过。未运行 live MP、未访问网络或接触 `MP_API_KEY`。
 
 ## 1. 执行摘要
 
@@ -1487,7 +1501,7 @@ Fake Worker 与真实 Worker 使用同一协议模型。默认测试增加恶意
    - 默认生产 `default_capabilities()[StageId.ML]` 继续保持
      `registered=false`。
 
-实际状态（本工作树，未提交）：`Agent02RunnerAdapter` 已位于
+实际状态（当前源码）：`Agent02RunnerAdapter` 已位于
 `src/material_agent/ml_screening/runner.py`，通过 Artifact Store 重新计算并验证
 requirement、Agent01 manifest/结构、policy、registry、health 和可选 request 的
 URI/hash/schema；实现 native/control plan 原子冻结、动态审批字段、候选 operation
