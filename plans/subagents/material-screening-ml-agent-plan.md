@@ -108,9 +108,11 @@ P1.1 Task 0（2026-07-28）已完成：冻结独立的 `agent02-benchmark-v1` �
 dry-run；现有
 `tests/fixtures/real_ml/si-diamond.cif` 已通过 dry-run，校验结构 hash、大小、公式、
 元素和位点数。dry-run 明确输出 `DRY_RUN_ONLY`、`evidence_level=NONE`、
+`reference_readiness=BLOCKED`/`BLOCKED_REFERENCE_MISSING`、
 `scientific_conclusion=false`，不读取参考科学值、不调用 CHGNet/DFT、不产生 L2 或
-其他科学 claim。新增 hash/size/metadata 篡改和科学 claim 防护测试；实际 benchmark
-数据、误差指标和适用域结论仍等待课题组审核的 DFT benchmark。
+其他科学 claim。新增 reference artifact 的 schema、hash/size、结构 hash、单位、
+方法元数据和科学 claim 防护测试；实际 benchmark 数据、误差指标和适用域结论仍等待
+课题组审核的 DFT benchmark。
 
 ## 1. 执行摘要
 

@@ -207,8 +207,10 @@ evidence:
   --structure tests/fixtures/real_ml/si-diamond.cif
 ```
 
-The expected result is `DRY_RUN_ONLY` with `evidence_level=NONE` and
-`scientific_conclusion=false`.
+The expected result is `DRY_RUN_ONLY` with
+`reference_readiness=BLOCKED`/`BLOCKED_REFERENCE_MISSING`,
+`evidence_level=NONE`, and `scientific_conclusion=false` until an
+expert-approved reference artifact is supplied.
 
 ### Agent03 v1 mock controller
 
