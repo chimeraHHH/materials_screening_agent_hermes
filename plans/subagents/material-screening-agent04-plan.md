@@ -2354,6 +2354,26 @@ backend”。
 - `is_mock=true`；
 - status history。
 
+**实际状态（2026-07-28）：已完成任务 4 范围。** 新增离线、无 sleep、确定性的
+`MockManyBodyBackend`，沿用 `submit/status/cancel/fetch_result` 方法名。backend 以
+`idempotency_key` 绑定 canonical request hash 和冻结 model artifact hash，重复提交复用同一
+external job reference；冲突、未知引用、早期 fetch、状态倒退和结果 hash 不一致均返回结构化
+错误。scenario 覆盖立即成功、queued/running/success、retryable/permanent submit failure、
+numerical failure、timeout、cancelled、status regression 和 result hash mismatch，并保留可查询
+的无时间戳状态历史。
+
+mock success 仅生成 `ManyBodyResultEnvelope` 的控制链元数据：`is_mock=true`、
+`MOCK_ONLY`、空 observables、backend/version、scenario、request/input hash、external job
+reference、状态历史和“无多体科学结论”警告；结果固定为 L1，不能生成或接受 L4。未接入
+StageRunner、Orchestrator、数据库、Artifact Store 或真实 solver。
+
+测试证据：`tests/contract/test_many_body_mock_backend.py`（10 passed）；Agent04 定向回归
+（含任务 1–3）`37 passed`；完整离线 Gate `316 passed, 2 skipped`（仅两个显式 live
+Materials Project Gate）；`.venv/bin/python -m pip check` 通过；`git diff --check` 通过。
+限制：状态 ledger 仅为单进程内存，跨进程
+持久化和恢复仍属于任务 5；submit response loss 测试在内存 ledger 中模拟幂等重试，未实现真实
+网络传输层。下一步：任务 5“StageRunner 与 Orchestrator 接口”。
+
 #### 任务 5：StageRunner 与 Orchestrator 接口，约 1 小时
 
 - validate/prepare/start/reconcile；
