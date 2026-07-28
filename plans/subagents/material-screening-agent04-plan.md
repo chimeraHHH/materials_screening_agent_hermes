@@ -2423,6 +2423,30 @@ registry 未修改，仍未注册。
 - resume；
 - mock 不提升 L4。
 
+**实际状态（2026-07-28）：已完成。** 本任务只补充离线、确定性的 Agent04
+unit/integration/E2E 验收，复用任务 1–5 已冻结的 fixture、显式测试 registry、
+`ManyBodyStageRunner` 和 `MockManyBodyBackend`，不新增 CLI 参数、不注册生产
+many-body capability，也不实现真实 ED。演示采用现有 `OrchestratorRuntime`
+的 `start_stage_run`/`approve`/`status`/`resume`/`read_report` API；CLI 的
+`run-stage many_body` 在默认 registry 下仍保持 `CAPABILITY_UNAVAILABLE`，因此
+不把测试 registry 描述为生产 CLI 演示。
+
+已知 fixture 差异：计划固定验收文字描述的 1D (L=4) 与 36 维 sector 尚未落在
+当前已合入 fixture；`one-dimensional-hubbard.json` 当前是 2-site、
+`N_up=N_down=1` 的最小链，测试以仓库实际 fixture 与其 hash 为准，不在任务 6
+静默修改模型或资源估算。P1 真实 ED 的边界和前置条件保持不变。
+
+测试证据：Agent04 定向回归
+`tests/unit/test_many_body_validation.py`、
+`tests/contract/test_agent04_domain_schema.py`、
+`tests/contract/test_many_body_mock_backend.py`、
+`tests/integration/test_many_body_runner_orchestrator.py`、
+`tests/e2e/test_many_body_cross_process.py` 共 `36 passed`。覆盖合法 1D/2D
+fixture、冻结 plan 与审批 payload、缺失 U 的无副作用阻塞、拒绝审批、跨
+runtime `status/resume`、幂等 job 复用、结果报告以及 mock evidence ceiling。
+README 已加入同一离线测试命令的复现入口。完整离线 Gate、`pip check` 和
+`git diff --check` 在任务收尾时运行。
+
 如果当天不足，优先级为：
 
 ```text

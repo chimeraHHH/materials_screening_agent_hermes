@@ -175,6 +175,29 @@ group method policy, expert approval, and the required security and scientific
 validation Gates. Mock artifacts remain lifecycle evidence only and must not be
 promoted to scientific evidence.
 
+### Agent04 v1 mock controller demo
+
+Agent04 has an offline MVP control-chain demo for the frozen 1D and 2D Hubbard
+fixtures. It uses the explicit test registry and `MockManyBodyBackend`; the
+default production registry intentionally does not register a many-body
+capability, so this is not a production `run-stage many_body` CLI workflow.
+The demo covers frozen planning, approval, queued/running status, process
+restart, read-only `status`, `resume`, final Artifact/report, approval rejection,
+missing input, and the mock evidence ceiling:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 MPLCONFIGDIR=/tmp/material-agent-mpl \
+.venv/bin/python -m pytest -q -p no:cacheprovider \
+  tests/contract/test_agent04_domain_schema.py \
+  tests/contract/test_many_body_mock_backend.py \
+  tests/integration/test_many_body_runner_orchestrator.py \
+  tests/e2e/test_many_body_cross_process.py
+```
+
+The fixtures are abstract, explicitly marked `fixture=true` and `is_mock=true`,
+produce no scientific observables, and cannot be promoted to L4. The planned
+exact-diagonalization backend remains a separate P1 task.
+
 Missing prerequisite artifacts produce an auditable
 `BLOCKED_MISSING_INPUT`/`PAUSED` Run. A complete input for an unregistered
 production capability produces `CAPABILITY_UNAVAILABLE`; neither case
