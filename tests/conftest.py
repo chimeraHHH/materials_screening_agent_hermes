@@ -38,15 +38,28 @@ def pytest_addoption(parser) -> None:
         default=False,
         help="run opt-in Materials Project API release tests",
     )
+    parser.addoption(
+        "--run-real-ml",
+        action="store_true",
+        default=False,
+        help="run opt-in Agent02 tests in the independent CHGNet environment",
+    )
 
 
 def pytest_collection_modifyitems(config, items) -> None:
-    if config.getoption("--run-live-mp"):
-        return
-    marker = pytest.mark.skip(reason="requires explicit --run-live-mp")
+    live_marker = pytest.mark.skip(reason="requires explicit --run-live-mp")
+    real_ml_marker = pytest.mark.skip(reason="requires explicit --run-real-ml")
     for item in items:
-        if "live_mp" in item.keywords:
-            item.add_marker(marker)
+        if (
+            "live_mp" in item.keywords
+            and not config.getoption("--run-live-mp")
+        ):
+            item.add_marker(live_marker)
+        if (
+            {"real_ml", "slow_real_ml", "mps_ml"} & set(item.keywords)
+            and not config.getoption("--run-real-ml")
+        ):
+            item.add_marker(real_ml_marker)
 
 
 @pytest.fixture

@@ -1,0 +1,5 @@
+# Agent02 runs in an independent Python 3.11 environment.
+# Resolve this direct requirement into requirements-agent02.lock on the
+# target Mac; do not install it into the main project environment.
+chgnet==0.4.2
+pydantic==2.12.5

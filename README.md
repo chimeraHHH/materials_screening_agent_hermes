@@ -8,10 +8,11 @@ test-only mock control adapters for the downstream stages described in
 
 The execution plan always contains the ordered
 `retrieval → ml → dft → many_body` routes. Agent 01 is the only production
-scientific runner today. Agent02 has a P0.2 Fake Adapter/Worker path, Agent03
-has a v1 mock controller, and Agent04 has an MVP mock controller. All three are
-available only through an explicitly injected test registry; none is registered
-as a default production capability or allowed to raise scientific evidence.
+scientific runner today. Agent02 has both the P0.2 Fake path and an opt-in,
+independent CHGNet CPU worker whose release Gate is not yet complete. Agent03
+has a v1 mock controller, and Agent04 has an MVP mock controller. Agent02–04
+remain absent from the default production registry; only the explicitly
+configured real Agent02 worker may produce L2 ML evidence in its opt-in Gate.
 
 ## Development environment
 
@@ -130,7 +131,7 @@ material-agent run-stage ml \
   --run-id run-ml
 ```
 
-### Agent02 P0.2 Fake Adapter
+### Agent02 Fake Adapter and opt-in real CPU worker
 
 Agent02's P0.2 Adapter is implemented and covered offline with an explicitly
 registered Fake Worker. It validates immutable Agent01 inputs, freezes native
@@ -139,9 +140,41 @@ stage-level completion records, reuses completed operations, and fails closed
 on Artifact/hash conflicts. Fake results are always `is_mock=true` and remain
 at L1; they cannot satisfy an L2 target.
 
-The default production registry intentionally leaves Agent02 unavailable.
-There is no real CHGNet worker, independent heavy-dependency environment,
-validated checkpoint/model health snapshot, or production registration yet.
+The same Adapter contract now also supports a no-shell, one-candidate JSON
+subprocess worker. The real worker pins `chgnet==0.4.2`, loads the packaged
+`CHGNet.load(model_name="0.3.0")` checkpoint, verifies its SHA-256 and the
+environment lock, runs CPU static prediction and FIRE/FrechetCellFilter
+relaxation, and emits only sandboxed CIF/NPZ artifacts. It can produce
+`L2_ML_SCREENED` only after applicability, convergence, structure, numerical,
+lineage, and Artifact validation all pass.
+
+Create the separate Python 3.11 environment without adding Torch, CHGNet, or
+ASE to the main `.venv`:
+
+```bash
+.venv/bin/python -m venv --copies .venv-agent02
+.venv-agent02/bin/python -m pip install -r requirements-agent02.lock
+.venv-agent02/bin/python -m pip check
+```
+
+Run the opt-in CPU and target-Mac MPS probes:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 MPLCONFIGDIR=/tmp/material-agent-mpl \
+.venv/bin/python -m pytest -q -p no:cacheprovider \
+  tests/real_ml --run-real-ml
+```
+
+The main process supplies the repository `src/` directory through a sanitized
+`PYTHONPATH`; the heavy environment does not install the main project or its
+dependency metadata. `MATERIAL_AGENT_ML_WORKER_PYTHON` may point the Gate at a
+different dedicated Python executable.
+
+The default production registry intentionally still leaves Agent02
+unavailable. The current Mac reports PyTorch MPS support as built but not
+runtime-available, so CPU/MPS parity, MPS fallback, real Top-5, recovery,
+performance recording, and production registration remain Step 4 work. The
+real worker never falls back to the Fake Worker.
 
 ### Agent03 v1 mock controller
 
@@ -266,11 +299,14 @@ MPLCONFIGDIR=/tmp/material-agent-mpl \
 .venv/bin/python -m pytest -q -p no:cacheprovider
 ```
 
-The Orchestrator P0.1 baseline is commit `d681de8`, and the P0.2 stage-planning
-bridge baseline is commit `701857c`. The 2026-07-28 P0 closeout run against the
-current source reports `325 passed, 2 skipped`; the skipped tests are the two
-explicit `live_mp` Gates. `.venv/bin/python -m pip check` and
-`git diff --check` also pass.
+The Orchestrator P0.1 baseline is commit `d681de8`, the P0.2 stage-planning
+bridge baseline is commit `701857c`, and P0 closeout is commit `505ac55`.
+The P0 closeout run reported `325 passed, 2 skipped`; the skipped tests were
+the two explicit `live_mp` Gates. P1 adds separate `real_ml`, `slow_real_ml`,
+and `mps_ml` markers so the default offline Gate remains independent of the
+heavy worker environment. The current P1 branch reports
+`329 passed, 4 skipped` for the default Gate and `1 passed, 1 skipped` for the
+explicit real-ML Gate; the latter skip is the unavailable MPS runtime.
 
 The standalone Agent01 and Orchestrator-restart Materials Project release
 Gates are opt-in and require both network access and `MP_API_KEY`:
@@ -337,9 +373,10 @@ control state into `ControlStageOutcome(orchestrator-p0.2-v3)`.
 
 - P0.2 has a replaceable Parser protocol and a deterministic offline default;
   an LLM Provider is not connected yet.
-- Agent 01 is the only real scientific stage in the graph. Agent 02–04 remain
-  unregistered production capabilities; test-only fixture runners are
-  explicitly `is_mock=true` and cannot raise evidence.
+- Agent 01 is the only registered production scientific stage in the graph.
+  Agent 02–04 remain unregistered production capabilities. Agent02's opt-in
+  independent CPU Gate can create validated L2 ML evidence, while every
+  test-only fixture runner stays `is_mock=true` and cannot raise evidence.
 - The four ordered routes and fail-closed boundaries are covered end to end,
   but there is no default four-stage scientific success path. In particular,
   Agent04 requires an explicit expert-supplied `EffectiveModelPackage`; mock DFT
@@ -352,6 +389,8 @@ control state into `ControlStageOutcome(orchestrator-p0.2-v3)`.
   StructureMatcher optimization, and additional database adapters remain P1.
 - CrystalNN/Larsen warnings are preserved as data-quality warnings. They do not
   automatically reject a candidate.
-- Agent 02's real worker and all real Agent03/04 scientific backends remain
-  later milestones. The Fake/mock adapters validate control behavior only and
-  remain unregistered in the default production registry.
+- Agent02's real CPU worker exists, but its MPS parity, fallback, Top-5,
+  recovery/performance release Gate, and production registration are still
+  incomplete. All real Agent03/04 scientific backends remain later
+  milestones. Fake/mock adapters remain unregistered and validate control
+  behavior only.

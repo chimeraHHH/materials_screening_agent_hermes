@@ -131,6 +131,20 @@ def test_adapter_preserves_partial_failure_and_rejects_tampered_plan(tmp_path):
     assert failed.errors[0].category == "BACKEND_INCONSISTENT"
 
 
+def test_adapter_maps_an_all_candidate_failure_to_permanent_failed(tmp_path):
+    store, adapter, context = _setup(
+        tmp_path, count=1, fail_once={"cand-1"}
+    )
+    prepared = adapter.prepare(context)
+    outcome = adapter.start(context, prepared, "d" * 64)
+    assert outcome.status is StageStatus.PERMANENT_FAILED
+    assert outcome.errors[0].category == "AGENT02_EXECUTION_FAILED"
+    assert outcome.native_result_uri is not None
+    envelope = store.read_json(outcome.native_result_uri)
+    assert envelope["status"] == "PERMANENT_FAILED"
+    assert envelope["candidate_summaries"][0]["decision"] == "FAILED"
+
+
 def test_reconcile_is_explicitly_unsupported(tmp_path):
     _store, adapter, context = _setup(tmp_path)
     prepared = adapter.prepare(context)

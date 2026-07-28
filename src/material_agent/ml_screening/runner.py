@@ -14,7 +14,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Callable
 
-from material_agent.ml_screening.adapters import FakeMLWorker
 from material_agent.ml_screening.models import (
     ArtifactPointer as MLArtifactPointer,
     CandidateProperty,
@@ -35,7 +34,11 @@ from material_agent.ml_screening.models import (
     MLCandidateResult,
     MLRelaxationResult,
     RelaxationStatus,
+    SelectionStatus,
     StructureLineage,
+)
+from material_agent.ml_screening.evidence import (
+    recommended_downstream_structure_id,
 )
 from material_agent.ml_screening.planner import build_ml_stage_plan
 from material_agent.ml_screening.requirement import requirement_view_from_payload
@@ -45,7 +48,11 @@ from material_agent.ml_screening.resources import (
     fake_health_snapshot,
     fake_registry,
 )
-from material_agent.ml_screening.reporting import render_fake_report
+from material_agent.ml_screening.reporting import render_stage_report
+from material_agent.ml_screening.worker_client import (
+    Agent02Worker,
+    WorkerProcessError,
+)
 from material_agent.orchestrator.models import (
     CancelOutcome,
     ControlError,
@@ -70,23 +77,26 @@ from material_agent.retrieval.storage import LocalArtifactStore
 class Agent02RunnerAdapter:
     """Map the frozen Agent02 native contract onto the P0.2 runner protocol."""
 
-    backend_name = "agent02-fake"  # never a production capability identity
-
     def __init__(
         self,
         *,
         artifact_store: LocalArtifactStore,
         capability: StageCapability,
-        worker: FakeMLWorker,
+        worker: Agent02Worker,
         now: Callable[[], datetime] | None = None,
     ) -> None:
         if capability.stage is not StageId.ML or not capability.registered:
             raise ValueError("Agent02 adapter requires an explicitly registered capability")
-        if not capability.is_mock:
-            raise ValueError("P0.2 adapter in this step only supports Fake Worker")
+        if capability.is_mock != worker.is_mock:
+            raise ValueError(
+                "Agent02 capability mock marker differs from worker identity"
+            )
         self.store = artifact_store
         self.capability = capability
         self.worker = worker
+        self.backend_name = (
+            "agent02-fake" if capability.is_mock else "agent02-chgnet"
+        )
         self.now = now or (lambda: datetime.now(UTC))
 
     def validate_input(self, context: StageExecutionContext) -> StageInputValidation:
@@ -200,7 +210,11 @@ class Agent02RunnerAdapter:
             gate_type="EXPENSIVE_BATCH_APPROVAL" if native.approval_required else None,
             resource_estimate=native.resource_estimate.model_dump(mode="json"),
             policy_version=native.policy_version,
-            risk_summary="Fake Worker only; results remain L1_RETRIEVED and produce no L2 evidence.",
+            risk_summary=(
+                "Fake Worker only; results remain L1_RETRIEVED and produce no L2 evidence."
+                if native.execution_identity.is_mock
+                else "Real CHGNet MLIP run; output is not DFT or experimental evidence."
+            ),
             created_at=native.created_at,
         )
 
@@ -213,6 +227,37 @@ class Agent02RunnerAdapter:
             self._validate_plan(plan, context, prepared_plan)
             result_ref = self._run_plan(plan, prepared_plan, idempotency_key)
             result = MLStageResultEnvelope.model_validate(self.store.read_json(result_ref.uri))
+            if result.status in {
+                NativeStageStatus.RETRYABLE_FAILED,
+                NativeStageStatus.PERMANENT_FAILED,
+            }:
+                retryable = result.status is NativeStageStatus.RETRYABLE_FAILED
+                return ControlStageOutcome(
+                    stage=context.stage,
+                    agent_id=context.agent_id,
+                    outcome=ControlOutcomeType.FAILED,
+                    status=(
+                        StageStatus.RETRYABLE_FAILED
+                        if retryable
+                        else StageStatus.PERMANENT_FAILED
+                    ),
+                    idempotency_key=idempotency_key,
+                    native_result_uri=result_ref.uri,
+                    native_result_sha256=result_ref.sha256,
+                    operation_ref=idempotency_key,
+                    errors=[
+                        ControlError(
+                            category=(
+                                "AGENT02_RETRYABLE_WORKER_FAILURE"
+                                if retryable
+                                else "AGENT02_EXECUTION_FAILED"
+                            ),
+                            operation="start",
+                            retryable=retryable,
+                            public_message="; ".join(result.errors),
+                        )
+                    ],
+                )
             return ControlStageOutcome(
                 stage=context.stage, agent_id=context.agent_id,
                 outcome=ControlOutcomeType.COMPLETED,
@@ -221,7 +266,7 @@ class Agent02RunnerAdapter:
                 native_result_uri=result_ref.uri, native_result_sha256=result_ref.sha256,
                 operation_ref=idempotency_key,
                 summary={
-                    "is_mock": True,
+                    "is_mock": result.execution_identity.is_mock,
                     "candidate_ids": result.candidate_ids,
                     "status_counts": result.status_counts,
                     "artifacts": {"candidate_manifest": {"uri": result.candidate_manifest.uri, "sha256": result.candidate_manifest.sha256}},
@@ -321,6 +366,7 @@ class Agent02RunnerAdapter:
             return ref
         records = []
         errors = []
+        retryable_errors = 0
         for planned in plan.planned_candidates:
             cid = planned.candidate.candidate_id
             if planned.selection_status.value == "SELECTED" and plan.allow_real_inference:
@@ -335,8 +381,9 @@ class Agent02RunnerAdapter:
                     record = MLCandidateManifestRecord.model_validate(record_payload)
                 else:
                     try:
-                        response = self.worker.run(self.worker.request_for_candidate(plan, cid))
-                        response.validate_against_request(self.worker.request_for_candidate(plan, cid))
+                        request = self.worker.request_for_candidate(plan, cid)
+                        response = self.worker.run(request)
+                        response.validate_against_request(request)
                         record = response.candidate_result and MLCandidateManifestRecord(candidate=response.candidate_result, scientific_rank=planned.candidate.publication_rank)
                         if record is None:
                             raise ValueError("worker response did not contain a candidate result")
@@ -345,25 +392,41 @@ class Agent02RunnerAdapter:
                         record_hash = hashlib.sha256(json.dumps(record_payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()).hexdigest()
                         self.store.write_json(complete_uri, {"schema_version": "agent02-candidate-operation-v1", "candidate_operation_key": key, "record_sha256": record_hash, "record": record_payload}, immutable=True)
                     except Exception as exc:
+                        if isinstance(exc, WorkerProcessError) and exc.category in {
+                            "WORKER_TIMEOUT",
+                            "WORKER_START_FAILED",
+                        }:
+                            retryable_errors += 1
                         errors.append(f"{cid}: {type(exc).__name__}: {exc}")
                         records.append(self._failed_record(planned, plan, str(exc)))
                         continue
                 records.append(record)
             else:
-                records.append(self.worker._candidate_record(planned, plan))
+                records.append(self._not_run_record(planned, plan))
         if errors and not records:
             raise RuntimeError("all Agent02 candidates failed: " + "; ".join(errors))
         records.sort(key=lambda record: record.candidate.candidate_id)
         manifest_ref = self.store.write_jsonl(f"stages/agent02/{plan.run_id}/attempt-{plan.attempt}/ml-candidate-manifest.jsonl", [record.model_dump(mode="json") for record in records], immutable=True)
-        report_ref = self.store.write_text(f"stages/agent02/{plan.run_id}/attempt-{plan.attempt}/report.md", render_fake_report(plan, records), media_type="text/markdown", immutable=True)
-        status = NativeStageStatus.PARTIAL if errors else NativeStageStatus.SUCCEEDED
+        report_ref = self.store.write_text(f"stages/agent02/{plan.run_id}/attempt-{plan.attempt}/report.md", render_stage_report(plan, records), media_type="text/markdown", immutable=True)
+        failed_count = sum(
+            record.candidate.decision is MLDecision.FAILED
+            for record in records
+        )
+        if not errors:
+            status = NativeStageStatus.SUCCEEDED
+        elif failed_count < len(records):
+            status = NativeStageStatus.PARTIAL
+        elif retryable_errors == len(errors):
+            status = NativeStageStatus.RETRYABLE_FAILED
+        else:
+            status = NativeStageStatus.PERMANENT_FAILED
         # Build the strict envelope only after deterministic summaries/counts are known.
         from material_agent.ml_screening.models import MLCandidateResultSummary
         summaries = [MLCandidateResultSummary.from_result(r.candidate) for r in records]
         counts = dict(sorted({d.value: sum(r.candidate.decision is d for r in records) for d in set(r.candidate.decision for r in records)}.items()))
         manifest_native_ref = MLArtifactRef.model_validate(manifest_ref.model_dump(mode="json"))
         report_native_ref = MLArtifactRef.model_validate(report_ref.model_dump(mode="json"))
-        envelope = MLStageResultEnvelope(project_id=plan.project_id, run_id=plan.run_id, status=status, operation_key=operation_key, plan=MLArtifactPointer(uri=prepared.native_plan_uri, sha256=prepared.native_plan_sha256), execution_identity=plan.execution_identity, candidate_manifest=manifest_native_ref, output_artifacts=[report_native_ref], candidate_ids=[r.candidate.candidate_id for r in records], candidate_summaries=summaries, status_counts=counts, errors=errors, started_at=plan.created_at, finished_at=self.now(), provenance={"is_mock": True})
+        envelope = MLStageResultEnvelope(project_id=plan.project_id, run_id=plan.run_id, status=status, operation_key=operation_key, plan=MLArtifactPointer(uri=prepared.native_plan_uri, sha256=prepared.native_plan_sha256), execution_identity=plan.execution_identity, candidate_manifest=manifest_native_ref, output_artifacts=[report_native_ref], candidate_ids=[r.candidate.candidate_id for r in records], candidate_summaries=summaries, status_counts=counts, errors=errors, started_at=plan.created_at, finished_at=self.now(), provenance={"is_mock": plan.execution_identity.is_mock})
         result_ref = self.store.write_json(result_uri, envelope.model_dump(mode="json"), immutable=True)
         self.store.write_json(
             f"stages/agent02/{plan.run_id}/attempt-{plan.attempt}/stage-operation-complete.json",
@@ -377,6 +440,18 @@ class Agent02RunnerAdapter:
         relaxation = candidate.relaxation_result
         if relaxation is None:
             return record
+        if not candidate.execution_identity.is_mock:
+            output_uri = relaxation.output_structure_uri
+            output_hash = relaxation.output_structure_sha256
+            if (
+                output_uri is None
+                or output_hash is None
+                or not self.store.exists_with_hash(output_uri, output_hash)
+            ):
+                raise ValueError(
+                    "real worker relaxed structure failed Artifact integrity"
+                )
+            return record
         raw = self.store.read_bytes(candidate.source_structure_uri)
         key = candidate.candidate_operation_key or "unknown"
         output_uri = f"stages/agent02/{plan.run_id}/candidate-operations/{key}/relaxed.cif"
@@ -387,31 +462,90 @@ class Agent02RunnerAdapter:
 
     def _failed_record(self, planned: Any, plan: MLStagePlan, message: str) -> MLCandidateManifestRecord:
         """Create an auditable failed candidate without fabricating ML values."""
-        base = self.worker._candidate_record(planned, plan).candidate
-        relaxation = base.relaxation_result
-        if relaxation is not None:
-            relaxation = relaxation.model_copy(
-                update={
-                    "output_structure_id": None,
-                    "output_structure_uri": None,
-                    "output_structure_sha256": None,
-                    "status": RelaxationStatus.RUNTIME_FAILED,
-                    "qc_passed": False,
-                    "errors": [message],
-                }
-            )
-        failed = base.model_copy(
-            update={
-                "execution_status": ExecutionStatus.RUNTIME_FAILED,
-                "decision": MLDecision.FAILED,
-                "evidence_level": EvidenceLevel.L1_RETRIEVED,
-                "ml_properties": [],
-                "relaxation_result": relaxation,
-                "structure_lineage": None,
-                "recommended_downstream_structure_id": base.source_structure_id,
-                "errors": [message],
-            }
+        candidate = planned.candidate
+        relaxation = MLRelaxationResult(
+            candidate_id=candidate.candidate_id,
+            input_structure_id=candidate.source_structure.structure_id,
+            input_structure_uri=candidate.source_structure.uri,
+            input_structure_sha256=candidate.source_structure.sha256,
+            model_id=plan.execution_identity.model_id,
+            checkpoint_sha256=plan.execution_identity.checkpoint_sha256,
+            adapter_version=plan.execution_identity.adapter_version,
+            execution_identity=plan.execution_identity,
+            device=plan.device_policy,
+            relaxation_profile=plan.relaxation_profile,
+            status=RelaxationStatus.RUNTIME_FAILED,
+            num_steps=0,
+            qc_passed=False,
+            errors=[message],
+            wall_time_seconds=0.0,
+            is_mock=plan.execution_identity.is_mock,
+            provenance={"worker_protocol": plan.execution_identity.worker_protocol_version},
         )
         return MLCandidateManifestRecord(
-            candidate=failed, scientific_rank=planned.candidate.publication_rank
+            candidate=MLCandidateResult(
+                project_id=plan.project_id,
+                run_id=plan.run_id,
+                candidate_id=candidate.candidate_id,
+                candidate_operation_key=plan.candidate_operation_keys[
+                    candidate.candidate_id
+                ],
+                upstream_manifest_uri=candidate.upstream_manifest_uri,
+                upstream_manifest_sha256=candidate.upstream_manifest_sha256,
+                source_structure_id=candidate.source_structure.structure_id,
+                source_structure_uri=candidate.source_structure.uri,
+                source_structure_sha256=candidate.source_structure.sha256,
+                pre_filter_decision=planned.pre_filter.decision,
+                applicability=planned.applicability,
+                selection_status=planned.selection_status,
+                execution_status=ExecutionStatus.RUNTIME_FAILED,
+                decision=MLDecision.FAILED,
+                evidence_level=EvidenceLevel.L1_RETRIEVED,
+                execution_identity=plan.execution_identity,
+                relaxation_result=relaxation,
+                recommended_downstream_structure_id=(
+                    candidate.source_structure.structure_id
+                ),
+                warnings=list(planned.applicability.warnings),
+                errors=[message],
+            ),
+            scientific_rank=candidate.publication_rank,
+        )
+
+    def _not_run_record(
+        self, planned: Any, plan: MLStagePlan
+    ) -> MLCandidateManifestRecord:
+        candidate = planned.candidate
+        decision = (
+            MLDecision.REJECT
+            if planned.pre_filter.decision is MLDecision.REJECT
+            else (
+                MLDecision.FAILED
+                if planned.pre_filter.decision is MLDecision.FAILED
+                else MLDecision.UNCERTAIN
+            )
+        )
+        result = MLCandidateResult(
+            project_id=plan.project_id,
+            run_id=plan.run_id,
+            candidate_id=candidate.candidate_id,
+            upstream_manifest_uri=candidate.upstream_manifest_uri,
+            upstream_manifest_sha256=candidate.upstream_manifest_sha256,
+            source_structure_id=candidate.source_structure.structure_id,
+            source_structure_uri=candidate.source_structure.uri,
+            source_structure_sha256=candidate.source_structure.sha256,
+            pre_filter_decision=planned.pre_filter.decision,
+            applicability=planned.applicability,
+            selection_status=planned.selection_status,
+            execution_status=ExecutionStatus.NOT_RUN,
+            decision=decision,
+            evidence_level=EvidenceLevel.L1_RETRIEVED,
+            execution_identity=plan.execution_identity,
+            recommended_downstream_structure_id=(
+                candidate.source_structure.structure_id
+            ),
+            warnings=list(planned.applicability.warnings),
+        )
+        return MLCandidateManifestRecord(
+            candidate=result, scientific_rank=candidate.publication_rank
         )

@@ -1,0 +1,32 @@
+{
+  "schema_version": "agent02-model-card-v1",
+  "model_id": "chgnet-mptrj-0.3.0",
+  "display_name": "CHGNet 0.3.0 MPtrj pretrained potential",
+  "summary": "Legacy CHGNet implementation using the packaged 0.3.0 MPtrj checkpoint for conservative bulk-crystal pre-relaxation.",
+  "intended_use": [
+    "static MLIP energy/force/stress/magnetic-moment prediction",
+    "bulk inorganic crystal pre-relaxation before separately approved DFT"
+  ],
+  "out_of_scope": [
+    "formation-energy or convex-hull replacement",
+    "experimental-property prediction",
+    "magnetic-ground-state, topology, Mott, or DFT proof",
+    "molecules, interfaces, two-dimensional structures, defects, or liquids"
+  ],
+  "training_data": "Materials Project GGA/GGA+U trajectories (MPtrj, September 2022); use remains subject to Materials Project terms.",
+  "limitations": [
+    "Single legacy checkpoint with no calibrated predictive uncertainty.",
+    "This repository currently audits a release fixture only for elemental Si.",
+    "The upstream project states that new development has moved to MatGL."
+  ],
+  "evidence_constraints": [
+    "Results are L2_ML_SCREENED only after applicability and structure QC pass.",
+    "MLIP values are never promoted to DFT or experimental evidence."
+  ],
+  "sources": [
+    "https://github.com/CederGroupHub/chgnet",
+    "https://chgnet.lbl.gov/",
+    "https://doi.org/10.1038/s42256-023-00716-3"
+  ],
+  "is_mock": false
+}

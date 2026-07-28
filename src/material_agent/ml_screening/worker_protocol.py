@@ -114,7 +114,49 @@ def validate_worker_outputs(
         }
         if any(path not in reported_paths for path in changed):
             raise ValueError("worker wrote outside its declared sandbox outputs")
+    _validate_result_artifact_references(response, response.produced_artifacts)
     return verified_numeric
+
+
+def _validate_result_artifact_references(
+    response: WorkerResponse,
+    produced_artifacts: list[WorkerProducedArtifact],
+) -> None:
+    result = response.candidate_result
+    if result is None or result.execution_identity.is_mock:
+        return
+    produced = {
+        f"artifact://{item.root_relative_path}": item
+        for item in produced_artifacts
+    }
+    for prop in result.ml_properties:
+        ref = prop.artifact_ref
+        if ref is None:
+            continue
+        artifact = produced.get(ref.uri)
+        if (
+            artifact is None
+            or artifact.sha256 != ref.sha256
+            or artifact.size_bytes != ref.size_bytes
+            or artifact.numeric_metadata is None
+            or artifact.numeric_metadata.array_key != ref.array_key
+            or artifact.numeric_metadata.dtype != ref.dtype
+            or artifact.numeric_metadata.shape != ref.shape
+        ):
+            raise ValueError(
+                "worker result numeric reference differs from produced artifact"
+            )
+    relaxation = result.relaxation_result
+    if relaxation is not None and relaxation.output_structure_uri is not None:
+        artifact = produced.get(relaxation.output_structure_uri)
+        if (
+            artifact is None
+            or artifact.sha256 != relaxation.output_structure_sha256
+            or artifact.media_type != "chemical/x-cif"
+        ):
+            raise ValueError(
+                "worker result structure reference differs from produced artifact"
+            )
 
 
 def parse_worker_stdout(

@@ -52,6 +52,53 @@ Artifact/结果显式 `is_mock=true` 且不超过 `L1_RETRIEVED`，要求 L2 时
 `325 passed, 2 skipped`，跳过项仅为显式 live MP Gate；`pip check` 和
 `git diff --check` 通过。未运行 live MP、未访问网络或接触 `MP_API_KEY`。
 
+### 本次 P1 实施范围（Step 3/4）
+
+本分支从 P0 收口提交 `505ac55` 创建，只实现 Agent02 独立真实 Worker、CPU/MPS
+Release Gate 和生产注册前置能力。主环境继续保持轻量；Torch、CHGNet、ASE 和模型
+权重只安装在独立 Python 3.11 环境。Worker 必须复用冻结的
+`agent02-worker-protocol-v1`，一次请求只处理一个候选，并由主进程 Adapter 校验
+stdout、handshake、路径、Artifact hash/size、超时和输出上限后提交权威 ledger。
+
+P1 验收标准：
+
+- 独立环境锁定 CHGNet 包、`0.3.0` checkpoint、Torch、ASE、Pymatgen、NumPy 和
+  Python 版本，并生成可验证的 lock/model card/health snapshot；
+- 主环境的 Subprocess Worker Client 不导入重型包，不经 shell 启动专用解释器；
+- 真实 CPU smoke、标准 relaxation、候选级崩溃恢复和路径/协议/大小/超时测试通过；
+- 在目标 Mac 上记录 MPS 可用性和 CPU/MPS parity；MPS 设备失败只允许一次显式
+  CPU 回退；
+- 完成真实 Top-5 前保持 production capability 未注册；任何缺失 Gate、过期 health、
+  lock/checkpoint 漂移或许可证未确认都必须 fail closed，且绝不回退 Fake Worker；
+- 不修改 Agent01、公共 Orchestrator/checkpoint schema、数据库迁移或
+  `agent02-worker-protocol-v1` 字段。
+
+P1 当前进度（2026-07-28）：
+
+- Step 3 已实现：独立 `.venv-agent02` 使用 Python 3.11.13，锁定
+  `chgnet==0.4.2`、`torch==2.13.0`、`ase==3.29.0`、
+  `pymatgen==2026.5.4`、`numpy==2.4.6` 和 `pydantic==2.12.5`；
+  `requirements-agent02.lock` SHA-256 为
+  `278ab73807262c733c6196e9f6bea074b997d80e738ca77781b5b42a4451f870`。
+- 已校验 packaged `0.3.0` checkpoint SHA-256
+  `d14ab7c0f093efe64b60a7bcd540bca10e74fb7f46c86108a079af60524659d1`，
+  model card canonical SHA-256
+  `5d607e39d8e8619c9bd9807bcc96bc246ca8493ec1f73a4fdd698493852fa173`。
+- Worker 通过冻结协议执行单候选 CPU 静态预测、FIRE/
+  FrechetCellFilter 标准弛豫、结构 QC、确定性 NPZ 和 relaxed CIF；
+  主进程校验无 shell 启动、环境 handshake、sandbox、路径、hash/size、stdout、
+  超时和数值 artifact 后，固定 diamond-Si fixture 产生
+  `PASS / L2_ML_SCREENED`。
+- 当前目标机为 macOS 14.7.4 arm64；PyTorch 报告
+  `mps.is_built() == true`、`mps.is_available() == false`。因此 Step 4 的
+  CPU/MPS parity、MPS→CPU 单次回退、Top-5、恢复/性能 Release Gate 尚未完成，
+  真实 production capability 继续保持未注册，且不会回退 Fake Worker。
+- P1 当前验证：完整默认离线 Gate `329 passed, 4 skipped`，其中两个 skip 为
+  `live_mp`、两个为 opt-in `real_ml/mps_ml`；显式真实 Gate 为
+  `1 passed, 1 skipped`，skip 原因为 MPS runtime 不可用。主环境与独立 worker
+  环境的 `pip check`、`git diff --check` 均通过；未运行 live MP、未读取
+  `MP_API_KEY`，未提交模型缓存、虚拟环境或真实运行 Artifact。
+
 ## 1. 执行摘要
 
 Agent02 是一个确定性、可恢复、可审计的机器学习筛选阶段，不是让 LLM 自主选择模型或科学阈值的对话 Agent。

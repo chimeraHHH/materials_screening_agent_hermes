@@ -236,6 +236,10 @@ class FakeMLWorker:
         self.fail_once_candidate_ids = set(fail_once_candidate_ids or ())
         self._failed_once: set[str] = set()
 
+    @property
+    def is_mock(self) -> bool:
+        return True
+
     def handshake(self) -> MLExecutionIdentity:
         self.adapter.describe()
         self.adapter.healthcheck("fixture")

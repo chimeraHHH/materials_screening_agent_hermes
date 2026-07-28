@@ -3,6 +3,7 @@
 .env.*
 !.env.example
 .venv/
+.venv-agent02/
 __pycache__/
 *.py[cod]
 *.egg-info/
@@ -14,4 +15,3 @@ htmlcov/
 build/
 dist/
 workspace/
-

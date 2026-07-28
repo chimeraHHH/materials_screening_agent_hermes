@@ -31,8 +31,8 @@ DMFT 或 DMRG。
 
 当前主里程碑：
 
-> **P0 控制链收口：Agent02 P0.2 Fake Adapter、Agent03 v1 mock 和 Agent04 MVP
-> mock 已完成；下一候选里程碑是 Agent02 Step 3 真实独立 worker。**
+> **P0 控制链已收口；Agent02 Step 3 独立真实 worker 与 CPU Gate 已实现，当前
+> 里程碑是补齐目标 Mac MPS/Top-5/恢复 Release Gate，完成前不注册生产能力。**
 
 ### 1.1 已确认基线
 
@@ -40,8 +40,8 @@ DMFT 或 DMRG。
 |---|---|---|
 | Orchestrator | P0.2 已完成；控制、阶段计划和报告契约已冻结 | [`Orchestrator 计划`](subagents/material-screening-orchestrator-plan.md) |
 | Agent 01 | P0 与增强 Gate 已完成；`agent01-contract-v1` 已冻结 | [`Agent 01 计划`](subagents/material-screening-agent01-plan.md) |
-| Agent 02 | Step 1/1.1 原生契约与 P0.2 Fake Adapter/Worker、审批/恢复测试和 fixture 已完成 | [`Agent 02 计划`](subagents/material-screening-ml-agent-plan.md) |
-| Agent 02 生产接入 | 真实独立 worker、CHGNet CPU/Mac Gate、真实 Top-5 和 production 注册尚未完成 | [`Agent 02 计划`](subagents/material-screening-ml-agent-plan.md) |
+| Agent 02 | Step 1/1.1、P0.2 Fake 路径及 Step 3 独立 CHGNet worker/CPU Gate 已完成 | [`Agent 02 计划`](subagents/material-screening-ml-agent-plan.md) |
+| Agent 02 生产接入 | 目标 Mac MPS parity/fallback、真实 Top-5、恢复/性能 Gate 和 production 注册尚未完成 | [`Agent 02 计划`](subagents/material-screening-ml-agent-plan.md) |
 | Agent 03 | v1 mock 控制链、审批、恢复、失败注入、报告与 fixture 已完成；真实 DFT backend 未实现或注册 | [`Agent 03 计划`](subagents/material-screening-agent-dft-plan.md) |
 | Agent 04 | MVP mock 控制链、模型校验/路由、审批、恢复、报告与 fixture 已完成；真实 ED/多体 backend 未实现或注册 | [`Agent 04 计划`](subagents/material-screening-agent04-plan.md) |
 | 联网 LLM | Parser Protocol 与离线默认已存在；联网 Provider 尚未接入 | [`README.md`](../README.md) |
@@ -138,8 +138,9 @@ v1 的系统级退出目标是：
 - [x] 实现 `Agent02RunnerAdapter` 的 P0.2 五方法生命周期。
 - [x] 实现候选级 operation ledger、重复 start、跨 attempt 复用和篡改检测。
 - [x] 完成 1–5 自动、6–20 动态审批、超过 20 预先阻塞的 Fake/控制面测试。
-- [ ] 建立独立 Python 3.11 ML worker 环境并锁定依赖。
-- [ ] 完成真实 CHGNet CPU 小样例、Mac Gate 和真实 Top-5。
+- [x] 建立独立 Python 3.11 ML worker 环境并锁定依赖。
+- [x] 完成真实 CHGNet CPU 小样例和标准 200 步上限 Gate。
+- [ ] 完成目标 Mac MPS Gate 和真实 Top-5。
 - [ ] 通过全部 Gate 后显式注册生产 ML capability。
 
 交付目标：L2 接口、可解释筛选漏斗和受控真实 ML 基础能力。
@@ -257,7 +258,8 @@ job、跨进程恢复、Artifact/hash 与 evidence ceiling 测试。新增的四
 
 ### 4.2 尚未满足
 
-- [ ] 独立真实 ML worker、CHGNet CPU/Mac Gate 和 Top-5 E2E 通过。
+- [x] 独立真实 ML worker和 CHGNet CPU Gate 通过。
+- [ ] 目标 Mac MPS Gate 和 Top-5 E2E 通过。
 - [ ] 生产 ML capability 仅在全部真实与安全 Gate 后显式注册。
 - [ ] 最终 v1 README、演示、已知限制和资源申请清单冻结。
 
@@ -357,8 +359,8 @@ flowchart LR
 
 | 类型 | 事项 | 当前处理 |
 |---|---|---|
-| 当前工程风险 | Agent02 Fake Adapter 已完成，但没有真实 worker 路径的性能、崩溃和安全证据 | Step 3 在独立环境实现并保留默认未注册 |
-| 当前工程阻塞 | 真实 CHGNet 独立环境、lock、checkpoint 与 Mac health snapshot 尚未建立 | 进入 Step 3/4 前冻结环境与 Release Gate |
+| 当前工程风险 | Agent02 CPU worker 已通过单候选 Gate，但 Top-5、崩溃恢复和性能证据未完成 | Step 4 补齐前保持默认未注册 |
+| 当前工程阻塞 | 当前 Mac 为 `mps.is_built=true`、`mps.is_available=false`，无法完成 MPS parity/fallback | 在 MPS 可用的目标 Mac 生成 health 并运行 Release Gate |
 | 能力缺口 | Agent03/04 只有 mock 控制 Runner，真实生产 backend 未实现或注册 | 保持 `CAPABILITY_UNAVAILABLE`，不得用 fixture 代替 |
 | 基础设施阻塞 | 当前无可用 Slurm、合法 VASP/POTCAR 和通过安全 Gate 的 bridge | 真实 DFT 延后到服务器 P2 |
 | 科学阻塞 | 课题组 DFT 方法 profile、POTCAR mapping、U/J、磁序等未冻结 | 真实 DFT backend 不得执行 |
@@ -382,8 +384,8 @@ flowchart LR
 
 1. [x] 完成 Agent02 Step 2、Agent03 v1 mock、Agent04 MVP mock 和四阶段 P0
    安全回归。
-2. [ ] 若批准进入下一里程碑，在独立 Python 3.11 环境实现已冻结 JSON worker 协议
-   和真实 CHGNet CPU Gate；主环境不得加入 Torch/CHGNet/ASE。
+2. [x] 在独立 Python 3.11 环境实现冻结 JSON worker 协议和真实 CHGNet CPU Gate；
+   主环境未加入 Torch/CHGNet/ASE。
 3. [ ] 完成目标 Mac health、CPU/MPS parity、真实 Top-5、崩溃恢复和安全 Gate。
 4. [ ] 审核文档、model card、许可和限制后，再评估显式注册 production ML capability。
 5. [ ] 真实 Agent03 进入 P2 前冻结 VASP/POTCAR、方法 policy、Slurm/bridge 和专家 Gate。
