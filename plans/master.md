@@ -14,24 +14,25 @@
 
 状态基准日期：2026-07-28
 
-### 本次 P0 收口范围
+### 本次 P2：系统 v1 收尾范围
 
 本次工作只对齐仓库已经存在的实现、测试和文档，不扩展真实科学计算能力。验收范围
-包括：核对 `retrieval → ml → dft → many_body` 固定路由；确认 Agent02 P0.2 Fake
-Adapter、Agent03 v1 mock 控制链和 Agent04 MVP mock 控制链的实际状态；复核缺输入、
-未注册 capability、审批拒绝、跨进程恢复、重复提交、Artifact/hash 篡改与 mock
-evidence ceiling；运行完整离线 Gate、`pip check` 和 `git diff --check`。
+包括：审核 README 与各分计划的实际状态；冻结 `retrieval → ml → dft → many_body`
+路由及 v1 能力边界；复核缺输入、未注册 capability、审批拒绝、跨进程恢复、重复
+提交、Artifact/hash 篡改与 mock evidence ceiling；运行完整离线 Gate、`pip check`
+和 `git diff --check`。
 
-依赖与边界：Agent01 仍是唯一生产科学 Runner；Agent02/03/04 只允许通过显式测试
-registry 使用 mock，默认 production capability 必须保持未注册；不修改公共
-Orchestrator/checkpoint schema 或数据库迁移，不接入真实 CHGNet、VASP、Slurm、ED、
-DMFT 或 DMRG。
+依赖与边界：Agent01 是默认生产科学 Runner；Agent02 只有在
+`MATERIAL_AGENT_ML_WORKER_PYTHON` 及其 lock/model-card/health 校验通过后才注册，
+当前 L2 审计范围限于 3D 单质 Si；Agent03/04 仍仅有 mock 控制链。benchmark、扩展
+适用域、OOD/不确定性校准不属于本 P2。不修改 Agent01/02 原生公共契约、Orchestrator/
+checkpoint schema、数据库迁移、requirements.lock 或科学阈值，不运行联网/真实 MP Gate。
 
 ## 1. 当前里程碑
 
 当前主里程碑：
 
-> **P0 控制链已收口；Agent02 真实 CHGNet worker 的 CPU/MPS、Top-5 恢复和生产
+> **系统 v1 发布基线已冻结；Agent02 真实 CHGNet worker 的 CPU/MPS、Top-5 恢复和生产
 > `run-stage` Gate 已完成。生产注册仅由显式 Worker 配置触发；缺失或无效配置保持
 > fail-closed。科学 benchmark、扩展适用域和不确定性校准仍属于后续 P1。**
 
@@ -47,17 +48,18 @@ DMFT 或 DMRG。
 | Agent 04 | MVP mock 控制链、模型校验/路由、审批、恢复、报告与 fixture 已完成；真实 ED/多体 backend 未实现或注册 | [`Agent 04 计划`](subagents/material-screening-agent04-plan.md) |
 | 联网 LLM | Parser Protocol 与离线默认已存在；联网 Provider 尚未接入 | [`README.md`](../README.md) |
 
-2026-07-28 P0 收口验证基线为：
+历史 P0 收口验证基线为：
 
-- 完整离线 Gate：`325 passed, 2 skipped`；
-- 两个跳过项为显式 opt-in 的 `live_mp` Gate；
+- 完整离线 Gate：`337 passed, 7 skipped`；
+- 跳过项为显式 opt-in 的两个 `live_mp` 和五个 real-ML/Metal Gate；
 - `pip check` 无破损依赖，`git diff --check` 通过；
 - 本次没有运行 live Materials Project 测试、访问网络或读取/生成 `MP_API_KEY`；
 - Agent 01 是当前唯一生产科学 Runner；
-- Agent 02–04 未注册生产 capability，不得用测试 fixture 冒充科学结果。
+- Agent 02 仅在显式 worker 配置通过校验后注册；Agent 03/04 未注册生产 capability，
+  不得用测试 fixture 冒充科学结果。
 
-历史分计划中的较小测试数字只记录当时任务快照；当前 P0 状态以上述完整离线 Gate
-和仓库现有实现为准。P0 控制链收口不等于系统 v1 或真实 ML/DFT/多体科学能力完成。
+历史分计划中的较小测试数字只记录当时任务快照；当前 v1 状态以上述 P2 完整离线 Gate
+和仓库现有实现为准。Agent03/04 mock 控制链不等于真实科学后端。
 
 ### 1.2 当前 v1 验收目标
 
@@ -214,13 +216,14 @@ Agent 02 Step 2 已在不扩展真实 CHGNet、DFT 或多体后端的边界内�
 
 Agent03 v1 和 Agent04 MVP mock 控制链也已完成各自契约、审批、operation/external
 job、跨进程恢复、Artifact/hash 与 evidence ceiling 测试。新增的四阶段综合安全回归
-确认固定 route 顺序，并确认默认 registry 对 Agent02/03/04 全部
-`CAPABILITY_UNAVAILABLE`、不创建下游 native result。
+确认固定 route 顺序，并确认默认 registry 对 Agent03/04 为
+`CAPABILITY_UNAVAILABLE`；Agent02 无有效 worker 配置时同样 unavailable，只有显式
+配置通过校验后才注册，不创建伪造下游 native result。
 
 | P0 边界 | 当前明确行为 |
 |---|---|
 | 缺输入 | 在 prepare/submit 前返回 `BLOCKED_MISSING_INPUT` 或完整性失败，不补造 Artifact |
-| 未注册 capability | 默认 Agent02/03/04 返回 `CAPABILITY_UNAVAILABLE`，不调用 Fake/mock |
+| 未注册 capability | 默认 Agent02（无有效 worker 配置）/03/04 返回 `CAPABILITY_UNAVAILABLE`，不调用 Fake/mock |
 | 审批拒绝 | Stage 为 `CANCELLED`，不创建 backend operation/job；已有上游结果可形成 `PARTIAL` |
 | 跨进程恢复 | Orchestrator/Agent01 checkpoint 可恢复；Agent03/04 从冻结 plan、operation 和 external ref 对账；Agent02 同步路径复用完成记录 |
 | 重复提交 | 同一 operation/idempotency key 复用既有结果或 external job，冲突 fail closed |
@@ -395,3 +398,19 @@ flowchart LR
 6. [ ] Agent04 真实 ED 作为独立 P1，以科学规格和 benchmark 为先，不实现
    DMFT/DMRG/自动模型猜测。
 7. [ ] 冻结最终 v1 演示与资源申请清单，再决定服务器 P2 和真实科学后端排期。
+
+## 9. P2 系统 v1 收尾记录（2026-07-28）
+
+- [x] README、源码、测试与 Agent 计划完成一致性复核；发现的旧 P0/P1 叙述已在
+  本计划和 README 标注为历史快照或改为当前状态。
+- [x] 冻结 v1 边界：Agent01 默认生产科学 runner；Agent02 仅在显式且校验通过的
+  `MATERIAL_AGENT_ML_WORKER_PYTHON` 下注册，当前 L2 审计仅限 3D 单质 Si；Agent03/04
+  仅 mock 控制链。
+- [x] 冻结离线演示、验收命令、预期 `337 passed, 7 skipped`、跳过项和环境边界。
+- [x] 完整离线 Gate、`pip check`、`git diff --check` 通过；未运行 live MP、未联网、
+  未读取或生成 `MP_API_KEY`。
+- [x] 未修改 Agent01/02 原生公共契约、Orchestrator/checkpoint schema、数据库迁移、
+  requirements.lock 或科学阈值；未新增模型、后端、依赖或公共 Schema。
+
+遗留项：联网 LLM、真实 DFT/多体 backend、benchmark、扩展适用域、OOD 与不确定性
+校准继续属于后续里程碑；sandbox 中 MPS 不可见仅记录为可选外部 Gate 的环境边界。

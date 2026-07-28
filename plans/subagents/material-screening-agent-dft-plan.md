@@ -99,11 +99,12 @@ Task 6 实际完成与验证（2026-07-27）：
 
 Task 6 限制与下一步：默认 CLI registry 仍不注册 Agent03；成功的 mock lifecycle 只能通过显式测试 registry 复现。永不结束 scenario 由调用方负责设置有限 reconcile 次数，v1 不引入后台 scheduler 或 sleep。真实 VASP/POTCAR/Slurm、方法 policy 冻结、专家审批和安全/科学验证 Gate 保持 P2 前置条件，P2/P3 状态不在本任务修改。
 
-P0 收口验证（2026-07-28）：Agent03 v1 mock 控制链保持完成状态；四阶段综合安全
-回归确认固定 route 顺序和默认 production DFT capability 未注册。完整离线 Gate 为
-`325 passed, 2 skipped`，跳过项仅为显式 live MP Gate；`pip check` 和
-`git diff --check` 通过。mock 继续显式 `is_mock=true`、无科研数值且不能产生
-`L3_DFT_VALIDATED`；未运行 live MP、真实 VASP/Slurm 或网络操作。
+P2 系统 v1 收尾验证（2026-07-28）：Agent03 v1 mock 控制链保持完成状态；四阶段综合
+安全回归确认固定 route 顺序和默认 production DFT capability 未注册。完整离线 Gate
+为 `337 passed, 7 skipped`（两个 live MP、五个 real-ML/Metal opt-in）；`pip check`
+和 `git diff --check` 通过。mock 继续显式 `is_mock=true`、无科研数值且不能产生
+`L3_DFT_VALIDATED`；未运行 live MP、真实 VASP/Slurm 或网络操作。真实 DFT backend
+不属于本次 P2 系统收尾。
 
 完成每个 v1/P2 任务后，只更新本计划的完成证据、测试、限制、方法/后端版本和待专家确认项；公共 claim/Artifact 契约变更须同步 Orchestrator、下游 Agent04 计划及相应 contract/integration/E2E 设计，不得修改外部后端状态真源。
 

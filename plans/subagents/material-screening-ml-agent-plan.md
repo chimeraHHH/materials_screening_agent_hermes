@@ -44,11 +44,13 @@ schema 或数据库迁移；Fake/fixture 保持 `is_mock=true` 和最高 L1；�
 
 当前状态：**第 8.1–8.5 节的 P1 工程接入已完成。主环境仍不安装或导入 Torch/CHGNet/ASE；当且仅当显式 Worker 配置、lock 和 model card 校验通过时，真实 Agent02 production capability 才注册。**
 
-P0 收口验证（2026-07-28）：Agent02 P0.2 Fake Adapter 保持完成状态；Fake
-Artifact/结果显式 `is_mock=true` 且不超过 `L1_RETRIEVED`，要求 L2 时 fail closed；
-默认 production ML capability 仍为 `registered=false`。完整离线 Gate 为
-`325 passed, 2 skipped`，跳过项仅为显式 live MP Gate；`pip check` 和
-`git diff --check` 通过。未运行 live MP、未访问网络或接触 `MP_API_KEY`。
+P2 系统 v1 收尾验证（2026-07-28）：Agent02 P0.2 Fake Adapter 保持完成状态；Fake
+Artifact/结果显式 `is_mock=true` 且不超过 `L1_RETRIEVED`，要求 L2 时 fail closed。
+默认 production ML capability 仍仅在 `MATERIAL_AGENT_ML_WORKER_PYTHON` 及 lock、
+model-card、health 校验通过后注册；当前真实 L2 审计范围限于周期性 3D 单质 Si。
+完整离线 Gate 为 `337 passed, 7 skipped`（两个 live MP、五个 real-ML/Metal opt-in）；
+`pip check` 和 `git diff --check` 通过。未运行 live MP、未访问网络或接触 `MP_API_KEY`。
+benchmark、扩展适用域、OOD 与不确定性校准不属于本 P2。
 
 ### 本次 P1 实施范围（Step 3/4）
 

@@ -60,8 +60,14 @@ StagePlan 与动态审批桥接提交为 `701857c`；Agent02/03/04 的 Fake/mock
 - [x] 冻结 `PreparedStagePlan(orchestrator-stage-plan-v2)`、阶段输入快照和 runner-owned native plan；
 - [x] 实现 capability 审批下限与 runner 动态审批的 OR 合并规则；
 - [x] 实现真实阶段计划引用、计划/输入篡改防护及 P0.1 checkpoint 兼容策略；
-- [x] 2026-07-28 P0 收口完整离线 Gate 为 `325 passed, 2 skipped`（均为显式
-  `live_mp`），`pip check` 与 `git diff --check` 通过。
+- [x] 历史 P0 收口快照为 `325 passed, 2 skipped`；P2 v1 收尾的当前完整离线
+  Gate 为 `337 passed, 7 skipped`，`pip check` 与 `git diff --check` 通过。
+
+P2 系统 v1 收尾（2026-07-28）复核确认：Agent01 是默认生产科学 runner；Agent02
+仅在校验通过的 `MATERIAL_AGENT_ML_WORKER_PYTHON` 下注册，当前 L2 审计限于 3D
+单质 Si；Agent03/04 仅为 mock 控制链且默认不可用。完整离线 Gate 为
+`337 passed, 7 skipped`；未运行 live MP、未联网或接触 `MP_API_KEY`。本次未修改
+公共契约、checkpoint/schema、数据库迁移、依赖或科学阈值。
 
 剩余工作：
 
@@ -340,7 +346,9 @@ P0.1a 和 P0.1b 的技术退出门禁已经通过，发布基线已形成代码�
 
 - [x] `ExecutionPlan.stages` 已升级为四阶段 `StageRoute`，可以表达 required/optional、disposition、跳过原因、输入要求和 Gate；
 - [x] LangGraph 已使用 `route_next_stage`、通用 execute/reconcile 和统一结果验证路径，移除 Agent01 专用控制分支；
-- [x] 生产 registry 只注册 Agent01 runner；Agent02–04 提供 capability descriptor 和明确的 unavailable 原因，fixture runner 仅用于测试；
+- [x] 生产 registry 默认注册 Agent01 runner；Agent02 由显式且校验通过的 worker 配置
+  条件注册，Agent03/04 提供 capability descriptor 和明确的 unavailable 原因，fixture
+  runner 仅用于测试；
 - [x] 已实现绑定不可变 plan/input snapshot 的 `EXPENSIVE_BATCH_APPROVAL`；
 - [x] 已实现 `WaitingExternal`、external job 业务记录及 `reconcile/cancel` 生命周期；
 - [x] 测试已覆盖外部任务状态倒退、重复提交、Artifact/SQLite/checkpoint 不一致和跨阶段路由；
@@ -528,7 +536,8 @@ P0.1a、P0.1b 和 P0.2 的技术门禁与发布提交均已完成。Orchestrator
 - Orchestrator 控制契约升级为 `orchestrator-p0.1-v2`，报告契约升级为 `orchestrator-report-p0.1-v2`；
 - 业务 SQLite schema 升级为 version 2；legacy version 1 自动迁移，但不修改 LangGraph 自有表；
 - 未完成的 `orchestrator-p0-v1` checkpoint 保持只读并拒绝 P0.1 恢复；
-- 默认生产 registry 只注册 Agent01；Agent02–04 仅提供 unavailable capability snapshot；
+- 默认生产 registry 注册 Agent01；Agent02 仅在显式 worker 配置通过校验后注册，Agent03/04
+  仍仅提供 unavailable capability snapshot；
 - 离线测试收集 `118` 项，其中 `116 passed`，两个 `live_mp` Gate 因未显式启用而 skipped；
 - `pip check` 返回 `No broken requirements found`，`git diff --check` 通过；
 - Agent01 独立真实 MP Gate 与 Orchestrator restart Gate 均已通过：`2 passed`，耗时 `58.61s`；

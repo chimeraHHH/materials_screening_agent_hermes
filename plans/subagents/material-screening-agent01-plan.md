@@ -73,6 +73,11 @@
 - [x] README 已补充离线运行、真实验收、测试、Artifact 布局、恢复语义和已知限制；
 - [x] 系统总 Plan 已补充 Agent 01 详细计划链接和与 Agent 02 的职责边界。
 - [x] 使用 macOS Keychain 临时注入轮换后的 API key，当前最终代码的真实 Materials Project release test 已通过；
+
+P2 系统 v1 收尾复核（2026-07-28）：Agent01 继续是默认生产科学 runner，`agent01-contract-v1`
+及确定性筛选阈值保持不变。完整离线 Gate 为 `337 passed, 7 skipped`；未运行联网
+Materials Project Gate、未读取或生成 `MP_API_KEY`。benchmark、扩展适用域、OOD 与
+不确定性校准不属于本次收尾。
 - [x] 冻结 `validate_input/prepare/start/reconcile` StageRunner 生命周期以及 Candidate、PropertyValue、StageResultEnvelope 公共契约，版本为 `agent01-contract-v1`；
 - [x] 生成 44 KB 最小离线冻结契约 fixture，包含 1 条候选、source JSON、CIF、manifest、StageResult 与 JSON Schema，并验证 artifact hash 和逐字节确定性重建；
 - [x] Orchestrator P0.1 通过 `Agent01RunnerAdapter` 使用冻结契约，代码、依赖和测试基线提交为 `d681de8`；

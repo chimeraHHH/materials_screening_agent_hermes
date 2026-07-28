@@ -279,8 +279,10 @@ input snapshot hashes.
 
 The P0.2 fixture contract verifies automatic batches of 1–5 candidates,
 approval for 6–20, and pre-plan blocking above the 20-candidate hard limit.
-Agent02's production runner remains unavailable until the independent real
-worker and its CPU/Mac, recovery, security, and release Gates are complete.
+The production Agent02 runner is conditional: it is registered only when the
+independent worker executable, lock, model card, health, recovery, security,
+and release checks are valid. Without that explicit configuration it remains
+fail-closed and unavailable.
 A `WaitingExternal` result is stored as Stage `RUNNING` plus Run `PAUSED`, so a
 new process can reconcile the same external job and frozen plan without
 preparing or submitting it again.
@@ -318,15 +320,13 @@ MPLCONFIGDIR=/tmp/material-agent-mpl \
 .venv/bin/python -m pytest -q -p no:cacheprovider
 ```
 
-The Orchestrator P0.1 baseline is commit `d681de8`, the P0.2 stage-planning
-bridge baseline is commit `701857c`, and P0 closeout is commit `505ac55`.
-The P0 closeout run reported `325 passed, 2 skipped`; the skipped tests were
-the two explicit `live_mp` Gates. P1 adds separate `real_ml`, `slow_real_ml`,
-and `mps_ml` markers so the default offline Gate remains independent of the
-heavy worker environment. The current P1 branch reports `337 passed, 7 skipped`
-for the default offline Gate. In the Codex sandbox the two MPS tests skip
-because Metal is unavailable; the same full `tests/real_ml --run-real-ml` Gate
-in a non-sandboxed target-Mac process reports `5 passed` (27.69s).
+The historical P0.1/P0.2 commits are retained for traceability. The v1
+closeout baseline is the current `codex/p2-system-v1-closeout` commit. Its
+default offline Gate reports `337 passed, 7 skipped`; the skips are the two
+explicit `live_mp` tests and five opt-in real-ML tests. The real-ML tests are
+never part of the offline Gate. On a non-sandboxed target Mac, the optional
+real-ML Gate previously reported `5 passed`; sandbox MPS unavailability is an
+environmental limitation, not a hardware failure.
 
 The standalone Agent01 and Orchestrator-restart Materials Project release
 Gates are opt-in and require both network access and `MP_API_KEY`:
@@ -368,6 +368,43 @@ The Orchestrator does not reuse this native envelope as its own public
 contract. `Agent01RunnerAdapter` validates `agent01-contract-v1`, stores its
 URI/hash, wraps its frozen native plan in `PreparedStagePlan`, and maps only
 control state into `ControlStageOutcome(orchestrator-p0.2-v3)`.
+
+## v1 release closeout (P2)
+
+The v1 boundary is frozen. This closeout adds no scientific model, backend,
+dependency, public schema, migration, or scientific-threshold changes:
+
+- Agent01 is the default production scientific runner.
+- Agent02 is registered only after `MATERIAL_AGENT_ML_WORKER_PYTHON` points to
+  a validated dedicated Python executable and the lock/model-card/health Gates
+  pass. The current L2 audit scope is only periodic 3D elemental Si.
+- Agent03 and Agent04 are mock control chains only; they are not real DFT or
+  many-body scientific backends and remain unavailable in the default registry.
+- Benchmarks, expanded applicability, OOD detection, and calibrated uncertainty
+  are explicitly out of scope for this P2 closeout.
+
+Reproducible offline release checklist (run from the repository root):
+
+```bash
+material-agent project create --workspace workspace --project-id demo
+material-agent run --workspace workspace --project demo --run-id run-demo \
+  --request "从 Materials Project 中寻找同时包含 Si 和 O、带隙为 0.5–1.0 eV、energy above hull 不超过 0.05 eV/atom 的非金属材料。" \
+  --fixture tests/fixtures/mp-summary.si-o.json
+# approve the printed approval_id, then run status/report as shown above
+PYTHONDONTWRITEBYTECODE=1 MPLCONFIGDIR=/tmp/material-agent-mpl \
+  .venv/bin/python -m pytest -q -p no:cacheprovider
+.venv/bin/python -m pip check
+git diff --check
+```
+
+Expected offline result at this closeout is `337 passed, 7 skipped`. The skipped
+tests are explicit opt-in `live_mp` and real-ML/Metal checks. Do not run the
+live MP Gate in this release audit: it requires network access and a secret
+`MP_API_KEY`, neither of which is permitted or needed for the offline baseline.
+The optional real-ML Gate may be run only in its separately provisioned worker
+environment; lack of MPS visibility in a sandbox is recorded as an environment
+boundary. Repository checks also require no tracked virtual environment, model
+cache, live artifact, secret, temporary file, or traceback.
 
 ## Artifact integrity and resume behavior
 
