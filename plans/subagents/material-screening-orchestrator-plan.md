@@ -34,6 +34,38 @@
 
 完成每个控制面任务后，只更新本计划的实际状态、契约版本、测试证据、限制和依赖；公共契约变更须同步检查对应 agent plan、fixture、contract test 和 `docs/architecture.md`，不得在本计划复制科学实现细节。
 
+### 本次 Stage 0 联网 LLM 接入范围（2026-07-29）
+
+本任务只在现有 `RequirementParser` 边界内增加显式启用的
+`LLMRequirementParser` 与 DeepSeek OpenAI-compatible Provider，不改变四阶段路由、
+科学阈值、Agent 原生契约、checkpoint schema、业务数据库 migration 或证据规则。
+
+冻结配置为：
+
+- Provider：DeepSeek；
+- Base URL：`https://api.deepseek.com`；
+- Model ID：`deepseek-v4-pro`；
+- API：非流式 OpenAI-compatible Chat Completions；
+- 输出：JSON Output，之后强制经过 Pydantic `Requirement` 校验和人工
+  `REQUIREMENT_CONFIRMATION`；
+- 密钥：只允许进程环境变量或 macOS Keychain 延迟读取，不进入 prompt、日志、
+  checkpoint、SQLite、Artifact 或错误消息；
+- 默认行为：未显式配置 Provider 时继续使用 Offline Parser；显式配置错误、认证失败、
+  非法/空 JSON 或 Schema 不匹配时 fail closed，不静默回退 Offline Parser 或其他模型。
+
+本任务验收标准：
+
+1. Provider transport、密钥来源、重试、响应大小、URL/model/config 校验和安全错误语义
+   具有离线单元测试；
+2. LLM 输出不能控制 `requirement_id`、revision、确认状态或 policy version，这些字段
+   由本地代码覆盖并由 `Requirement` Schema 校验；
+3. Orchestrator event 记录 provider、model、prompt version、请求/响应 hash、模式和
+   token usage，但不记录 API key、原始 reasoning content 或未脱敏响应；
+4. CLI/runtime 只通过显式环境配置启用联网 Parser，结构化 Requirement 输入仍走本地
+   规范化路径；
+5. 增加默认跳过的 `live_llm` Gate；完整离线 Gate 不访问网络或 Keychain；
+6. README、主计划和本计划记录实际配置、运行方式、测试证据、限制与未完成项。
+
 ## 0. 当前实施进度
 
 当前状态：**Orchestrator P0.2 已完成：P0.1 发布基线为 `d681de8`，runner-owned
@@ -69,6 +101,13 @@ P2 系统 v1 收尾（2026-07-28）复核确认：Agent01 是默认生产科学 
 `337 passed, 7 skipped`；未运行 live MP、未联网或接触 `MP_API_KEY`。本次未修改
 公共契约、checkpoint/schema、数据库迁移、依赖或科学阈值。
 
+Stage 0 DeepSeek 接入（2026-07-29）已完成代码与离线验证：新增显式启用的
+`LLMRequirementParser`、冻结 DeepSeek Provider、环境变量/macOS Keychain 延迟密钥
+解析、安全 retry/响应上限、严格 JSON/Requirement 校验、受控字段覆盖、最小审计元数据
+和 fail-closed 运行语义。完整离线 Gate 为 `379 passed, 8 skipped`；新增跳过项是
+显式 `live_llm` Gate，本次未联网、未访问 Keychain 或产生 Provider 费用。真实
+DeepSeek Release Gate 仍待用户明确执行。
+
 剩余工作：
 
 - [x] 完成第 7 节定义的 `Orchestrator P0.1a` 通用同步控制面；
@@ -78,6 +117,9 @@ P2 系统 v1 收尾（2026-07-28）复核确认：Agent01 是默认生产科学 
 - [x] Orchestrator 真实 MP 人工 opt-in 发布 Gate 已通过；
 - [x] 按第 8.2 节形成真实、可审阅的 P0.1 代码/测试提交与文档提交；
 - [x] 完成第 8.3 节的 `orchestrator-p0.2-v3` runner-owned `StagePlan` 与动态审批桥接；
+- [x] 实现显式启用且 fail-closed 的 DeepSeek Stage 0
+  `LLMRequirementParser`，默认 Offline Parser 不变；
+- [ ] 执行真实 DeepSeek 网络/Keychain `live_llm` Release Gate；
 - [ ] 在后续服务器阶段迁移 Postgres checkpointer、后台 worker 和多用户权限。
 
 ## 1. 目标与完成标准

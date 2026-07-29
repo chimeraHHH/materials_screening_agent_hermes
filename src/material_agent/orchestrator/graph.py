@@ -248,15 +248,33 @@ class OrchestratorGraph:
         return "direct" if state.get("run_mode") == "direct-stage" else "request"
 
     def parse_requirement(self, state: OrchestratorState) -> dict[str, Any]:
-        if state.get("initial_requirement") is not None:
-            parsed = self.parser.normalize_structured(
-                state["initial_requirement"] or {},
-                state["requirement_id"],
+        try:
+            if state.get("initial_requirement") is not None:
+                parsed = self.parser.normalize_structured(
+                    state["initial_requirement"] or {},
+                    state["requirement_id"],
+                )
+            else:
+                parsed = self.parser.parse(
+                    state["raw_request"], state["requirement_id"]
+                )
+        except Exception as exc:
+            self.repository.update_run(
+                state["run_id"],
+                status=RunStatus.FAILED,
+                current_stage="requirement",
             )
-        else:
-            parsed = self.parser.parse(
-                state["raw_request"], state["requirement_id"]
+            self.repository.append_event(
+                event_key=f"{state['run_id']}:requirement:parse-failed",
+                run_id=state["run_id"],
+                event_type="REQUIREMENT_PARSE_FAILED",
+                payload={
+                    "parser": self.parser.name,
+                    "parser_version": self.parser.version,
+                    "error_type": type(exc).__name__,
+                },
             )
+            raise
         questions = parsed.clarification_questions
         status = (
             RunStatus.CLARIFYING
@@ -301,6 +319,11 @@ class OrchestratorGraph:
                 "parser": parsed.parser_name,
                 "parser_version": parsed.parser_version,
                 "clarification_count": len(questions),
+                "llm_audit": (
+                    parsed.llm_audit.model_dump(mode="json")
+                    if parsed.llm_audit is not None
+                    else None
+                ),
             },
         )
         return {

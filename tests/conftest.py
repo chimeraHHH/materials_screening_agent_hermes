@@ -44,11 +44,18 @@ def pytest_addoption(parser) -> None:
         default=False,
         help="run opt-in Agent02 tests in the independent CHGNet environment",
     )
+    parser.addoption(
+        "--run-live-llm",
+        action="store_true",
+        default=False,
+        help="run opt-in DeepSeek Stage0 LLM release tests",
+    )
 
 
 def pytest_collection_modifyitems(config, items) -> None:
     live_marker = pytest.mark.skip(reason="requires explicit --run-live-mp")
     real_ml_marker = pytest.mark.skip(reason="requires explicit --run-real-ml")
+    live_llm_marker = pytest.mark.skip(reason="requires explicit --run-live-llm")
     for item in items:
         if (
             "live_mp" in item.keywords
@@ -60,6 +67,11 @@ def pytest_collection_modifyitems(config, items) -> None:
             and not config.getoption("--run-real-ml")
         ):
             item.add_marker(real_ml_marker)
+        if (
+            "live_llm" in item.keywords
+            and not config.getoption("--run-live-llm")
+        ):
+            item.add_marker(live_llm_marker)
 
 
 @pytest.fixture

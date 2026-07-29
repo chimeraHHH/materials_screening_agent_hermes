@@ -34,7 +34,10 @@ from material_agent.orchestrator.models import (
     StageStartInput,
     StageStatus,
 )
-from material_agent.orchestrator.parser import RequirementParser
+from material_agent.orchestrator.parser import (
+    RequirementParser,
+    requirement_parser_from_environment,
+)
 from material_agent.orchestrator.runners import (
     StageRunnerRegistry,
     configure_agent02_production,
@@ -98,10 +101,11 @@ class OrchestratorRuntime:
             configure_agent02_production(
                 selected_registry, project_root=self.project_root
             )
+        selected_parser = parser or requirement_parser_from_environment()
         self.orchestrator = OrchestratorGraph(
             repository=self.repository,
             artifact_store=self.store,
-            parser=parser,
+            parser=selected_parser,
             runner_registry=selected_registry,
             clock=self.clock,
         )

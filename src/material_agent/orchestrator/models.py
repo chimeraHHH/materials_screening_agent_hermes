@@ -428,11 +428,28 @@ class StageStartInput(StrictModel):
     artifacts: dict[str, ArtifactPointer] = Field(default_factory=dict)
 
 
+class LLMCallAudit(StrictModel):
+    provider: str
+    provider_version: str
+    model_id: str
+    base_url: str
+    prompt_version: str
+    request_sha256: str
+    response_sha256: str
+    thinking_mode: str
+    reasoning_effort: str
+    response_format: str
+    prompt_tokens: int | None = Field(default=None, ge=0)
+    completion_tokens: int | None = Field(default=None, ge=0)
+    total_tokens: int | None = Field(default=None, ge=0)
+
+
 class ParseResult(StrictModel):
     requirement: dict[str, Any]
     clarification_questions: list[str] = Field(default_factory=list)
     parser_name: str
     parser_version: str
+    llm_audit: LLMCallAudit | None = None
 
 
 class PendingInteraction(StrictModel):
