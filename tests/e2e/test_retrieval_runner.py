@@ -99,3 +99,50 @@ def test_offline_cli_writes_run_scoped_manifest(
         / "run-cli"
         / "candidate_manifest.jsonl"
     ).is_file()
+
+
+def test_offline_cli_selects_nomad_as_the_only_source(
+    tmp_path: Path, capsys
+) -> None:
+    fixture_dir = Path(__file__).parents[1] / "fixtures"
+    exit_code = main(
+        [
+            "retrieval",
+            "--requirement",
+            str(fixture_dir / "requirement.si-o.json"),
+            "--fixture",
+            str(fixture_dir / "mp-summary.si-o.json"),
+            "--output",
+            str(tmp_path),
+            "--project-id",
+            "project-cli-nomad",
+            "--run-id",
+            "run-cli-nomad",
+            "--source",
+            "nomad",
+        ]
+    )
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+    assert exit_code == 0
+    assert payload["schema_version"] == "agent01-contract-v2"
+    query_plan = json.loads(
+        (
+            tmp_path
+            / "stages"
+            / "agent01"
+            / "run-cli-nomad"
+            / "query_plan.json"
+        ).read_text(encoding="utf-8")
+    )
+    assert query_plan["source_database"] == "nomad"
+    manifest = json.loads(
+        (
+            tmp_path
+            / "stages"
+            / "agent01"
+            / "run-cli-nomad"
+            / "candidate_manifest.jsonl"
+        ).read_text(encoding="utf-8")
+    )
+    assert manifest["source_database"] == "nomad"

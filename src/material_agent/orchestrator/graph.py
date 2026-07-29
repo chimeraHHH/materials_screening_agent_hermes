@@ -52,8 +52,15 @@ from material_agent.orchestrator.storage import (
 from material_agent.retrieval.adapters import (
     InMemoryMaterialsAdapter,
     MaterialsProjectAdapter,
+    NomadAdapter,
 )
-from material_agent.retrieval.models import EvidenceLevel, Requirement, RetrievalPolicy
+from material_agent.retrieval.models import (
+    EvidenceLevel,
+    Requirement,
+    RetrievalPolicy,
+    SourceDatabase,
+)
+from material_agent.retrieval.query import retrieval_policy_for_source
 from material_agent.retrieval.runner import RetrievalStageRunner
 from material_agent.retrieval.storage import (
     LocalArtifactStore,
@@ -1858,6 +1865,17 @@ class OrchestratorGraph:
             final_status = RunStatus.PARTIAL
         else:
             final_status = RunStatus.SUCCEEDED
+        retrieval_source = SourceDatabase(
+            state.get(
+                "retrieval_source",
+                SourceDatabase.MATERIALS_PROJECT.value,
+            )
+        )
+        retrieval_source_label = (
+            "Materials Project"
+            if retrieval_source is SourceDatabase.MATERIALS_PROJECT
+            else "NOMAD"
+        )
         report = {
             "schema_version": ORCHESTRATOR_REPORT_VERSION,
             "project_id": state["project_id"],
@@ -1886,7 +1904,7 @@ class OrchestratorGraph:
             },
             "stages": stages,
             "evidence_statement": (
-                "Materials Project retrieval evidence at L1 is preserved. "
+                f"{retrieval_source_label} retrieval evidence at L1 is preserved. "
                 "Fixture/mock runners are control-flow tests only and do not "
                 "raise scientific evidence."
             ),
@@ -2171,7 +2189,12 @@ class OrchestratorGraph:
         context: StageExecutionContext,
     ) -> StageRunner:
         if context.stage is StageId.RETRIEVAL:
-            policy = RetrievalPolicy()
+            policy = retrieval_policy_for_source(
+                state.get(
+                    "retrieval_source",
+                    SourceDatabase.MATERIALS_PROJECT.value,
+                )
+            )
             return Agent01RunnerAdapter(
                 native_runner=self._agent01_runner(state, policy),
                 artifact_store=self.store,
@@ -2191,7 +2214,10 @@ class OrchestratorGraph:
                     "database_version", "orchestrator-fixture-v1"
                 ),
                 task_metadata=fixture.get("task_metadata", {}),
+                source_database=policy.source_database,
             )
+        elif policy.source_database is SourceDatabase.NOMAD:
+            adapter = NomadAdapter()
         else:
             adapter = MaterialsProjectAdapter()
         return RetrievalStageRunner(

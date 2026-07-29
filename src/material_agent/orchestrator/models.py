@@ -522,6 +522,7 @@ class OrchestratorState(TypedDict, total=False):
     stage_approval_decision: str | None
     retry_decision: str | None
     retrieval_fixture_uri: str | None
+    retrieval_source: str
     retry_counters: dict[str, int]
     report_uri: str | None
     report_sha256: str | None

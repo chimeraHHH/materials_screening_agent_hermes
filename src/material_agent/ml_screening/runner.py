@@ -315,7 +315,10 @@ class Agent02RunnerAdapter:
         return {"refs": {name: MLArtifactPointer(uri=ref.uri, sha256=ref.sha256) for name, ref in checked.items()}, "requirement": requirement, "candidates": candidates, "policy": policy, "registry": registry, "health": health, "request": request}
 
     def _candidate_from_agent01(self, item: dict[str, Any], manifest_uri: str, manifest_sha: str) -> MLCandidateInput:
-        if item.get("schema_version") != "agent01-contract-v1":
+        if item.get("schema_version") not in {
+            "agent01-contract-v1",
+            "agent01-contract-v2",
+        }:
             raise ValueError("candidate manifest schema version is invalid")
         structure_uri = item.get("structure_artifact_uri")
         structure_sha = item.get("structure_artifact_sha256")

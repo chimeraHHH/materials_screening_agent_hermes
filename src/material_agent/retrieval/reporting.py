@@ -6,9 +6,10 @@ from collections import Counter
 from typing import Any
 
 from material_agent.retrieval.models import (
-    CandidateAuditRecord,
+    CandidateRecord,
     Decision,
     RetrievalQueryPlan,
+    SourceDatabase,
     StageStatus,
 )
 
@@ -16,7 +17,7 @@ from material_agent.retrieval.models import (
 def build_report(
     *,
     query_plan: RetrievalQueryPlan,
-    candidates: list[CandidateAuditRecord],
+    candidates: list[CandidateRecord],
     raw_count: int,
     scan_truncated: bool,
     status: StageStatus,
@@ -42,6 +43,7 @@ def build_report(
         "stage": "agent01",
         "status": status.value,
         "query": {
+            "source_database": query_plan.source_database.value,
             "query_id": query_plan.query_id,
             "query_fingerprint": query_plan.query_fingerprint,
             "database_version": query_plan.database_version,
@@ -107,8 +109,15 @@ def report_to_markdown(report: dict[str, Any]) -> str:
     funnel = report["funnel"]
     limits = report["limits"]
     query = report["query"]
+    source = SourceDatabase(query["source_database"])
+    source_label = (
+        "Materials Project"
+        if source is SourceDatabase.MATERIALS_PROJECT
+        else "NOMAD"
+    )
+    source_id_label = "MP ID" if source is SourceDatabase.MATERIALS_PROJECT else "NOMAD entry ID"
     lines = [
-        "# Agent 01 Materials Project 检索报告",
+        f"# Agent 01 {source_label} 检索报告",
         "",
         f"- Stage 状态：`{report['status']}`",
         f"- 数据库版本：`{query['database_version']}`",
@@ -137,7 +146,7 @@ def report_to_markdown(report: dict[str, Any]) -> str:
         "",
         "## 发布候选",
         "",
-        "| Rank | MP ID | Formula | Decision | Missing evidence |",
+        f"| Rank | {source_id_label} | Formula | Decision | Missing evidence |",
         "|---:|---|---|---|---|",
     ]
     for candidate in report["published_candidates"]:

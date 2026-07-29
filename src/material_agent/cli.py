@@ -12,13 +12,15 @@ from material_agent.orchestrator.runtime import OrchestratorRuntime
 from material_agent.retrieval.adapters import (
     InMemoryMaterialsAdapter,
     MaterialsProjectAdapter,
+    NomadAdapter,
 )
 from material_agent.retrieval.models import (
     Requirement,
-    RetrievalPolicy,
     RetrievalStageInput,
+    SourceDatabase,
     StageStatus,
 )
+from material_agent.retrieval.query import retrieval_policy_for_source
 from material_agent.retrieval.runner import RetrievalStageRunner
 from material_agent.retrieval.storage import LocalArtifactStore
 
@@ -41,6 +43,11 @@ def main(argv: list[str] | None = None) -> int:
     run_input.add_argument("--request")
     run_input.add_argument("--requirement-file", type=Path)
     run.add_argument("--fixture", type=Path)
+    run.add_argument(
+        "--source",
+        choices=tuple(source.value for source in SourceDatabase),
+        default=SourceDatabase.MATERIALS_PROJECT.value,
+    )
     run.add_argument("--run-id")
 
     run_stage = subparsers.add_parser(
@@ -107,6 +114,11 @@ def main(argv: list[str] | None = None) -> int:
     retrieval.add_argument("--project-id", default="project-demo")
     retrieval.add_argument("--run-id", default="run-agent01-demo")
     retrieval.add_argument("--fixture", type=Path)
+    retrieval.add_argument(
+        "--source",
+        choices=tuple(source.value for source in SourceDatabase),
+        default=SourceDatabase.MATERIALS_PROJECT.value,
+    )
     arguments = parser.parse_args(argv)
 
     try:
@@ -180,6 +192,7 @@ def _start_orchestrator_run(arguments: argparse.Namespace) -> int:
             initial_requirement=requirement,
             fixture_payload=fixture,
             run_id=arguments.run_id,
+            retrieval_source=arguments.source,
         )
     _print_model(view)
     return 0
@@ -287,6 +300,7 @@ def _run_retrieval(arguments: argparse.Namespace) -> int:
         "application/json",
         immutable=True,
     )
+    source = SourceDatabase(arguments.source)
     if arguments.fixture:
         fixture_payload = json.loads(arguments.fixture.read_text(encoding="utf-8"))
         adapter = InMemoryMaterialsAdapter(
@@ -295,11 +309,14 @@ def _run_retrieval(arguments: argparse.Namespace) -> int:
                 "database_version", "fixture-2026-07-25"
             ),
             task_metadata=fixture_payload.get("task_metadata", {}),
+            source_database=source,
         )
+    elif source is SourceDatabase.NOMAD:
+        adapter = NomadAdapter()
     else:
         adapter = MaterialsProjectAdapter()
 
-    policy = RetrievalPolicy()
+    policy = retrieval_policy_for_source(source)
     stage_input = RetrievalStageInput(
         project_id=arguments.project_id,
         run_id=arguments.run_id,

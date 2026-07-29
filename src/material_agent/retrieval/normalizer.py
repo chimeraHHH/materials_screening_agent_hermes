@@ -8,12 +8,15 @@ from typing import Any
 
 from material_agent.retrieval.models import (
     CandidateAuditRecord,
+    CandidateAuditRecordV2,
+    CandidateRecord,
     Decision,
     EvidenceLevel,
     PropertyOrigin,
     PropertyValue,
     ProvenanceStatus,
     RetrievalQueryPlan,
+    SourceDatabase,
 )
 from material_agent.retrieval.structures import ProcessedStructure
 
@@ -27,10 +30,15 @@ ORIGIN_NAME_ALIASES = {
 }
 
 
-def candidate_id_for(project_id: str, material_id: str) -> str:
+def candidate_id_for(
+    project_id: str,
+    material_id: str,
+    source_database: SourceDatabase | str = SourceDatabase.MATERIALS_PROJECT,
+) -> str:
+    source = SourceDatabase(source_database)
     value = uuid.uuid5(
         uuid.NAMESPACE_URL,
-        f"material-agent://{project_id}/materials_project/{material_id}",
+        f"material-agent://{project_id}/{source.value}/{material_id}",
     )
     return f"cand_{value.hex}"
 
@@ -46,7 +54,7 @@ def normalize_candidate(
     structure_uri: str,
     structure_sha256: str,
     retrieved_at: datetime,
-) -> CandidateAuditRecord:
+) -> CandidateRecord:
     material_id = str(document["material_id"])
     origins = _origin_map(document.get("origins"))
     properties = [
@@ -83,8 +91,28 @@ def normalize_candidate(
             retrieved_at=retrieved_at,
         ),
     ]
-    return CandidateAuditRecord(
-        candidate_id=candidate_id_for(project_id, material_id),
+    record_class = (
+        CandidateAuditRecord
+        if query_plan.source_database is SourceDatabase.MATERIALS_PROJECT
+        else CandidateAuditRecordV2
+    )
+    provenance = {
+        "source_endpoint": query_plan.endpoint,
+        "database_version": query_plan.database_version,
+        "query_fingerprint": query_plan.query_fingerprint,
+        "requirement_hash": query_plan.requirement_hash,
+        "retrieval_policy_version": query_plan.policy_version,
+        "summary_formula": document.get("formula_pretty"),
+    }
+    if query_plan.source_database is SourceDatabase.NOMAD:
+        provenance["source_provenance"] = document.get("source_provenance", {})
+    return record_class(
+        candidate_id=candidate_id_for(
+            project_id,
+            material_id,
+            query_plan.source_database,
+        ),
+        source_database=query_plan.source_database,
         formula=processed_structure.reduced_formula,
         source_database_version=query_plan.database_version,
         source_material_id=material_id,
@@ -102,19 +130,12 @@ def normalize_candidate(
         evidence_level=EvidenceLevel.L1_RETRIEVED,
         decision=Decision.UNCERTAIN,
         data_quality_flags=list(processed_structure.data_quality_flags),
-        provenance={
-            "source_endpoint": query_plan.endpoint,
-            "database_version": query_plan.database_version,
-            "query_fingerprint": query_plan.query_fingerprint,
-            "requirement_hash": query_plan.requirement_hash,
-            "retrieval_policy_version": query_plan.policy_version,
-            "summary_formula": document.get("formula_pretty"),
-        },
+        provenance=provenance,
     )
 
 
 def add_dimensionality_property(
-    candidate: CandidateAuditRecord,
+    candidate: CandidateRecord,
     *,
     value: int | None,
     method: str,
@@ -122,7 +143,7 @@ def add_dimensionality_property(
     database_version: str,
     retrieved_at: datetime,
     warning_messages: list[str] | None = None,
-) -> CandidateAuditRecord:
+) -> CandidateRecord:
     structure_origin = _property_lookup(candidate, "num_sites").origin
     origin = structure_origin.model_copy()
     flags = list(candidate.data_quality_flags)
@@ -134,7 +155,11 @@ def add_dimensionality_property(
         name="structural_dimensionality",
         value=value,
         unit="dimensionless",
-        source="derived_from_mp_structure",
+        source=(
+            "derived_from_mp_structure"
+            if str(candidate.source_database) == SourceDatabase.MATERIALS_PROJECT.value
+            else f"derived_from_{str(candidate.source_database)}_structure"
+        ),
         method=method,
         evidence_level=EvidenceLevel.L1_RETRIEVED,
         origin=PropertyOrigin(
@@ -160,9 +185,9 @@ def add_dimensionality_property(
 
 
 def apply_task_metadata(
-    candidate: CandidateAuditRecord,
+    candidate: CandidateRecord,
     resolved: dict[str, dict[str, Any]],
-) -> CandidateAuditRecord:
+) -> CandidateRecord:
     properties: list[PropertyValue] = []
     for prop in candidate.properties:
         task_id = prop.origin.origin_task_id
@@ -199,7 +224,7 @@ def apply_task_metadata(
 
 
 def collect_origin_task_ids(
-    candidates: list[CandidateAuditRecord],
+    candidates: list[CandidateRecord],
 ) -> tuple[list[str], list[str]]:
     task_ids = {
         prop.origin.origin_task_id
@@ -232,7 +257,7 @@ def _property(
         name=name,
         value=value,
         unit=unit,
-        source="materials_project",
+        source=plan.source_database.value,
         method=None,
         origin=PropertyOrigin(
             endpoint=plan.endpoint,
@@ -262,7 +287,7 @@ def _origin_map(raw_origins: Any) -> dict[str, str]:
     return output
 
 
-def _property_lookup(candidate: CandidateAuditRecord, name: str) -> PropertyValue:
+def _property_lookup(candidate: CandidateRecord, name: str) -> PropertyValue:
     return next(prop for prop in candidate.properties if prop.name == name)
 
 

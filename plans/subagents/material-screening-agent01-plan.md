@@ -36,9 +36,80 @@
 
 完成每个任务后，只在本计划记录实际完成项、测试证据、限制和对 Agent02/Orchestrator 的影响；公共契约或阈值变更需先同步相关 agent plan、fixture、contract test，并按职责更新主计划或技术架构。
 
+### 当前任务：P1 单数据源 NOMAD 接入（2026-07-29）
+
+范围：
+
+- 单次 Agent01 Run 只允许选择一个数据源：`materials_project` 或 `nomad`；
+- Materials Project 继续作为默认来源，既有 `agent01-contract-v1`、冻结 fixture、
+  query fingerprint 和 CLI 行为保持可重建；
+- NOMAD 使用公开只读 REST API、`owner=public` 和
+  `/entries/archive/query`，不引入 NOMAD Python 客户端或新依赖；
+- NOMAD 原始 entry 必须在 Adapter 内映射为 Agent01 的规范化输入，结构从解析后的
+  topology/atoms 引用读取，长度从米显式换算为 Å，能量从焦耳显式换算为 eV；
+- NOMAD 不存在可直接等同于 Materials Project `energy_above_hull` 的统一来源字段，
+  因而该性质保持缺失并按既有 `UNCERTAIN` 语义处理；不得推测或跨库补值；
+- NOMAD 结果使用新的 `agent01-contract-v2` Envelope/Candidate，旧 v1 模型和 fixture
+  继续只描述 Materials Project；Agent02 转换器只增加读取 v2 的兼容性，不修改
+  Agent01 权威记录或提升证据；
+- Orchestrator 只记录和传递显式 source selection，不改变控制面状态机、SQLite
+  migration、审批、路由顺序或 checkpoint schema。
+
+依赖：
+
+- 复用主环境已锁定的 `requests` 和 `pymatgen`；
+- 真实 NOMAD release test 必须保持显式 opt-in，默认测试使用 fake HTTP response，
+  不访问网络；
+- NOMAD 公共 API 没有稳定数据库 release snapshot，必须记录 API 版本、endpoint、
+  entry ID、parser/method/program 和获取时间，并在报告中声明该限制。
+
+验收标准：
+
+1. 默认 MP 相关 unit、contract、fixture、integration 和 E2E 输出无回归；
+2. NOMAD Query Plan 对元素和可支持的 band-gap 范围做确定性下推，其他约束明确留给
+   本地复核；
+3. NOMAD Adapter 覆盖 API 版本、游标分页、结构/单位映射、schema drift、429/5xx、
+   零结果和扫描截断；
+4. standalone CLI 与 Orchestrator Run 均能显式选择 `nomad`，且同一 Run 不混合来源；
+5. 每条 NOMAD Candidate 使用 source-qualified ID，保留 entry/parser/method
+   provenance、结构 URI/hash 和 `L1_RETRIEVED` ceiling；
+6. 相关测试、完整离线 Gate、`pip check` 和 `git diff --check` 通过，并在本节记录
+   实际测试证据与剩余限制。
+
+实现结果：
+
+- [x] `material-agent retrieval` 与 Orchestrator `run` 均支持
+      `--source materials_project|nomad`，默认 MP；source selection 写入 Run state，
+      Runner factory 每次只构造一个 Adapter；
+- [x] 新增 NOMAD public Archive Adapter、查询计划、OpenAPI 版本快照、稳定游标分页、
+      schema 校验、结构米→Å、band gap J→eV、method/parser provenance 和受控重试；
+- [x] NOMAD Candidate/Envelope 使用 `agent01-contract-v2` 与 source-qualified ID；
+      MP v1 Candidate/Envelope、ID namespace 和冻结 fixture 逐字节重建测试未改变；
+- [x] NOMAD 没有被安全映射为 MP `energy_above_hull` 的字段；该值固定保留缺失，
+      相应硬约束得到 `MISSING`，Candidate 为 `UNCERTAIN`，不跨库补值；
+- [x] Agent02 loader 增加 v2 只读兼容；Orchestrator 报告按所选来源声明 L1，
+      控制契约、审批和 SQLite migration 未改变；
+- [x] fake HTTP unit、standalone CLI、Orchestrator integration、MP v1 contract/frozen
+      fixture 与 Agent02 兼容回归通过；完整离线 Gate 为
+      `392 passed, 9 skipped`，`pip check` 为 `No broken requirements found`，
+      `git diff --check` 通过；
+- [ ] 新增 `live_nomad` 发布探针默认跳过，本次未执行；实现前通过一次受限公开查询
+      验证了元素、band-gap 查询语法和 archive 映射，但这不替代正式 release Gate。
+
+剩余限制：
+
+- NOMAD 公共 API 只记录当前 API version，没有 MP 式稳定数据库 release snapshot；
+- 当前结构映射只接受可解析且三轴周期的 resolved topology atoms；缺失或非周期结构按
+  既有结构失败/不确定语义处理，不猜测晶格；
+- 多个 NOMAD band-gap 记录按
+  `minimum_nonnegative_reported_gap-v1` 选择最小非负值并保留选择 provenance；
+- 尚未实现跨库合并、fallback 或去重；这是“单次运行选择单一来源”的刻意边界。
+
 ## 0. 当前实施进度
 
-当前状态：**Agent 01 P0 与第 8 节增强 Gate 已完成，公共契约已冻结为 `agent01-contract-v1`；Orchestrator P0.1 已基于该契约实现并形成代码基线提交 `d681de8`。P1 性能和扩展项尚未开始。**
+当前状态：**Agent 01 P0 与第 8 节增强 Gate 已完成；Materials Project 公共契约继续
+冻结为 `agent01-contract-v1`。P1 已完成 NOMAD 单来源接入并发布
+`agent01-contract-v2`，其他性能和扩展项尚未开始。**
 
 ### 0.1 已完成
 
@@ -48,6 +119,7 @@
 - [x] 建立 `material-agent retrieval` CLI、Pydantic 输入输出模型和 StageResultEnvelope；
 - [x] 实现 Requirement 校验、Query Plan、query fingerprint、MP 查询参数下推和本地约束复核；
 - [x] 实现真实 Materials Project Adapter 与不依赖 API key 的离线 fixture Adapter；
+- [x] 实现公开只读 NOMAD Archive Adapter、单 Run 单来源选择和 NOMAD v2 契约；
 - [x] 实现 database version snapshot；兼容固定版本客户端的 `get_database_version()` 接口；
 - [x] 实现受控查询、瞬时错误重试、schema drift 检测、零结果和扫描截断状态；
 - [x] 实现 gzip JSONL 原始响应归档、manifest、原子写入、hash 校验和 artifact 路径保护；

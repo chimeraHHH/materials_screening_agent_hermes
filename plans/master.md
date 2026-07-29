@@ -36,12 +36,17 @@ checkpoint schema、数据库迁移、requirements.lock 或科学阈值，不运
 > `run-stage` Gate 已完成。生产注册仅由显式 Worker 配置触发；缺失或无效配置保持
 > fail-closed。科学 benchmark、扩展适用域和不确定性校准仍属于后续 P1。**
 
+当前并行 P1 增量：Agent01 增加 NOMAD public Archive Adapter，并将每次 Run 的来源
+冻结为 `materials_project` 或 `nomad` 之一。Materials Project
+`agent01-contract-v1` 与冻结 fixture 保持不变；NOMAD 使用
+`agent01-contract-v2`，缺失的 MP 专有性质不跨库补值。
+
 ### 1.1 已确认基线
 
 | 组件 | 状态 | 仓库依据 |
 |---|---|---|
 | Orchestrator | P0.2 已完成；控制、阶段计划和报告契约已冻结 | [`Orchestrator 计划`](subagents/material-screening-orchestrator-plan.md) |
-| Agent 01 | P0 与增强 Gate 已完成；`agent01-contract-v1` 已冻结 | [`Agent 01 计划`](subagents/material-screening-agent01-plan.md) |
+| Agent 01 | P0 与增强 Gate 已完成；MP `agent01-contract-v1` 保持冻结；NOMAD 单来源 P1 接入及离线 Gate 已完成 | [`Agent 01 计划`](subagents/material-screening-agent01-plan.md) |
 | Agent 02 | Step 1/1.1、P0.2 Fake 路径及 Step 3 独立 CHGNet worker/CPU Gate 已完成 | [`Agent 02 计划`](subagents/material-screening-ml-agent-plan.md) |
 | Agent 02 生产接入 | 目标 Mac CPU/MPS parity、单次 CPU 回退、Top-5/恢复/资源记录和显式 production factory 已完成；默认无配置时仍不可用 | [`Agent 02 计划`](subagents/material-screening-ml-agent-plan.md) |
 | Agent 03 | v1 mock 控制链、审批、恢复、失败注入、报告与 fixture 已完成；真实 DFT backend 未实现或注册 | [`Agent 03 计划`](subagents/material-screening-agent-dft-plan.md) |
@@ -97,6 +102,8 @@ v1 的系统级退出目标是：
 ### Day 3–4：Agent 01 查询与规范化
 
 - [x] 实现 Materials Project Adapter 和离线 fixture Adapter。
+- [x] 实现单 Run 单来源选择和 NOMAD public Archive Adapter；NOMAD 结果使用 v2，
+      不改变 MP v1 冻结输出。
 - [x] 实现查询参数生成、能力/数据库版本快照和受控重试。
 - [x] 保存原始响应、来源和 provenance。
 - [x] 保存 source JSON、canonical CIF 和稳定结构身份。
@@ -413,24 +420,5 @@ flowchart LR
 - [x] 未修改 Agent01/02 原生公共契约、Orchestrator/checkpoint schema、数据库迁移、
   requirements.lock 或科学阈值；未新增模型、后端、依赖或公共 Schema。
 
-遗留项：DeepSeek 真实网络/Keychain Release Gate、真实 DFT/多体 backend、benchmark、
-扩展适用域、OOD 与不确定性校准继续属于后续里程碑；sandbox 中 MPS 不可见仅记录为
-可选外部 Gate 的环境边界。
-
-## 10. Stage 0 DeepSeek 接入记录（2026-07-29）
-
-- [x] 在既有 `RequirementParser` 边界内实现 DeepSeek
-  OpenAI-compatible Chat Completions Provider，冻结 Base URL
-  `https://api.deepseek.com` 和 Model ID `deepseek-v4-pro`；
-- [x] 默认仍使用 Offline Parser；只有
-  `MATERIAL_AGENT_LLM_PROVIDER=deepseek` 才启用联网解析，显式配置后的认证、网络、
-  JSON 或 Schema 失败均 fail closed，不静默回退；
-- [x] API key 只从进程环境或 macOS Keychain 延迟读取，未加入 CLI、配置、日志、
-  SQLite、checkpoint、Artifact 或测试 fixture；
-- [x] Provider 输出经过严格 JSON/Pydantic/Requirement policy 校验并继续停在人工
-  Requirement confirmation Gate；控制字段由本地代码覆盖；
-- [x] 审计事件只保存 provider/model/prompt version、请求与响应 hash、模式及 token
-  usage，不保存授权信息、原始响应或 reasoning content；
-- [x] 完整离线 Gate 为 `379 passed, 8 skipped`，`live_llm` 是新增的显式 opt-in
-  跳过项；未联网、未访问 Keychain，也未执行可能产生费用的真实 Provider Gate；
-- [ ] 使用已配置 Keychain 凭据执行 `--run-live-llm` Release Gate。
+遗留项：联网 LLM、真实 DFT/多体 backend、benchmark、扩展适用域、OOD 与不确定性
+校准继续属于后续里程碑；sandbox 中 MPS 不可见仅记录为可选外部 Gate 的环境边界。

@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 
 AGENT01_CONTRACT_VERSION = "agent01-contract-v1"
+AGENT01_MULTI_SOURCE_CONTRACT_VERSION = "agent01-contract-v2"
 
 
 def utc_now() -> datetime:
@@ -74,6 +75,11 @@ class RankingMode(StrEnum):
     MINIMIZE = "minimize"
     MAXIMIZE = "maximize"
     TARGET = "target"
+
+
+class SourceDatabase(StrEnum):
+    MATERIALS_PROJECT = "materials_project"
+    NOMAD = "nomad"
 
 
 class NumericRange(StrictModel):
@@ -169,6 +175,7 @@ class Requirement(StrictModel):
 
 class RetrievalPolicy(StrictModel):
     policy_version: str = "retrieval-policy-v1"
+    source_database: SourceDatabase = SourceDatabase.MATERIALS_PROJECT
     endpoint: str = "/materials/summary"
     include_deprecated: bool = False
     include_gnome_default: bool = False
@@ -223,7 +230,7 @@ class SourceMetadata(StrictModel):
 
 class RetrievalQueryPlan(StrictModel):
     query_id: str
-    source_database: Literal["materials_project"] = "materials_project"
+    source_database: SourceDatabase = SourceDatabase.MATERIALS_PROJECT
     endpoint: str
     database_version: str
     requirement_hash: str
@@ -331,6 +338,15 @@ class CandidateAuditRecord(StrictModel):
     provenance: dict[str, Any] = Field(default_factory=dict)
 
 
+class CandidateAuditRecordV2(CandidateAuditRecord):
+    """Multi-source candidate contract used by non-MP retrieval sources."""
+
+    schema_version: Literal["agent01-contract-v2"] = (
+        AGENT01_MULTI_SOURCE_CONTRACT_VERSION
+    )
+    source_database: SourceDatabase
+
+
 class ArtifactRef(StrictModel):
     uri: str
     sha256: str
@@ -364,12 +380,20 @@ class StageResultEnvelope(StrictModel):
     finished_at: datetime
 
 
+class StageResultEnvelopeV2(StageResultEnvelope):
+    """Multi-source stage envelope while the MP v1 envelope remains frozen."""
+
+    schema_version: Literal["agent01-contract-v2"] = (
+        AGENT01_MULTI_SOURCE_CONTRACT_VERSION
+    )
+
+
 class OperationRecord(StrictModel):
     """Immutable completion record used to validate resumable stage output."""
 
     operation_id: str
     query_fingerprint: str
-    result: StageResultEnvelope
+    result: StageResultEnvelope | StageResultEnvelopeV2
     registered_artifacts: list[ArtifactRef]
 
 
@@ -380,3 +404,15 @@ class StageOutcome(StrictModel):
     operation_ref: str | None = None
     result: StageResultEnvelope | None = None
     errors: list[ErrorRecord] = Field(default_factory=list)
+
+
+class StageOutcomeV2(StageOutcome):
+    schema_version: Literal["agent01-contract-v2"] = (
+        AGENT01_MULTI_SOURCE_CONTRACT_VERSION
+    )
+    result: StageResultEnvelopeV2 | None = None
+
+
+CandidateRecord = CandidateAuditRecord | CandidateAuditRecordV2
+StageResult = StageResultEnvelope | StageResultEnvelopeV2
+NativeStageOutcome = StageOutcome | StageOutcomeV2

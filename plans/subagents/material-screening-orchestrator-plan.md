@@ -34,6 +34,18 @@
 
 完成每个控制面任务后，只更新本计划的实际状态、契约版本、测试证据、限制和依赖；公共契约变更须同步检查对应 agent plan、fixture、contract test 和 `docs/architecture.md`，不得在本计划复制科学实现细节。
 
+### Agent01 NOMAD 单来源兼容（2026-07-29）
+
+- Orchestrator `run` 接受显式 `retrieval_source=materials_project|nomad`，默认仍为
+  Materials Project；选择值写入初始 checkpoint 并在同一 Run 中保持不变；
+- Runner factory 按选择构造 MP 或 NOMAD Adapter，同一 Run 不同时调用两个来源，
+  fixture 只用于离线控制流且继续标记 mock；
+- `Agent01RunnerAdapter` 接受 MP v1 或 NOMAD v2 原生结果，但仍只向
+  `ControlStageOutcome(orchestrator-p0.2-v3)` 映射控制状态和 Artifact 引用，没有
+  改变控制契约、SQLite migration、审批或路由顺序；
+- 最终报告按实际来源声明 L1 retrieval evidence；缺失性质与
+  `UNCERTAIN` 不由控制面改写。
+
 ### 本次 Stage 0 联网 LLM 接入范围（2026-07-29）
 
 本任务只在现有 `RequirementParser` 边界内增加显式启用的
@@ -101,13 +113,6 @@ P2 系统 v1 收尾（2026-07-28）复核确认：Agent01 是默认生产科学 
 `337 passed, 7 skipped`；未运行 live MP、未联网或接触 `MP_API_KEY`。本次未修改
 公共契约、checkpoint/schema、数据库迁移、依赖或科学阈值。
 
-Stage 0 DeepSeek 接入（2026-07-29）已完成代码与离线验证：新增显式启用的
-`LLMRequirementParser`、冻结 DeepSeek Provider、环境变量/macOS Keychain 延迟密钥
-解析、安全 retry/响应上限、严格 JSON/Requirement 校验、受控字段覆盖、最小审计元数据
-和 fail-closed 运行语义。完整离线 Gate 为 `379 passed, 8 skipped`；新增跳过项是
-显式 `live_llm` Gate，本次未联网、未访问 Keychain 或产生 Provider 费用。真实
-DeepSeek Release Gate 仍待用户明确执行。
-
 剩余工作：
 
 - [x] 完成第 7 节定义的 `Orchestrator P0.1a` 通用同步控制面；
@@ -117,9 +122,6 @@ DeepSeek Release Gate 仍待用户明确执行。
 - [x] Orchestrator 真实 MP 人工 opt-in 发布 Gate 已通过；
 - [x] 按第 8.2 节形成真实、可审阅的 P0.1 代码/测试提交与文档提交；
 - [x] 完成第 8.3 节的 `orchestrator-p0.2-v3` runner-owned `StagePlan` 与动态审批桥接；
-- [x] 实现显式启用且 fail-closed 的 DeepSeek Stage 0
-  `LLMRequirementParser`，默认 Offline Parser 不变；
-- [ ] 执行真实 DeepSeek 网络/Keychain `live_llm` Release Gate；
 - [ ] 在后续服务器阶段迁移 Postgres checkpointer、后台 worker 和多用户权限。
 
 ## 1. 目标与完成标准

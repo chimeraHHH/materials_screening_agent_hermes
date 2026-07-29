@@ -21,6 +21,8 @@ from material_agent.retrieval.evaluator import evaluate_candidate
 from material_agent.retrieval.models import (
     ArtifactRef,
     CandidateAuditRecord,
+    CandidateAuditRecordV2,
+    CandidateRecord,
     Decision,
     ErrorRecord,
     OperationRecord,
@@ -31,11 +33,15 @@ from material_agent.retrieval.models import (
     RetrievalStageContext,
     RetrievalStageInput,
     RetrievalStagePlan,
+    SourceDatabase,
     SourceMetadata,
     StageInputValidation,
     StageOutcome,
+    StageOutcomeV2,
     StageOutcomeType,
+    StageResult,
     StageResultEnvelope,
+    StageResultEnvelopeV2,
     StageStatus,
 )
 from material_agent.retrieval.normalizer import (
@@ -86,6 +92,13 @@ class RetrievalStageRunner:
         self.store = artifact_store
         self.policy = policy or RetrievalPolicy()
         self.clock = clock or (lambda: datetime.now(UTC))
+        adapter_source = SourceDatabase(
+            getattr(adapter, "source_database", SourceDatabase.MATERIALS_PROJECT)
+        )
+        if adapter_source is not self.policy.source_database:
+            raise ValueError(
+                "retrieval adapter source does not match retrieval policy"
+            )
 
     def validate_input(
         self, context: RetrievalStageContext
@@ -191,7 +204,8 @@ class RetrievalStageRunner:
                 "; ".join([*validation.errors, *validation.missing_fields])
             )
         source_metadata = metadata or self._call_with_retry(
-            "materials_project.metadata", self.adapter.metadata
+            f"{self.policy.source_database.value}.metadata",
+            self.adapter.metadata,
         )
         query_plan = build_query_plan(
             requirement,
@@ -276,7 +290,7 @@ class RetrievalStageRunner:
         stage_input: RetrievalStageInput,
         *,
         prepared_stage_plan: RetrievalStagePlan | None = None,
-    ) -> StageResultEnvelope:
+    ) -> StageResult:
         context = RetrievalStageContext(
             requirement=requirement,
             stage_input=stage_input,
@@ -492,8 +506,11 @@ class RetrievalStageRunner:
                     "TRANSIENT_EXTERNAL" if retryable else "INVALID_RESPONSE"
                 ),
                 retryable=retryable,
-                operation="materials_project.search",
-                public_message=f"Materials Project search failed ({type(exc).__name__})",
+                operation=f"{plan.source_database.value}.search",
+                public_message=(
+                    f"{_source_label(plan.source_database)} search failed "
+                    f"({type(exc).__name__})"
+                ),
             )
             report = build_report(
                 query_plan=plan,
@@ -517,7 +534,7 @@ class RetrievalStageRunner:
                     ),
                 ]
             )
-            result = StageResultEnvelope(
+            result = self._new_result(
                 run_id=stage_input.run_id,
                 status=status,
                 input_snapshot_uri=input_ref.uri,
@@ -527,7 +544,7 @@ class RetrievalStageRunner:
                 errors=[search_error],
                 metrics=report["funnel"] | report["limits"],
                 provenance={
-                    "source": "materials_project",
+                    "source": plan.source_database.value,
                     "database_version": plan.database_version,
                     "query_id": plan.query_id,
                     "query_fingerprint": plan.query_fingerprint,
@@ -588,12 +605,16 @@ class RetrievalStageRunner:
             )
 
         retrieved_at = plan.created_at
-        candidates: list[CandidateAuditRecord] = []
+        candidates: list[CandidateRecord] = []
         structures = {}
 
         for index, document in enumerate(documents):
             material_id = str(document.get("material_id") or f"unknown-{index}")
-            candidate_id = candidate_id_for(stage_input.project_id, material_id)
+            candidate_id = candidate_id_for(
+                stage_input.project_id,
+                material_id,
+                plan.source_database,
+            )
             try:
                 processed = process_structure(
                     document.get("structure"),
@@ -663,9 +684,15 @@ class RetrievalStageRunner:
                     ),
                 )
             except (StructureValidationError, KeyError, TypeError, ValueError) as exc:
+                record_class = (
+                    CandidateAuditRecord
+                    if plan.source_database is SourceDatabase.MATERIALS_PROJECT
+                    else CandidateAuditRecordV2
+                )
                 candidates.append(
-                    CandidateAuditRecord(
+                    record_class(
                         candidate_id=candidate_id,
+                        source_database=plan.source_database,
                         formula=str(document.get("formula_pretty") or "unknown"),
                         source_database_version=plan.database_version,
                         source_material_id=material_id,
@@ -703,7 +730,7 @@ class RetrievalStageRunner:
         if task_ids:
             try:
                 resolved_task_metadata, origin_warnings = self._call_with_retry(
-                    "materials_project.resolve_task_metadata",
+                    f"{plan.source_database.value}.resolve_task_metadata",
                     lambda: self.adapter.resolve_task_metadata(
                         task_ids, material_ids, self.policy.origin_batch_size
                     ),
@@ -836,7 +863,26 @@ class RetrievalStageRunner:
             )
 
         finished_at = self.clock()
-        result = StageResultEnvelope(
+        provenance = {
+            "source": plan.source_database.value,
+            "database_version": plan.database_version,
+            "query_id": plan.query_id,
+            "query_fingerprint": plan.query_fingerprint,
+            "policy_version": self.policy.policy_version,
+            "pymatgen_version": _distribution_version("pymatgen"),
+            "is_mock": bool(getattr(self.adapter, "is_mock", False)),
+        }
+        if plan.source_database is SourceDatabase.MATERIALS_PROJECT:
+            provenance["mp_api_version"] = _distribution_version("mp-api")
+        else:
+            provenance["nomad_http_client_version"] = _distribution_version(
+                "requests"
+            )
+            provenance["database_snapshot_limit"] = (
+                "NOMAD public API exposes an API version, not an immutable "
+                "database release snapshot"
+            )
+        result = self._new_result(
             run_id=stage_input.run_id,
             status=status,
             input_snapshot_uri=input_ref.uri,
@@ -847,16 +893,7 @@ class RetrievalStageRunner:
             warnings=sorted(set(warnings)),
             errors=errors,
             metrics=report["funnel"] | report["limits"],
-            provenance={
-                "source": "materials_project",
-                "database_version": plan.database_version,
-                "query_id": plan.query_id,
-                "query_fingerprint": plan.query_fingerprint,
-                "policy_version": self.policy.policy_version,
-                "mp_api_version": _distribution_version("mp-api"),
-                "pymatgen_version": _distribution_version("pymatgen"),
-                "is_mock": bool(getattr(self.adapter, "is_mock", False)),
-            },
+            provenance=provenance,
             started_at=started_at,
             finished_at=finished_at,
         )
@@ -900,7 +937,7 @@ class RetrievalStageRunner:
         warnings: list[str],
         provenance: dict[str, Any],
         persist: bool = True,
-    ) -> StageResultEnvelope:
+    ) -> StageResult:
         input_hash = None
         if input_uri.startswith("artifact://"):
             try:
@@ -908,7 +945,7 @@ class RetrievalStageRunner:
                     input_hash = self.store.inspect(input_uri).sha256
             except ArtifactStoreError:
                 pass
-        result = StageResultEnvelope(
+        result = self._new_result(
             run_id=stage_input.run_id,
             status=status,
             input_snapshot_uri=input_uri,
@@ -936,7 +973,7 @@ class RetrievalStageRunner:
         started_at: datetime,
         operation: str,
         message: str,
-    ) -> StageResultEnvelope:
+    ) -> StageResult:
         return self._write_early_result(
             stage_input=stage_input,
             stage_prefix=f"stages/agent01/{stage_input.run_id}",
@@ -1009,7 +1046,8 @@ class RetrievalStageRunner:
 
     def _search_with_retry(self, plan: RetrievalQueryPlan) -> list[dict[str, Any]]:
         return self._call_with_retry(
-            "materials_project.search", lambda: self.adapter.search(plan)
+            f"{plan.source_database.value}.search",
+            lambda: self.adapter.search(plan),
         )
 
     def _call_with_retry(
@@ -1030,7 +1068,7 @@ class RetrievalStageRunner:
 
     def _load_valid_result(
         self, operation_path: str, expected_query_fingerprint: str
-    ) -> StageResultEnvelope:
+    ) -> StageResult:
         try:
             payload = self.store.read_json(operation_path)
             operation = OperationRecord.model_validate(payload)
@@ -1038,6 +1076,7 @@ class RetrievalStageRunner:
             raise BackendInconsistentError(
                 "completed operation record is missing or invalid"
             ) from exc
+
         if (
             operation.operation_id != expected_query_fingerprint
             or operation.query_fingerprint != expected_query_fingerprint
@@ -1079,6 +1118,14 @@ class RetrievalStageRunner:
                 "completed operation input snapshot is not registered"
             )
         return operation.result
+
+    def _new_result(self, **values: Any) -> StageResult:
+        result_class = (
+            StageResultEnvelope
+            if self.policy.source_database is SourceDatabase.MATERIALS_PROJECT
+            else StageResultEnvelopeV2
+        )
+        return result_class(**values)
 
 
 def _is_retryable(exc: Exception) -> bool:
@@ -1161,15 +1208,21 @@ def _deduplicate_documents(
 
 
 def _stage_outcome(
-    result: StageResultEnvelope, *, operation_ref: str | None
-) -> StageOutcome:
+    result: StageResult, *, operation_ref: str | None
+) -> StageOutcome | StageOutcomeV2:
     if result.status in {StageStatus.SUCCEEDED, StageStatus.PARTIAL}:
         outcome = StageOutcomeType.COMPLETED
     elif result.status is StageStatus.BLOCKED_MISSING_INPUT:
         outcome = StageOutcomeType.BLOCKED
     else:
         outcome = StageOutcomeType.FAILED
-    return StageOutcome(
+    outcome_class = (
+        StageOutcome
+        if isinstance(result, StageResultEnvelope)
+        and not isinstance(result, StageResultEnvelopeV2)
+        else StageOutcomeV2
+    )
+    return outcome_class(
         outcome=outcome,
         status=result.status,
         operation_ref=operation_ref,
@@ -1188,3 +1241,9 @@ def _distribution_version(name: str) -> str:
         return importlib.metadata.version(name)
     except importlib.metadata.PackageNotFoundError:
         return "unknown"
+
+
+def _source_label(source_database: SourceDatabase) -> str:
+    if source_database is SourceDatabase.MATERIALS_PROJECT:
+        return "Materials Project"
+    return "NOMAD"

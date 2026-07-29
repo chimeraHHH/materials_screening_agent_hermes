@@ -62,6 +62,40 @@ def test_p0_resumes_across_runtime_instances_and_finishes_report(
             database.close()
 
 
+def test_orchestrator_run_selects_nomad_as_the_only_retrieval_source(
+    tmp_path, requirement, fixture_payload
+) -> None:
+    OrchestratorRuntime.create_project(tmp_path, "project-nomad")
+    with OrchestratorRuntime.from_workspace(
+        tmp_path, "project-nomad"
+    ) as runtime:
+        waiting = runtime.start_run(
+            raw_request="structured",
+            initial_requirement=requirement.model_dump(mode="json"),
+            fixture_payload=fixture_payload,
+            run_id="run-nomad",
+            retrieval_source="nomad",
+        )
+        approval_id = waiting.interrupts[0].value["approval_id"]
+        completed = runtime.approve(
+            run_id="run-nomad",
+            approval_id=approval_id,
+            decision="approve",
+        )
+
+        assert completed.status is RunStatus.SUCCEEDED
+        assert "NOMAD retrieval evidence at L1" in runtime.read_report(
+            "run-nomad"
+        )
+        manifest = json.loads(
+            runtime.store.read_bytes(
+                "artifact://stages/agent01/run-nomad/candidate_manifest.jsonl"
+            ).decode("utf-8")
+        )
+        assert manifest["schema_version"] == "agent01-contract-v2"
+        assert manifest["source_database"] == "nomad"
+
+
 def test_requirement_rejection_cancels_without_calling_agent01(
     tmp_path, requirement, fixture_payload
 ) -> None:

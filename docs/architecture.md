@@ -49,6 +49,7 @@ flowchart TD
         O --> A4["Agent 04<br/>Many-Body Controller"]
 
         A1 --> MP["Materials Project Adapter"]
+        A1 --> NOMAD["NOMAD Adapter"]
         A2 --> ML["ML Model / Worker Adapters"]
         A3 --> DFT["DFTBackend<br/>Mock / Future VASPilot / Future backend"]
         A4 --> MB["ManyBodyBackend<br/>Mock / Future Solver Adapters"]
@@ -262,6 +263,7 @@ Stage 0 是 Orchestrator 内的确定性模块加可选 LLM Provider。
 
 - Query Planner；
 - Materials Project Adapter；
+- NOMAD public Archive Adapter；
 - Raw Response Archiver；
 - Normalizer 与结构校验；
 - 硬约束执行；
@@ -271,9 +273,15 @@ Stage 0 是 Orchestrator 内的确定性模块加可选 LLM Provider。
 关键边界：
 
 - `candidate_id` 表示项目内稳定实体；
+- 每个 Run 必须显式冻结单一来源，默认 `materials_project`，可选 `nomad`，不得在同一
+  Run 跨库补齐缺失性质；
 - `structure_id` 表示内容寻址的结构版本；
 - 数据库、ML 弛豫、DFT 弛豫结构演化时 candidate 不变，structure 改变；
 - 所有数据库性质带单位、来源、计算层级、数据库版本和获取时间；
+- Materials Project 继续使用冻结的 `agent01-contract-v1`；NOMAD 使用
+  `agent01-contract-v2`，并保留 entry/parser/method provenance、SI→Agent01 单位
+  换算政策及数据库快照限制。NOMAD 缺少可安全等同于 MP
+  `energy_above_hull` 的统一字段时必须保留 `MISSING/UNCERTAIN`；
 - Agent 02 消费 Agent 01 发布的 manifest，不重新定义检索阶段的硬约束。
 
 完整契约见 [Agent 01 详细计划](../plans/subagents/material-screening-agent01-plan.md)。

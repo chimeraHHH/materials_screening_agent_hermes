@@ -1,7 +1,7 @@
 # Material Screening Agent
 
 This repository implements the durable Orchestrator P0.2 control plane,
-the deterministic Materials Project retrieval stage, and explicitly
+the deterministic Materials Project/NOMAD retrieval stage, and explicitly
 test-only mock control adapters for the downstream stages described in
 `plans/subagents/material-screening-orchestrator-plan.md` and
 `plans/subagents/material-screening-agent01-plan.md`.
@@ -384,12 +384,28 @@ preparing or submitting it again.
 
 ## Run Agent 01 standalone
 
+Each run selects exactly one retrieval source. Materials Project remains the
+default; choose the public, read-only NOMAD API explicitly:
+
 ```bash
 material-agent retrieval \
   --requirement tests/fixtures/requirement.si-o.json \
   --output workspace/demo \
-  --fixture tests/fixtures/mp-summary.si-o.json
+  --source nomad
 ```
+
+NOMAD public entries do not require `MP_API_KEY`. The adapter queries
+`/entries/archive/query` with `owner=public`, records the API/entry/parser/method
+provenance, converts archive lengths from metres to ångström and electronic
+gaps from joules to eV, and keeps the evidence ceiling at `L1_RETRIEVED`.
+NOMAD has no standardized field that this implementation can safely equate to
+Materials Project `energy_above_hull`; when that property is required it stays
+missing and the candidate is `UNCERTAIN`. A run never fills missing NOMAD
+properties from Materials Project.
+
+For the deterministic offline fixture, add
+`--fixture tests/fixtures/mp-summary.si-o.json`; fixture results remain
+`is_mock=true` even when exercising `--source nomad`.
 
 The output is written below the selected Artifact Store root. The authoritative
 candidate manifest is run-scoped:
@@ -423,11 +439,6 @@ never part of the offline Gate. On a non-sandboxed target Mac, the optional
 real-ML Gate previously reported `5 passed`; sandbox MPS unavailability is an
 environmental limitation, not a hardware failure.
 
-With the opt-in DeepSeek Stage 0 parser included, the current complete offline
-Gate reports `379 passed, 8 skipped`. The additional skip is the explicit
-`live_llm` release test; the default Gate does not read Keychain or access the
-network.
-
 The standalone Agent01 and Orchestrator-restart Materials Project release
 Gates are opt-in and require both network access and `MP_API_KEY`:
 
@@ -447,10 +458,21 @@ The P0.2 release run completed both real Materials Project Gates with
 `2 passed` in `78.10s`; no API key or live run artifact was retained in the
 repository.
 
-## Frozen Agent 01 contract
+The public NOMAD release probe is separately opt-in and requires network access
+but no credential:
 
-The public contract is versioned as `agent01-contract-v1`. Orchestrators should
-use the explicit lifecycle:
+```bash
+PYTHONDONTWRITEBYTECODE=1 MPLCONFIGDIR=/tmp/material-agent-mpl \
+.venv/bin/python -m pytest -q -p no:cacheprovider \
+  tests/live/test_live_nomad_release.py --run-live-nomad
+```
+
+## Agent 01 contracts
+
+The frozen Materials Project contract remains `agent01-contract-v1`, including
+its byte-reproducible fixture. NOMAD candidates and envelopes use
+`agent01-contract-v2` so the source identity is explicit without changing the
+v1 schema. Orchestrators should use the explicit lifecycle:
 
 ```text
 validate_input(context) -> StageInputValidation
@@ -464,9 +486,9 @@ wrapper. Frozen JSON Schemas and a deterministic one-candidate reference output
 are committed under `tests/fixtures/contracts/agent01-v1/`. The fixture is
 generated from offline test data and contains no live Materials Project data.
 
-The Orchestrator does not reuse this native envelope as its own public
-contract. `Agent01RunnerAdapter` validates `agent01-contract-v1`, stores its
-URI/hash, wraps its frozen native plan in `PreparedStagePlan`, and maps only
+The Orchestrator does not reuse either native envelope as its own public
+contract. `Agent01RunnerAdapter` validates the selected source's native result,
+stores its URI/hash, wraps its native plan in `PreparedStagePlan`, and maps only
 control state into `ControlStageOutcome(orchestrator-p0.2-v3)`.
 
 ## v1 release closeout (P2)

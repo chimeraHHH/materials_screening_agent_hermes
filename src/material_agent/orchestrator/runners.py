@@ -26,12 +26,12 @@ from material_agent.orchestrator.models import (
     operation_input_sha256_for,
 )
 from material_agent.retrieval.models import (
+    NativeStageOutcome,
     Requirement,
     RetrievalPolicy,
     RetrievalStageContext,
     RetrievalStageInput,
     RetrievalStagePlan,
-    StageOutcome as NativeStageOutcome,
     StageOutcomeType as NativeOutcomeType,
     StageStatus as NativeStageStatus,
 )
@@ -367,7 +367,10 @@ class Agent01RunnerAdapter:
             approval_required=False,
             resource_estimate={"class": "retrieval"},
             policy_version=native_plan.query_plan.policy_version,
-            risk_summary="Read-only Materials Project retrieval.",
+            risk_summary=(
+                f"Read-only {native_plan.query_plan.source_database.value} "
+                "retrieval."
+            ),
             created_at=native_plan.query_plan.created_at,
         )
 
@@ -419,7 +422,7 @@ class Agent01RunnerAdapter:
         requirement = Requirement.model_validate(
             self.store.read_json(context.requirement_artifact.uri)
         )
-        policy = RetrievalPolicy()
+        policy = getattr(self.native_runner, "policy", RetrievalPolicy())
         return RetrievalStageContext(
             requirement=requirement,
             stage_input=RetrievalStageInput(
