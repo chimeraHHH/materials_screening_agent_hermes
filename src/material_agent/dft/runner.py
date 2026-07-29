@@ -37,7 +37,14 @@ from .models import (
     canonical_hash,
 )
 from .planner import DFTPlanner, StageInputValidator, build_approval_payload
+from .protocol import DFTBackend, RestorableDFTBackend
 from .reporting import render_mock_report
+from .bridge_transport import (
+    BridgeConflictError,
+    BridgeNotFoundError,
+    BridgeProtocolError,
+    BridgeTransportError,
+)
 
 
 _REMEDIATION = {
@@ -69,7 +76,7 @@ class DFTStageRunner:
         *,
         artifact_store: LocalArtifactStore,
         capability: StageCapability,
-        backend: MockDFTBackend | None = None,
+        backend: DFTBackend | None = None,
         now: Callable[[], datetime] | None = None,
     ) -> None:
         if capability.stage is not StageId.DFT or not capability.registered:
@@ -78,7 +85,15 @@ class DFTStageRunner:
             raise ValueError("Task 4 only supports an explicitly mock capability")
         self.store = artifact_store
         self.capability = capability
-        self.backend = backend or MockDFTBackend()
+        selected_backend = backend or MockDFTBackend()
+        if not isinstance(selected_backend, DFTBackend):
+            raise TypeError("DFT runner backend does not implement DFTBackend")
+        if selected_backend.backend_id != "mock-dft":
+            raise ValueError(
+                "v1 DFT runner accepts the explicitly mock backend only"
+            )
+        self.backend = selected_backend
+        self.backend_name = selected_backend.backend_id
         self.now = now or (lambda: datetime.now(UTC))
         self.planner = DFTPlanner()
 
@@ -217,11 +232,18 @@ class DFTStageRunner:
                 "idempotency_key": idempotency_key,
                 "request": request.model_dump(mode="json"),
                 "external_job_ref": ref.model_dump(mode="json"),
-                "scenario": self.backend.scenario,
+                "backend": {
+                    "backend_id": self.backend.backend_id,
+                    "backend_version": self.backend.backend_version,
+                    "adapter_version": self.backend.adapter_version,
+                },
                 "status": JobStatus.CREATED.value,
                 "status_sequence": 0,
                 "result": None,
             }
+            scenario = getattr(self.backend, "scenario", None)
+            if scenario is not None:
+                operation["scenario"] = scenario
             self.store.write_json(operation_uri, operation, immutable=True)
             return self._waiting(context, idempotency_key, ref, 0, JobStatus.CREATED)
         except Exception as exc:
@@ -250,8 +272,11 @@ class DFTStageRunner:
                     context, prepared_plan, self.store.read_json(terminal_uri)
                 )
             previous, sequence = self._latest_status(context, idempotency_key, operation)
-            self.backend.restore_job(
-                request, ref, polls=sequence, status=previous
+            self._restore_backend_if_supported(
+                request,
+                ref,
+                polls=sequence,
+                status=previous,
             )
             observed = self.backend.status(ref)
             self._validate_status_transition(previous, observed)
@@ -290,11 +315,13 @@ class DFTStageRunner:
             operation_uri = self._operation_uri_from_key(ref.idempotency_key)
             operation = self.store.read_json(operation_uri)
             request = DFTRequest.model_validate(operation["request"])
-            self.backend.restore_job(
+            self._restore_backend_if_supported(
                 request,
                 ref,
                 polls=int(operation.get("status_sequence", 0)),
-                status=JobStatus(operation.get("status", JobStatus.CREATED.value)),
+                status=JobStatus(
+                    operation.get("status", JobStatus.CREATED.value)
+                ),
             )
             result = self.backend.cancel(ref)
         return CancelOutcome(
@@ -485,6 +512,15 @@ class DFTStageRunner:
 
     @staticmethod
     def _classify_exception(exc: Exception) -> tuple[str, StageStatus, bool]:
+        if isinstance(exc, BridgeTransportError):
+            return "TRANSIENT_EXTERNAL", StageStatus.RETRYABLE_FAILED, True
+        if isinstance(
+            exc,
+            (BridgeConflictError, BridgeNotFoundError),
+        ):
+            return "BACKEND_INCONSISTENT", StageStatus.PERMANENT_FAILED, False
+        if isinstance(exc, BridgeProtocolError):
+            return "INVALID_RESPONSE", StageStatus.PERMANENT_FAILED, False
         text = str(exc).lower()
         if isinstance(exc, (TimeoutError, ConnectionError)) or any(token in text for token in ("timeout", "temporarily", "429", "503", "unavailable")):
             return "TRANSIENT_EXTERNAL", StageStatus.RETRYABLE_FAILED, True
@@ -503,6 +539,22 @@ class DFTStageRunner:
         if "cancel" in text:
             return "MOCK_CANCELLED", StageStatus.CANCELLED, False
         return "MOCK_BACKEND_FAILED", StageStatus.PERMANENT_FAILED, False
+
+    def _restore_backend_if_supported(
+        self,
+        request: DFTRequest,
+        ref: ExternalJobRef,
+        *,
+        polls: int,
+        status: JobStatus,
+    ) -> None:
+        if isinstance(self.backend, RestorableDFTBackend):
+            self.backend.restore_job(
+                request,
+                ref,
+                polls=polls,
+                status=status,
+            )
 
     def _summary(self, ref, result, reason, report, prepared, *, remediation):
         return {"is_mock": True, "claim_status": "NOT_EVALUATED_MOCK", "reason_code": reason, "remediation": remediation, "report_uri": report.uri, "report_sha256": report.sha256, "backend_id": ref.backend_id, "backend_version": ref.backend_version, "external_job_ref": ref.external_job_ref_id, "workflow_plan_hash": result.workflow_plan_hash, "message": "Mock lifecycle only; no DFT calculation was executed."}

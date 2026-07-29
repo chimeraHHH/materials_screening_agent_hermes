@@ -45,6 +45,73 @@ Artifact。Agent03 v1 mock 源码和控制链已经存在；当前阻塞仅指�
 Slurm/合法 VASP/POTCAR bridge，课题组 functional/U/J/磁序等科学 policy 也未冻结，
 不能用 mock 越过这些阻塞。
 
+### 本次 VASPilot Bridge 工程 PoC 范围（2026-07-29）
+
+本次任务只实现 P2.1 的最小可执行工程切片，不需要科学 benchmark，也不连接真实
+VASPilot、Slurm、VASP 或 POTCAR：
+
+- 冻结 `DFTBackend` Protocol 和结构化 Bridge v1 request/response/status/artifact
+  Schema；
+- 实现仅依赖标准库 HTTP/JSON 的 `VASPilotBackend`，主环境不导入 CrewAI、
+  VASPilot、ASE 或额外重型依赖；
+- 实现显式测试用途的 deterministic Fake Bridge transport，覆盖 submit、按
+  idempotency key 找回、status、cancel、artifact manifest 和响应丢失恢复；
+- 将 `DFTStageRunner` 对 `MockDFTBackend` 的类型依赖改为 Protocol 依赖，同时保持
+  v1 mock planner、报告、默认 production capability unavailable 和冻结 fixture
+  完全兼容；
+- 不启用 `ExecutionMode.REAL` planner，不注册真实 Agent03 capability，不产生科学
+  数值、真实 VASP claim 或 `L3_DFT_VALIDATED`。
+
+依赖与边界：
+
+- 复用现有 `DFTRequest`、`ExternalJobRef`、`DFTResultEnvelope`、Artifact Store 和
+  Orchestrator `StageRunner` 契约；
+- 不修改 Orchestrator 公共 Schema、checkpoint、数据库迁移、Agent01/02 输入或
+  Agent04 消费契约；
+- Bridge 返回的 workflow、plan/input hash、backend/adapter identity 和 Artifact
+  manifest 必须经过严格校验；未知状态、引用变化或 hash 冲突 fail closed；
+- Fake Bridge 只验证工程协议，不得注册或描述为生产科学能力。
+
+验收标准：
+
+1. 相同 idempotency key 与相同 request 只创建一个 workflow；
+2. 相同 key 与不同 plan/request hash 被拒绝；
+3. submit 响应丢失后可按 key 找回原 workflow；
+4. status/cancel/terminal result 显式映射，未知或倒退状态被拒绝；
+5. 非法 JSON、Schema、backend identity、plan/input hash 和 Artifact manifest
+   冲突 fail closed；
+6. 现有 Agent03 unit/contract/integration/E2E 回归保持通过；
+7. 完整离线 Gate、`pip check` 与 `git diff --check` 通过。
+
+实际完成与验证（2026-07-29）：
+
+- [x] 新增轻量 `DFTBackend` Protocol 和仅供内存 mock 恢复使用的可选
+  `RestorableDFTBackend` hook；`DFTStageRunner` 不再以
+  `MockDFTBackend` 作为构造参数类型，但仍拒绝非 mock capability 和非
+  `mock-dft` backend。
+- [x] 新增严格 Bridge descriptor/health/submit/workflow/child-job/terminal-result/
+  Artifact manifest Schema；所有模型保持 `extra=forbid`、finite/hash/URI 和
+  mock 证据护栏。
+- [x] 新增标准库 `UrllibBridgeTransport`：非本机 HTTP 被拒绝，远端要求 HTTPS，
+  bearer token 不进入 payload，URL credentials/query 被拒绝，响应类型/大小/JSON
+  有界且 HTTP 错误结构化分类。
+- [x] 新增 `VASPilotBackend`：submit/status/cancel/fetch 映射、服务端幂等、submit
+  响应丢失后按 key 找回、descriptor/request/plan/task/backend identity 校验及独立
+  Artifact manifest 对账。
+- [x] 新增显式 test-only `FakeVASPilotBridgeTransport`；只接受 `is_mock=true`
+  request，不注册生产 capability，不执行 VASP，不产生科研数值或 L3 evidence。
+- [x] 新增 unit/contract/Orchestrator integration 覆盖；Agent03 定向回归
+  `40 passed`。
+- [x] 完整离线 Gate：`374 passed, 7 skipped`；跳过项为需要显式 opt-in 的两个
+  live MP 和五个 real-ML 测试。未运行网络、VASP、Slurm 或真实 VASPilot。
+- [x] `.venv/bin/python -m pip check`：通过；`git diff --check`：通过。
+
+本次限制与下一步：REAL planner 和生产 registry 保持关闭；当前没有真实 bridge
+服务、认证配置、集群 health/capability snapshot、VASP/POTCAR/Slurm 或科学结果
+validator。下一切片应在独立服务/环境实现 Bridge HTTP 端点并以本客户端做
+contract test；在 method policy、许可、安全和独立 validator Gate 通过前，即使
+手工试跑真实 VASP，也不得产生 `L3_DFT_VALIDATED`。
+
 ### 本次 Agent03 v1 实施范围（Task 1–4）
 
 本次分支仅实现第 26.1 节 Task 4：在既有 Task 1–3 原生契约、确定性 planner 和 `MockDFTBackend` 之上接入现有 Orchestrator 的 `PreparedStagePlan`、审批、operation/external-job ledger、Artifact Store、checkpoint/resume 和通用报告路径。实现放在 `src/material_agent/dft/`，测试放在 Agent03 自有 unit/integration/E2E 文件中；不修改 Orchestrator 公共控制契约、Agent01、Agent02、全局依赖或默认生产 capability registry。

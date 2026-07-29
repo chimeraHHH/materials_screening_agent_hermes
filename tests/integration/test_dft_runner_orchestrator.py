@@ -4,8 +4,11 @@ from datetime import UTC, datetime
 
 import pytest
 
+from material_agent.dft.bridge_models import BridgeBackendDescriptor
+from material_agent.dft.fake_bridge import FakeVASPilotBridgeTransport
 from material_agent.dft.mock_backend import MockDFTBackend
 from material_agent.dft.runner import DFTStageRunner
+from material_agent.dft.vaspilot_backend import VASPilotBackend
 from material_agent.orchestrator.models import StageCapability, StageId
 from material_agent.orchestrator.runners import StageRunnerRegistry
 from material_agent.orchestrator.runtime import OrchestratorRuntime
@@ -13,7 +16,11 @@ from material_agent.orchestrator.runtime import OrchestratorRuntime
 from tests.integration.test_orchestrator_p01 import _complete_source_run, _stage_input
 
 
-def _registry(project_root, scenario: str = "mock_success") -> StageRunnerRegistry:
+def _registry(
+    project_root,
+    scenario: str = "mock_success",
+    backend_factory=None,
+) -> StageRunnerRegistry:
     capability = StageCapability(
         stage=StageId.DFT,
         agent_id="agent03",
@@ -31,7 +38,11 @@ def _registry(project_root, scenario: str = "mock_success") -> StageRunnerRegist
         return DFTStageRunner(
             artifact_store=LocalArtifactStore(project_root),
             capability=capability,
-            backend=MockDFTBackend(scenario=scenario),
+            backend=(
+                backend_factory()
+                if backend_factory is not None
+                else MockDFTBackend(scenario=scenario)
+            ),
             now=lambda: datetime(2026, 7, 27, tzinfo=UTC),
         )
 
@@ -108,8 +119,85 @@ def test_dft_approval_rejects_without_submit(tmp_path, requirement, fixture_payl
         assert not (tmp_path / project_id / "stages/agent03/operations").exists()
         report = runtime.read_report("run-dft-reject")
         assert "USER_REJECTED_STAGE" in report
-        assert "PARTIAL" in report or "CANCELLED" in report
-        assert "upstream" not in report.lower() or "agent01" in report
+    assert "PARTIAL" in report or "CANCELLED" in report
+    assert "upstream" not in report.lower() or "agent01" in report
+
+
+def test_dft_orchestrator_runs_through_structured_fake_bridge(
+    tmp_path,
+    requirement,
+    fixture_payload,
+):
+    project_id = "project-agent03-bridge"
+    dft_requirement = requirement.model_copy(
+        update={
+            "budget": requirement.budget.model_copy(
+                update={"allow_dft": True}
+            )
+        }
+    )
+    requirement_row, manifest = _complete_source_run(
+        tmp_path,
+        dft_requirement,
+        fixture_payload,
+        project_id=project_id,
+        run_id="run-source",
+    )
+    descriptor = BridgeBackendDescriptor(
+        backend_id="mock-dft",
+        backend_version="fake-bridge-1.0.0",
+        adapter_version="agent03-vaspilot-adapter-v1",
+        is_mock=True,
+        supported_task_types=("MOCK_TASK",),
+    )
+    transport = FakeVASPilotBridgeTransport(descriptor=descriptor)
+
+    def backend_factory():
+        return VASPilotBackend(
+            transport=transport,
+            descriptor=descriptor,
+        )
+
+    project_root = tmp_path / project_id
+    registry = _registry(
+        project_root,
+        backend_factory=backend_factory,
+    )
+    with OrchestratorRuntime.from_workspace(
+        tmp_path,
+        project_id,
+        runner_registry=registry,
+    ) as runtime:
+        waiting = runtime.start_stage_run(
+            stage=StageId.DFT,
+            stage_input=_stage_input(
+                "run-source",
+                requirement_row,
+                manifest,
+            ),
+            run_id="run-dft-bridge",
+        )
+        approval_id = waiting.interrupts[0].value["approval_id"]
+        view = runtime.approve(
+            run_id="run-dft-bridge",
+            approval_id=approval_id,
+            decision="approve",
+        )
+        assert view.stage_statuses["agent03"] == "RUNNING"
+        for _ in range(3):
+            view = runtime.resume(run_id="run-dft-bridge")
+        assert view.stage_statuses["agent03"] == "SUCCEEDED"
+        assert transport.workflow_count == 1
+        state = runtime.graph.get_state(
+            runtime._config("run-dft-bridge")
+        ).values
+        result = runtime.store.read_json(
+            state["stage_outcomes"]["agent03"]["native_result_uri"]
+        )
+        assert result["is_mock"] is True
+        assert result["provenance"]["bridge_protocol"] == (
+            "agent03-vaspilot-bridge-v1"
+        )
 
 
 @pytest.mark.parametrize(

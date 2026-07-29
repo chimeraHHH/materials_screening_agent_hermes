@@ -374,6 +374,14 @@ registry in `tests/integration/test_dft_runner_orchestrator.py` and the
 cross-process E2E test; the command sequence above documents the shared CLI
 surface and recovery semantics, not a real DFT execution.
 
+An engineering-only VASPilot Bridge PoC now freezes strict JSON contracts,
+server-side idempotency semantics, bounded authenticated HTTP transport, and a
+`VASPilotBackend` adapter. Its deterministic Fake Bridge is test-only,
+`is_mock=true`, and exercises response-loss recovery, status/cancel, Artifact
+manifests, and fail-closed hash checks. It does not enable the REAL planner,
+contact VASPilot, register Agent03 in production, or relax any VASP/POTCAR,
+method-policy, approval, security, validation, or evidence Gate.
+
 Run the Agent03 contract, failure-injection, integration, and E2E coverage with:
 
 ```bash
@@ -381,6 +389,8 @@ PYTHONDONTWRITEBYTECODE=1 MPLCONFIGDIR=/tmp/material-agent-mpl \
 .venv/bin/python -m pytest -q -p no:cacheprovider \
   tests/contract/test_frozen_agent03_fixture.py \
   tests/contract/test_dft_mock_backend.py \
+  tests/contract/test_vaspilot_bridge_contract.py \
+  tests/unit/test_vaspilot_bridge.py \
   tests/integration/test_dft_failure_injection.py \
   tests/integration/test_dft_runner_orchestrator.py \
   tests/e2e/test_dft_cross_process.py
