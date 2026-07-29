@@ -20,10 +20,10 @@
   结构处理和发布契约。
 - [Agent02 Plan](plans/subagents/material-screening-ml-agent-plan.md)：ML 原生契约、适用域、worker 边界与
   后续真实 ML 路线。
-- [Agent03 Plan](plans/subagents/material-screening-agent-dft-plan.md)：DFT Controller 的目标设计；当前
-  没有对应源码。
-- [Agent04 Plan](plans/subagents/material-screening-agent04-plan.md)：多体 Controller 的目标设计；当前
-  没有对应源码。
+- [Agent03 Plan](plans/subagents/material-screening-agent-dft-plan.md)：DFT Controller 的目标设计、v1
+  mock 控制链和结构化 bridge PoC；真实科学 backend 仍未注册。
+- [Agent04 Plan](plans/subagents/material-screening-agent04-plan.md)：多体 Controller 的目标设计与
+  MVP mock 控制链；真实 solver/backend 仍未实现或注册。
 
 各 subagent 的详细计划统一位于 `plans/subagents/`。不得虚构尚不存在的标准化 plan
 路径。文档描述与实现冲突时，以 `src/`、配置和测试为准，并
@@ -36,15 +36,16 @@
 | `src/material_agent/cli.py` | CLI 参数和用户入口 |
 | `src/material_agent/orchestrator/` | LangGraph 控制流、控制契约、SQLite/checkpoint、审批、恢复和 runner registry |
 | `src/material_agent/retrieval/` | Agent01：数据源、查询、结构、确定性判定、排序、Artifact 和报告 |
-| `src/material_agent/ml_screening/` | Agent02：轻量原生契约、pre-filter、适用域、计划、数值/worker 校验和 Fake 实现 |
-| `src/material_agent/dft/` | Agent03：v1 mock DFT 控制契约、计划、backend 生命周期、runner 和非科研报告 |
+| `src/material_agent/ml_screening/` | Agent02：轻量原生契约、pre-filter、适用域、计划、数值/worker 校验、Fake 实现和独立 worker 边界 |
+| `src/material_agent/dft/` | Agent03：v1 mock DFT 控制契约、计划、backend 生命周期、runner、非科研报告和结构化 bridge PoC |
 | `src/material_agent/many_body/` | Agent04：MVP 模型契约、验证、路由、mock backend、runner 和 evidence ceiling |
 | `scripts/`、`tests/fixtures/contracts/` | 冻结契约 fixture 的生成与参考输出 |
 | `tests/{unit,contract,integration,e2e,live}/` | 相应层级的验证 |
 
-Agent01 是当前唯一已注册的生产科学 runner。Agent02 P0.2 Fake Adapter、Agent03 v1
-mock 控制链和 Agent04 MVP mock 控制链已有源码，但 Agent02 尚无真实 CHGNet worker，
-Agent03/04 尚无真实科学 backend。Agent02–04 默认 production capability 均未注册；
+Agent01 是默认已注册的生产科学 runner。Agent02 P0.2 Fake Adapter、独立 CHGNet
+worker/production factory、Agent03 v1 mock 控制链及结构化 bridge PoC、Agent04 MVP
+mock 控制链均已有源码；Agent03/04 尚无真实科学 backend，Agent02 只有在显式 worker
+配置及 lock/model-card/health Gate 通过后才注册。Agent02–04 默认 production capability 均未注册；
 测试用 `FixtureStageRunner`、Fake Adapter/Worker 和 mock backend 不得注册或描述为
 生产科学能力。
 
@@ -57,8 +58,8 @@ Agent03/04 尚无真实科学 backend。Agent02–04 默认 production capabilit
    和相关 plan，不能单边修改。
 3. `ml_screening` 的默认导入保持轻量，不得把 Torch、CHGNet 或 ASE 加入主环境；
    真实 worker 依照 Agent02 Plan 使用独立环境和 JSON 边界。
-4. 新增 Agent03/04 实现前，先以对应 plan 和现有 `StageRunner` 契约确认边界；不要
-   预建计划中的空目录或伪结果。
+4. 新增 Agent03/04 真实科学 backend 前，先以对应 plan 和现有 `StageRunner` 契约确认边界；
+   不要把现有 mock/bridge PoC 描述成生产科学能力，也不要预建计划中的空目录或伪结果。
 
 ## 工作流程
 

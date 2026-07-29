@@ -36,10 +36,11 @@ checkpoint schema、数据库迁移、requirements.lock 或科学阈值，不运
 > `run-stage` Gate 已完成。生产注册仅由显式 Worker 配置触发；缺失或无效配置保持
 > fail-closed。科学 benchmark、扩展适用域和不确定性校准仍属于后续 P1。**
 
-当前并行 P1 增量：Agent01 增加 NOMAD public Archive Adapter，并将每次 Run 的来源
-冻结为 `materials_project` 或 `nomad` 之一。Materials Project
-`agent01-contract-v1` 与冻结 fixture 保持不变；NOMAD 使用
-`agent01-contract-v2`，缺失的 MP 专有性质不跨库补值。
+当前已合入的增量包括：Agent01 NOMAD public Archive Adapter（每次 Run 的来源冻结为
+`materials_project` 或 `nomad` 之一）、Stage 0 DeepSeek Provider、Agent02 benchmark/
+DeepH companion flow，以及 Agent03 结构化 VASPilot bridge PoC。Materials Project
+`agent01-contract-v1` 与冻结 fixture 保持不变；NOMAD 使用 `agent01-contract-v2`，
+缺失的 MP 专有性质不跨库补值；这些新增控制流仍不等于真实 DFT/多体科学能力。
 
 ### 1.1 已确认基线
 
@@ -49,11 +50,11 @@ checkpoint schema、数据库迁移、requirements.lock 或科学阈值，不运
 | Agent 01 | P0 与增强 Gate 已完成；MP `agent01-contract-v1` 保持冻结；NOMAD 单来源 P1 接入及离线 Gate 已完成 | [`Agent 01 计划`](subagents/material-screening-agent01-plan.md) |
 | Agent 02 | Step 1/1.1、P0.2 Fake 路径及 Step 3 独立 CHGNet worker/CPU Gate 已完成 | [`Agent 02 计划`](subagents/material-screening-ml-agent-plan.md) |
 | Agent 02 生产接入 | 目标 Mac CPU/MPS parity、单次 CPU 回退、Top-5/恢复/资源记录和显式 production factory 已完成；默认无配置时仍不可用 | [`Agent 02 计划`](subagents/material-screening-ml-agent-plan.md) |
-| Agent 03 | v1 mock 控制链、审批、恢复、失败注入、报告与 fixture 已完成；真实 DFT backend 未实现或注册 | [`Agent 03 计划`](subagents/material-screening-agent-dft-plan.md) |
+| Agent 03 | v1 mock 控制链、审批、恢复、失败注入、报告、fixture 和结构化 VASPilot bridge PoC 已完成；真实 DFT backend 未实现或注册 | [`Agent 03 计划`](subagents/material-screening-agent-dft-plan.md) |
 | Agent 04 | MVP mock 控制链、模型校验/路由、审批、恢复、报告与 fixture 已完成；真实 ED/多体 backend 未实现或注册 | [`Agent 04 计划`](subagents/material-screening-agent04-plan.md) |
 | 联网 LLM | DeepSeek `deepseek-v4-pro` Provider 与 `LLMRequirementParser` 已实现并显式配置启用；离线 Gate 已覆盖，真实 `live_llm` 发布 Gate 待运行 | [`README.md`](../README.md) |
 
-历史 P0 收口验证基线为：
+历史 P0/v1 收口验证基线为：
 
 - 完整离线 Gate：`337 passed, 7 skipped`；
 - 跳过项为显式 opt-in 的两个 `live_mp` 和五个 real-ML/Metal Gate；
@@ -63,8 +64,11 @@ checkpoint schema、数据库迁移、requirements.lock 或科学阈值，不运
 - Agent 02 仅在显式 worker 配置通过校验后注册；Agent 03/04 未注册生产 capability，
   不得用测试 fixture 冒充科学结果。
 
-历史分计划中的较小测试数字只记录当时任务快照；当前 v1 状态以上述 P2 完整离线 Gate
-和仓库现有实现为准。Agent03/04 mock 控制链不等于真实科学后端。
+当前 `main` 在上述收口之后又合入多个增量；当前完整离线 Gate 为
+`403 passed, 9 skipped, 140 warnings`。9 个跳过项是显式 opt-in 的 live LLM、两项
+live MP、live NOMAD 和五项 real-ML/Metal Gate；warning 为已知 pymatgen 弃用提示。
+历史分计划中的较小测试数字只记录当时任务快照；当前状态以该结果、源码和测试为准。
+Agent03/04 mock 控制链及 bridge PoC 不等于真实科学后端。
 
 ### 1.2 当前 v1 验收目标
 
@@ -165,7 +169,8 @@ v1 的系统级退出目标是：
 - [x] 实现 `MockDFTBackend` 的 submit/status/cancel/fetch。
 - [x] 实现 Agent 03 Runner/Adapter、幂等、审批和恢复。
 - [x] 冻结不产生伪科研数值的 DFT fixture、报告和测试。
-- [ ] 实现并评审 VASPilot structured bridge mapping；真实接入属于未来 P2。
+- [x] 完成工程用途的 VASPilot structured bridge mapping PoC；真实接入仍属于未来 P2，
+      不注册生产 capability、不连接真实 VASPilot/Slurm/VASP/POTCAR。
 
 交付目标：不冒充真实计算的 DFT 状态链路。
 
@@ -414,8 +419,9 @@ flowchart LR
 - [x] 冻结 v1 边界：Agent01 默认生产科学 runner；Agent02 仅在显式且校验通过的
   `MATERIAL_AGENT_ML_WORKER_PYTHON` 下注册，当前 L2 审计仅限 3D 单质 Si；Agent03/04
   仅 mock 控制链。
-- [x] 冻结离线演示、验收命令、预期 `337 passed, 7 skipped`、跳过项和环境边界。
-- [x] 完整离线 Gate、`pip check`、`git diff --check` 通过；未运行 live MP、未联网、
+- [x] 冻结离线演示、验收命令；历史 closeout 为 `337 passed, 7 skipped`，当前 main
+      Gate 为 `403 passed, 9 skipped, 140 warnings`，跳过项和环境边界已记录。
+- [x] 当前完整离线 Gate、`pip check`、`git diff --check` 通过；未运行 live MP、未联网、
   未读取或生成 `MP_API_KEY`。
 - [x] 未修改 Agent01/02 原生公共契约、Orchestrator/checkpoint schema、数据库迁移、
   requirements.lock 或科学阈值；未新增模型、后端、依赖或公共 Schema。

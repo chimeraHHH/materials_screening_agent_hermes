@@ -561,7 +561,10 @@ workspace/
 
 ### 9.2 推荐代码结构
 
-仓库当前已有 `orchestrator`、`retrieval` 和 `ml_screening` 包。下列内容是从原始总方案保留的**目标结构建议**，不是对所有目录已存在的声明；DFT、多体和部分通用层仍属于计划：
+仓库当前已有 `orchestrator`、`retrieval`、`ml_screening`、`dft` 和 `many_body` 包。
+其中 DFT/多体当前实现是严格边界内的 mock 控制链，Agent03 另有不注册生产能力的
+结构化 VASPilot bridge PoC；下列内容是从原始总方案保留的**目标结构建议**，不是对
+所有目录已存在的声明，未来真实科学 backend、通用 stages/adapters 和服务器层仍属于计划：
 
 ```text
 src/material_agent/

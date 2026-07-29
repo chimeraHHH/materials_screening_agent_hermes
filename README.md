@@ -496,13 +496,16 @@ MPLCONFIGDIR=/tmp/material-agent-mpl \
 .venv/bin/python -m pytest -q -p no:cacheprovider
 ```
 
-The historical P0.1/P0.2 commits are retained for traceability. The v1
-closeout baseline is the current `codex/p2-system-v1-closeout` commit. Its
-default offline Gate reports `337 passed, 7 skipped`; the skips are the two
-explicit `live_mp` tests and five opt-in real-ML tests. The real-ML tests are
-never part of the offline Gate. On a non-sandboxed target Mac, the optional
-real-ML Gate previously reported `5 passed`; sandbox MPS unavailability is an
-environmental limitation, not a hardware failure.
+The historical P0.1/P0.2 and v1-closeout commits are retained for traceability.
+After the closeout, the current `main` branch added the DeepSeek Stage 0
+provider, NOMAD retrieval source, Agent02 benchmark/DeepH control flows, and
+the Agent03 structured VASPilot bridge PoC. The current offline Gate reports
+`403 passed, 9 skipped, 140 warnings`; skips are the explicit live LLM, live
+Materials Project, live NOMAD, and real-ML/Metal tests. The warnings are known
+pymatgen deprecation warnings and do not indicate test failures. Real-ML tests
+are never part of the offline Gate. On a non-sandboxed target Mac, the
+historical optional real-ML Gate reported `5 passed`; sandbox MPS unavailability
+is an environmental limitation, not a hardware failure.
 
 The standalone Agent01 and Orchestrator-restart Materials Project release
 Gates are opt-in and require both network access and `MP_API_KEY`:
@@ -584,10 +587,11 @@ PYTHONDONTWRITEBYTECODE=1 MPLCONFIGDIR=/tmp/material-agent-mpl \
 git diff --check
 ```
 
-Expected offline result at this closeout is `337 passed, 7 skipped`. The skipped
-tests are explicit opt-in `live_mp` and real-ML/Metal checks. Do not run the
-live MP Gate in this release audit: it requires network access and a secret
-`MP_API_KEY`, neither of which is permitted or needed for the offline baseline.
+The historical closeout result was `337 passed, 7 skipped`. The current
+post-closeout result is `403 passed, 9 skipped`; the additional skips are the
+explicit live LLM and live NOMAD probes. Do not run the live MP Gate in this
+offline audit: it requires network access and a secret `MP_API_KEY`, neither of
+which is needed for the offline baseline.
 The optional real-ML Gate may be run only in its separately provisioned worker
 environment; lack of MPS visibility in a sandbox is recorded as an environment
 boundary. Repository checks also require no tracked virtual environment, model
