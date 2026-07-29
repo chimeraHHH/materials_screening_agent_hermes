@@ -12,7 +12,7 @@
 > [Agent 04 计划](subagents/material-screening-agent04-plan.md)中明确记录的状态更新。当前可运行能力以 README、源码、配置和测试为准。
 > 只有这些仓库文档明确确认完成的事项才标为 `[x]`；无法确认的事项保持 `[ ]`。
 
-状态基准日期：2026-07-28
+状态基准日期：2026-07-29
 
 ### 本次 P2：系统 v1 收尾范围
 
@@ -46,7 +46,7 @@ checkpoint schema、数据库迁移、requirements.lock 或科学阈值，不运
 | Agent 02 生产接入 | 目标 Mac CPU/MPS parity、单次 CPU 回退、Top-5/恢复/资源记录和显式 production factory 已完成；默认无配置时仍不可用 | [`Agent 02 计划`](subagents/material-screening-ml-agent-plan.md) |
 | Agent 03 | v1 mock 控制链、审批、恢复、失败注入、报告与 fixture 已完成；真实 DFT backend 未实现或注册 | [`Agent 03 计划`](subagents/material-screening-agent-dft-plan.md) |
 | Agent 04 | MVP mock 控制链、模型校验/路由、审批、恢复、报告与 fixture 已完成；真实 ED/多体 backend 未实现或注册 | [`Agent 04 计划`](subagents/material-screening-agent04-plan.md) |
-| 联网 LLM | Parser Protocol 与离线默认已存在；联网 Provider 尚未接入 | [`README.md`](../README.md) |
+| 联网 LLM | Stage 0 DeepSeek Provider 已实现并保持显式启用；真实网络/Keychain Release Gate 待执行 | [`README.md`](../README.md) |
 
 历史 P0 收口验证基线为：
 
@@ -89,7 +89,8 @@ v1 的系统级退出目标是：
 - [x] 实现 Offline Parser。
 - [x] 抽象可替换 Parser Protocol。
 - [x] 实现澄清问题、Requirement revision 和 CLI 人工确认。
-- [ ] 接入并发布真实联网 LLM Provider。
+- [x] 实现显式启用、fail-closed 的 DeepSeek Stage 0 Provider。
+- [ ] 运行真实网络/Keychain `live_llm` Release Gate 并发布。
 
 交付目标：自然语言/固定语法到已确认、不可变的 `requirement.json`。
 
@@ -372,7 +373,7 @@ flowchart LR
 | 科学阻塞 | 课题组 DFT 方法 profile、POTCAR mapping、U/J、磁序等未冻结 | 真实 DFT backend 不得执行 |
 | 科学阻塞 | 多体模型构建链、材料 linkage 和首个真实材料目标未冻结 | Agent 04 只能接受完整专家输入；不自动猜测 |
 | 评测缺口 | 尚无课题组正式 gold set | 先维持工程回归，逐步建立 silver/gold set |
-| 产品限制 | 联网 LLM Provider 尚未接入 | Offline Parser 继续作为默认，不阻塞确定性链路 |
+| 产品限制 | DeepSeek Stage 0 Provider 已实现，但真实网络/Keychain Release Gate 尚未执行 | Offline Parser 继续作为默认；联网能力仅显式启用，任何 Provider 错误均 fail closed 且不回退 |
 | 迁移风险 | 本地 SQLite/同步 CLI 不适合多用户和长后台任务 | 服务器阶段迁移 Postgres、worker、RBAC 和监控 |
 
 需要课题组或用户后续确认的科学事项：
@@ -412,5 +413,24 @@ flowchart LR
 - [x] 未修改 Agent01/02 原生公共契约、Orchestrator/checkpoint schema、数据库迁移、
   requirements.lock 或科学阈值；未新增模型、后端、依赖或公共 Schema。
 
-遗留项：联网 LLM、真实 DFT/多体 backend、benchmark、扩展适用域、OOD 与不确定性
-校准继续属于后续里程碑；sandbox 中 MPS 不可见仅记录为可选外部 Gate 的环境边界。
+遗留项：DeepSeek 真实网络/Keychain Release Gate、真实 DFT/多体 backend、benchmark、
+扩展适用域、OOD 与不确定性校准继续属于后续里程碑；sandbox 中 MPS 不可见仅记录为
+可选外部 Gate 的环境边界。
+
+## 10. Stage 0 DeepSeek 接入记录（2026-07-29）
+
+- [x] 在既有 `RequirementParser` 边界内实现 DeepSeek
+  OpenAI-compatible Chat Completions Provider，冻结 Base URL
+  `https://api.deepseek.com` 和 Model ID `deepseek-v4-pro`；
+- [x] 默认仍使用 Offline Parser；只有
+  `MATERIAL_AGENT_LLM_PROVIDER=deepseek` 才启用联网解析，显式配置后的认证、网络、
+  JSON 或 Schema 失败均 fail closed，不静默回退；
+- [x] API key 只从进程环境或 macOS Keychain 延迟读取，未加入 CLI、配置、日志、
+  SQLite、checkpoint、Artifact 或测试 fixture；
+- [x] Provider 输出经过严格 JSON/Pydantic/Requirement policy 校验并继续停在人工
+  Requirement confirmation Gate；控制字段由本地代码覆盖；
+- [x] 审计事件只保存 provider/model/prompt version、请求与响应 hash、模式及 token
+  usage，不保存授权信息、原始响应或 reasoning content；
+- [x] 完整离线 Gate 为 `379 passed, 8 skipped`，`live_llm` 是新增的显式 opt-in
+  跳过项；未联网、未访问 Keychain，也未执行可能产生费用的真实 Provider Gate；
+- [ ] 使用已配置 Keychain 凭据执行 `--run-live-llm` Release Gate。

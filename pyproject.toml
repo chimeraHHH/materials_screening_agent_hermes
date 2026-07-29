@@ -33,6 +33,7 @@ addopts = "-ra"
 testpaths = ["tests"]
 markers = [
   "live_mp: opt-in Materials Project release test requiring network and MP_API_KEY",
+  "live_llm: opt-in DeepSeek Stage0 release test requiring network and a secret-store API key",
   "real_ml: opt-in Agent02 CPU test using the independent CHGNet environment",
   "slow_real_ml: opt-in Agent02 standard 200-step relaxation test",
   "mps_ml: opt-in Agent02 target-Mac MPS parity and fallback test",

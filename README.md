@@ -76,6 +76,56 @@ Unknown requests stop at a clarification interaction instead of inventing
 scientific thresholds. Use `material-agent respond --json ...` with the
 interaction ID and a complete Requirement or a recursive `changes` object.
 
+### Opt-in DeepSeek Stage 0 parser
+
+Stage 0 remains fully offline by default. Set
+`MATERIAL_AGENT_LLM_PROVIDER=deepseek` to explicitly enable the DeepSeek
+OpenAI-compatible Chat Completions provider. The frozen configuration uses
+`deepseek-v4-pro`, JSON Output, enabled thinking, and high reasoning effort.
+The model output is always treated as untrusted input: it must pass the strict
+`Requirement` schema and the existing human Requirement confirmation Gate.
+The model cannot select the local requirement ID, revision, confirmation
+state, policy version, route, scientific threshold policy, or evidence level.
+
+The API key is resolved lazily from `MATERIAL_AGENT_LLM_API_KEY` or, when that
+variable is absent, from macOS Keychain. With the key already stored under
+service `material-screening-agent-llm-api` and account `wuleyan`, run:
+
+```bash
+export MATERIAL_AGENT_LLM_PROVIDER=deepseek
+export MATERIAL_AGENT_LLM_BASE_URL=https://api.deepseek.com
+export MATERIAL_AGENT_LLM_MODEL=deepseek-v4-pro
+export MATERIAL_AGENT_LLM_KEYCHAIN_SERVICE=material-screening-agent-llm-api
+export MATERIAL_AGENT_LLM_KEYCHAIN_ACCOUNT=wuleyan
+
+material-agent run \
+  --workspace workspace \
+  --project demo \
+  --run-id run-deepseek \
+  --request "寻找同时包含 Si 和 O、带隙为 0.5–1.0 eV 的非金属材料。" \
+  --fixture tests/fixtures/mp-summary.si-o.json
+```
+
+Do not put the API key in a CLI argument, repository configuration, `.env`
+file, log, checkpoint, or Artifact. The audit event stores only provider/model
+identity, prompt version, request/response SHA-256 values, response mode, and
+token counts; it does not retain authorization data, response text, or
+reasoning content. An explicitly enabled provider fails closed on
+configuration, authentication, transport, JSON, or schema errors and never
+falls back silently to the offline parser or another model.
+
+The real-provider acceptance test is separate from the offline Gate and must
+be explicitly enabled because it reads the secret store, uses network access,
+and may incur API cost:
+
+```bash
+MATERIAL_AGENT_LLM_PROVIDER=deepseek \
+MATERIAL_AGENT_LLM_KEYCHAIN_SERVICE=material-screening-agent-llm-api \
+MATERIAL_AGENT_LLM_KEYCHAIN_ACCOUNT=wuleyan \
+.venv/bin/python -m pytest -q -p no:cacheprovider \
+  tests/live/test_live_llm_requirement_parser.py --run-live-llm
+```
+
 `status` is strictly local and read-only. For a stage that is waiting on an
 external backend, only an explicit `resume` performs reconciliation:
 
@@ -373,6 +423,11 @@ never part of the offline Gate. On a non-sandboxed target Mac, the optional
 real-ML Gate previously reported `5 passed`; sandbox MPS unavailability is an
 environmental limitation, not a hardware failure.
 
+With the opt-in DeepSeek Stage 0 parser included, the current complete offline
+Gate reports `379 passed, 8 skipped`. The additional skip is the explicit
+`live_llm` release test; the default Gate does not read Keychain or access the
+network.
+
 The standalone Agent01 and Orchestrator-restart Materials Project release
 Gates are opt-in and require both network access and `MP_API_KEY`:
 
@@ -473,8 +528,10 @@ cache, live artifact, secret, temporary file, or traceback.
 
 ## Known limits
 
-- P0.2 has a replaceable Parser protocol and a deterministic offline default;
-  an LLM Provider is not connected yet.
+- P0.2 has a replaceable Parser protocol, a deterministic offline default, and
+  an opt-in DeepSeek Stage 0 Provider. The provider has full offline contract
+  coverage; its real network/Keychain release Gate remains explicit and is not
+  part of the default offline test run.
 - Agent 01 is the only production scientific stage registered by default.
   Agent02 is additionally registered only when
   `MATERIAL_AGENT_ML_WORKER_PYTHON` passes the production factory checks;
