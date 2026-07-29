@@ -298,6 +298,19 @@ Stage 0 是 Orchestrator 内的确定性模块加可选 LLM Provider。
 
 真实重型依赖计划通过独立 JSON worker 进程运行；主 Orchestrator 环境不应导入 Torch/CHGNet/ASE。worker 只能在预创建 sandbox 中使用 root-relative 路径，stdout 只返回一份严格 JSON。
 
+当前 CHGNet v1 继续承担结构静态预测和预弛豫。DeepH-pack 以独立 companion flow
+接入 Agent02 包，不复用或修改冻结的 CHGNet v1 原生契约，也暂不注册为默认
+Orchestrator capability。DeepH 不能仅消费 CIF：它还必须接收已训练模型、同一 DFT
+interface/局域基组产生的 overlap、结构 linkage 和全部 Artifact hash。控制桥只冻结
+`task=[1,2,3,4]` Hamiltonian inference 的执行边界；缺任一科学输入时阻塞。
+
+DeepH worker 可以运行在与 CHGNet 不同的独立环境中，主环境不导入 DeepH、Torch
+Geometric、e3nn 或 Julia。真实 executable 完成只证明控制流程和 Artifact 完整性；
+在独立 benchmark、适用域和专家审查完成前，结果固定不产生科学结论或 evidence
+晋级。未来若把该 companion flow 并入统一 `StageId.ML`，必须发布 composite/v2
+Agent02 契约并同步 Orchestrator、fixture、contract test 和消费者计划，不能把
+sidecar Artifact 隐式塞入现有 CHGNet plan。
+
 完整契约见 [Agent 02 详细计划](../plans/subagents/material-screening-ml-agent-plan.md)。
 
 ### 5.5 Agent 03：DFT Controller

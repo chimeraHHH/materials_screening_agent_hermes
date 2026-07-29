@@ -44,6 +44,99 @@ schema 或数据库迁移；Fake/fixture 保持 `is_mock=true` 和最高 L1；�
 
 当前状态：**第 8.1–8.5 节的 P1 工程接入已完成。主环境仍不安装或导入 Torch/CHGNet/ASE；当且仅当显式 Worker 配置、lock 和 model card 校验通过时，真实 Agent02 production capability 才注册。**
 
+### Agent01 NOMAD v2 消费兼容（2026-07-29）
+
+Agent02 manifest loader 允许读取既有 MP `agent01-contract-v1` 或 NOMAD
+`agent01-contract-v2` candidate。该兼容只扩展可接受的上游 schema version：
+Agent02 仍按冻结 Requirement 防御性复核，不能翻转上游 `REJECT`，不能补造 NOMAD
+缺失的 `energy_above_hull`，也不能重写来源、provenance 或提升 L1 证据。CHGNet
+request/plan/result/worker v1 契约及 production factory 不因本变更修改。
+
+### 本次 CHGNet/DeepH 流程接入（2026-07-29）
+
+集成分支：`main`。
+
+本任务不重写已经完成并冻结的 CHGNet v1 路径。现有
+`agent02-request-v1`、`agent02-stage-plan-v1`、`agent02-contract-v1`、
+`agent02-worker-protocol-v1`、CHGNet production factory、CPU/MPS Gate 和
+`requirements-agent02.lock` 保持兼容。新增范围是 Agent02 包内独立版本化的
+DeepH 控制桥，先跑通：
+
+```text
+显式 DeepH request
+  → 输入/兼容性/Artifact 校验
+  → 不可变 DeepH plan 与 operation key
+  → 独立 Python 环境中的无 shell JSON worker
+  → deeph-inference 固定 argv/config
+  → 输出路径、大小、hash 和完成记录复核
+  → warning-first、无科学结论的结果
+```
+
+官方 DeepH-pack 不是仅凭 CIF 即可直接使用的通用预训练模型。真实 inference 必须
+显式提供并绑定：
+
+- 与目标材料化学环境相符的已训练模型及全部文件 hash；
+- 由受支持 DFT interface 生成的 overlap 文件及全部 hash；
+- 模型与 overlap 完全一致的 DFT interface、局域轨道/basis 身份；
+- 输入结构 URI/hash，以及 overlap 所对应的同一结构 hash；
+- 独立 DeepH executable/Python 环境、上游版本或 commit、运行限制和输出 sandbox。
+
+当前官方说明的 inference 前置包含 OpenMX/ABACUS overlap、训练模型和 INI 配置；
+仓库还声明 Python 3.9、旧版 Torch/PyG/e3nn 依赖，部分稀疏计算路径需要 Julia。
+因此本次只冻结 Hamiltonian inference 的 `task=[1,2,3,4]` 控制路径，不执行
+task 5 band sparse calculation，不向主 `.venv` 添加 DeepH/Torch/PyG/e3nn/Julia，
+也不下载模型、数据集或 DFT 软件。
+
+科学与发布边界：
+
+- 本次不做 benchmark；所有 DeepH 输出固定
+  `benchmark_status=NOT_RUN`、`scientific_conclusion=false`；
+- 即使真实 executable 成功，DeepH 结果也不自动提升为 L2/L3，不宣称 Hamiltonian、
+  band、拓扑或 DFT 已验证；
+- fixture worker 必须 `is_mock=true`，只验证控制流；
+- 缺模型、overlap、basis/interface linkage 或 hash 时 fail closed，不使用生成、
+  猜测或占位科学输入；
+- DeepH production capability 不在本任务注册到默认 Orchestrator；先提供可复用的
+  Agent02 companion flow，后续若要进入统一 `StageId.ML`，必须发布 composite/v2
+  原生契约并同步 Orchestrator、fixture 和 contract test；
+- DeepH-pack README/LICENSE 与 `setup.py` 的许可证标识需在生产冻结 commit 前复核，
+  本次不宣称许可证结论。
+
+本任务验收标准：
+
+- [x] 新 DeepH request/plan/worker/result 契约严格拒绝额外字段、非规范路径、
+      symlink、hash/size 不一致和 basis/interface/structure linkage 冲突；
+- [x] 主环境使用无 shell 子进程调用独立 JSON worker，stdout 仅一份响应，第三方
+      stdout/stderr 不进入科学结果；
+- [x] worker 只生成受控 INI 并调用显式、绝对的 `deeph-inference` executable，
+      不执行任意命令或用户生成代码；
+- [x] fixture executable 完成 request → plan → worker → verified Artifact →
+      completion ledger 的跨进程流程，重复执行复用相同结果，篡改后 fail closed；
+- [x] CHGNet 现有定向测试和 Agent02 冻结 contract tests 保持通过；
+- [x] 完整离线 Gate、主环境 `pip check` 和 `git diff --check` 通过；
+- [x] README 记录 DeepH 真实前置、运行方式、证据上限和尚未注册生产能力的限制。
+
+本次实现结果：
+
+- 新增独立的 `agent02-deeph-request-v1`、`agent02-deeph-plan-v1`、
+  `agent02-deeph-worker-v1` 和 `agent02-deeph-result-v1`；没有修改 CHGNet v1
+  公共契约、fixture、production factory 或 lockfile；
+- `deeph_request_from_chgnet_result()` 只接受冻结 CHGNet model/checkpoint/lock/
+  adapter 身份、真实 L2 PASS、收敛且 QC 通过的 relaxed structure，并重新验证
+  Artifact；model、overlap 与 basis/interface linkage 仍必须独立显式提供；
+- stdlib worker 可由 DeepH 独立环境直接按文件路径启动，不导入主项目或重型包；
+  它生成固定 `task=[1,2,3,4]` INI，以 `shell=false` 调用绝对
+  `deeph-inference` executable，并把第三方 stdout/stderr 留在非公开边界；
+- 新增脚本 `scripts/run_agent02_deeph_flow.py` 和 fixture executable 的真实跨进程
+  Gate；验证完成记录复用、结果篡改、symlink/path traversal 和 sandbox 外写入拒绝；
+- Agent02 定向回归为 `166 passed`；新增核心/脚本小集合为 `32 passed`；
+  `pip check` 为 `No broken requirements found`，`git diff --check` 通过；
+- Agent01 NOMAD 集成修复后，完整离线 Gate 为 `392 passed, 9 skipped`；跳过项仅为
+  显式 opt-in 的 live LLM、live MP、live NOMAD 和真实 Agent02 worker Gates；
+- 未安装或运行真实 DeepH-pack、模型、overlap、DFT 或 benchmark；所有新增流程测试
+  `is_mock=true`，结果固定 `evidence_level=NONE`、
+  `benchmark_status=NOT_RUN`、`scientific_conclusion=false`。
+
 P2 系统 v1 收尾验证（2026-07-28）：Agent02 P0.2 Fake Adapter 保持完成状态；Fake
 Artifact/结果显式 `is_mock=true` 且不超过 `L1_RETRIEVED`，要求 L2 时 fail closed。
 默认 production ML capability 仍仅在 `MATERIAL_AGENT_ML_WORKER_PYTHON` 及 lock、

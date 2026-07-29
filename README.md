@@ -245,6 +245,61 @@ absent or invalid configuration leaves `ml` unavailable with remediation.
 The release Gate covers serial Top-5 execution, candidate-level interruption
 recovery, wall time and peak-RSS recording.
 
+### Agent02 DeepH companion flow
+
+Agent02 also provides an independent, opt-in DeepH-pack control bridge. It
+does not modify the frozen CHGNet v1 request/plan/result/worker contracts and
+is not registered as a default Orchestrator capability. The bridge is for an
+explicit handoff after CHGNet, not an automatic claim that a relaxed CIF is
+enough for DeepH.
+
+DeepH inference requires all of the following immutable inputs:
+
+- a trained DeepH model bundle;
+- an overlap bundle produced by OpenMX or ABACUS;
+- the exact DFT interface, software version and localized-basis identity shared
+  by the model and overlap;
+- the structure URI/hash for which the overlap was calculated;
+- a dedicated worker Python and absolute `deeph-inference` executable.
+
+The explicit helper
+`material_agent.ml_screening.deeph_handoff.deeph_request_from_chgnet_result()`
+accepts only a real, QC-passed `CHGNet 0.3.0` L2 result and verifies the
+relaxed structure Artifact. It still requires the caller to supply the
+independent model/overlap bundles; it never creates or guesses them. Keeping
+this helper in its explicit submodule preserves the lightweight top-level
+Agent02 import.
+
+Run the explicit companion flow after creating a strict
+`agent02-deeph-request-v1` JSON file whose artifacts all live below the
+selected project root:
+
+```bash
+.venv/bin/python scripts/run_agent02_deeph_flow.py \
+  --request /absolute/path/to/deeph-request.json \
+  --artifact-root /absolute/path/to/project \
+  --worker-python /absolute/path/to/deeph-env/bin/python \
+  --deeph-executable /absolute/path/to/deeph-env/bin/deeph-inference
+```
+
+The worker uses no shell, freezes DeepH tasks `[1, 2, 3, 4]`, writes only in a
+candidate operation sandbox and revalidates every input/output path, size and
+SHA-256. Task 5 band/sparse calculation, Julia execution, model/data download,
+training and benchmark are outside this flow.
+
+Successful execution means only that the configured DeepH program completed
+and its files passed control-plane integrity checks. Results remain
+`evidence_level=NONE`, `benchmark_status=NOT_RUN` and
+`scientific_conclusion=false`; they are not DFT validation, a validated
+Hamiltonian, a band result or a topology claim. Test executables are explicitly
+`is_mock=true`. Missing model, overlap or scientific linkage fails closed.
+
+The upstream [DeepH-pack repository](https://github.com/mzjb/DeepH-pack) and
+[inference documentation](https://deeph-pack.readthedocs.io/en/latest/inference/inference.html)
+describe the model/overlap prerequisites. The upstream README/LICENSE and
+`setup.py` currently expose inconsistent license labels; freeze and review a
+specific upstream revision before any production deployment.
+
 Run the Agent02 benchmark-v1 metadata-only dry-run against the existing Si
 fixture. This validates the manifest, structure hash/size and parsed metadata;
 it does not load CHGNet, evaluate reference values, or produce scientific

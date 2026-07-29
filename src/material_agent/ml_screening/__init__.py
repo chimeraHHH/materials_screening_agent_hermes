@@ -1,8 +1,8 @@
 """Deterministic Agent02 contracts and planning primitives.
 
 This package intentionally has no imports of torch, chgnet, or ase.  The
-production ML worker is a later implementation step and lives behind the JSON
-worker protocol defined here.
+CHGNet and DeepH execution paths remain behind independent subprocess
+boundaries.
 """
 
 from material_agent.ml_screening.adapters import (
@@ -38,6 +38,12 @@ from material_agent.ml_screening.models import (
     SelectionStatus,
 )
 from material_agent.ml_screening.planner import build_ml_stage_plan
+from material_agent.ml_screening.deeph_models import (
+    DeepHExecutionPlan,
+    DeepHInferenceRequest,
+    DeepHResult,
+)
+from material_agent.ml_screening.deeph_planner import build_deeph_plan
 
 __all__ = [
     "AGENT02_CONTRACT_VERSION",
@@ -69,4 +75,8 @@ __all__ = [
     "SelectionMode",
     "SelectionStatus",
     "build_ml_stage_plan",
+    "DeepHExecutionPlan",
+    "DeepHInferenceRequest",
+    "DeepHResult",
+    "build_deeph_plan",
 ]
