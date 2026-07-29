@@ -197,6 +197,112 @@ def test_natural_language_clarification_reaches_requirement_review(
     assert json.loads(event[0])["parser"] == "offline-demo-parser"
 
 
+def test_multi_round_clarification_survives_new_runtime(
+    tmp_path, fixture_payload
+) -> None:
+    project_id = "project-clarify-multi"
+    run_id = "run-clarify-multi"
+    OrchestratorRuntime.create_project(tmp_path, project_id)
+
+    with OrchestratorRuntime.from_workspace(tmp_path, project_id) as runtime:
+        first_round = runtime.start_run(
+            raw_request="帮我找一些材料",
+            fixture_payload=fixture_payload,
+            run_id=run_id,
+        )
+        first_interaction = first_round.interrupts[0]
+        second_round = runtime.respond(
+            run_id=run_id,
+            interaction_id=first_interaction.interaction_id,
+            response={"answer": "要求同时包含 Si 和 O。"},
+        )
+
+        assert second_round.status is RunStatus.CLARIFYING
+        second_interaction = second_round.interrupts[0]
+        assert second_interaction.interaction_id != (
+            first_interaction.interaction_id
+        )
+        assert second_interaction.value["payload"]["round"] == 2
+        assert second_interaction.value["payload"]["questions"] == [
+            "请明确带隙范围及单位 eV。",
+            "请明确 energy above hull 上限及单位 eV/atom。",
+            "请确认是否要求非金属材料。",
+        ]
+
+    with OrchestratorRuntime.from_workspace(tmp_path, project_id) as runtime:
+        reviewing = runtime.respond(
+            run_id=run_id,
+            interaction_id=second_interaction.interaction_id,
+            response={
+                "answer": (
+                    "要求非金属，带隙为 0.5 到 1.0 eV，energy above hull "
+                    "不超过 0.05 eV/atom。"
+                )
+            },
+        )
+
+        assert reviewing.status is RunStatus.REQUIREMENT_REVIEW
+        requirement = reviewing.interrupts[0].value["payload"]["requirement"]
+        assert requirement["hard_constraints"]["include_elements"] == ["O", "Si"]
+        assert requirement["hard_constraints"]["band_gap_ev"]["min"] == 0.5
+        assert requirement["hard_constraints"]["is_metal"] is False
+        with pytest.raises(
+            RuntimeError, match="interaction was already answered differently"
+        ):
+            runtime.respond(
+                run_id=run_id,
+                interaction_id=first_interaction.interaction_id,
+                response={"answer": "改成包含 Fe 和 O。"},
+            )
+        database = sqlite3.connect(runtime.database_path)
+        try:
+            events = database.execute(
+                "SELECT payload_json FROM events "
+                "WHERE run_id = ? AND event_type = ?",
+                (run_id, "REQUIREMENT_CLARIFICATION_PARSED"),
+            ).fetchall()
+        finally:
+            database.close()
+
+    assert len(events) == 2
+    rounds = sorted(json.loads(row[0])["clarification_round"] for row in events)
+    assert rounds == [1, 2]
+
+
+def test_invalid_clarification_returns_new_retry_interaction(
+    tmp_path, fixture_payload
+) -> None:
+    project_id = "project-clarify-invalid"
+    run_id = "run-clarify-invalid"
+    OrchestratorRuntime.create_project(tmp_path, project_id)
+    with OrchestratorRuntime.from_workspace(tmp_path, project_id) as runtime:
+        clarifying = runtime.start_run(
+            raw_request="帮我找一些材料",
+            fixture_payload=fixture_payload,
+            run_id=run_id,
+        )
+        interaction = clarifying.interrupts[0]
+
+        retrying = runtime.respond(
+            run_id=run_id,
+            interaction_id=interaction.interaction_id,
+            response={"unsupported": "answer"},
+        )
+
+        assert retrying.status is RunStatus.CLARIFYING
+        retry_interaction = retrying.interrupts[0]
+        assert retry_interaction.interaction_id != interaction.interaction_id
+        assert "requirement" in (
+            retry_interaction.value["payload"]["validation_error"]
+        )
+        reviewing = runtime.respond(
+            run_id=run_id,
+            interaction_id=retry_interaction.interaction_id,
+            response={"answer": ACCEPTANCE_REQUEST},
+        )
+        assert reviewing.status is RunStatus.REQUIREMENT_REVIEW
+
+
 def test_stale_interaction_id_is_rejected(
     tmp_path, requirement, fixture_payload
 ) -> None:

@@ -160,6 +160,7 @@ class OrchestratorGraph:
             "clarification_gate",
             self.route_after_clarification,
             {
+                "repeat": "clarification_gate",
                 "continue": "prepare_requirement_review",
                 "cancel": "cancel_run",
             },
@@ -290,27 +291,12 @@ class OrchestratorGraph:
         )
         pending = None
         if questions:
-            interaction_id = _stable_id(
-                "interaction",
-                state["run_id"],
-                InteractionType.CLARIFICATION.value,
-                _sha256(parsed.requirement),
-            )
-            pending = PendingInteraction(
-                interaction_id=interaction_id,
-                interaction_type=InteractionType.CLARIFICATION,
+            pending = self._clarification_interaction(
                 run_id=state["run_id"],
-                prompt="需求信息不完整，请补充后继续。",
-                payload={
-                    "questions": questions,
-                    "requirement_draft": parsed.requirement,
-                    "response_schema": {
-                        "requirement": "完整 Requirement JSON，或使用 changes",
-                        "changes": "对当前 Requirement 的递归字段更新",
-                        "answer": "自然语言补充说明",
-                    },
-                },
-            ).model_dump(mode="json")
+                requirement=parsed.requirement,
+                questions=questions,
+                round_number=1,
+            )
         self.repository.update_run(
             state["run_id"],
             status=status,
@@ -351,54 +337,74 @@ class OrchestratorGraph:
 
     def clarification_gate(self, state: OrchestratorState) -> dict[str, Any]:
         pending = deepcopy(state["pending_interaction"])
-        while True:
-            response = interrupt(pending)
+        response = interrupt(pending)
+        try:
+            _validate_interaction_response(pending, response)
+        except (TypeError, ValueError, KeyError) as exc:
+            return self._repeat_clarification(
+                state=state,
+                pending=pending,
+                requirement=state["requirement_draft"],
+                questions=state["clarification_questions"],
+                validation_error=str(exc),
+            )
+        if str(response.get("decision", "")).lower() == "cancel":
+            self.repository.update_run(
+                state["run_id"],
+                status=RunStatus.CANCELLED,
+                clear_current_stage=True,
+            )
+            return {
+                "clarification_decision": "cancel",
+                "pending_interaction": None,
+                "updated_at": self._now(),
+            }
+        questions: list[str] = []
+        if isinstance(response.get("answer"), str):
+            parsed = self.parser.revise_from_text(
+                state["requirement_draft"], response["answer"]
+            )
+            updated = parsed.requirement
+            questions = parsed.clarification_questions
+            self.repository.append_event(
+                event_key=(
+                    f"{state['run_id']}:requirement:clarified:"
+                    f"{pending['interaction_id']}:{_sha256(updated)}"
+                ),
+                run_id=state["run_id"],
+                event_type="REQUIREMENT_CLARIFICATION_PARSED",
+                payload={
+                    "parser": parsed.parser_name,
+                    "parser_version": parsed.parser_version,
+                    "clarification_round": pending["payload"].get("round", 1),
+                    "clarification_count": len(questions),
+                    "llm_audit": (
+                        parsed.llm_audit.model_dump(mode="json")
+                        if parsed.llm_audit is not None
+                        else None
+                    ),
+                },
+            )
+        else:
             try:
-                _validate_interaction_response(pending, response)
-                if str(response.get("decision", "")).lower() == "cancel":
-                    self.repository.update_run(
-                        state["run_id"],
-                        status=RunStatus.CANCELLED,
-                        clear_current_stage=True,
-                    )
-                    return {
-                        "clarification_decision": "cancel",
-                        "pending_interaction": None,
-                        "updated_at": self._now(),
-                    }
-                if isinstance(response.get("answer"), str):
-                    parsed = self.parser.revise_from_text(
-                        state["requirement_draft"], response["answer"]
-                    )
-                    updated = parsed.requirement
-                    self.repository.append_event(
-                        event_key=(
-                            f"{state['run_id']}:requirement:clarified:"
-                            f"{_sha256(updated)}"
-                        ),
-                        run_id=state["run_id"],
-                        event_type="REQUIREMENT_CLARIFICATION_PARSED",
-                        payload={
-                            "parser": parsed.parser_name,
-                            "parser_version": parsed.parser_version,
-                            "clarification_count": len(
-                                parsed.clarification_questions
-                            ),
-                            "llm_audit": (
-                                parsed.llm_audit.model_dump(mode="json")
-                                if parsed.llm_audit is not None
-                                else None
-                            ),
-                        },
-                    )
-                else:
-                    updated = self.parser.apply_response(
-                        state["requirement_draft"], response
-                    )
+                updated = self.parser.apply_response(
+                    state["requirement_draft"], response
+                )
             except (TypeError, ValueError, KeyError) as exc:
-                pending["payload"]["validation_error"] = str(exc)
-                continue
-            break
+                return self._repeat_clarification(
+                    state=state,
+                    pending=pending,
+                    requirement=state["requirement_draft"],
+                    questions=state["clarification_questions"],
+                    validation_error=str(exc),
+                )
+        if questions:
+            return self._repeat_clarification(
+                state=state,
+                pending=pending,
+                requirement=updated,
+                questions=questions,
+            )
         self.repository.update_run(
             state["run_id"],
             status=RunStatus.REQUIREMENT_REVIEW,
@@ -415,11 +421,75 @@ class OrchestratorGraph:
 
     @staticmethod
     def route_after_clarification(state: OrchestratorState) -> str:
-        return (
-            "cancel"
-            if state.get("clarification_decision") == "cancel"
-            else "continue"
+        decision = state.get("clarification_decision")
+        if decision not in {"repeat", "continue", "cancel"}:
+            raise ValueError("clarification has no valid decision")
+        return decision
+
+    @staticmethod
+    def _clarification_interaction(
+        *,
+        run_id: str,
+        requirement: dict[str, Any],
+        questions: list[str],
+        round_number: int,
+    ) -> dict[str, Any]:
+        interaction_id = _stable_id(
+            "interaction",
+            run_id,
+            InteractionType.CLARIFICATION.value,
+            _sha256(requirement),
+            _sha256(questions),
+            str(round_number),
         )
+        return PendingInteraction(
+            interaction_id=interaction_id,
+            interaction_type=InteractionType.CLARIFICATION,
+            run_id=run_id,
+            prompt="需求信息不完整，请补充后继续。",
+            payload={
+                "round": round_number,
+                "questions": questions,
+                "requirement_draft": requirement,
+                "response_schema": {
+                    "requirement": "完整 Requirement JSON，或使用 changes",
+                    "changes": "对当前 Requirement 的递归字段更新",
+                    "answer": "自然语言补充说明",
+                },
+            },
+        ).model_dump(mode="json")
+
+    def _repeat_clarification(
+        self,
+        *,
+        state: OrchestratorState,
+        pending: dict[str, Any],
+        requirement: dict[str, Any],
+        questions: list[str],
+        validation_error: str | None = None,
+    ) -> dict[str, Any]:
+        next_round = int(pending["payload"].get("round", 1)) + 1
+        next_pending = self._clarification_interaction(
+            run_id=state["run_id"],
+            requirement=requirement,
+            questions=questions,
+            round_number=next_round,
+        )
+        if validation_error is not None:
+            next_pending["payload"]["validation_error"] = validation_error
+        self.repository.update_run(
+            state["run_id"],
+            status=RunStatus.CLARIFYING,
+            current_stage="requirement",
+        )
+        return {
+            "requirement_draft": requirement,
+            "clarification_questions": questions,
+            "clarification_decision": "repeat",
+            "pending_interaction": next_pending,
+            "run_status": RunStatus.CLARIFYING.value,
+            "updated_at": self._now(),
+        }
 
     def prepare_requirement_review(
         self, state: OrchestratorState

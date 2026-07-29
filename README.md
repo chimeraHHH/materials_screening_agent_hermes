@@ -95,8 +95,11 @@ scientific thresholds. Use `material-agent respond --text "..."` for a natural
 language supplement, or `material-agent respond --json ...` with the
 interaction ID and a complete Requirement or recursive `changes` object.
 Offline text clarification only merges constraints recognized by the
-deterministic acceptance parser; every result is still displayed at the
-Requirement confirmation Gate.
+deterministic acceptance parser. After each text response, remaining questions
+produce a new `CLARIFYING` response with an incremented `round` and a new
+`interaction_id`; repeat `respond --text` with that ID until the status becomes
+`REQUIREMENT_REVIEW`. Every completed draft is still displayed at the
+Requirement confirmation Gate before it can be frozen.
 
 ### Opt-in DeepSeek Stage 0 parser
 
@@ -522,7 +525,7 @@ The historical P0.1/P0.2 and v1-closeout commits are retained for traceability.
 After the closeout, the current `main` branch added the DeepSeek Stage 0
 provider, NOMAD retrieval source, Agent02 benchmark/DeepH control flows, and
 the Agent03 structured VASPilot bridge PoC. The current offline Gate reports
-`411 passed, 9 skipped, 142 warnings`; skips are the explicit live LLM, live
+`413 passed, 9 skipped, 142 warnings`; skips are the explicit live LLM, live
 Materials Project, live NOMAD, and real-ML/Metal tests. The warnings are known
 pymatgen deprecation warnings and do not indicate test failures. Real-ML tests
 are never part of the offline Gate. On a non-sandboxed target Mac, the
@@ -610,7 +613,7 @@ git diff --check
 ```
 
 The historical closeout result was `337 passed, 7 skipped`. The current
-post-closeout result is `411 passed, 9 skipped`; the additional skips are the
+post-closeout result is `413 passed, 9 skipped`; the additional skips are the
 explicit live LLM and live NOMAD probes. Do not run the live MP Gate in this
 offline audit: it requires network access and a secret `MP_API_KEY`, neither of
 which is needed for the offline baseline.

@@ -434,6 +434,8 @@ def _llm_clarification_system_prompt() -> str:
         "units, method choices, evidence levels, budget permissions, or "
         "material-model parameters. Use null or an empty list where the Schema "
         "permits an unresolved value and ask a concise clarification question. "
+        "When the user explicitly says that an optional field has no preference, "
+        "preserve its null or empty value and do not ask about that field again. "
         "Use exact units eV and eV/atom. Element lists must contain valid, unique "
         "chemical symbols in sorted order. Set confirmed_by_user=false. Identity, "
         "revision, confirmation, and policy fields are controlled and overwritten "

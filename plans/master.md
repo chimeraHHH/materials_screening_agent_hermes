@@ -65,7 +65,7 @@ DeepH companion flow，以及 Agent03 结构化 VASPilot bridge PoC。Materials 
   不得用测试 fixture 冒充科学结果。
 
 当前 `main` 在上述收口之后又合入多个增量；当前完整离线 Gate 为
-`411 passed, 9 skipped, 142 warnings`。9 个跳过项是显式 opt-in 的 live LLM、两项
+`413 passed, 9 skipped, 142 warnings`。9 个跳过项是显式 opt-in 的 live LLM、两项
 live MP、live NOMAD 和五项 real-ML/Metal Gate；warning 为已知 pymatgen 弃用提示。
 历史分计划中的较小测试数字只记录当时任务快照；当前状态以该结果、源码和测试为准。
 Agent03/04 mock 控制链及 bridge PoC 不等于真实科学后端。
@@ -100,6 +100,7 @@ v1 的系统级退出目标是：
 - [x] 实现澄清问题、Requirement revision 和 CLI 人工确认。
 - [x] 实现显式启用、fail-closed 的 DeepSeek `LLMRequirementParser`、安全密钥来源和离线 Gate。
 - [x] 增加独立 `requirement parse` 草稿输出、自然语言澄清和离线冻结回归集。
+- [x] 实现多轮自然语言澄清；只在问题清空后进入 Requirement Review。
 - [x] 真实 `live_llm` Gate 已通过并发布显式启用的联网 Provider（`1 passed`，`26.56s`）。
 
 交付目标：自然语言/固定语法到已确认、不可变的 `requirement.json`。
@@ -422,7 +423,7 @@ flowchart LR
   `MATERIAL_AGENT_ML_WORKER_PYTHON` 下注册，当前 L2 审计仅限 3D 单质 Si；Agent03/04
   仅 mock 控制链。
 - [x] 冻结离线演示、验收命令；历史 closeout 为 `337 passed, 7 skipped`，当前 main
-      Gate 为 `411 passed, 9 skipped, 142 warnings`，跳过项和环境边界已记录。
+      Gate 为 `413 passed, 9 skipped, 142 warnings`，跳过项和环境边界已记录。
 - [x] 当前完整离线 Gate、`pip check`、`git diff --check` 通过；未运行 live MP、未联网、
   未读取或生成 `MP_API_KEY`。
 - [x] 未修改 Agent01/02 原生公共契约、Orchestrator/checkpoint schema、数据库迁移、

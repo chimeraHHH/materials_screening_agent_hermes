@@ -119,6 +119,36 @@ checkpoint/SQLite schema、科学阈值或证据规则。
 - [x] 真实 `live_llm` Gate 已通过：`1 passed in 26.56s`；联网 Provider 作为显式
   opt-in 能力发布，Offline Parser 仍为默认。
 
+### Stage 0 多轮自然语言澄清（2026-07-29）
+
+本次任务在现有 `CLARIFICATION` interrupt 内补齐多轮自然语言澄清，不改变
+Requirement Schema、Orchestrator/checkpoint schema、SQLite migration、四阶段路由、
+科学阈值或证据规则。
+
+范围与验收标准：
+
+- 每轮 `answer` 都通过当前 Offline/LLM Parser 重新解析，并基于上一轮 Requirement
+  草稿保留未被明确修改的字段；
+- Parser 仍返回 `clarification_questions` 时，Orchestrator 必须生成绑定新草稿 hash
+  的新 `interaction_id`、保持 `CLARIFYING` 并再次暂停，不能提前进入 Review；
+- 只有问题列表为空时才进入 `REQUIREMENT_CONFIRMATION`；`cancel`、完整 Requirement
+  和递归 `changes` JSON 路径保持兼容；
+- 每轮 LLM 调用继续只审计 provider/model/prompt/hash/token 元数据，旧 interaction
+  重放或不同答案必须 fail closed；
+- 测试覆盖至少两轮澄清、跨 runtime 恢复、CLI `respond --text`、事件数量与最终
+  Requirement 字段累积；完整离线 Gate、`pip check` 和 `git diff --check` 通过。
+
+实施结果：
+
+- [x] 每轮未解决问题生成含递增 `round`、新草稿 hash 和新 `interaction_id` 的
+  `CLARIFICATION`，Run 保持 `CLARIFYING`；
+- [x] 问题清空后才进入 `REQUIREMENT_REVIEW`，旧 interaction 的相同响应幂等复用、
+  不同响应 fail closed；
+- [x] 每轮 LLM 只调用一次并写入独立安全审计事件，不因下一轮 checkpoint 恢复重放；
+- [x] 两轮 Offline/LLM、跨 runtime、CLI E2E、无效回答重试和事件/字段累积测试通过；
+  Stage 0 专项为 `38 passed`，完整离线 Gate 为
+  `413 passed, 9 skipped, 142 warnings`。
+
 ## 0. 当前实施进度
 
 当前状态：**Orchestrator P0.2 已完成：P0.1 发布基线为 `d681de8`，runner-owned
@@ -147,14 +177,14 @@ StagePlan 与动态审批桥接提交为 `701857c`；Agent02/03/04 的 Fake/mock
 - [x] 实现真实阶段计划引用、计划/输入篡改防护及 P0.1 checkpoint 兼容策略；
 - [x] 历史 P0 收口快照为 `325 passed, 2 skipped`，P2 v1 收尾快照为
   `337 passed, 7 skipped`；当前完整离线 Gate 为
-  `411 passed, 9 skipped, 142 warnings`。
+  `413 passed, 9 skipped, 142 warnings`。
 
 P2 系统 v1 收尾（2026-07-28）复核确认：Agent01 是默认生产科学 runner；Agent02
 仅在校验通过的 `MATERIAL_AGENT_ML_WORKER_PYTHON` 下注册，当前 L2 审计限于 3D
 单质 Si；Agent03/04 仅为 mock 控制链且默认不可用。P2 v1 收尾时完整离线 Gate 为
 `337 passed, 7 skipped`；当前 Stage 0 收口后为
-`411 passed, 9 skipped, 142 warnings`。未运行 live MP/LLM、未联网或接触
-`MP_API_KEY`。本次未修改
+`413 passed, 9 skipped, 142 warnings`。真实 `live_llm` 单请求 Gate 已通过；未运行
+live MP 或接触 `MP_API_KEY`。本次未修改
 公共契约、checkpoint/schema、数据库迁移、依赖或科学阈值。
 
 剩余工作：

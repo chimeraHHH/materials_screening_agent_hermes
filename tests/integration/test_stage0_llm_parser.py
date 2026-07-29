@@ -65,7 +65,7 @@ class ClarifyingProvider(SuccessfulProvider):
     def structured_generate(self, **_kwargs) -> StructuredLLMResponse:
         self.calls += 1
         response = super().structured_generate()
-        if self.calls == 1:
+        if self.calls <= 2:
             response.payload["clarification_questions"] = [
                 "请补充明确的筛选条件。"
             ]
@@ -162,27 +162,41 @@ def test_llm_natural_language_clarification_audits_metadata(
             run_id="run-llm-clarify",
         )
         interaction = clarifying.interrupts[0]
-        reviewing = runtime.respond(
+        second_round = runtime.respond(
             run_id="run-llm-clarify",
             interaction_id=interaction.interaction_id,
-            response={"answer": "补充明确的 Si/O 半导体筛选条件。"},
+            response={"answer": "要求包含 Si 和 O。"},
         )
 
+        assert second_round.status is RunStatus.CLARIFYING
+        second_interaction = second_round.interrupts[0]
+        assert second_interaction.interaction_id != interaction.interaction_id
+        assert second_interaction.value["payload"]["round"] == 2
+        reviewing = runtime.respond(
+            run_id="run-llm-clarify",
+            interaction_id=second_interaction.interaction_id,
+            response={"answer": "其余条件已经明确，不再需要偏好。"},
+        )
         assert reviewing.status is RunStatus.REQUIREMENT_REVIEW
         database = sqlite3.connect(runtime.database_path)
         try:
-            row = database.execute(
+            rows = database.execute(
                 "SELECT payload_json FROM events "
-                "WHERE run_id = ? AND event_type = ?",
+                "WHERE run_id = ? AND event_type = ? ORDER BY created_at",
                 (
                     "run-llm-clarify",
                     "REQUIREMENT_CLARIFICATION_PARSED",
                 ),
-            ).fetchone()
+            ).fetchall()
         finally:
             database.close()
 
-    assert provider.calls == 2
-    payload = json.loads(row[0])
-    assert payload["llm_audit"]["provider"] == "deepseek"
-    assert "reasoning_content" not in json.dumps(payload)
+    assert provider.calls == 3
+    assert len(rows) == 2
+    payloads = [json.loads(row[0]) for row in rows]
+    assert [payload["clarification_round"] for payload in payloads] == [1, 2]
+    assert all(
+        payload["llm_audit"]["provider"] == "deepseek"
+        for payload in payloads
+    )
+    assert "reasoning_content" not in json.dumps(payloads)

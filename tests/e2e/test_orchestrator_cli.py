@@ -140,7 +140,7 @@ def test_requirement_parse_cli_writes_immutable_unconfirmed_draft(
     assert frozen["hard_constraints"] == payload["hard_constraints"]
 
 
-def test_orchestrator_cli_accepts_natural_language_clarification(
+def test_orchestrator_cli_repeats_natural_language_clarification(
     tmp_path: Path, capsys
 ) -> None:
     fixture_dir = Path(__file__).parents[1] / "fixtures"
@@ -194,7 +194,40 @@ def test_orchestrator_cli_accepts_natural_language_clarification(
                 "--interaction",
                 interaction_id,
                 "--text",
-                ACCEPTANCE_REQUEST,
+                "要求同时包含 Si 和 O。",
+            ]
+        )
+        == 0
+    )
+    second_round = json.loads(capsys.readouterr().out)
+    assert second_round["status"] == "CLARIFYING"
+    second_interrupt = second_round["interrupts"][0]
+    assert second_interrupt["interaction_id"] != interaction_id
+    assert second_interrupt["value"]["payload"]["round"] == 2
+    assert (
+        second_interrupt["value"]["payload"]["requirement_draft"][
+            "hard_constraints"
+        ]["include_elements"]
+        == ["O", "Si"]
+    )
+
+    assert (
+        main(
+            [
+                "respond",
+                "--workspace",
+                str(tmp_path),
+                "--project",
+                project_id,
+                "--run",
+                run_id,
+                "--interaction",
+                second_interrupt["interaction_id"],
+                "--text",
+                (
+                    "要求非金属；带隙为 0.5 到 1.0 eV，energy above hull "
+                    "不超过 0.05 eV/atom。"
+                ),
             ]
         )
         == 0
