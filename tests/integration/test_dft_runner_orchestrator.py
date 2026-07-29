@@ -119,8 +119,8 @@ def test_dft_approval_rejects_without_submit(tmp_path, requirement, fixture_payl
         assert not (tmp_path / project_id / "stages/agent03/operations").exists()
         report = runtime.read_report("run-dft-reject")
         assert "USER_REJECTED_STAGE" in report
-    assert "PARTIAL" in report or "CANCELLED" in report
-    assert "upstream" not in report.lower() or "agent01" in report
+        assert "PARTIAL" in report or "CANCELLED" in report
+        assert "upstream" not in report.lower() or "agent01" in report
 
 
 def test_dft_orchestrator_runs_through_structured_fake_bridge(
