@@ -151,6 +151,52 @@ def test_clarification_response_is_checkpointed_before_review(
         )
 
 
+def test_natural_language_clarification_reaches_requirement_review(
+    tmp_path, fixture_payload
+) -> None:
+    OrchestratorRuntime.create_project(tmp_path, "project-clarify-text")
+    with OrchestratorRuntime.from_workspace(
+        tmp_path, "project-clarify-text"
+    ) as runtime:
+        clarifying = runtime.start_run(
+            raw_request="帮我找一些材料",
+            fixture_payload=fixture_payload,
+            run_id="run-clarify-text",
+        )
+        interaction = clarifying.interrupts[0]
+
+        reviewing = runtime.respond(
+            run_id="run-clarify-text",
+            interaction_id=interaction.interaction_id,
+            response={"answer": ACCEPTANCE_REQUEST},
+        )
+
+        assert reviewing.status is RunStatus.REQUIREMENT_REVIEW
+        confirmation = reviewing.interrupts[0].value
+        assert confirmation["interaction_type"] == "REQUIREMENT_CONFIRMATION"
+        requirement = confirmation["payload"]["requirement"]
+        assert requirement["hard_constraints"]["include_elements"] == ["O", "Si"]
+        assert requirement["hard_constraints"]["band_gap_ev"] == {
+            "min": 0.5,
+            "max": 1.0,
+            "unit": "eV",
+        }
+        database = sqlite3.connect(runtime.database_path)
+        try:
+            event = database.execute(
+                "SELECT payload_json FROM events "
+                "WHERE run_id = ? AND event_type = ?",
+                (
+                    "run-clarify-text",
+                    "REQUIREMENT_CLARIFICATION_PARSED",
+                ),
+            ).fetchone()
+        finally:
+            database.close()
+
+    assert json.loads(event[0])["parser"] == "offline-demo-parser"
+
+
 def test_stale_interaction_id_is_rejected(
     tmp_path, requirement, fixture_payload
 ) -> None:

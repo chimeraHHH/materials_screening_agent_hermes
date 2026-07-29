@@ -307,6 +307,7 @@ class OrchestratorGraph:
                     "response_schema": {
                         "requirement": "完整 Requirement JSON，或使用 changes",
                         "changes": "对当前 Requirement 的递归字段更新",
+                        "answer": "自然语言补充说明",
                     },
                 },
             ).model_dump(mode="json")
@@ -365,9 +366,35 @@ class OrchestratorGraph:
                         "pending_interaction": None,
                         "updated_at": self._now(),
                     }
-                updated = self.parser.apply_response(
-                    state["requirement_draft"], response
-                )
+                if isinstance(response.get("answer"), str):
+                    parsed = self.parser.revise_from_text(
+                        state["requirement_draft"], response["answer"]
+                    )
+                    updated = parsed.requirement
+                    self.repository.append_event(
+                        event_key=(
+                            f"{state['run_id']}:requirement:clarified:"
+                            f"{_sha256(updated)}"
+                        ),
+                        run_id=state["run_id"],
+                        event_type="REQUIREMENT_CLARIFICATION_PARSED",
+                        payload={
+                            "parser": parsed.parser_name,
+                            "parser_version": parsed.parser_version,
+                            "clarification_count": len(
+                                parsed.clarification_questions
+                            ),
+                            "llm_audit": (
+                                parsed.llm_audit.model_dump(mode="json")
+                                if parsed.llm_audit is not None
+                                else None
+                            ),
+                        },
+                    )
+                else:
+                    updated = self.parser.apply_response(
+                        state["requirement_draft"], response
+                    )
             except (TypeError, ValueError, KeyError) as exc:
                 pending["payload"]["validation_error"] = str(exc)
                 continue

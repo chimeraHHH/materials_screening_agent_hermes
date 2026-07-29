@@ -52,7 +52,7 @@ DeepH companion flow，以及 Agent03 结构化 VASPilot bridge PoC。Materials 
 | Agent 02 生产接入 | 目标 Mac CPU/MPS parity、单次 CPU 回退、Top-5/恢复/资源记录和显式 production factory 已完成；默认无配置时仍不可用 | [`Agent 02 计划`](subagents/material-screening-ml-agent-plan.md) |
 | Agent 03 | v1 mock 控制链、审批、恢复、失败注入、报告、fixture 和结构化 VASPilot bridge PoC 已完成；真实 DFT backend 未实现或注册 | [`Agent 03 计划`](subagents/material-screening-agent-dft-plan.md) |
 | Agent 04 | MVP mock 控制链、模型校验/路由、审批、恢复、报告与 fixture 已完成；真实 ED/多体 backend 未实现或注册 | [`Agent 04 计划`](subagents/material-screening-agent04-plan.md) |
-| 联网 LLM | DeepSeek `deepseek-v4-pro` Provider 与 `LLMRequirementParser` 已实现并显式配置启用；离线 Gate 已覆盖，真实 `live_llm` 发布 Gate 待运行 | [`README.md`](../README.md) |
+| 联网 LLM | DeepSeek `deepseek-v4-pro` Provider 与 `LLMRequirementParser` 已实现并显式配置启用；离线 Gate 与真实单请求 `live_llm` 发布 Gate 均已通过 | [`README.md`](../README.md) |
 
 历史 P0/v1 收口验证基线为：
 
@@ -65,7 +65,7 @@ DeepH companion flow，以及 Agent03 结构化 VASPilot bridge PoC。Materials 
   不得用测试 fixture 冒充科学结果。
 
 当前 `main` 在上述收口之后又合入多个增量；当前完整离线 Gate 为
-`403 passed, 9 skipped, 140 warnings`。9 个跳过项是显式 opt-in 的 live LLM、两项
+`411 passed, 9 skipped, 142 warnings`。9 个跳过项是显式 opt-in 的 live LLM、两项
 live MP、live NOMAD 和五项 real-ML/Metal Gate；warning 为已知 pymatgen 弃用提示。
 历史分计划中的较小测试数字只记录当时任务快照；当前状态以该结果、源码和测试为准。
 Agent03/04 mock 控制链及 bridge PoC 不等于真实科学后端。
@@ -99,7 +99,8 @@ v1 的系统级退出目标是：
 - [x] 抽象可替换 Parser Protocol。
 - [x] 实现澄清问题、Requirement revision 和 CLI 人工确认。
 - [x] 实现显式启用、fail-closed 的 DeepSeek `LLMRequirementParser`、安全密钥来源和离线 Gate。
-- [ ] 运行真实 `live_llm` Gate 并发布联网 Provider。
+- [x] 增加独立 `requirement parse` 草稿输出、自然语言澄清和离线冻结回归集。
+- [x] 真实 `live_llm` Gate 已通过并发布显式启用的联网 Provider（`1 passed`，`26.56s`）。
 
 交付目标：自然语言/固定语法到已确认、不可变的 `requirement.json`。
 
@@ -300,6 +301,7 @@ job、跨进程恢复、Artifact/hash 与 evidence ceiling 测试。新增的四
 - [x] fixture/mock 不得提升真实证据的控制面测试已存在。
 - [x] Agent 02 真实与 Fake 路径通过同一 Adapter/Worker 契约和恢复矩阵。
 - [x] Agent 03/04 原生 mock 不产生科学数值，并通过各自 evidence ceiling 测试。
+- [x] 离线 Stage 0 冻结回归集的 Requirement Schema 与已声明硬约束翻译通过率为 100%。
 - [ ] 全系统 Requirement Schema 校验通过率在冻结评测集达到 100%。
 - [ ] 全系统硬约束翻译在冻结回归集达到 100%。
 - [x] P0 mock 控制链的人工审批具有不可变记录和篡改/过期快照测试。
@@ -385,7 +387,7 @@ flowchart LR
 | 科学阻塞 | 课题组 DFT 方法 profile、POTCAR mapping、U/J、磁序等未冻结 | 真实 DFT backend 不得执行 |
 | 科学阻塞 | 多体模型构建链、材料 linkage 和首个真实材料目标未冻结 | Agent 04 只能接受完整专家输入；不自动猜测 |
 | 评测缺口 | 尚无课题组正式 gold set | 先维持工程回归，逐步建立 silver/gold set |
-| 产品限制 | DeepSeek Provider 已实现但真实 `live_llm` 发布 Gate 尚未运行 | Offline Parser 继续作为默认；联网配置显式启用且失败不回退 |
+| 产品限制 | DeepSeek Provider 已通过单请求 `live_llm` 发布 Gate，但仍是显式启用能力 | Offline Parser 继续作为默认；联网配置失败不回退，并保留周期性 live 回归 |
 | 迁移风险 | 本地 SQLite/同步 CLI 不适合多用户和长后台任务 | 服务器阶段迁移 Postgres、worker、RBAC 和监控 |
 
 需要课题组或用户后续确认的科学事项：
@@ -420,11 +422,11 @@ flowchart LR
   `MATERIAL_AGENT_ML_WORKER_PYTHON` 下注册，当前 L2 审计仅限 3D 单质 Si；Agent03/04
   仅 mock 控制链。
 - [x] 冻结离线演示、验收命令；历史 closeout 为 `337 passed, 7 skipped`，当前 main
-      Gate 为 `403 passed, 9 skipped, 140 warnings`，跳过项和环境边界已记录。
+      Gate 为 `411 passed, 9 skipped, 142 warnings`，跳过项和环境边界已记录。
 - [x] 当前完整离线 Gate、`pip check`、`git diff --check` 通过；未运行 live MP、未联网、
   未读取或生成 `MP_API_KEY`。
 - [x] 未修改 Agent01/02 原生公共契约、Orchestrator/checkpoint schema、数据库迁移、
   requirements.lock 或科学阈值；未新增模型、后端、依赖或公共 Schema。
 
-遗留项：联网 LLM、真实 DFT/多体 backend、benchmark、扩展适用域、OOD 与不确定性
+遗留项：真实 DFT/多体 backend、benchmark、扩展适用域、OOD 与不确定性
 校准继续属于后续里程碑；sandbox 中 MPS 不可见仅记录为可选外部 Gate 的环境边界。

@@ -303,6 +303,59 @@ def test_llm_requirement_parser_fails_closed_on_invalid_scientific_unit(
     assert raised.value.category == "INVALID_RESPONSE"
 
 
+def test_llm_parser_revises_from_text_and_preserves_controlled_fields(
+    requirement: Requirement,
+) -> None:
+    payload = requirement.model_dump(mode="json")
+    payload.update(
+        {
+            "requirement_id": "provider-controlled",
+            "revision": 99,
+            "confirmed_by_user": True,
+            "policy_version": "provider-policy",
+        }
+    )
+    provider = FakeProvider(
+        {"requirement": payload, "clarification_questions": []}
+    )
+
+    parsed = LLMRequirementParser(provider).revise_from_text(
+        requirement.model_dump(mode="json"),
+        "补充：带隙范围为 0.5 到 1.0 eV。",
+    )
+    validated = Requirement.model_validate(parsed.requirement)
+
+    assert validated.requirement_id == requirement.requirement_id
+    assert validated.revision == requirement.revision
+    assert validated.confirmed_by_user is False
+    assert validated.policy_version == requirement.policy_version
+    assert parsed.llm_audit == _audit()
+    assert provider.calls[0]["user_payload"] == {
+        "current_requirement": requirement.model_dump(mode="json"),
+        "clarification_response": "补充：带隙范围为 0.5 到 1.0 eV。",
+    }
+    assert provider.calls[0]["prompt_version"] == (
+        "stage0-clarification-deepseek-v1"
+    )
+
+
+def test_llm_text_revision_fails_closed_on_invalid_unit(
+    requirement: Requirement,
+) -> None:
+    payload = requirement.model_dump(mode="json")
+    payload["hard_constraints"]["band_gap_ev"]["unit"] = "meV"
+    parser = LLMRequirementParser(
+        FakeProvider({"requirement": payload, "clarification_questions": []})
+    )
+
+    with pytest.raises(LLMProviderError) as raised:
+        parser.revise_from_text(
+            requirement.model_dump(mode="json"), "带隙单位使用 meV"
+        )
+
+    assert raised.value.category == "INVALID_RESPONSE"
+
+
 def test_structured_requirement_never_calls_llm(requirement: Requirement) -> None:
     provider = FakeProvider({})
     parser = LLMRequirementParser(provider)

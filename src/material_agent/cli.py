@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 from pathlib import Path
 from typing import Any
 
+from material_agent.orchestrator.parser import requirement_parser_from_environment
 from material_agent.orchestrator.runtime import OrchestratorRuntime
 from material_agent.retrieval.adapters import (
     InMemoryMaterialsAdapter,
@@ -22,7 +24,10 @@ from material_agent.retrieval.models import (
 )
 from material_agent.retrieval.query import retrieval_policy_for_source
 from material_agent.retrieval.runner import RetrievalStageRunner
-from material_agent.retrieval.storage import LocalArtifactStore
+from material_agent.retrieval.storage import (
+    LocalArtifactStore,
+    canonical_json_bytes,
+)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -36,6 +41,17 @@ def main(argv: list[str] | None = None) -> int:
     project_create = project_commands.add_parser("create")
     project_create.add_argument("--workspace", type=Path, default=Path("workspace"))
     project_create.add_argument("--project-id")
+
+    requirement = subparsers.add_parser(
+        "requirement", help="parse a natural-language Requirement draft"
+    )
+    requirement_commands = requirement.add_subparsers(
+        dest="requirement_command", required=True
+    )
+    requirement_parse = requirement_commands.add_parser("parse")
+    requirement_parse.add_argument("--request", required=True)
+    requirement_parse.add_argument("--output", required=True, type=Path)
+    requirement_parse.add_argument("--requirement-id")
 
     run = subparsers.add_parser("run", help="start an Orchestrator P0 run")
     _add_project_arguments(run)
@@ -70,7 +86,9 @@ def main(argv: list[str] | None = None) -> int:
     _add_project_arguments(respond)
     respond.add_argument("--run", required=True, dest="run_id")
     respond.add_argument("--interaction", required=True)
-    respond.add_argument("--json", required=True, dest="response_json")
+    respond_input = respond.add_mutually_exclusive_group(required=True)
+    respond_input.add_argument("--json", dest="response_json")
+    respond_input.add_argument("--text", dest="response_text")
 
     approve = subparsers.add_parser(
         "approve", help="approve or reject a pending Gate"
@@ -124,6 +142,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if arguments.command == "project":
             return _project_command(arguments)
+        if arguments.command == "requirement":
+            return _requirement_command(arguments)
         if arguments.command == "run":
             return _start_orchestrator_run(arguments)
         if arguments.command == "run-stage":
@@ -174,6 +194,52 @@ def _project_command(arguments: argparse.Namespace) -> int:
     return 0
 
 
+def _requirement_command(arguments: argparse.Namespace) -> int:
+    if arguments.requirement_command != "parse":
+        return 2
+    raw_request = arguments.request.strip()
+    if not raw_request:
+        raise ValueError("request cannot be empty")
+    requirement_id = arguments.requirement_id or (
+        "req-" + hashlib.sha256(raw_request.encode("utf-8")).hexdigest()[:16]
+    )
+    parsed = requirement_parser_from_environment().parse(
+        raw_request, requirement_id
+    )
+    requirement = Requirement.model_validate(parsed.requirement)
+    if requirement.confirmed_by_user:
+        raise ValueError("parsed Requirement draft cannot be pre-confirmed")
+    payload = requirement.model_dump(mode="json")
+    output_path = arguments.output.resolve()
+    content = canonical_json_bytes(payload)
+    _write_immutable_file(output_path, content)
+    print(
+        json.dumps(
+            {
+                "status": (
+                    "CLARIFICATION_REQUIRED"
+                    if parsed.clarification_questions
+                    else "REVIEW_REQUIRED"
+                ),
+                "requirement_file": str(output_path),
+                "requirement_sha256": hashlib.sha256(content).hexdigest(),
+                "confirmed_by_user": False,
+                "clarification_questions": parsed.clarification_questions,
+                "parser": parsed.parser_name,
+                "parser_version": parsed.parser_version,
+                "llm_audit": (
+                    parsed.llm_audit.model_dump(mode="json")
+                    if parsed.llm_audit is not None
+                    else None
+                ),
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
+    return 0
+
+
 def _start_orchestrator_run(arguments: argparse.Namespace) -> int:
     requirement = (
         _read_json_file(arguments.requirement_file)
@@ -221,10 +287,27 @@ def _runtime_view_command(
         if operation == "status":
             view = runtime.status(arguments.run_id)
         elif operation == "respond":
+            if arguments.response_text is not None:
+                pending = [
+                    item
+                    for item in runtime.status(arguments.run_id).interrupts
+                    if item.interaction_id == arguments.interaction
+                ]
+                if (
+                    len(pending) != 1
+                    or pending[0].value.get("interaction_type")
+                    != "CLARIFICATION"
+                ):
+                    raise ValueError(
+                        "--text is only valid for a pending CLARIFICATION"
+                    )
+                response = {"answer": arguments.response_text}
+            else:
+                response = _parse_json_argument(arguments.response_json)
             view = runtime.respond(
                 run_id=arguments.run_id,
                 interaction_id=arguments.interaction,
-                response=_parse_json_argument(arguments.response_json),
+                response=response,
             )
         elif operation == "approve":
             view = runtime.approve(
@@ -270,6 +353,19 @@ def _parse_json_argument(value: str) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise ValueError("--json must contain a JSON object")
     return payload
+
+
+def _write_immutable_file(path: Path, content: bytes) -> None:
+    if path.exists():
+        if path.is_file() and path.read_bytes() == content:
+            return
+        raise ValueError(f"refusing to overwrite existing output: {path}")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with path.open("xb") as output:
+            output.write(content)
+    except FileExistsError as exc:
+        raise ValueError(f"refusing to overwrite existing output: {path}") from exc
 
 
 def _print_model(value: Any) -> None:

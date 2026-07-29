@@ -1,0 +1,38 @@
+{
+  "schema_version": "stage0-offline-regression-v1",
+  "cases": [
+    {
+      "case_id": "zh-acceptance",
+      "request": "从 Materials Project 中寻找同时包含 Si 和 O、带隙为 0.5–1.0 eV、energy above hull 不超过 0.05 eV/atom 的非金属材料。",
+      "expected": {
+        "include_elements": ["O", "Si"],
+        "band_gap_min_ev": 0.5,
+        "band_gap_max_ev": 1.0,
+        "energy_above_hull_max_ev_atom": 0.05,
+        "is_metal": false
+      }
+    },
+    {
+      "case_id": "zh-operator-variants",
+      "request": "寻找含有 Si、O，带隙 0.5 到 1.0 eV，凸包能不超过 0.05 eV/atom 的非金属材料。",
+      "expected": {
+        "include_elements": ["O", "Si"],
+        "band_gap_min_ev": 0.5,
+        "band_gap_max_ev": 1.0,
+        "energy_above_hull_max_ev_atom": 0.05,
+        "is_metal": false
+      }
+    },
+    {
+      "case_id": "en-acceptance",
+      "request": "Find non-metal materials containing Si and O with band gap 0.5 to 1.0 eV and energy above hull at most 0.05 eV/atom.",
+      "expected": {
+        "include_elements": ["O", "Si"],
+        "band_gap_min_ev": 0.5,
+        "band_gap_max_ev": 1.0,
+        "energy_above_hull_max_ev_atom": 0.05,
+        "is_metal": false
+      }
+    }
+  ]
+}

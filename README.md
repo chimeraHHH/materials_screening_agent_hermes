@@ -29,6 +29,24 @@ python3.11 -m venv .venv
 The Materials Project API key is read from `MP_API_KEY`. It must not be placed
 in project configuration or artifacts.
 
+## Parse a Requirement draft without starting retrieval
+
+Stage 0 can write a strict, unconfirmed Requirement JSON file independently:
+
+```bash
+material-agent requirement parse \
+  --request "从 Materials Project 中寻找同时包含 Si 和 O、带隙为 0.5–1.0 eV、energy above hull 不超过 0.05 eV/atom 的非金属材料。" \
+  --output /absolute/path/to/requirement.draft.json
+```
+
+The command prints the parser/version, SHA-256, clarification questions and
+either `REVIEW_REQUIRED` or `CLARIFICATION_REQUIRED`. The output file is a pure
+Requirement object with `confirmed_by_user=false`; the command is idempotent
+for identical bytes and refuses to overwrite different content. To freeze a
+confirmed revision, pass the draft to the normal Orchestrator flow with
+`material-agent run --requirement-file ...` and approve the existing
+`REQUIREMENT_CONFIRMATION` Gate.
+
 ## Run the Orchestrator P0.2 offline demo
 
 Create a project:
@@ -73,8 +91,12 @@ material-agent report \
 ```
 
 Unknown requests stop at a clarification interaction instead of inventing
-scientific thresholds. Use `material-agent respond --json ...` with the
-interaction ID and a complete Requirement or a recursive `changes` object.
+scientific thresholds. Use `material-agent respond --text "..."` for a natural
+language supplement, or `material-agent respond --json ...` with the
+interaction ID and a complete Requirement or recursive `changes` object.
+Offline text clarification only merges constraints recognized by the
+deterministic acceptance parser; every result is still displayed at the
+Requirement confirmation Gate.
 
 ### Opt-in DeepSeek Stage 0 parser
 
@@ -500,7 +522,7 @@ The historical P0.1/P0.2 and v1-closeout commits are retained for traceability.
 After the closeout, the current `main` branch added the DeepSeek Stage 0
 provider, NOMAD retrieval source, Agent02 benchmark/DeepH control flows, and
 the Agent03 structured VASPilot bridge PoC. The current offline Gate reports
-`403 passed, 9 skipped, 140 warnings`; skips are the explicit live LLM, live
+`411 passed, 9 skipped, 142 warnings`; skips are the explicit live LLM, live
 Materials Project, live NOMAD, and real-ML/Metal tests. The warnings are known
 pymatgen deprecation warnings and do not indicate test failures. Real-ML tests
 are never part of the offline Gate. On a non-sandboxed target Mac, the
@@ -588,7 +610,7 @@ git diff --check
 ```
 
 The historical closeout result was `337 passed, 7 skipped`. The current
-post-closeout result is `403 passed, 9 skipped`; the additional skips are the
+post-closeout result is `411 passed, 9 skipped`; the additional skips are the
 explicit live LLM and live NOMAD probes. Do not run the live MP Gate in this
 offline audit: it requires network access and a secret `MP_API_KEY`, neither of
 which is needed for the offline baseline.
@@ -621,8 +643,9 @@ cache, live artifact, secret, temporary file, or traceback.
 
 - P0.2 has a replaceable Parser protocol, deterministic offline default, and
   an explicitly configured DeepSeek `deepseek-v4-pro` Stage 0 implementation.
-  Its offline Provider/Parser/integration Gates are covered; the real
-  `live_llm` release Gate remains opt-in and is not part of the offline Gate.
+  Its offline Provider/Parser/integration Gates and the one-request real
+  `live_llm` release Gate passed on 2026-07-29 (`1 passed in 26.56s`). Future
+  live probes remain opt-in and are not part of the offline Gate.
 - Agent 01 is the only production scientific stage registered by default.
   Agent02 is additionally registered only when
   `MATERIAL_AGENT_ML_WORKER_PYTHON` passes the production factory checks;

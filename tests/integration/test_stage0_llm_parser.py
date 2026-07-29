@@ -57,6 +57,21 @@ class FailingProvider:
         )
 
 
+class ClarifyingProvider(SuccessfulProvider):
+    def __init__(self, requirement: dict) -> None:
+        super().__init__(requirement)
+        self.calls = 0
+
+    def structured_generate(self, **_kwargs) -> StructuredLLMResponse:
+        self.calls += 1
+        response = super().structured_generate()
+        if self.calls == 1:
+            response.payload["clarification_questions"] = [
+                "请补充明确的筛选条件。"
+            ]
+        return response
+
+
 def test_llm_parser_reaches_requirement_gate_and_audits_only_metadata(
     tmp_path, requirement, fixture_payload
 ) -> None:
@@ -129,3 +144,45 @@ def test_llm_provider_failure_marks_run_failed_without_fallback(
         "parser": "llm-requirement-parser",
         "parser_version": "llm-requirement-parser-v1",
     }
+
+
+def test_llm_natural_language_clarification_audits_metadata(
+    tmp_path, requirement, fixture_payload
+) -> None:
+    OrchestratorRuntime.create_project(tmp_path, "project-llm-clarify")
+    provider = ClarifyingProvider(requirement.model_dump(mode="json"))
+    parser = LLMRequirementParser(provider)
+
+    with OrchestratorRuntime.from_workspace(
+        tmp_path, "project-llm-clarify", parser=parser
+    ) as runtime:
+        clarifying = runtime.start_run(
+            raw_request="寻找材料",
+            fixture_payload=fixture_payload,
+            run_id="run-llm-clarify",
+        )
+        interaction = clarifying.interrupts[0]
+        reviewing = runtime.respond(
+            run_id="run-llm-clarify",
+            interaction_id=interaction.interaction_id,
+            response={"answer": "补充明确的 Si/O 半导体筛选条件。"},
+        )
+
+        assert reviewing.status is RunStatus.REQUIREMENT_REVIEW
+        database = sqlite3.connect(runtime.database_path)
+        try:
+            row = database.execute(
+                "SELECT payload_json FROM events "
+                "WHERE run_id = ? AND event_type = ?",
+                (
+                    "run-llm-clarify",
+                    "REQUIREMENT_CLARIFICATION_PARSED",
+                ),
+            ).fetchone()
+        finally:
+            database.close()
+
+    assert provider.calls == 2
+    payload = json.loads(row[0])
+    assert payload["llm_audit"]["provider"] == "deepseek"
+    assert "reasoning_content" not in json.dumps(payload)

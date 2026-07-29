@@ -78,6 +78,47 @@
 5. 增加默认跳过的 `live_llm` Gate；完整离线 Gate 不访问网络或 Keychain；
 6. README、主计划和本计划记录实际配置、运行方式、测试证据、限制与未完成项。
 
+### Stage 0 自然语言需求文件收口（2026-07-29）
+
+本次任务只收口“用户自然语言 → 本地校验的 Requirement 草稿 → 现有人工确认
+Gate → 不可变 `requirement.vN.json`”，不改变 Requirement 公共 Schema、四阶段路由、
+checkpoint/SQLite schema、科学阈值或证据规则。
+
+范围与依赖：
+
+- 增加独立 `material-agent requirement parse` CLI，将自然语言解析为未确认的
+  Requirement 草稿文件；该命令不能设置 `confirmed_by_user=true`，最终冻结仍必须
+  进入现有 Orchestrator `REQUIREMENT_CONFIRMATION` Gate；
+- 澄清交互在保留现有完整 Requirement/递归 `changes` JSON 的同时，允许显式
+  `answer` 文本；Offline Parser 只合并其确定识别的约束，联网 Parser 输出继续经过
+  本地 Schema、policy 和受控身份字段校验；
+- 增加冻结的离线 Stage 0 回归集，逐 case 校验 Schema 与受支持硬约束翻译；
+- 真实 DeepSeek `live_llm` Gate 依赖显式密钥、联网批准和可能的 API 成本，不以
+  mock 或离线 Provider 代替发布证据；本次已在该边界下执行单请求发布验证。
+
+验收标准：
+
+1. parse CLI 输出严格 Requirement JSON、SHA-256、解析器版本和澄清问题，拒绝覆盖
+   内容不同的既有文件；
+2. 自然语言澄清不能控制 Requirement ID、revision、确认状态或 policy version，
+   LLM 澄清调用只持久化安全审计元数据；
+3. 离线冻结回归集的 Schema 校验与已声明硬约束翻译均为 100%；
+4. unit、integration、E2E、完整离线 Gate、`pip check` 与 `git diff --check` 通过，
+   README、主计划和本计划准确记录实际能力及未运行的联网 Gate。
+
+实施结果：
+
+- [x] `material-agent requirement parse` 输出严格、未确认且不可静默覆盖的 Requirement
+  草稿，并报告 SHA-256、parser/version 和澄清问题；
+- [x] `respond --text` 已接入 Offline/LLM Parser；受控身份字段由本地覆盖，LLM
+  澄清事件只保存安全审计元数据；
+- [x] `stage0-offline-regression-v1` 的 3 个中英文固定 case 均通过 Schema 与已声明
+  硬约束逐字段校验；
+- [x] Stage 0 专项为 `36 passed`；完整离线 Gate 为
+  `411 passed, 9 skipped, 142 warnings`；
+- [x] 真实 `live_llm` Gate 已通过：`1 passed in 26.56s`；联网 Provider 作为显式
+  opt-in 能力发布，Offline Parser 仍为默认。
+
 ## 0. 当前实施进度
 
 当前状态：**Orchestrator P0.2 已完成：P0.1 发布基线为 `d681de8`，runner-owned
@@ -104,13 +145,16 @@ StagePlan 与动态审批桥接提交为 `701857c`；Agent02/03/04 的 Fake/mock
 - [x] 冻结 `PreparedStagePlan(orchestrator-stage-plan-v2)`、阶段输入快照和 runner-owned native plan；
 - [x] 实现 capability 审批下限与 runner 动态审批的 OR 合并规则；
 - [x] 实现真实阶段计划引用、计划/输入篡改防护及 P0.1 checkpoint 兼容策略；
-- [x] 历史 P0 收口快照为 `325 passed, 2 skipped`；P2 v1 收尾的当前完整离线
-  Gate 为 `337 passed, 7 skipped`，`pip check` 与 `git diff --check` 通过。
+- [x] 历史 P0 收口快照为 `325 passed, 2 skipped`，P2 v1 收尾快照为
+  `337 passed, 7 skipped`；当前完整离线 Gate 为
+  `411 passed, 9 skipped, 142 warnings`。
 
 P2 系统 v1 收尾（2026-07-28）复核确认：Agent01 是默认生产科学 runner；Agent02
 仅在校验通过的 `MATERIAL_AGENT_ML_WORKER_PYTHON` 下注册，当前 L2 审计限于 3D
-单质 Si；Agent03/04 仅为 mock 控制链且默认不可用。完整离线 Gate 为
-`337 passed, 7 skipped`；未运行 live MP、未联网或接触 `MP_API_KEY`。本次未修改
+单质 Si；Agent03/04 仅为 mock 控制链且默认不可用。P2 v1 收尾时完整离线 Gate 为
+`337 passed, 7 skipped`；当前 Stage 0 收口后为
+`411 passed, 9 skipped, 142 warnings`。未运行 live MP/LLM、未联网或接触
+`MP_API_KEY`。本次未修改
 公共契约、checkpoint/schema、数据库迁移、依赖或科学阈值。
 
 剩余工作：
