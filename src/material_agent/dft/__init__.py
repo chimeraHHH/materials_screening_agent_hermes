@@ -9,4 +9,8 @@ from .mock_backend import *
 from .fake_bridge import *
 from .vaspilot_backend import *
 from .validation import *
+from .policies import *
+from .workflows import *
+from .preflight import *
+from .claim_gate import *
 from .runner import *

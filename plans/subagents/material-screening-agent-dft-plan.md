@@ -64,6 +64,38 @@ parser/输入、VASP/POTCAR、Slurm、真实 bridge 服务或端到端 real-back
 test。因此 Agent03 production capability、REAL planner 与 `L3_DFT_VALIDATED` 仍保持
 不可用；P2 DoD 和主计划中的真实 backend 验收项不因本离线契约而完成。
 
+### 本次非 VASP 控制面完善范围（2026-07-30）
+
+在保持 mock runner、Orchestrator 公共契约和 production registry 不变的前提下，补齐
+后续真实 DFT 所需的纯数据控制面：版本化 policy snapshot、可验证 workflow template
+DAG、approved-input preflight 和 claim 进入领域 validator 前的 task dependency Gate。
+这些模块只消费调用方提供的冻结 Artifact/health/approval 快照，不读取网络、不生成
+VASP 输入、不调用 backend，且不能产生 `ClaimResult` 或 evidence 升级。具体方法参数、
+VASP parser、bridge 服务和真实执行仍保持 P2 Gate 之后再实施。
+
+实际完成与验证（2026-07-30）：
+
+- [x] 新增 `policies.py`：冻结 Method/Resource/Evidence 等 policy 的 kind、版本、
+  Artifact、审批人、审批时间与生效时间；没有任何内置 VASP 参数，非 `APPROVED`
+  policy 不能通过真实 preflight。
+- [x] 新增 `workflows.py`：严格检查真实 task template DAG、依赖、claim supporting
+  task 与 domain validator ID；它只是非可执行模板 registry，不替代 REAL planner。
+- [x] 新增 `preflight.py`：对请求/template、policy Artifact、backend descriptor/health、
+  advertised task capability、approval/request/plan hash 和 expiry 进行纯数据、
+  side-effect-free fail-closed Gate。
+- [x] 新增 `claim_gate.py`：只在全部 supporting task 的结果为 `VALID` 或
+  `VALID_WITH_WARNINGS` 时，允许进入指定的领域 validator；该 Gate 不创建
+  `ClaimResult`、不写 Artifact、不升级 evidence。
+- [x] 新增控制面单元测试；与既有 Agent03 contract/runner/bridge/integration/E2E
+  定向测试共 `45 passed`。完整离线 Gate：`438 passed, 9 skipped, 169 warnings`；
+  跳过项均为 explicit opt-in live LLM/MP/NOMAD 和 real-ML 测试。`pip check` 与
+  `git diff --check` 通过。
+
+限制：这些契约尚未接入默认 runner/registry，不能执行或解锁 REAL request。实际
+VASP method profile、POTCAR、Slurm/bridge 服务、VASP parser、domain validator、
+scientific benchmark 和专家审核仍是 P2 前置条件，任何一项缺失都必须保持 production
+Agent03 不可用。
+
 本次 P0 收口验收：不修改公共 Orchestrator/checkpoint schema、数据库迁移或
 Agent01/02 权威输入；mock 始终 `is_mock=true`、不产生科研数值或
 `L3_DFT_VALIDATED`；完整离线 Gate、`pip check` 与 `git diff --check` 通过。
