@@ -35,6 +35,16 @@ CORE_FIELDS = [
     "last_updated",
 ]
 
+# These fields are optional in the public summary endpoint.  They are never
+# required for deterministic screening, but make the human report useful when
+# the deployed MP release exposes them.
+MP_REPORT_OPTIONAL_FIELDS = [
+    "formation_energy_per_atom", "is_stable", "equilibrium_reaction_energy_per_atom",
+    "decomposes_to", "density", "symmetry", "cbm", "vbm", "efermi",
+    "is_gap_direct", "ordering", "total_magnetization", "possible_species",
+    "has_props", "database_IDs",
+]
+
 NOMAD_REQUIRED_FIELDS = [
     "entry_id",
     "upload_id",
@@ -188,12 +198,17 @@ def build_query_plan(
         local_only.append("dimensionality")
 
     num_chunks = policy.max_records_scanned // policy.chunk_size
+    requested_fields = sorted(
+        set(CORE_FIELDS)
+        | (set(MP_REPORT_OPTIONAL_FIELDS) & set(metadata.available_fields))
+    )
     fingerprint_payload = {
         "database_version": metadata.database_version,
         "client_version": metadata.client_version,
         "endpoint": policy.endpoint,
         "filters": _jsonable(filters),
-        "fields": CORE_FIELDS,
+        "fields": requested_fields,
+        "mp_report_policy": policy.mp_report.model_dump(mode="json"),
         "chunk_size": policy.chunk_size,
         "num_chunks": num_chunks,
         "requirement_hash": requirement_hash,
@@ -213,7 +228,7 @@ def build_query_plan(
         requirement_hash=requirement_hash,
         pushdown_filters=filters,
         local_only_constraints=sorted(set(local_only)),
-        requested_fields=CORE_FIELDS,
+        requested_fields=requested_fields,
         chunk_size=policy.chunk_size,
         num_chunks=num_chunks,
         max_records_scanned=policy.max_records_scanned,
@@ -230,10 +245,26 @@ def build_query_plan(
 
 def retrieval_policy_for_source(
     source_database: SourceDatabase | str,
+    *,
+    mp_report_heavy_limit: int | None = None,
 ) -> RetrievalPolicy:
     source = SourceDatabase(source_database)
     if source is SourceDatabase.MATERIALS_PROJECT:
-        return RetrievalPolicy()
+        policy = RetrievalPolicy()
+        if mp_report_heavy_limit is not None:
+            policy = policy.model_copy(
+                update={
+                    "mp_report": policy.mp_report.model_copy(
+                        update={
+                            **(
+                                {"heavy_candidate_limit": mp_report_heavy_limit}
+                                if mp_report_heavy_limit is not None else {}
+                            ),
+                        }
+                    )
+                }
+            )
+        return policy
     profiles = {
         SourceDatabase.NOMAD: (
             "retrieval-policy-nomad-v1",

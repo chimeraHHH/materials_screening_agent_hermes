@@ -496,6 +496,20 @@ preparing or submitting it again.
 
 ## Run Agent 01 standalone
 
+Materials Project runs additionally produce a human-readable rich report for
+every published candidate. The public `candidate_manifest.jsonl` remains the
+frozen `agent01-contract-v1` interface; report-only data lives in
+`report_enrichment.jsonl`, `report_assets/`, and compressed `report_data/`.
+Structure views are rendered locally. Heavy endpoint retrieval (electronic,
+phonon, spectra, heterostructure and charge-density derivatives) is limited to
+the top 20 published candidates by default and can be changed without changing
+screening using `--mp-report-heavy-limit 0..200` on either `material-agent
+retrieval` or `material-agent run`. Missing endpoint data is shown as
+`NOT_AVAILABLE`; optional fetch/render failures make the Stage `PARTIAL` but
+never change a candidate decision or rank. Materials Project values remain
+database calculations, not experimental validation.
+
+
 Each run selects exactly one retrieval source. Materials Project remains the
 default. `--source auto` makes a deterministic choice after Requirement
 confirmation: `topological_flat_band` selects TQC,

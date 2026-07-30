@@ -239,7 +239,7 @@ stateDiagram-v2
 | 模块 | 最低输入 | 核心输出 | 明确边界 |
 |---|---|---|---|
 | Stage 0 Requirement | 自然语言或结构化需求 | 不可变 `requirement.json` revision、面向用户的说明 | 不偷偷补科学阈值 |
-| Agent 01 Retrieval | 已确认 Requirement URI/hash/revision | 原始查询证据、候选审计、候选 manifest、来源结构、检索报告 | 不做 ML/DFT/多体结论 |
+| Agent 01 Retrieval | 已确认 Requirement URI/hash/revision | 原始查询证据、候选审计、候选 manifest、来源结构、检索报告；MP 报告 enrichment/PNG/gzip 证据 | 不做 ML/DFT/多体结论 |
 | Agent 02 ML | Candidate manifest、结构引用、Requirement、policy/registry/health | ML 原生计划、适用域、ML 增量 manifest、结构 lineage、报告 | 不重复主检索，不把 ML 能量称为 hull/DFT |
 | Agent 03 DFT | 候选结构、DFT claim、方法 policy、预算、审批 | DFT workflow plan、ExternalJobRef、验证结果、claim 级证据 | 不自由写参数，不以 backend completed 代替 L3 |
 | Agent 04 Many-Body | `EffectiveModelPackage`、state point、observable、solver policy | 路由、资源估算、solver 结果、数值验证、claim 级证据 | 不从结构或自然语言猜 Hamiltonian/U/J |

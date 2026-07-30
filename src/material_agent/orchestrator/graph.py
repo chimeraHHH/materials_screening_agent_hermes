@@ -706,6 +706,7 @@ class OrchestratorGraph:
             "requirement": requirement_pointer.model_dump(mode="json"),
             "policy_version": ROUTING_POLICY_VERSION,
             "retrieval_source": retrieval_source.value,
+            "mp_report_heavy_limit": state.get("mp_report_heavy_limit"),
             "routes": [
                 route.model_dump(mode="json")
                 for route in routes
@@ -2317,7 +2318,8 @@ class OrchestratorGraph:
                 state.get(
                     "retrieval_source",
                     SourceDatabase.MATERIALS_PROJECT.value,
-                )
+                ),
+                mp_report_heavy_limit=state.get("mp_report_heavy_limit"),
             )
             return Agent01RunnerAdapter(
                 native_runner=self._agent01_runner(state, policy),

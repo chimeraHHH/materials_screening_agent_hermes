@@ -1198,6 +1198,19 @@ StageResult。真实产物在指标提取后删除，不作为公共 fixture。
 - Stage0 DeepSeek 提示明确：数据库筛选描述应建模为硬约束，不得生成无法由所选数据库验证的自由文本 `scientific_targets`。
 - 相关单元测试通过（35 passed）；完整离线 Gate 通过（439 passed, 9 skipped）。
 
+### 8.10 Materials Project 富媒体检索报告（2026-07-30）
+
+- 已实现报告专用 `agent01-mp-report-v1` enrichment Artifact，保留冻结的
+  `agent01-contract-v1` candidate manifest 不变。
+- 对所有发布候选本地渲染常规胞/对称性结构 PNG；Top-N（默认 20，可由 CLI
+  配置）采集重端点的电子、声子、谱学、异质结构和电荷密度数据。原始端点对象以
+  确定性 gzip JSON 归档；结构与电荷切片以本地 Matplotlib 渲染。
+- 报告缺失信息显式标记 `NOT_AVAILABLE`，端点/渲染失败保留候选并将 Stage 置为
+  `PARTIAL`。实验措辞仅表示 MP experimental-database provenance，绝不把计算
+  性质表述为实验验证。
+- 新增直接依赖 `matplotlib==3.11.1`、`mp-pyrho==0.5.1`；后者用于 CHGCAR
+  标准化至 electrons/Å³。
+
 只有以下条件全部满足，才进入完整 Orchestrator 实施：
 
 - 依赖锁文件可在 Python 3.11 环境复现；

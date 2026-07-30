@@ -198,10 +198,13 @@ class OrchestratorRuntime:
         fixture_payload: dict[str, Any] | None = None,
         run_id: str | None = None,
         retrieval_source: SourceDatabase | str = SourceDatabase.MATERIALS_PROJECT,
+        mp_report_heavy_limit: int | None = None,
     ) -> RuntimeView:
         selected_source = str(retrieval_source)
         if selected_source != AUTO_SOURCE:
             selected_source = SourceDatabase(selected_source).value
+        if mp_report_heavy_limit is not None and not 0 <= mp_report_heavy_limit <= 200:
+            raise ValueError("mp_report_heavy_limit must be between 0 and 200")
         selected_run_id = _validate_id(
             run_id or self.id_factory.new_id("run"), "run_id"
         )
@@ -231,6 +234,7 @@ class OrchestratorRuntime:
                 created_at=created_at,
                 fixture_uri=fixture_uri,
                 retrieval_source=selected_source,
+                mp_report_heavy_limit=mp_report_heavy_limit,
             )
             self.graph.invoke(
                 initial_state,
@@ -303,6 +307,7 @@ class OrchestratorRuntime:
                 created_at=created_at,
                 fixture_uri=None,
                 retrieval_source=SourceDatabase.MATERIALS_PROJECT.value,
+                mp_report_heavy_limit=None,
             )
             initial_state.update(
                 {
@@ -581,6 +586,7 @@ class OrchestratorRuntime:
         created_at: str,
         fixture_uri: str | None,
         retrieval_source: str,
+        mp_report_heavy_limit: int | None,
     ) -> dict[str, Any]:
         return {
             "schema_version": ORCHESTRATOR_CONTRACT_VERSION,
@@ -606,6 +612,7 @@ class OrchestratorRuntime:
             "pending_interaction": None,
             "retrieval_fixture_uri": fixture_uri,
             "retrieval_source": retrieval_source,
+            "mp_report_heavy_limit": mp_report_heavy_limit,
             "retry_counters": {},
             "warnings": [],
             "errors": [],

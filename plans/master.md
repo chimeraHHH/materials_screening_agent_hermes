@@ -12,7 +12,12 @@
 > [Agent 04 计划](subagents/material-screening-agent04-plan.md)中明确记录的状态更新。当前可运行能力以 README、源码、配置和测试为准。
 > 只有这些仓库文档明确确认完成的事项才标为 `[x]`；无法确认的事项保持 `[ ]`。
 
-状态基准日期：2026-07-29
+状态基准日期：2026-07-30
+
+本次增加 Agent01 Materials Project 富媒体检索报告：发布候选的下游 manifest
+仍保持 `agent01-contract-v1`，附加报告证据使用独立的 enrichment、PNG 和 gzip
+Artifact；Top-N 重端点限额进入运行指纹。该增量新增 `mp-pyrho==0.5.1` 与显式
+Matplotlib 依赖，完整离线 Gate 待本次变更结束后重新记录。
 
 ### 本次 P2：系统 v1 收尾范围
 

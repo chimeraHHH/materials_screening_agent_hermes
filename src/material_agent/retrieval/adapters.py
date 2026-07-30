@@ -45,6 +45,8 @@ class MaterialsSourceAdapter(Protocol):
         self, task_ids: Sequence[str], material_ids: Sequence[str], batch_size: int
     ) -> tuple[dict[str, dict[str, Any]], list[str]]: ...
 
+    def fetch_report_data(self, material_id: str, *, heavy: bool) -> dict[str, Any]: ...
+
 
 class MaterialsProjectAdapter:
     """Official mp-api backed adapter with no persisted credentials."""
@@ -253,6 +255,43 @@ class MaterialsProjectAdapter:
                         )
 
         return resolved, sorted(set(warnings))
+
+    def fetch_report_data(self, material_id: str, *, heavy: bool) -> dict[str, Any]:
+        """Fetch report-only endpoint payloads without affecting screening.
+
+        Endpoint availability differs between MP deployments, so individual
+        failures are represented explicitly instead of changing the candidate.
+        """
+        result: dict[str, Any] = {"material_id": material_id, "endpoints": {}, "errors": {}}
+        endpoints = ["dielectric", "oxidation_states"]
+        if heavy:
+            endpoints += ["electronic_structure", "phonon", "xas", "absorption", "substrates"]
+        with self._make_client() as client:
+            for endpoint in endpoints:
+                try:
+                    rester = getattr(client.materials, endpoint)
+                    documents = rester.search(
+                        material_ids=[material_id], all_fields=True, chunk_size=1, num_chunks=1
+                    )
+                    result["endpoints"][endpoint] = [_plain_document(item) for item in documents]
+                except Exception as exc:  # report enrichment must be non-fatal
+                    result["errors"][endpoint] = type(exc).__name__
+            if heavy:
+                for key, method_name in (
+                    ("bandstructure", "get_bandstructure_by_material_id"),
+                    ("dos", "get_dos_by_material_id"),
+                    ("phonon_bandstructure", "get_phonon_bandstructure_by_material_id"),
+                    ("phonon_dos", "get_phonon_dos_by_material_id"),
+                ):
+                    try:
+                        result[key] = getattr(client, method_name)(material_id)
+                    except Exception as exc:
+                        result["errors"][key] = type(exc).__name__
+                try:
+                    result["charge_density"] = client.get_charge_density_from_material_id(material_id)
+                except Exception as exc:
+                    result["errors"]["charge_density"] = type(exc).__name__
+        return result
 
 
 class NomadAdapter:
@@ -1037,6 +1076,7 @@ class InMemoryMaterialsAdapter:
         honor_filters: bool = True,
         available_fields: Sequence[str] | None = None,
         source_database: SourceDatabase | str = SourceDatabase.MATERIALS_PROJECT,
+        report_payloads: dict[str, dict[str, Any]] | None = None,
     ) -> None:
         self.source_database = SourceDatabase(source_database)
         self.documents = [dict(document) for document in documents]
@@ -1053,6 +1093,7 @@ class InMemoryMaterialsAdapter:
             )
         )
         self.available_fields = sorted(available_fields or default_fields)
+        self.report_payloads = report_payloads or {}
 
     def metadata(self) -> SourceMetadata:
         return SourceMetadata(
@@ -1086,6 +1127,11 @@ class InMemoryMaterialsAdapter:
             },
             [],
         )
+
+    def fetch_report_data(self, material_id: str, *, heavy: bool) -> dict[str, Any]:
+        del heavy
+        payload = self.report_payloads.get(material_id, {})
+        return {"material_id": material_id, "endpoints": {}, "errors": {}, **payload}
 
 
 def _plain_document(document: Any) -> dict[str, Any]:

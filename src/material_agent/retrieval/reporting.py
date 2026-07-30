@@ -24,6 +24,7 @@ def build_report(
     warnings: list[str],
     exact_duplicate_groups: list[dict[str, object]],
     similarity_clusters: list[dict[str, object]],
+    report_enrichment: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     decision_counts = Counter(candidate.decision.value for candidate in candidates)
     reason_counts = Counter(
@@ -103,6 +104,7 @@ def build_report(
                 published, key=lambda item: item.publication_rank or 0
             )
         ],
+        "materials_project_enrichment": report_enrichment or [],
     }
 
 
@@ -193,6 +195,37 @@ def report_to_markdown(report: dict[str, Any]) -> str:
         )
     if not report["published_candidates"]:
         lines.append("| — | — | — | — | 无候选 |")
+    enrichments = report.get("materials_project_enrichment", [])
+    if enrichments:
+        lines.extend(["", "## Materials Project 候选详情", ""])
+        for item in enrichments:
+            lines.extend([f"### {item['material_id']}", ""])
+            lines.extend(["#### Summary", "", "| 属性 | 数值 | 单位 |", "|---|---|---|"])
+            for field in item.get("sections", {}).get("summary", {}).get("fields", []):
+                lines.append(f"| {field['label']} | {field['value']} | {field.get('unit') or '—'} |")
+            experimental = item.get("sections", {}).get("experimental", {})
+            lines.extend(["", "#### Experimentally Observed", "", experimental.get("text", "NOT_AVAILABLE"), ""])
+            crystal = item.get("sections", {}).get("crystal_structure", {})
+            lines.extend(["#### Crystal Structure", "", f"状态：`{crystal.get('status', 'NOT_AVAILABLE')}`"])
+            for asset in item.get("assets", []):
+                if asset.get("media_type") == "image/png":
+                    relative = asset["uri"].removeprefix("artifact://")
+                    label = relative.rsplit("/", 1)[-1].removesuffix(".png").replace("_", " ")
+                    lines.extend(["", f"![{label}]({relative})"])
+            symmetry = crystal.get("symmetry")
+            if symmetry:
+                lines.extend(["", "| Symmetry | Value |", "|---|---|"])
+                lines.extend(f"| {key.replace('_', ' ')} | {value} |" for key, value in symmetry.items())
+            lines.extend(["", "#### Properties", ""])
+            for name in ("phase_stability", "electronic_structure", "phonon", "spectra", "heterostructures"):
+                section = item.get("sections", {}).get(name, {})
+                lines.append(f"- {name}: `{section.get('status', 'NOT_AVAILABLE')}`")
+            if item.get("raw_source"):
+                lines.append(f"- Compressed raw source: `{item['raw_source']['uri']}`")
+            if item.get("warnings"):
+                lines.extend(["", "Warnings:"])
+                lines.extend(f"- {warning}" for warning in item["warnings"])
+            lines.append("")
     lines.extend(
         [
             "",

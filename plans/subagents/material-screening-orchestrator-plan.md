@@ -898,6 +898,13 @@ validate_stage_input
 
 ### 8.6 完成后的主线切换
 
+### 8.7 Agent01 MP 报告限额状态（2026-07-30）
+
+- Orchestrator state 新增可选 `mp_report_heavy_limit`，只作用于 Materials Project
+  富媒体报告，不改变 Agent01 candidate manifest 或其他 Agent 输入。
+- 该值写入 execution-plan 输入种子，并在运行时构造 Agent01 policy；因此恢复和
+  operation identity 不会在不同 Top-N 报告限额之间错误复用。
+
 第 8.2 与 8.5 节退出条件已经全部通过，后续执行顺序固定为：
 
 1. Agent02 的生产 capability 继续保持 unavailable；第 8 节只冻结可供后续 Adapter 注入的通用接口，测试 fixture 不改变生产注册状态；

@@ -195,12 +195,25 @@ class RetrievalPolicy(StrictModel):
     canonical_float_digits: int = Field(default=12, ge=6, le=16)
     dimensionality_policy_version: str = "dimensionality-larsen-crystalnn-v1"
     canonicalization_policy_version: str = "canonical-structure-v1"
+    mp_report: "MaterialsProjectReportPolicy" = Field(
+        default_factory=lambda: MaterialsProjectReportPolicy()
+    )
 
     @model_validator(mode="after")
     def chunks_cover_scan_limit(self) -> RetrievalPolicy:
         if self.max_records_scanned % self.chunk_size != 0:
             raise ValueError("max_records_scanned must be divisible by chunk_size")
         return self
+
+
+class MaterialsProjectReportPolicy(StrictModel):
+    """Bounded, deterministic enrichment policy for the MP Markdown report."""
+
+    schema_version: str = "agent01-mp-report-policy-v1"
+    heavy_candidate_limit: int = Field(default=20, ge=0, le=200)
+    total_byte_limit: int = Field(default=2_147_483_648, ge=1)
+    single_object_byte_limit: int = Field(default=536_870_912, ge=1)
+    renderer_version: str = "mp-local-matplotlib-v1"
 
 
 class RetrievalStageInput(StrictModel):

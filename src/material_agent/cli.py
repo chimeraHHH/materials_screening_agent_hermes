@@ -73,6 +73,10 @@ def main(argv: list[str] | None = None) -> int:
         default=SourceDatabase.MATERIALS_PROJECT.value,
     )
     run.add_argument("--run-id")
+    run.add_argument(
+        "--mp-report-heavy-limit", type=int, default=None,
+        help="Materials Project heavy report assets for top N published candidates (0-200)",
+    )
 
     run_stage = subparsers.add_parser(
         "run-stage", help="start one stage from explicit immutable inputs"
@@ -145,6 +149,7 @@ def main(argv: list[str] | None = None) -> int:
         choices=(*tuple(source.value for source in SourceDatabase), AUTO_SOURCE),
         default=SourceDatabase.MATERIALS_PROJECT.value,
     )
+    retrieval.add_argument("--mp-report-heavy-limit", type=int, default=None)
     arguments = parser.parse_args(argv)
 
     try:
@@ -267,6 +272,7 @@ def _start_orchestrator_run(arguments: argparse.Namespace) -> int:
             fixture_payload=fixture,
             run_id=arguments.run_id,
             retrieval_source=arguments.source,
+            mp_report_heavy_limit=arguments.mp_report_heavy_limit,
         )
     _print_model(view)
     return 0
@@ -427,7 +433,10 @@ def _run_retrieval(arguments: argparse.Namespace) -> int:
             SourceDatabase.NIMS_SUPERCON: NimsSuperconAdapter,
         }[source]()
 
-    policy = retrieval_policy_for_source(source)
+    policy = retrieval_policy_for_source(
+        source,
+        mp_report_heavy_limit=arguments.mp_report_heavy_limit,
+    )
     stage_input = RetrievalStageInput(
         project_id=arguments.project_id,
         run_id=arguments.run_id,

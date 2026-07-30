@@ -51,6 +51,7 @@ from material_agent.retrieval.normalizer import (
     collect_origin_task_ids,
     normalize_candidate,
 )
+from material_agent.retrieval.mp_report import enrich_published_candidates
 from material_agent.retrieval.query import (
     QueryPlanningError,
     build_query_plan,
@@ -831,6 +832,34 @@ class RetrievalStageRunner:
             )
             output_artifacts.append(candidate_manifest_ref)
 
+            report_enrichment: list[dict[str, Any]] = []
+            if plan.source_database is SourceDatabase.MATERIALS_PROJECT:
+                (
+                    report_enrichment,
+                    enrichment_artifacts,
+                    enrichment_warnings,
+                    enrichment_partial,
+                ) = enrich_published_candidates(
+                    candidates=candidates,
+                    structures=structures,
+                    summaries={str(item.get("material_id")): item for item in documents},
+                    adapter=self.adapter,
+                    store=self.store,
+                    stage_prefix=stage_prefix,
+                    policy=self.policy.mp_report,
+                )
+                output_artifacts.extend(enrichment_artifacts)
+                output_artifacts.append(
+                    self.store.write_jsonl(
+                        f"{stage_prefix}/report_enrichment.jsonl",
+                        report_enrichment,
+                        immutable=True,
+                    )
+                )
+                warnings.extend(enrichment_warnings)
+                if enrichment_partial:
+                    status = StageStatus.PARTIAL
+
             report = build_report(
                 query_plan=plan,
                 candidates=candidates,
@@ -840,6 +869,7 @@ class RetrievalStageRunner:
                 warnings=warnings,
                 exact_duplicate_groups=exact_groups,
                 similarity_clusters=similarity_clusters,
+                report_enrichment=report_enrichment,
             )
             report_json_ref = self.store.write_json(
                 f"{stage_prefix}/retrieval_report.json",
