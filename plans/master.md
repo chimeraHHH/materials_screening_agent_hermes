@@ -36,18 +36,19 @@ checkpoint schema、数据库迁移、requirements.lock 或科学阈值，不运
 > `run-stage` Gate 已完成。生产注册仅由显式 Worker 配置触发；缺失或无效配置保持
 > fail-closed。科学 benchmark、扩展适用域和不确定性校准仍属于后续 P1。**
 
-当前已合入的增量包括：Agent01 NOMAD public Archive Adapter（每次 Run 的来源冻结为
-`materials_project` 或 `nomad` 之一）、Stage 0 DeepSeek Provider、Agent02 benchmark/
-DeepH companion flow，以及 Agent03 结构化 VASPilot bridge PoC。Materials Project
-`agent01-contract-v1` 与冻结 fixture 保持不变；NOMAD 使用 `agent01-contract-v2`，
-缺失的 MP 专有性质不跨库补值；这些新增控制流仍不等于真实 DFT/多体科学能力。
+当前已合入的增量包括：Agent01 单来源公开数据库 Adapter（Materials Project、NOMAD、
+MC3D、C2DB、Topological Quantum Chemistry，以及结构受限的 NIMS SuperCon
+元数据）、Stage 0 DeepSeek Provider、Agent02 benchmark/DeepH companion flow，以及
+Agent03 结构化 VASPilot bridge PoC。Materials Project `agent01-contract-v1` 与冻结
+fixture 保持不变；所有非 MP 来源使用 `agent01-contract-v2`，缺失性质不跨库补值。
+Atomly 因无公开授权 API 保持外部阻塞；这些新增检索控制流仍不等于真实 DFT/多体能力。
 
 ### 1.1 已确认基线
 
 | 组件 | 状态 | 仓库依据 |
 |---|---|---|
 | Orchestrator | P0.2 已完成；控制、阶段计划和报告契约已冻结 | [`Orchestrator 计划`](subagents/material-screening-orchestrator-plan.md) |
-| Agent 01 | P0 与增强 Gate 已完成；MP `agent01-contract-v1` 保持冻结；NOMAD 单来源 P1 接入及离线 Gate 已完成 | [`Agent 01 计划`](subagents/material-screening-agent01-plan.md) |
+| Agent 01 | P0 与增强 Gate 已完成；MP v1 保持冻结；NOMAD/MC3D/C2DB/TQC/NIMS SuperCon 单来源 v2 接入已实现，Atomly 等待授权 API | [`Agent 01 计划`](subagents/material-screening-agent01-plan.md) |
 | Agent 02 | Step 1/1.1、P0.2 Fake 路径及 Step 3 独立 CHGNet worker/CPU Gate 已完成 | [`Agent 02 计划`](subagents/material-screening-ml-agent-plan.md) |
 | Agent 02 生产接入 | 目标 Mac CPU/MPS parity、单次 CPU 回退、Top-5/恢复/资源记录和显式 production factory 已完成；默认无配置时仍不可用 | [`Agent 02 计划`](subagents/material-screening-ml-agent-plan.md) |
 | Agent 03 | v1 mock 控制链、审批、恢复、失败注入、报告、fixture 和结构化 VASPilot bridge PoC 已完成；真实 DFT backend 未实现或注册 | [`Agent 03 计划`](subagents/material-screening-agent-dft-plan.md) |

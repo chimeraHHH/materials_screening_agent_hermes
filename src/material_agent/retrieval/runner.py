@@ -875,12 +875,10 @@ class RetrievalStageRunner:
         if plan.source_database is SourceDatabase.MATERIALS_PROJECT:
             provenance["mp_api_version"] = _distribution_version("mp-api")
         else:
-            provenance["nomad_http_client_version"] = _distribution_version(
-                "requests"
-            )
+            provenance["http_client_version"] = _distribution_version("requests")
             provenance["database_snapshot_limit"] = (
-                "NOMAD public API exposes an API version, not an immutable "
-                "database release snapshot"
+                f"{_source_label(plan.source_database)} exposes the recorded "
+                "version identity, which may not be an immutable release snapshot"
             )
         result = self._new_result(
             run_id=stage_input.run_id,
@@ -1244,6 +1242,13 @@ def _distribution_version(name: str) -> str:
 
 
 def _source_label(source_database: SourceDatabase) -> str:
-    if source_database is SourceDatabase.MATERIALS_PROJECT:
-        return "Materials Project"
-    return "NOMAD"
+    return {
+        SourceDatabase.MATERIALS_PROJECT: "Materials Project",
+        SourceDatabase.NOMAD: "NOMAD",
+        SourceDatabase.MC3D: "Materials Cloud MC3D",
+        SourceDatabase.C2DB: "C2DB",
+        SourceDatabase.TOPOLOGICAL_QUANTUM_CHEMISTRY: (
+            "Topological Quantum Chemistry"
+        ),
+        SourceDatabase.NIMS_SUPERCON: "NIMS MDR SuperCon",
+    }[source_database]

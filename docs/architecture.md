@@ -50,6 +50,7 @@ flowchart TD
 
         A1 --> MP["Materials Project Adapter"]
         A1 --> NOMAD["NOMAD Adapter"]
+        A1 --> OPENDB["MC3D / C2DB / TQC<br/>NIMS SuperCon metadata"]
         A2 --> ML["ML Model / Worker Adapters"]
         A3 --> DFT["DFTBackend<br/>Mock / Future VASPilot / Future backend"]
         A4 --> MB["ManyBodyBackend<br/>Mock / Future Solver Adapters"]
@@ -264,6 +265,8 @@ Stage 0 是 Orchestrator 内的确定性模块加可选 LLM Provider。
 - Query Planner；
 - Materials Project Adapter；
 - NOMAD public Archive Adapter；
+- MC3D OPTIMADE、C2DB 官方 Web/JSON、TQC 版本化 API Adapter；
+- NIMS MDR SuperCon 元数据 Adapter（无结构，不发布下游候选）；
 - Raw Response Archiver；
 - Normalizer 与结构校验；
 - 硬约束执行；
@@ -273,15 +276,18 @@ Stage 0 是 Orchestrator 内的确定性模块加可选 LLM Provider。
 关键边界：
 
 - `candidate_id` 表示项目内稳定实体；
-- 每个 Run 必须显式冻结单一来源，默认 `materials_project`，可选 `nomad`，不得在同一
-  Run 跨库补齐缺失性质；
+- 每个 Run 必须显式冻结单一来源，默认 `materials_project`；所有其他来源也必须显式
+  选择，不得在同一 Run 跨库补齐缺失性质；
 - `structure_id` 表示内容寻址的结构版本；
 - 数据库、ML 弛豫、DFT 弛豫结构演化时 candidate 不变，structure 改变；
 - 所有数据库性质带单位、来源、计算层级、数据库版本和获取时间；
-- Materials Project 继续使用冻结的 `agent01-contract-v1`；NOMAD 使用
-  `agent01-contract-v2`，并保留 entry/parser/method provenance、SI→Agent01 单位
+- Materials Project 继续使用冻结的 `agent01-contract-v1`；所有非 MP 来源使用
+  `agent01-contract-v2`。NOMAD 保留 entry/parser/method provenance、SI→Agent01 单位
   换算政策及数据库快照限制。NOMAD 缺少可安全等同于 MP
   `energy_above_hull` 的统一字段时必须保留 `MISSING/UNCERTAIN`；
+- MC3D 只映射 OPTIMADE 结构；C2DB 显式标记其 PBE/二维来源；TQC 拓扑分类只作为
+  数据库 provenance，不自动满足更高证据级别；SuperCon 无原子坐标记录必须在结构
+  Gate 失败且不得发布给 Agent02；
 - Agent 02 消费 Agent 01 发布的 manifest，不重新定义检索阶段的硬约束。
 
 完整契约见 [Agent 01 详细计划](../plans/subagents/material-screening-agent01-plan.md)。

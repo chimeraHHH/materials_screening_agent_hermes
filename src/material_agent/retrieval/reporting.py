@@ -110,12 +110,24 @@ def report_to_markdown(report: dict[str, Any]) -> str:
     limits = report["limits"]
     query = report["query"]
     source = SourceDatabase(query["source_database"])
-    source_label = (
-        "Materials Project"
-        if source is SourceDatabase.MATERIALS_PROJECT
-        else "NOMAD"
-    )
-    source_id_label = "MP ID" if source is SourceDatabase.MATERIALS_PROJECT else "NOMAD entry ID"
+    source_label = {
+        SourceDatabase.MATERIALS_PROJECT: "Materials Project",
+        SourceDatabase.NOMAD: "NOMAD",
+        SourceDatabase.MC3D: "Materials Cloud MC3D",
+        SourceDatabase.C2DB: "C2DB",
+        SourceDatabase.TOPOLOGICAL_QUANTUM_CHEMISTRY: (
+            "Topological Quantum Chemistry"
+        ),
+        SourceDatabase.NIMS_SUPERCON: "NIMS MDR SuperCon",
+    }[source]
+    source_id_label = {
+        SourceDatabase.MATERIALS_PROJECT: "MP ID",
+        SourceDatabase.NOMAD: "NOMAD entry ID",
+        SourceDatabase.MC3D: "MC3D ID",
+        SourceDatabase.C2DB: "C2DB UID",
+        SourceDatabase.TOPOLOGICAL_QUANTUM_CHEMISTRY: "ICSD ID",
+        SourceDatabase.NIMS_SUPERCON: "SuperCon record ID",
+    }[source]
     lines = [
         f"# Agent 01 {source_label} 检索报告",
         "",

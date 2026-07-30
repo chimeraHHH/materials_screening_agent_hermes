@@ -3,10 +3,15 @@
 from __future__ import annotations
 
 import importlib.metadata
+import csv
+import html
+import io
 import math
 import os
+import re
 from collections.abc import Sequence
 from typing import Any, Protocol
+from urllib.parse import urljoin
 
 import requests
 from pymatgen.core import Element, Lattice, Structure
@@ -19,6 +24,7 @@ from material_agent.retrieval.models import (
 from material_agent.retrieval.query import (
     CORE_FIELDS,
     ELECTRON_VOLT_JOULE,
+    MULTI_SOURCE_REQUIRED_FIELDS,
     NOMAD_REQUIRED_FIELDS,
     assert_mp_client_contract,
 )
@@ -388,6 +394,572 @@ class NomadAdapter:
         }
 
 
+class Mc3dAdapter:
+    """Public MC3D PBE-v1 OPTIMADE structure adapter."""
+
+    is_mock = False
+    source_database = SourceDatabase.MC3D
+
+    def __init__(
+        self,
+        *,
+        base_url: str = (
+            "https://optimade.materialscloud.org/main/mc3d-pbe-v1"
+        ),
+        session: requests.Session | None = None,
+        timeout_seconds: float = 30.0,
+    ) -> None:
+        self.base_url = base_url.rstrip("/")
+        self.session = session or requests.Session()
+        self.timeout_seconds = timeout_seconds
+
+    def metadata(self) -> SourceMetadata:
+        payload = _response_json(
+            self.session.get(
+                f"{self.base_url}/v1/info", timeout=self.timeout_seconds
+            ),
+            "MC3D OPTIMADE metadata",
+        )
+        meta = payload.get("meta")
+        api_version = (
+            meta.get("api_version") if isinstance(meta, dict) else None
+        )
+        if not isinstance(api_version, str):
+            raise ValueError("MC3D OPTIMADE metadata is missing meta.api_version")
+        return SourceMetadata(
+            database_version=f"pbe-v1;optimade:{api_version}",
+            client_version=importlib.metadata.version("requests"),
+            available_fields=sorted(MULTI_SOURCE_REQUIRED_FIELDS),
+        )
+
+    def search(self, plan: RetrievalQueryPlan) -> list[dict[str, Any]]:
+        if plan.source_database is not SourceDatabase.MC3D:
+            raise ValueError("MC3D adapter received a non-MC3D query plan")
+        filters = _optimade_filter(plan.pushdown_filters)
+        next_url: str | None = f"{self.base_url}{plan.endpoint}"
+        params: dict[str, Any] | None = {
+            "filter": filters,
+            "page_limit": min(plan.chunk_size, plan.max_records_scanned),
+            "response_fields": (
+                "id,elements,nelements,nsites,chemical_formula_reduced,"
+                "chemical_formula_descriptive,lattice_vectors,"
+                "cartesian_site_positions,species_at_sites,last_modified"
+            ),
+            "sort": "id",
+        }
+        documents: list[dict[str, Any]] = []
+        seen_urls: set[str] = set()
+        while next_url and len(documents) < plan.max_records_scanned:
+            if next_url in seen_urls:
+                raise ValueError("MC3D OPTIMADE pagination URL repeated")
+            seen_urls.add(next_url)
+            payload = _response_json(
+                self.session.get(
+                    next_url,
+                    params=params,
+                    timeout=self.timeout_seconds,
+                ),
+                "MC3D OPTIMADE structures",
+            )
+            params = None
+            data = payload.get("data")
+            if not isinstance(data, list):
+                raise ValueError("MC3D OPTIMADE response is missing data[]")
+            for entry in data:
+                if not isinstance(entry, dict):
+                    raise ValueError("MC3D OPTIMADE data contains a non-object")
+                documents.append(_map_optimade_structure(entry, "mc3d:pbe-v1"))
+                if len(documents) >= plan.max_records_scanned:
+                    break
+            links = payload.get("links")
+            raw_next = links.get("next") if isinstance(links, dict) else None
+            if isinstance(raw_next, dict):
+                raw_next = raw_next.get("href")
+            next_url = (
+                urljoin(f"{self.base_url}/", raw_next)
+                if isinstance(raw_next, str) and raw_next
+                else None
+            )
+        return sorted(documents, key=lambda item: str(item["material_id"]))
+
+    def resolve_task_metadata(
+        self, task_ids: Sequence[str], material_ids: Sequence[str], batch_size: int
+    ) -> tuple[dict[str, dict[str, Any]], list[str]]:
+        del material_ids, batch_size
+        return (
+            {
+                task_id: {
+                    "task_id": task_id,
+                    "run_type": "PBE",
+                    "task_type": "DFT structure relaxation",
+                    "calc_type": "Quantum ESPRESSO/SIRIUS",
+                }
+                for task_id in sorted(set(task_ids))
+            },
+            [],
+        )
+
+
+class C2dbAdapter:
+    """Read-only adapter for the official C2DB search and JSON downloads."""
+
+    is_mock = False
+    source_database = SourceDatabase.C2DB
+
+    def __init__(
+        self,
+        *,
+        base_url: str = "https://c2db.fysik.dtu.dk",
+        session: requests.Session | None = None,
+        timeout_seconds: float = 30.0,
+    ) -> None:
+        self.base_url = base_url.rstrip("/")
+        self.session = session or requests.Session()
+        self.timeout_seconds = timeout_seconds
+
+    def metadata(self) -> SourceMetadata:
+        response = self.session.get(
+            f"{self.base_url}/help", timeout=self.timeout_seconds
+        )
+        response.raise_for_status()
+        if "C2DB UID" not in response.text or "Band gap (PBE)" not in response.text:
+            raise ValueError("C2DB help page schema drifted")
+        version = response.headers.get("Last-Modified", "undated-live-web")
+        return SourceMetadata(
+            database_version=f"web:{version}",
+            client_version=importlib.metadata.version("requests"),
+            available_fields=sorted(MULTI_SOURCE_REQUIRED_FIELDS),
+        )
+
+    def search(self, plan: RetrievalQueryPlan) -> list[dict[str, Any]]:
+        if plan.source_database is not SourceDatabase.C2DB:
+            raise ValueError("C2DB adapter received a non-C2DB query plan")
+        params = _c2db_params(plan.pushdown_filters)
+        initial = self.session.get(
+            f"{self.base_url}/", timeout=self.timeout_seconds
+        )
+        initial.raise_for_status()
+        sid_match = re.search(
+            r'hx-get="/table\?sid=([^"&]+)"', initial.text
+        )
+        if sid_match is None:
+            raise ValueError("C2DB landing page is missing search session id")
+        page = 0
+        sid: str | None = sid_match.group(1)
+        rows: list[dict[str, str]] = []
+        while len(rows) < plan.max_records_scanned:
+            request_params = (
+                {**params, "sid": sid, "page": page}
+                if page == 0
+                else {"sid": sid, "page": page}
+            )
+            response = self.session.get(
+                f"{self.base_url}{plan.endpoint}",
+                params=request_params,
+                timeout=self.timeout_seconds,
+            )
+            response.raise_for_status()
+            parsed_rows, parsed_sid, has_next = _parse_c2db_table(response.text)
+            if parsed_sid != sid:
+                raise ValueError("C2DB search session changed during pagination")
+            if not parsed_rows:
+                break
+            rows.extend(parsed_rows[: plan.max_records_scanned - len(rows)])
+            if not has_next or len(rows) >= plan.max_records_scanned:
+                break
+            page += 1
+
+        documents = [self._material(row) for row in rows]
+        return sorted(documents, key=lambda item: str(item["material_id"]))
+
+    def _material(self, row: dict[str, str]) -> dict[str, Any]:
+        uid = row["uid"]
+        payload = _response_json(
+            self.session.get(
+                f"{self.base_url}/material/{uid}/download/json",
+                timeout=self.timeout_seconds,
+            ),
+            f"C2DB material {uid}",
+        )
+        atoms = payload.get("1")
+        if not isinstance(atoms, dict):
+            raise ValueError(f"C2DB material {uid} is missing atoms record '1'")
+        structure = _ase_json_structure(atoms)
+        elements = sorted({str(site.specie) for site in structure})
+        gap = _optional_float(row.get("band_gap"))
+        ehull = _optional_float(row.get("energy_above_hull"))
+        return {
+            "material_id": uid,
+            "formula_pretty": row.get("formula") or structure.composition.formula,
+            "elements": elements,
+            "nelements": len(elements),
+            "nsites": len(structure),
+            "structure": structure.as_dict(),
+            "band_gap": gap,
+            "energy_above_hull": ehull,
+            "is_metal": gap == 0.0 if gap is not None else None,
+            "deprecated": False,
+            "theoretical": True,
+            "origins": [
+                {"name": name, "task_id": uid}
+                for name in ("structure", "band_gap", "energy_above_hull", "is_metal")
+            ],
+            "last_updated": None,
+            "source_provenance": {
+                "uid": uid,
+                "method": "GPAW/PBE",
+                "license": "CC-BY-NC-4.0",
+                "layer_group": row.get("layer_group"),
+            },
+        }
+
+    def resolve_task_metadata(
+        self, task_ids: Sequence[str], material_ids: Sequence[str], batch_size: int
+    ) -> tuple[dict[str, dict[str, Any]], list[str]]:
+        del material_ids, batch_size
+        return (
+            {
+                task_id: {
+                    "task_id": task_id,
+                    "run_type": "PBE",
+                    "task_type": "C2DB high-throughput workflow",
+                    "calc_type": "GPAW",
+                }
+                for task_id in sorted(set(task_ids))
+            },
+            [],
+        )
+
+
+class TopologicalQuantumChemistryAdapter:
+    """Versioned public search/detail API adapter for the TQC database."""
+
+    is_mock = False
+    source_database = SourceDatabase.TOPOLOGICAL_QUANTUM_CHEMISTRY
+
+    def __init__(
+        self,
+        *,
+        api_base_url: str = "https://www.topologicalquantumchemistry.fr/api",
+        session: requests.Session | None = None,
+        timeout_seconds: float = 30.0,
+    ) -> None:
+        self.api_base_url = api_base_url.rstrip("/")
+        self.session = session or requests.Session()
+        self.timeout_seconds = timeout_seconds
+        self._metadata: dict[str, dict[str, Any]] = {}
+
+    def metadata(self) -> SourceMetadata:
+        payload = _response_json(
+            self.session.get(
+                f"{self.api_base_url}/v4/search/_search/",
+                params={"page": 0},
+                timeout=self.timeout_seconds,
+            ),
+            "TQC search metadata",
+        )
+        if not isinstance(payload.get("items"), list):
+            raise ValueError("TQC search metadata is missing items[]")
+        return SourceMetadata(
+            database_version="api:v4-search;v1-detail",
+            client_version=importlib.metadata.version("requests"),
+            available_fields=sorted(MULTI_SOURCE_REQUIRED_FIELDS),
+        )
+
+    def search(self, plan: RetrievalQueryPlan) -> list[dict[str, Any]]:
+        if plan.source_database is not SourceDatabase.TOPOLOGICAL_QUANTUM_CHEMISTRY:
+            raise ValueError("TQC adapter received a non-TQC query plan")
+        filters = plan.pushdown_filters
+        params: dict[str, Any] = {
+            "include": " ".join(filters.get("elements", [])),
+            "exclude": " ".join(filters.get("exclude_elements", [])),
+            "option": "contains",
+            "filter": "ALL",
+            "sort_direction": "asc",
+            "sort_by": "compound_complexity",
+        }
+        icsd_ids: list[str] = []
+        page = 0
+        total_pages = 1
+        while page < total_pages and len(icsd_ids) < plan.max_records_scanned:
+            response_payload = _response_json(
+                self.session.get(
+                    f"{self.api_base_url}/v4/search/_search/",
+                    params={**params, "page": page},
+                    timeout=self.timeout_seconds,
+                ),
+                "TQC search",
+            )
+            items = response_payload.get("items")
+            if not isinstance(items, list):
+                raise ValueError("TQC search response is missing items[]")
+            total_pages_raw = response_payload.get("totalPages")
+            if not isinstance(total_pages_raw, int) or total_pages_raw < 0:
+                raise ValueError("TQC search response has invalid totalPages")
+            total_pages = total_pages_raw
+            for item in items:
+                if not isinstance(item, dict):
+                    raise ValueError("TQC search response contains a non-object item")
+                ids = item.get("similarICSD")
+                if not isinstance(ids, list):
+                    raise ValueError("TQC search item is missing similarICSD[]")
+                for value in ids:
+                    identifier = str(value)
+                    if identifier not in icsd_ids:
+                        icsd_ids.append(identifier)
+                    if len(icsd_ids) >= plan.max_records_scanned:
+                        break
+            page += 1
+        return sorted(
+            [self._detail(identifier) for identifier in icsd_ids],
+            key=lambda item: str(item["material_id"]),
+        )
+
+    def _detail(self, icsd_id: str) -> dict[str, Any]:
+        payload = _response_json(
+            self.session.get(
+                f"{self.api_base_url}/v1/compounds/icsd={icsd_id}/",
+                timeout=self.timeout_seconds,
+            ),
+            f"TQC ICSD {icsd_id}",
+        )
+        cif = payload.get("cifContent")
+        cif_text = (
+            cif.get("modifiedCifContent") if isinstance(cif, dict) else None
+        )
+        cif_url = payload.get("cifFile")
+        if isinstance(cif_text, str):
+            cif_text = cif_text.replace("\\'", "'")
+        if not isinstance(cif_text, str) or not cif_text.strip():
+            cif_text = None
+        structure: Structure | None = None
+        if cif_text is not None:
+            try:
+                structure = Structure.from_str(cif_text, fmt="cif")
+            except (KeyError, TypeError, ValueError):
+                structure = None
+        if structure is None and isinstance(cif_url, str):
+            response = self.session.get(cif_url, timeout=self.timeout_seconds)
+            response.raise_for_status()
+            try:
+                structure = Structure.from_str(response.text, fmt="cif")
+            except (KeyError, TypeError, ValueError):
+                structure = None
+        if structure is None and cif_text is None and not isinstance(cif_url, str):
+            raise ValueError(f"TQC ICSD {icsd_id} is missing CIF content")
+        atom_compounds = payload.get("atomCompounds")
+        atom_items = (
+            atom_compounds.get("items")
+            if isinstance(atom_compounds, dict)
+            else None
+        )
+        elements = sorted(
+            {
+                str(item["atom"]["symbol"])
+                for item in atom_items or []
+                if isinstance(item, dict)
+                and isinstance(item.get("atom"), dict)
+                and item["atom"].get("symbol")
+            }
+        )
+        if structure is not None:
+            elements = sorted({str(site.specie) for site in structure})
+        if not elements:
+            raise ValueError(f"TQC ICSD {icsd_id} is missing element identities")
+        topological = payload.get("topologicalClassification")
+        subclass = payload.get("topologicalSubClassification")
+        task_id = f"tqc:{payload.get('id', icsd_id)}"
+        self._metadata[task_id] = {
+            "task_id": task_id,
+            "run_type": "TQC band representation analysis",
+            "task_type": (
+                topological.get("shortDescription")
+                if isinstance(topological, dict)
+                else None
+            ),
+            "calc_type": (
+                subclass.get("shortDescription")
+                if isinstance(subclass, dict)
+                else None
+            ),
+        }
+        return {
+            "material_id": f"icsd-{icsd_id}",
+            "formula_pretty": str(
+                payload.get("chemicalFormulaSum")
+                or (
+                    structure.composition.reduced_formula
+                    if structure is not None
+                    else "unknown"
+                )
+            ),
+            "elements": elements,
+            "nelements": len(elements),
+            "nsites": (
+                len(structure)
+                if structure is not None
+                else payload.get("nbrAtoms")
+            ),
+            "structure": structure.as_dict() if structure is not None else None,
+            "band_gap": None,
+            "energy_above_hull": None,
+            "is_metal": None,
+            "deprecated": False,
+            "theoretical": True,
+            "origins": [{"name": "structure", "task_id": task_id}],
+            "last_updated": None,
+            "source_provenance": {
+                "icsd_id": icsd_id,
+                "tqc_compound_id": payload.get("id"),
+                "topological_classification": topological,
+                "topological_subclassification": subclass,
+                "topological_indices": payload.get("indexCompounds"),
+                "soc": payload.get("type") == "COMPOUND_SOC",
+                "structure_parse_status": (
+                    "parsed" if structure is not None else "invalid_cif"
+                ),
+            },
+        }
+
+    def resolve_task_metadata(
+        self, task_ids: Sequence[str], material_ids: Sequence[str], batch_size: int
+    ) -> tuple[dict[str, dict[str, Any]], list[str]]:
+        del material_ids, batch_size
+        resolved = {
+            task_id: self._metadata[task_id]
+            for task_id in sorted(set(task_ids))
+            if task_id in self._metadata
+        }
+        missing = sorted(set(task_ids) - set(resolved))
+        return resolved, (
+            [f"TQC method metadata unavailable for {len(missing)} records"]
+            if missing
+            else []
+        )
+
+
+class NimsSuperconAdapter:
+    """Metadata-only SuperCon adapter; records intentionally lack structures."""
+
+    is_mock = False
+    source_database = SourceDatabase.NIMS_SUPERCON
+    DATASET_ID = "650c4826-f0ca-42e8-8dd9-94025a5307ce"
+    DATASET_DOI = "10.48505/nims.4487"
+    DATA_FILE_ID = "2347b413-9c15-43b7-90e6-41fe9243b1a5"
+
+    def __init__(
+        self,
+        *,
+        base_url: str = "https://mdr.nims.go.jp",
+        session: requests.Session | None = None,
+        timeout_seconds: float = 60.0,
+    ) -> None:
+        self.base_url = base_url.rstrip("/")
+        self.session = session or requests.Session()
+        self.timeout_seconds = timeout_seconds
+
+    def metadata(self) -> SourceMetadata:
+        response = self.session.get(
+            f"{self.base_url}/datasets/{self.DATASET_ID}",
+            timeout=self.timeout_seconds,
+        )
+        response.raise_for_status()
+        if self.DATASET_DOI not in response.text:
+            raise ValueError("NIMS SuperCon dataset identity changed")
+        return SourceMetadata(
+            database_version=f"doi:{self.DATASET_DOI};version:240322",
+            client_version=importlib.metadata.version("requests"),
+            available_fields=sorted(MULTI_SOURCE_REQUIRED_FIELDS),
+        )
+
+    def search(self, plan: RetrievalQueryPlan) -> list[dict[str, Any]]:
+        if plan.source_database is not SourceDatabase.NIMS_SUPERCON:
+            raise ValueError("NIMS adapter received a non-NIMS query plan")
+        response = self.session.get(
+            f"{self.base_url}/filesets/{self.DATA_FILE_ID}/download",
+            timeout=self.timeout_seconds,
+        )
+        response.raise_for_status()
+        reader = csv.reader(io.StringIO(response.text), delimiter="\t")
+        try:
+            verbose_header = next(reader)
+            field_keys = next(reader)
+        except StopIteration:
+            return []
+        if not verbose_header or not field_keys or field_keys[0] != "num":
+            raise ValueError("NIMS SuperCon two-row header schema drifted")
+        key_index = {key: index for index, key in enumerate(field_keys) if key}
+        filters = plan.pushdown_filters
+        required = set(filters.get("elements", []))
+        excluded = set(filters.get("exclude_elements", []))
+        documents: list[dict[str, Any]] = []
+        for values in reader:
+            def value(key: str) -> str:
+                index = key_index.get(key)
+                return (
+                    str(values[index]).strip()
+                    if index is not None and index < len(values)
+                    else ""
+                )
+
+            elements = {
+                value(key)
+                for key in (
+                    "ma1", "mb1", "mc1", "md1", "me1", "mf1",
+                    "mg1", "mh1", "mi1", "mj1", "mo1",
+                )
+            }
+            elements.discard("")
+            if required and not required.issubset(elements):
+                continue
+            if excluded & elements:
+                continue
+            record_id = value("num")
+            if not record_id:
+                continue
+            documents.append(
+                {
+                    "material_id": f"supercon-{record_id}",
+                    "formula_pretty": (
+                        value("element")
+                        or value("name")
+                        or "unknown"
+                    ),
+                    "elements": sorted(elements),
+                    "nelements": len(elements),
+                    "nsites": None,
+                    "structure": None,
+                    "band_gap": None,
+                    "energy_above_hull": None,
+                    "is_metal": None,
+                    "deprecated": False,
+                    "theoretical": False,
+                    "origins": [],
+                    "last_updated": None,
+                    "source_provenance": {
+                        "dataset_doi": self.DATASET_DOI,
+                        "record_id": record_id,
+                        "reference_number": value("refno"),
+                        "recommended_tc": value("tc") or None,
+                        "tc_unit": value("utc") or None,
+                        "license": "CC-BY-4.0",
+                        "structure_limitation": (
+                            "SuperCon datasheet has no atomic coordinates"
+                        ),
+                    },
+                }
+            )
+            if len(documents) >= plan.max_records_scanned:
+                break
+        return sorted(documents, key=lambda item: str(item["material_id"]))
+
+    def resolve_task_metadata(
+        self, task_ids: Sequence[str], material_ids: Sequence[str], batch_size: int
+    ) -> tuple[dict[str, dict[str, Any]], list[str]]:
+        del task_ids, material_ids, batch_size
+        return {}, []
+
+
 class InMemoryMaterialsAdapter:
     """Offline adapter used by fixtures and deterministic E2E tests."""
 
@@ -411,7 +983,11 @@ class InMemoryMaterialsAdapter:
         default_fields = (
             CORE_FIELDS
             if self.source_database is SourceDatabase.MATERIALS_PROJECT
-            else NOMAD_REQUIRED_FIELDS
+            else (
+                NOMAD_REQUIRED_FIELDS
+                if self.source_database is SourceDatabase.NOMAD
+                else MULTI_SOURCE_REQUIRED_FIELDS
+            )
         )
         self.available_fields = sorted(available_fields or default_fields)
 
@@ -653,3 +1229,178 @@ def _nomad_band_gap(
 
 def _optional_text(value: Any) -> str | None:
     return str(value) if value is not None else None
+
+
+def _optimade_filter(filters: dict[str, Any]) -> str:
+    clauses: list[str] = []
+    required = filters.get("elements", [])
+    if required:
+        values = ",".join(f'"{value}"' for value in required)
+        clauses.append(f"elements HAS ALL {values}")
+    excluded = filters.get("exclude_elements", [])
+    if excluded:
+        values = ",".join(f'"{value}"' for value in excluded)
+        clauses.append(f"NOT elements HAS ANY {values}")
+    bounds = filters.get("num_sites")
+    if isinstance(bounds, (list, tuple)) and len(bounds) == 2:
+        clauses.append(f"nsites >= {int(bounds[0])}")
+        clauses.append(f"nsites <= {int(bounds[1])}")
+    return " AND ".join(clauses)
+
+
+def _map_optimade_structure(
+    entry: dict[str, Any], method: str
+) -> dict[str, Any]:
+    identifier = entry.get("id")
+    attributes = entry.get("attributes")
+    if not isinstance(identifier, str) or not identifier:
+        raise ValueError("OPTIMADE structure is missing id")
+    if not isinstance(attributes, dict):
+        raise ValueError(f"OPTIMADE structure {identifier} is missing attributes")
+    lattice = attributes.get("lattice_vectors")
+    positions = attributes.get("cartesian_site_positions")
+    species = attributes.get("species_at_sites")
+    if not isinstance(lattice, list) or not isinstance(positions, list):
+        raise ValueError(f"OPTIMADE structure {identifier} is missing coordinates")
+    if not isinstance(species, list) or len(species) != len(positions):
+        raise ValueError(f"OPTIMADE structure {identifier} has invalid species")
+    try:
+        structure = Structure(
+            Lattice(lattice),
+            [str(value) for value in species],
+            positions,
+            coords_are_cartesian=True,
+            to_unit_cell=False,
+        )
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            f"OPTIMADE structure {identifier} could not be parsed"
+        ) from exc
+    elements = attributes.get("elements")
+    if not isinstance(elements, list):
+        elements = sorted({str(site.specie) for site in structure})
+    task_id = f"{method}:{identifier}"
+    return {
+        "material_id": identifier,
+        "formula_pretty": (
+            attributes.get("chemical_formula_descriptive")
+            or attributes.get("chemical_formula_reduced")
+            or structure.composition.reduced_formula
+        ),
+        "elements": sorted(str(value) for value in elements),
+        "nelements": len(set(str(value) for value in elements)),
+        "nsites": len(structure),
+        "structure": structure.as_dict(),
+        "band_gap": None,
+        "energy_above_hull": None,
+        "is_metal": None,
+        "deprecated": False,
+        "theoretical": True,
+        "origins": [{"name": "structure", "task_id": task_id}],
+        "last_updated": attributes.get("last_modified"),
+        "source_provenance": {
+            "optimade_id": identifier,
+            "optimade_method": method,
+        },
+    }
+
+
+def _c2db_params(filters: dict[str, Any]) -> dict[str, str]:
+    terms = [str(value) for value in filters.get("elements", [])]
+    terms.extend(
+        f"{value}=0" for value in filters.get("exclude_elements", [])
+    )
+    params = {
+        "filter": ",".join(terms),
+        "from_ehull": "-1000000",
+        "to_ehull": "1000000",
+        "bg": "gap",
+    }
+    gap = filters.get("band_gap")
+    if isinstance(gap, (list, tuple)) and len(gap) == 2:
+        params["from_bg"] = str(gap[0])
+        params["to_bg"] = str(gap[1])
+    hull = filters.get("energy_above_hull")
+    if isinstance(hull, (list, tuple)) and len(hull) == 2:
+        params["from_ehull"] = str(hull[0])
+        params["to_ehull"] = str(hull[1])
+    sites = filters.get("num_sites")
+    if isinstance(sites, (list, tuple)) and len(sites) == 2:
+        terms.append(f"natoms<={int(sites[1])}")
+        params["filter"] = ",".join(terms)
+    return params
+
+
+def _parse_c2db_table(
+    text: str,
+) -> tuple[list[dict[str, str]], str, bool]:
+    sid_match = re.search(r'name="sid" value="([^"]+)"', text)
+    if sid_match is None:
+        raise ValueError("C2DB table response is missing search session id")
+    sid = sid_match.group(1)
+    rows: list[dict[str, str]] = []
+    for raw_row in re.findall(r"<tr[^>]*>(.*?)</tr>", text, flags=re.S):
+        hrefs = re.findall(r"href=/material/([^ >]+)", raw_row)
+        if not hrefs:
+            continue
+        cells = [
+            html.unescape(
+                re.sub(r"\s+", " ", re.sub(r"<[^>]+>", "", cell))
+            ).strip()
+            for cell in re.findall(
+                r'<th scope="row">(.*?)</th>', raw_row, flags=re.S
+            )
+        ]
+        if len(cells) < 6:
+            raise ValueError("C2DB result row has fewer than six columns")
+        rows.append(
+            {
+                "uid": hrefs[0],
+                "formula": cells[0],
+                "energy_above_hull": cells[1],
+                "heat_of_formation": cells[2],
+                "band_gap": cells[3],
+                "magnetic": cells[4],
+                "layer_group": cells[5],
+            }
+        )
+    has_next = not bool(
+        re.search(
+            r'<li class="page-item disabled">\s*<a class="page-link"\s*'
+            rf'hx-get="/table\?sid={re.escape(sid)}&page=\d+"[^>]*title=">"',
+            text,
+            flags=re.S,
+        )
+    )
+    return rows, sid, has_next
+
+
+def _ase_json_structure(atoms: dict[str, Any]) -> Structure:
+    numbers = atoms.get("numbers")
+    positions = atoms.get("positions")
+    cell = atoms.get("cell")
+    if not isinstance(numbers, list) or not isinstance(positions, list):
+        raise ValueError("C2DB atoms record is missing numbers/positions")
+    if not isinstance(cell, list) or len(numbers) != len(positions):
+        raise ValueError("C2DB atoms record has invalid cell or site count")
+    try:
+        labels = [str(Element.from_Z(int(value))) for value in numbers]
+        return Structure(
+            Lattice(cell),
+            labels,
+            positions,
+            coords_are_cartesian=True,
+            to_unit_cell=False,
+        )
+    except (TypeError, ValueError) as exc:
+        raise ValueError("C2DB atoms record could not be parsed") from exc
+
+
+def _optional_float(value: Any) -> float | None:
+    if value is None or str(value).strip() == "":
+        return None
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if math.isfinite(parsed) else None

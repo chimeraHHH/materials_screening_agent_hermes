@@ -50,9 +50,13 @@ from material_agent.orchestrator.storage import (
     RepositoryConflictError,
 )
 from material_agent.retrieval.adapters import (
+    C2dbAdapter,
     InMemoryMaterialsAdapter,
     MaterialsProjectAdapter,
+    Mc3dAdapter,
+    NimsSuperconAdapter,
     NomadAdapter,
+    TopologicalQuantumChemistryAdapter,
 )
 from material_agent.retrieval.models import (
     EvidenceLevel,
@@ -1968,11 +1972,16 @@ class OrchestratorGraph:
                 SourceDatabase.MATERIALS_PROJECT.value,
             )
         )
-        retrieval_source_label = (
-            "Materials Project"
-            if retrieval_source is SourceDatabase.MATERIALS_PROJECT
-            else "NOMAD"
-        )
+        retrieval_source_label = {
+            SourceDatabase.MATERIALS_PROJECT: "Materials Project",
+            SourceDatabase.NOMAD: "NOMAD",
+            SourceDatabase.MC3D: "Materials Cloud MC3D",
+            SourceDatabase.C2DB: "C2DB",
+            SourceDatabase.TOPOLOGICAL_QUANTUM_CHEMISTRY: (
+                "Topological Quantum Chemistry"
+            ),
+            SourceDatabase.NIMS_SUPERCON: "NIMS MDR SuperCon",
+        }[retrieval_source]
         report = {
             "schema_version": ORCHESTRATOR_REPORT_VERSION,
             "project_id": state["project_id"],
@@ -2313,10 +2322,17 @@ class OrchestratorGraph:
                 task_metadata=fixture.get("task_metadata", {}),
                 source_database=policy.source_database,
             )
-        elif policy.source_database is SourceDatabase.NOMAD:
-            adapter = NomadAdapter()
         else:
-            adapter = MaterialsProjectAdapter()
+            adapter = {
+                SourceDatabase.MATERIALS_PROJECT: MaterialsProjectAdapter,
+                SourceDatabase.NOMAD: NomadAdapter,
+                SourceDatabase.MC3D: Mc3dAdapter,
+                SourceDatabase.C2DB: C2dbAdapter,
+                SourceDatabase.TOPOLOGICAL_QUANTUM_CHEMISTRY: (
+                    TopologicalQuantumChemistryAdapter
+                ),
+                SourceDatabase.NIMS_SUPERCON: NimsSuperconAdapter,
+            }[policy.source_database]()
         return RetrievalStageRunner(
             adapter=adapter,
             artifact_store=self.store,

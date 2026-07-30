@@ -104,7 +104,7 @@ def normalize_candidate(
         "retrieval_policy_version": query_plan.policy_version,
         "summary_formula": document.get("formula_pretty"),
     }
-    if query_plan.source_database is SourceDatabase.NOMAD:
+    if query_plan.source_database is not SourceDatabase.MATERIALS_PROJECT:
         provenance["source_provenance"] = document.get("source_provenance", {})
     return record_class(
         candidate_id=candidate_id_for(

@@ -105,6 +105,67 @@
   `minimum_nonnegative_reported_gap-v1` 选择最小非负值并保留选择 provenance；
 - 尚未实现跨库合并、fallback 或去重；这是“单次运行选择单一来源”的刻意边界。
 
+### 当前任务：P1 公共数据库扩展（2026-07-30）
+
+范围：
+
+- 保持“单次 Run 只选择一个来源”，在现有 Materials Project/NOMAD 之外接入
+  `mc3d`、`c2db`、`topological_quantum_chemistry` 和受限的
+  `nims_supercon`；
+- MC3D 使用公开 OPTIMADE 1.2 结构接口；C2DB 使用官方只读检索页和逐材料 JSON
+  下载；TQC 使用站点公开配置所指向的 v4 搜索/v1 详情 API；
+- NIMS 用户给定链接是 MDR SuperCon Datasheet，不包含晶体结构。允许检索和归档
+  版本化元数据，但必须将记录标记为结构缺失、不得发布给 Agent02；
+- Atomly 当前公开说明 API 仅供内部测试和合作者使用。在取得授权 API 文档与凭据
+  前不实现网页反向工程或批量抓取，并把该项记录为外部阻塞；
+- 新来源均复用 `agent01-contract-v2`，不修改 MP v1 冻结 fixture，不跨库补齐缺失
+  性质，不把拓扑分类、SuperCon 文献 Tc 或数据库 DFT 值提升为更高证据等级。
+
+依赖：
+
+- 只复用主环境已锁定的 `requests`、`pymatgen` 和 Python 标准库，不新增依赖；
+- 所有默认测试使用 fake HTTP response，不访问网络；live 探针若增加必须显式 opt-in；
+- 外部 API/网页没有稳定 release snapshot 时记录 API/数据集版本、endpoint、许可和
+  获取限制，schema drift 时 fail closed。
+
+验收标准：
+
+1. CLI 与 Orchestrator 能显式选择新增来源，且同一 Run 不混合来源；
+2. MC3D/C2DB/TQC 的元素、结构和可安全映射性质保留来源、单位、方法与 L1 ceiling；
+3. 不支持的硬约束保持本地 `MISSING/UNCERTAIN`，NIMS 无结构记录为 `FAILED` 且不发布；
+4. 覆盖查询构造、分页、结构映射、schema drift、零结果、429/5xx 和来源身份测试；
+5. MP v1 frozen contract、NOMAD v2 与 Agent02 兼容性无回归；
+6. 相关测试、完整离线 Gate、`pip check` 与 `git diff --check` 通过，并记录真实证据。
+
+实现结果：
+
+- [x] 新增 `mc3d`、`c2db`、`topological_quantum_chemistry` 和
+      `nims_supercon` source selection、policy、CLI/Orchestrator factory 与报告标签；
+- [x] MC3D 使用 PBE-v1 OPTIMADE 1.2 分页结构查询；真实受限 probe 返回并解析 100 条
+      Si/O 结构，带隙、凸包能和金属标记保持缺失；
+- [x] C2DB 使用官方 search session、确定性分页和逐 UID ASE JSON；真实固定 Si/O
+      条件为零结果，补充 Mo/S probe 成功映射 25 条结构、PBE gap/ehull；
+- [x] TQC 使用公开配置所指向的 v4 search/v1 detail，保存 ICSD、SOC、拓扑分类和
+      指数 provenance；历史无效 CIF 按单记录结构失败处理；
+- [x] NIMS SuperCon 固定 DOI `10.48505/nims.4487`/Ver.240322，解析双行 TSV header；
+      真实 probe 找到 9 条 Si/O 记录，全部明确无原子坐标并通过测试证明不发布下游；
+- [x] Atomly 未接入：公开站点说明 API 仅供内部测试和合作者使用，当前缺授权 API
+      文档/凭据；未反向工程私有接口或批量抓取；
+- [x] 新增 fake HTTP/schema/映射、结构缺失下游阻断和全部非 MP CLI source 测试；
+      完整离线 Gate `423 passed, 9 skipped`，`pip check` 无破损依赖，
+      `git diff --check` 通过。
+
+剩余限制：
+
+- TQC 真实 25 条 probe 在多次详情请求后被远端代理断开；缩小到 3 条重试仍被该代理
+  拒绝。此前已验证搜索与单条详情 schema，离线映射测试通过，但正式 live release
+  Gate 尚未建立；
+- C2DB/TQC 是官方站点的版本化/只读接口，但没有可验证的不可变数据库 release；
+  默认扫描上限分别保守设为 200 和 25，并在达到上限时报告截断；
+- NIMS SuperCon 是性质/文献数据表而非晶体结构库，当前只用于检索审计，不是
+  Agent02 候选来源；
+- 尚未实现跨库联合检索、fallback 或跨库去重；每个 Run 继续只冻结一个来源。
+
 ## 0. 当前实施进度
 
 当前状态：**Agent 01 P0 与第 8 节增强 Gate 已完成；Materials Project 公共契约继续

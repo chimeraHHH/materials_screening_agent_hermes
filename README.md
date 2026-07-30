@@ -1,7 +1,7 @@
 # Material Screening Agent
 
 This repository implements the durable Orchestrator P0.2 control plane,
-the deterministic Materials Project/NOMAD retrieval stage, and explicitly
+the deterministic single-source public-database retrieval stage, and explicitly
 test-only mock control adapters for the downstream stages described in
 `plans/subagents/material-screening-orchestrator-plan.md` and
 `plans/subagents/material-screening-agent01-plan.md`.
@@ -475,7 +475,18 @@ preparing or submitting it again.
 ## Run Agent 01 standalone
 
 Each run selects exactly one retrieval source. Materials Project remains the
-default; choose the public, read-only NOMAD API explicitly:
+default. The available `--source` values are:
+
+| Source | Interface | Safely mapped properties | Important limit |
+|---|---|---|---|
+| `materials_project` | official `mp-api` | structure, band gap, hull energy, metal flag | requires `MP_API_KEY` |
+| `nomad` | public Archive API | structure, reported band gap | no MP-equivalent hull field |
+| `mc3d` | Materials Cloud OPTIMADE 1.2, PBE-v1 | relaxed 3D structure | band gap/hull/metal remain missing |
+| `c2db` | official search plus per-material JSON | 2D structure, PBE gap, C2DB hull energy | CC BY-NC 4.0; live web snapshot is not immutable |
+| `topological_quantum_chemistry` | public v4 search and v1 detail API | ICSD structure and topology provenance | topology is not promoted above L1; historical invalid CIFs fail per record |
+| `nims_supercon` | MDR SuperCon Ver.240322 TSV | formula, elements, Tc metadata/provenance | no atomic coordinates; records fail the structure Gate and are not published |
+
+For example, choose the public, read-only NOMAD API explicitly:
 
 ```bash
 material-agent retrieval \
@@ -493,9 +504,18 @@ Materials Project `energy_above_hull`; when that property is required it stays
 missing and the candidate is `UNCERTAIN`. A run never fills missing NOMAD
 properties from Materials Project.
 
+MC3D, C2DB, TQC, and NIMS retrieval also require no secret. Unsupported
+properties are never filled from another source. The NIMS source is useful for
+auditing SuperCon metadata only: Agent01's structure-required downstream
+contract intentionally marks every structureless record `FAILED`.
+
+Atomly is not a selectable source. Its public site currently states that API
+access is limited to internal testing and collaborators; an authorized API
+contract is required before Agent01 can automate it.
+
 For the deterministic offline fixture, add
 `--fixture tests/fixtures/mp-summary.si-o.json`; fixture results remain
-`is_mock=true` even when exercising `--source nomad`.
+`is_mock=true` when exercising any `--source` value.
 
 The output is written below the selected Artifact Store root. The authoritative
 candidate manifest is run-scoped:
@@ -523,9 +543,9 @@ MPLCONFIGDIR=/tmp/material-agent-mpl \
 
 The historical P0.1/P0.2 and v1-closeout commits are retained for traceability.
 After the closeout, the current `main` branch added the DeepSeek Stage 0
-provider, NOMAD retrieval source, Agent02 benchmark/DeepH control flows, and
-the Agent03 structured VASPilot bridge PoC. The current offline Gate reports
-`413 passed, 9 skipped, 142 warnings`; skips are the explicit live LLM, live
+provider, additional Agent01 retrieval sources, Agent02 benchmark/DeepH control
+flows, and the Agent03 structured VASPilot bridge PoC. The current offline Gate
+reports `423 passed, 9 skipped, 158 warnings`; skips are the explicit live LLM, live
 Materials Project, live NOMAD, and real-ML/Metal tests. The warnings are known
 pymatgen deprecation warnings and do not indicate test failures. Real-ML tests
 are never part of the offline Gate. On a non-sandboxed target Mac, the
@@ -563,7 +583,7 @@ PYTHONDONTWRITEBYTECODE=1 MPLCONFIGDIR=/tmp/material-agent-mpl \
 ## Agent 01 contracts
 
 The frozen Materials Project contract remains `agent01-contract-v1`, including
-its byte-reproducible fixture. NOMAD candidates and envelopes use
+its byte-reproducible fixture. Every non-MP source uses
 `agent01-contract-v2` so the source identity is explicit without changing the
 v1 schema. Orchestrators should use the explicit lifecycle:
 
@@ -613,7 +633,7 @@ git diff --check
 ```
 
 The historical closeout result was `337 passed, 7 skipped`. The current
-post-closeout result is `413 passed, 9 skipped`; the additional skips are the
+post-closeout result is `423 passed, 9 skipped`; the additional skips are the
 explicit live LLM and live NOMAD probes. Do not run the live MP Gate in this
 offline audit: it requires network access and a secret `MP_API_KEY`, neither of
 which is needed for the offline baseline.

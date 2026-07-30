@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from material_agent.cli import main
 from material_agent.retrieval.models import RetrievalStageInput, StageStatus
 from material_agent.retrieval.runner import RetrievalStageRunner
@@ -101,8 +103,18 @@ def test_offline_cli_writes_run_scoped_manifest(
     ).is_file()
 
 
-def test_offline_cli_selects_nomad_as_the_only_source(
-    tmp_path: Path, capsys
+@pytest.mark.parametrize(
+    "source",
+    [
+        "nomad",
+        "mc3d",
+        "c2db",
+        "topological_quantum_chemistry",
+        "nims_supercon",
+    ],
+)
+def test_offline_cli_selects_one_non_mp_source(
+    tmp_path: Path, capsys, source: str
 ) -> None:
     fixture_dir = Path(__file__).parents[1] / "fixtures"
     exit_code = main(
@@ -115,11 +127,11 @@ def test_offline_cli_selects_nomad_as_the_only_source(
             "--output",
             str(tmp_path),
             "--project-id",
-            "project-cli-nomad",
+            f"project-cli-{source}",
             "--run-id",
-            "run-cli-nomad",
+            f"run-cli-{source}",
             "--source",
-            "nomad",
+            source,
         ]
     )
     captured = capsys.readouterr()
@@ -131,18 +143,18 @@ def test_offline_cli_selects_nomad_as_the_only_source(
             tmp_path
             / "stages"
             / "agent01"
-            / "run-cli-nomad"
+            / f"run-cli-{source}"
             / "query_plan.json"
         ).read_text(encoding="utf-8")
     )
-    assert query_plan["source_database"] == "nomad"
+    assert query_plan["source_database"] == source
     manifest = json.loads(
         (
             tmp_path
             / "stages"
             / "agent01"
-            / "run-cli-nomad"
+            / f"run-cli-{source}"
             / "candidate_manifest.jsonl"
         ).read_text(encoding="utf-8")
     )
-    assert manifest["source_database"] == "nomad"
+    assert manifest["source_database"] == source

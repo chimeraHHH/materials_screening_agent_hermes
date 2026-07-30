@@ -12,9 +12,13 @@ from typing import Any
 from material_agent.orchestrator.parser import requirement_parser_from_environment
 from material_agent.orchestrator.runtime import OrchestratorRuntime
 from material_agent.retrieval.adapters import (
+    C2dbAdapter,
     InMemoryMaterialsAdapter,
     MaterialsProjectAdapter,
+    Mc3dAdapter,
+    NimsSuperconAdapter,
     NomadAdapter,
+    TopologicalQuantumChemistryAdapter,
 )
 from material_agent.retrieval.models import (
     Requirement,
@@ -407,10 +411,17 @@ def _run_retrieval(arguments: argparse.Namespace) -> int:
             task_metadata=fixture_payload.get("task_metadata", {}),
             source_database=source,
         )
-    elif source is SourceDatabase.NOMAD:
-        adapter = NomadAdapter()
     else:
-        adapter = MaterialsProjectAdapter()
+        adapter = {
+            SourceDatabase.MATERIALS_PROJECT: MaterialsProjectAdapter,
+            SourceDatabase.NOMAD: NomadAdapter,
+            SourceDatabase.MC3D: Mc3dAdapter,
+            SourceDatabase.C2DB: C2dbAdapter,
+            SourceDatabase.TOPOLOGICAL_QUANTUM_CHEMISTRY: (
+                TopologicalQuantumChemistryAdapter
+            ),
+            SourceDatabase.NIMS_SUPERCON: NimsSuperconAdapter,
+        }[source]()
 
     policy = retrieval_policy_for_source(source)
     stage_input = RetrievalStageInput(

@@ -80,6 +80,10 @@ class RankingMode(StrEnum):
 class SourceDatabase(StrEnum):
     MATERIALS_PROJECT = "materials_project"
     NOMAD = "nomad"
+    MC3D = "mc3d"
+    C2DB = "c2db"
+    TOPOLOGICAL_QUANTUM_CHEMISTRY = "topological_quantum_chemistry"
+    NIMS_SUPERCON = "nims_supercon"
 
 
 class NumericRange(StrictModel):
