@@ -53,6 +53,23 @@ live MP、五个 real-ML/Metal opt-in）；`pip check` 和 `git diff --check` �
 fixture/mock 继续显式 `is_mock=true`、空 observables、不得晋级 L4；未运行 live MP、
 网络或真实多体求解。benchmark 与真实 solver/backend 不属于本次 P2 系统收尾。
 
+调研接入起点（2026-07-30）：新增 `many_body.research_catalog`，将调研 bundle 中优先的
+QMC/ALF、DMRG/TeNPy 和 DMFT/TRIQS solid_dmft + cthyb 固化为带版本、官方来源、方法质量门
+和限制的研究元数据，并纳入 registry snapshot。新增的
+`qmc/alf-v2.4-planned`、`dmrg/tenpy-v1-planned` 和
+`dmft/solid-dmft-triqs4-planned` 均保持 `PLANNED/registered=false/executable=false`；
+它们只能参与确定性适用性说明，不能提交任务或产生科学结果。当前单带零温有限图 fixture
+可匹配 QMC/DMRG；DMFT 因尚无周期材料、有限温、correlated-subspace、U/J 和 double-counting
+输入契约而保持不适用。已有 `SolverCapability` 增加 `method_family` 和可选
+`research_catalog_id`，保持向后兼容。
+
+测试证据：Agent04 定向回归 `47 passed`；未安装、导入或运行 ALF、TeNPy、TRIQS/solid_dmft
+或其他真实 solver。下一步仍需在冻结科学目标、环境/许可证、输入输出 schema、benchmark 和
+专家审批后，分别实现 QMC/DMRG/DMFT backend；不得把 planned capability 改成生产能力。
+仓库完整离线 Gate 本次为 `442 passed, 9 skipped, 1 failed`；唯一失败来自工作树中已有的
+Agent02 ALIGNN 流程测试 `tests/integration/test_agent02_alignn_flow.py`，错误消息断言与
+实现不一致，未触及 Agent04 文件。`pip check` 和 `git diff --check` 通过。
+
 ## 0. 执行结论
 
 Agent 04 不应被设计成“LLM 看一眼材料，然后自动选择并运行 DMFT/DMRG/ED”的自治科研 Agent。它应当是一个受版本化科学政策、严格数据契约、能力注册表和人工审批约束的多体计算控制器。
