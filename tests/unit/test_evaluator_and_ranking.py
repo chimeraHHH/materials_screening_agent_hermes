@@ -200,6 +200,14 @@ def test_default_ranking_does_not_add_scientific_preference() -> None:
     assert [candidate.source_material_id for candidate in published] == ["mp-1", "mp-2"]
 
 
+def test_uncertain_candidates_are_kept_in_audit_but_not_published() -> None:
+    uncertain = make_candidate("mp-uncertain", band_gap=None)
+    updated, published = rank_and_publish([uncertain], [], 10)
+    assert published == []
+    assert updated[0].published_downstream is False
+    assert updated[0].publication_rank is None
+
+
 def test_explicit_stability_ranking_is_applied() -> None:
     first = make_candidate("mp-2", band_gap=0.7, hull=0.001).model_copy(
         update={"decision": Decision.PASS}

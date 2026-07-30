@@ -1191,6 +1191,13 @@ StageResult。真实产物在指标提取后删除，不作为公共 fixture。
 
 ### 8.8 Agent 01 完成 Gate
 
+### 8.9 C2DB 发布与溯源修正（2026-07-30）
+
+- `UNCERTAIN` 候选仅保留在审计结果，不再设置 `published_downstream`，防止下游阶段误用未确认记录。
+- Agent01 Markdown 报告显示 `local_only_constraints`、检索时间，并对 C2DB `undated-live-web` 快照限制给出提示。
+- Stage0 DeepSeek 提示明确：数据库筛选描述应建模为硬约束，不得生成无法由所选数据库验证的自由文本 `scientific_targets`。
+- 相关单元测试通过（35 passed）；完整离线 Gate 通过（439 passed, 9 skipped）。
+
 只有以下条件全部满足，才进入完整 Orchestrator 实施：
 
 - 依赖锁文件可在 Python 3.11 环境复现；

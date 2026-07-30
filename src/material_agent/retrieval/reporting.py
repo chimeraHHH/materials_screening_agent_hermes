@@ -49,6 +49,7 @@ def build_report(
             "database_version": query_plan.database_version,
             "client_version": query_plan.client_version,
             "endpoint": query_plan.endpoint,
+            "retrieved_at": query_plan.created_at.isoformat(),
             "pushdown_filters": query_plan.pushdown_filters,
             "local_only_constraints": query_plan.local_only_constraints,
             "include_gnome": query_plan.include_gnome,
@@ -71,7 +72,7 @@ def build_report(
                 [
                     candidate
                     for candidate in candidates
-                    if candidate.decision in {Decision.PASS, Decision.UNCERTAIN}
+                    if candidate.decision is Decision.PASS
                 ]
             )
             > query_plan.max_candidates_published,
@@ -133,6 +134,7 @@ def report_to_markdown(report: dict[str, Any]) -> str:
         "",
         f"- Stage 状态：`{report['status']}`",
         f"- 数据库版本：`{query['database_version']}`",
+        f"- 检索时间：`{query['retrieved_at']}`",
         f"- Query ID：`{query['query_id']}`",
         f"- Query fingerprint：`{query['query_fingerprint']}`",
         f"- GNoME：`{query['include_gnome']}`",
@@ -152,15 +154,37 @@ def report_to_markdown(report: dict[str, Any]) -> str:
         "",
         "## 查询",
         "",
-        "```json",
-        _pretty_json(query["pushdown_filters"]),
-        "```",
+        "### 本地复核约束",
         "",
-        "## 发布候选",
-        "",
-        f"| Rank | {source_id_label} | Formula | Decision | Missing evidence |",
-        "|---:|---|---|---|---|",
     ]
+    local_constraints = query.get("local_only_constraints", [])
+    if local_constraints:
+        lines.extend(f"- `{constraint}`" for constraint in local_constraints)
+    else:
+        lines.append("- 无（全部约束已下推到数据库查询）")
+    if source is SourceDatabase.C2DB and query["database_version"].endswith("undated-live-web"):
+        lines.extend(
+            [
+                "",
+                "> C2DB 使用实时 Web 数据；当前接口未提供可固定的数据快照版本。",
+                "> 相同查询未来可能因数据库更新而返回不同记录。",
+            ]
+        )
+    lines.extend(
+        [
+            "",
+            "### 远程查询条件",
+            "",
+            "```json",
+            _pretty_json(query["pushdown_filters"]),
+            "```",
+            "",
+            "## 发布候选",
+            "",
+            f"| Rank | {source_id_label} | Formula | Decision | Missing evidence |",
+            "|---:|---|---|---|---|",
+        ]
+    )
     for candidate in report["published_candidates"]:
         missing = ", ".join(candidate["missing_evidence"]) or "—"
         lines.append(

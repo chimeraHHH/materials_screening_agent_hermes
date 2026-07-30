@@ -25,11 +25,9 @@ def rank_and_publish(
     preferences: list[RankingPreference],
     max_candidates: int,
 ) -> tuple[list[CandidateAuditRecord], list[CandidateAuditRecord]]:
-    eligible = [
-        candidate
-        for candidate in candidates
-        if candidate.decision in {Decision.PASS, Decision.UNCERTAIN}
-    ]
+    # Only deterministic PASS records are safe to hand to downstream stages.
+    # UNCERTAIN records remain in the audit output, but are not published.
+    eligible = [candidate for candidate in candidates if candidate.decision is Decision.PASS]
     eligible.sort(key=lambda candidate: ranking_key(candidate, preferences))
     published_ids = {
         candidate.candidate_id for candidate in eligible[:max_candidates]
@@ -90,4 +88,3 @@ def _property_value(candidate: CandidateAuditRecord, name: str) -> float | int |
             if isinstance(prop.value, (float, int)):
                 return prop.value
     return None
-

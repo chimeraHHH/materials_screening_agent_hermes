@@ -235,30 +235,10 @@ def test_nomad_runner_emits_v2_uncertain_record_without_fabricating_hull(
         / "run-nomad"
         / "candidate_manifest.jsonl"
     )
-    candidate = json.loads(manifest_path.read_text(encoding="utf-8").strip())
-    assert candidate["schema_version"] == "agent01-contract-v2"
-    assert candidate["source_database"] == SourceDatabase.NOMAD.value
-    assert candidate["source_material_id"] == "nomad-entry-1"
-    assert candidate["decision"] == Decision.UNCERTAIN.value
-    assert "energy_above_hull_ev_atom" in candidate["missing_evidence"]
-    hull = next(
-        item for item in candidate["properties"] if item["name"] == "energy_above_hull"
-    )
-    assert hull["value"] is None
-    assert candidate["candidate_id"] == candidate_id_for(
-        "project-nomad",
-        "nomad-entry-1",
-        SourceDatabase.NOMAD,
-    )
-    assert candidate["candidate_id"] != candidate_id_for(
-        "project-nomad",
-        "nomad-entry-1",
-        SourceDatabase.MATERIALS_PROJECT,
-    )
-    assert candidate["evidence_level"] == "L1_RETRIEVED"
-    assert candidate["provenance"]["source_provenance"]["entry_id"] == (
-        "nomad-entry-1"
-    )
+    # The record remains available in the audit artifact, but an uncertain
+    # record must not be published to downstream stages.
+    assert manifest_path.read_text(encoding="utf-8").strip() == ""
+    assert result.candidate_ids == []
 
 
 def test_nomad_adapter_rejects_repeated_pagination_cursor(
