@@ -59,6 +59,42 @@ store 注入 `MP_API_KEY`。
 - [x] 相关测试 `19 passed`；完整离线 Gate `429 passed, 9 skipped`；`pip check` 和
       `git diff --check` 通过。未运行需网络的 `live_mp` release Gate。
 
+### TQC 真实检索回归修复（2026-07-30）
+
+范围：修复真实 TQC Bi/Te Run 暴露的三个 Agent01 边界问题：(1) CIF 中带氧化态的
+`Species` 必须规范化为元素符号，不能将 `Bi3+`/`Te2-` 误判为缺少 `Bi`/`Te`；(2) 对
+明确命名为 `Topological materials` 的 L1 target，使用 TQC provenance 的非 trivial 分类、
+SOC 标记和非空拓扑指数建立保守的数据库标签判定，保留其 L1 ceiling；(3) TQC search
+绝不能超过冻结 `max_records_scanned`。不得把 TQC 标签提升为实验、ML、DFT 或拓扑证明，
+不得更改 MP v1 fixture 或跨库契约。
+
+验收：新增 TQC Adapter/Runner 离线回归覆盖氧化态元素、target 的 `PASS` 与 trivial 的
+`REJECT`、以及跨 `similarICSD` item 的严格上限；相关 source/Orchestrator 测试、完整离线
+Gate、`pip check`、`git diff --check` 通过。对已有 `tqc-dialog-001` 的 Artifact 不做
+就地改写；修复后使用新的 Run ID 重新联网验证。
+
+真实验证补充：TQC 网络连接失败发生在 Agent01 `prepare`（metadata）阶段时，控制面必须
+把该已尝试编号写入 retry counter；否则用户批准重试会将不同 operation key 写入同一个
+不可变 stage-attempt。此修复只纠正 attempt 计数与审计，不能掩盖网络失败或重复使用先前
+的数据库结果。
+
+实现结果：
+
+- [x] TQC 从 CIF Structure 提取元素时兼容 `Element` 与带氧化态 `Species`，统一发布裸
+      元素符号；Bi/Te 过滤不再被 `Bi3+`/`Te2-` 误拒绝；
+- [x] `Topological materials` L1 target 仅在 TQC 记录同时具有非 `trivial` 分类、`soc=true`
+      和非空拓扑指数时通过；`trivial` 标签明确 `REJECT`，缺任一字段保持 `UNCERTAIN`；
+      这只是 TQC 数据库标签，不提升至实验、ML、DFT 或拓扑证明；
+- [x] TQC 在一个 `similarICSD` item 达到上限后停止外层遍历，并在详情请求前再次切片，
+      保证不超过 `max_records_scanned`；
+- [x] Agent01 prepare 阶段的 retry 记录 attempt，重试不会因复用 attempt 1 的不可变
+      operation key 失败；
+- [x] source/runner/Orchestrator/contract 回归与完整离线 Gate 为 `438 passed, 9 skipped`，
+      `pip check`、`git diff --check` 通过；
+- [ ] 使用原冻结 DeepSeek Requirement 的两个新真实 TQC Run 均在远端 metadata 调用返回
+      `ConnectionError`；第二次 Run 的人工 retry 已进入 attempt 2 且安全暂停，证明重试
+      控制修复有效，但不构成成功的联网候选复验。
+
 ### 当前任务：P1 单数据源 NOMAD 接入（2026-07-29）
 
 范围：

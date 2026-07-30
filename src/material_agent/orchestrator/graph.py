@@ -1050,6 +1050,7 @@ class OrchestratorGraph:
             f"attempt-{attempt}.json"
         )
         has_frozen_plan = self.store.exists(plan_relative_path)
+        retry_counters = dict(state.get("retry_counters", {}))
         try:
             if has_frozen_plan:
                 plan_ref = self.store.inspect(
@@ -1083,6 +1084,10 @@ class OrchestratorGraph:
             )
             return {
                 "pending_control_outcome": outcome.model_dump(mode="json"),
+                "retry_counters": {
+                    **retry_counters,
+                    route.agent_id: attempt,
+                },
                 "updated_at": self._now(),
             }
         try:
@@ -1100,6 +1105,10 @@ class OrchestratorGraph:
             )
             return {
                 "pending_control_outcome": outcome.model_dump(mode="json"),
+                "retry_counters": {
+                    **retry_counters,
+                    route.agent_id: attempt,
+                },
                 "updated_at": self._now(),
             }
         if not self.store.exists(plan_relative_path):

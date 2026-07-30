@@ -57,6 +57,7 @@ def normalize_candidate(
 ) -> CandidateRecord:
     material_id = str(document["material_id"])
     origins = _origin_map(document.get("origins"))
+    source_provenance = document.get("source_provenance", {})
     properties = [
         _property(
             name="band_gap",
@@ -91,6 +92,15 @@ def normalize_candidate(
             retrieved_at=retrieved_at,
         ),
     ]
+    if query_plan.source_database is SourceDatabase.TOPOLOGICAL_QUANTUM_CHEMISTRY:
+        properties.extend(
+            _tqc_topology_properties(
+                source_provenance=source_provenance,
+                origins=origins,
+                plan=query_plan,
+                retrieved_at=retrieved_at,
+            )
+        )
     record_class = (
         CandidateAuditRecord
         if query_plan.source_database is SourceDatabase.MATERIALS_PROJECT
@@ -105,7 +115,7 @@ def normalize_candidate(
         "summary_formula": document.get("formula_pretty"),
     }
     if query_plan.source_database is not SourceDatabase.MATERIALS_PROJECT:
-        provenance["source_provenance"] = document.get("source_provenance", {})
+        provenance["source_provenance"] = source_provenance
     return record_class(
         candidate_id=candidate_id_for(
             project_id,
@@ -273,6 +283,75 @@ def _property(
     )
 
 
+def _tqc_topology_properties(
+    *,
+    source_provenance: Any,
+    origins: dict[str, str],
+    plan: RetrievalQueryPlan,
+    retrieved_at: datetime,
+) -> list[PropertyValue]:
+    """Expose a narrow TQC database label without promoting its evidence level."""
+
+    provenance = (
+        source_provenance if isinstance(source_provenance, dict) else {}
+    )
+    classification = provenance.get("topological_classification")
+    short_description = (
+        classification.get("shortDescription")
+        if isinstance(classification, dict)
+        else None
+    )
+    classification_label = (
+        str(short_description).strip() if short_description is not None else None
+    )
+    if not classification_label:
+        classification_label = None
+    indices = provenance.get("topological_indices")
+    index_items = indices.get("items") if isinstance(indices, dict) else None
+    soc = provenance.get("soc")
+    labeled_topological: bool | None
+    if not isinstance(soc, bool) or not isinstance(index_items, list):
+        labeled_topological = None
+    else:
+        labeled_topological = bool(
+            classification_label
+            and classification_label.casefold() != "trivial"
+            and soc
+            and index_items
+        )
+    task_id = origins.get("structure")
+    origin = PropertyOrigin(
+        endpoint=plan.endpoint,
+        database_version=plan.database_version,
+        origin_task_id=task_id,
+        status=(
+            ProvenanceStatus.PARTIAL
+            if task_id
+            else ProvenanceStatus.UNRESOLVED
+        ),
+    )
+    return [
+        PropertyValue(
+            name="tqc_topological_classification",
+            value=classification_label,
+            unit="database_label",
+            source=plan.source_database.value,
+            method="TQC classification provenance v1",
+            evidence_level=EvidenceLevel.L1_RETRIEVED,
+            origin=origin,
+            retrieved_at=retrieved_at,
+        ),
+        PropertyValue(
+            name="tqc_topological_material_label",
+            value=labeled_topological,
+            unit="dimensionless",
+            source=plan.source_database.value,
+            method="TQC classification provenance v1",
+            evidence_level=EvidenceLevel.L1_RETRIEVED,
+            origin=origin,
+            retrieved_at=retrieved_at,
+        ),
+    ]
 def _origin_map(raw_origins: Any) -> dict[str, str]:
     output: dict[str, str] = {}
     for raw in raw_origins or []:

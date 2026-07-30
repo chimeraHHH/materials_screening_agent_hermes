@@ -767,9 +767,14 @@ class TopologicalQuantumChemistryAdapter:
                         icsd_ids.append(identifier)
                     if len(icsd_ids) >= plan.max_records_scanned:
                         break
+                if len(icsd_ids) >= plan.max_records_scanned:
+                    break
             page += 1
         return sorted(
-            [self._detail(identifier) for identifier in icsd_ids],
+            [
+                self._detail(identifier)
+                for identifier in icsd_ids[: plan.max_records_scanned]
+            ],
             key=lambda item: str(item["material_id"]),
         )
 
@@ -821,7 +826,7 @@ class TopologicalQuantumChemistryAdapter:
             }
         )
         if structure is not None:
-            elements = sorted({str(site.specie) for site in structure})
+            elements = sorted({_element_symbol(site.specie) for site in structure})
         if not elements:
             raise ValueError(f"TQC ICSD {icsd_id} is missing element identities")
         topological = payload.get("topologicalClassification")
@@ -1462,6 +1467,16 @@ def _optional_float(value: Any) -> float | None:
     except (TypeError, ValueError):
         return None
     return parsed if math.isfinite(parsed) else None
+
+
+def _element_symbol(specie: Any) -> str:
+    """Return a bare element symbol for either pymatgen Element or Species."""
+
+    element = getattr(specie, "element", specie)
+    symbol = getattr(element, "symbol", None)
+    if not isinstance(symbol, str) or not symbol:
+        raise ValueError("structure site has no valid element symbol")
+    return symbol
 
 
 def _safe_keychain_label(value: str, label: str) -> str:

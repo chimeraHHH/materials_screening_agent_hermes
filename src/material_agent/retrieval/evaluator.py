@@ -26,6 +26,7 @@ SUPPORTED_TARGET_PROPERTIES = {
     "dimensionality": "structural_dimensionality",
     "nonmetal": "is_metal",
 }
+TQC_TOPOLOGICAL_TARGET = "topological_materials"
 
 
 def evaluate_candidate(
@@ -192,8 +193,13 @@ def evaluate_candidate(
         for item in target_evaluations
         if item.result in {ConstraintResult.MISSING, ConstraintResult.ERROR}
     ]
+    target_mismatch = [
+        item
+        for item in target_evaluations
+        if item.result is ConstraintResult.MISMATCH
+    ]
 
-    if mismatch:
+    if mismatch or target_mismatch:
         decision = Decision.REJECT
     elif missing or target_missing:
         decision = Decision.UNCERTAIN
@@ -205,7 +211,9 @@ def evaluate_candidate(
         for item in evaluations
         if item.result is ConstraintResult.MATCH
     ]
-    unmatched = [item.constraint_id for item in mismatch]
+    unmatched = [item.constraint_id for item in mismatch] + [
+        f"scientific_target:{item.name}" for item in target_mismatch
+    ]
     missing_evidence = [
         item.constraint_id for item in missing
     ] + [f"scientific_target:{item.name}" for item in target_missing]
@@ -282,7 +290,14 @@ def _evaluate_scientific_target(
             result=ConstraintResult.MISSING,
             reason_code="SCIENTIFIC_TARGET_REQUIRES_DOWNSTREAM_EVIDENCE",
         )
-    property_name = SUPPORTED_TARGET_PROPERTIES.get(target.name)
+    target_key = (
+        str(target.name).casefold().replace("-", "_").replace(" ", "_")
+    )
+    property_name = (
+        "tqc_topological_material_label"
+        if target_key == TQC_TOPOLOGICAL_TARGET
+        else SUPPORTED_TARGET_PROPERTIES.get(target.name)
+    )
     prop = _property(candidate, property_name) if property_name else None
     if not prop or prop.value is None:
         return ScientificTargetEvaluation(
@@ -290,6 +305,14 @@ def _evaluate_scientific_target(
             required_evidence_level=target.required_evidence_level,
             result=ConstraintResult.MISSING,
             reason_code="SCIENTIFIC_TARGET_UNSUPPORTED_AT_L1",
+        )
+    if property_name == "tqc_topological_material_label" and not bool(prop.value):
+        return ScientificTargetEvaluation(
+            name=target.name,
+            required_evidence_level=target.required_evidence_level,
+            result=ConstraintResult.MISMATCH,
+            reason_code="TQC_TOPOLOGICAL_LABEL_NOT_MATCHED",
+            observed_property=property_name,
         )
     return ScientificTargetEvaluation(
         name=target.name,
@@ -306,4 +329,3 @@ def _property(
     if name is None:
         return None
     return next((prop for prop in candidate.properties if prop.name == name), None)
-

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import json
 from typing import Any
 
 from material_agent.retrieval.adapters import (
@@ -10,10 +11,15 @@ from material_agent.retrieval.adapters import (
     NimsSuperconAdapter,
     TopologicalQuantumChemistryAdapter,
 )
+from material_agent.retrieval.evaluator import evaluate_candidate
 from material_agent.retrieval.models import (
+    CandidateAuditRecordV2,
+    Decision,
+    Requirement,
     RetrievalStageInput,
     SourceDatabase,
     SourceMetadata,
+    StageStatus,
 )
 from material_agent.retrieval.query import (
     MULTI_SOURCE_REQUIRED_FIELDS,
@@ -236,8 +242,8 @@ _atom_site_label
 _atom_site_fract_x
 _atom_site_fract_y
 _atom_site_fract_z
-Si Si1 0 0 0
-O O1 0.5 0.5 0.5
+Bi3+ Bi1 0 0 0
+Te2- Te1 0.5 0.5 0.5
 """
     session = FakeSession(
         [
@@ -252,7 +258,7 @@ O O1 0.5 0.5 0.5
                 {
                     "id": 44,
                     "type": "COMPOUND_SOC",
-                    "chemicalFormulaSum": "Si1 O1",
+                    "chemicalFormulaSum": "Bi1 Te1",
                     "cifContent": {"modifiedCifContent": cif},
                     "topologicalClassification": {
                         "shortDescription": "TI",
@@ -277,12 +283,200 @@ O O1 0.5 0.5 0.5
     )
     documents = adapter.search(plan)
     assert documents[0]["material_id"] == "icsd-123"
+    assert documents[0]["elements"] == ["Bi", "Te"]
     assert documents[0]["band_gap"] is None
     assert (
         documents[0]["source_provenance"]["topological_classification"][
             "shortDescription"
         ]
         == "TI"
+    )
+
+
+def test_tqc_adapter_never_resolves_more_than_frozen_scan_limit(requirement) -> None:
+    cif = """
+data_test
+_cell_length_a 3
+_cell_length_b 3
+_cell_length_c 3
+_cell_angle_alpha 90
+_cell_angle_beta 90
+_cell_angle_gamma 90
+_symmetry_space_group_name_H-M 'P 1'
+loop_
+_atom_site_type_symbol
+_atom_site_label
+_atom_site_fract_x
+_atom_site_fract_y
+_atom_site_fract_z
+Bi Bi1 0 0 0
+Te Te1 0.5 0.5 0.5
+"""
+    detail = lambda identifier: {
+        "id": identifier,
+        "chemicalFormulaSum": "Bi1 Te1",
+        "cifContent": {"modifiedCifContent": cif},
+        "topologicalClassification": {"shortDescription": "TI"},
+        "topologicalSubClassification": {"shortDescription": "SEBR"},
+        "indexCompounds": {"items": [{"value": 1}]},
+        "type": "COMPOUND_SOC",
+    }
+    session = FakeSession(
+        [
+            FakeResponse({"items": [], "totalPages": 0}),
+            FakeResponse(
+                {
+                    "items": [
+                        {"similarICSD": [101, 102]},
+                        {"similarICSD": [103, 104]},
+                    ],
+                    "totalPages": 1,
+                }
+            ),
+            FakeResponse(detail(1)),
+            FakeResponse(detail(2)),
+        ]
+    )
+    adapter = TopologicalQuantumChemistryAdapter(session=session)
+    plan = build_query_plan(
+        requirement,
+        "d" * 64,
+        adapter.metadata(),
+        retrieval_policy_for_source(
+            SourceDatabase.TOPOLOGICAL_QUANTUM_CHEMISTRY
+        ),
+    ).model_copy(update={"max_records_scanned": 2})
+
+    documents = adapter.search(plan)
+
+    assert [document["material_id"] for document in documents] == [
+        "icsd-101",
+        "icsd-102",
+    ]
+    assert len(session.calls) == 4
+
+
+def test_tqc_runner_evaluates_explicit_topological_database_label(
+    tmp_path, requirement
+) -> None:
+    cif = """
+data_test
+_cell_length_a 3
+_cell_length_b 3
+_cell_length_c 3
+_cell_angle_alpha 90
+_cell_angle_beta 90
+_cell_angle_gamma 90
+_symmetry_space_group_name_H-M 'P 1'
+loop_
+_atom_site_type_symbol
+_atom_site_label
+_atom_site_fract_x
+_atom_site_fract_y
+_atom_site_fract_z
+Bi Bi1 0 0 0
+Te Te1 0.5 0.5 0.5
+"""
+    payload = requirement.model_dump(mode="json")
+    payload["hard_constraints"] = {
+        "exact_formula": None,
+        "include_elements": ["Bi", "Te"],
+        "exclude_elements": [],
+        "band_gap_ev": None,
+        "energy_above_hull_ev_atom": None,
+        "is_metal": None,
+        "dimensionality": None,
+        "max_num_sites": None,
+    }
+    payload["scientific_targets"] = [
+        {
+            "name": "Topological materials",
+            "operational_definition": (
+                "non-trivial TQC classification with SOC and a topological index"
+            ),
+            "required_evidence_level": "L1_RETRIEVED",
+        }
+    ]
+    tqc_requirement = Requirement.model_validate(payload)
+    session = FakeSession(
+        [
+            FakeResponse({"items": [], "totalPages": 0}),
+            FakeResponse({"items": [{"similarICSD": [123]}], "totalPages": 1}),
+            FakeResponse(
+                {
+                    "id": 44,
+                    "type": "COMPOUND_SOC",
+                    "chemicalFormulaSum": "Bi1 Te1",
+                    "cifContent": {"modifiedCifContent": cif},
+                    "topologicalClassification": {"shortDescription": "TI"},
+                    "topologicalSubClassification": {"shortDescription": "SEBR"},
+                    "indexCompounds": {"items": [{"value": 1}]},
+                }
+            ),
+        ]
+    )
+    store = LocalArtifactStore(tmp_path)
+    requirement_ref = store.write_json(
+        "requirements/requirement.v1.json",
+        tqc_requirement.model_dump(mode="json"),
+        immutable=True,
+    )
+    policy = retrieval_policy_for_source(
+        SourceDatabase.TOPOLOGICAL_QUANTUM_CHEMISTRY
+    )
+    result = RetrievalStageRunner(
+        adapter=TopologicalQuantumChemistryAdapter(session=session),
+        artifact_store=store,
+        policy=policy,
+    ).run(
+        tqc_requirement,
+        RetrievalStageInput(
+            project_id="tqc-test",
+            run_id="tqc-topology-pass",
+            requirement_revision=1,
+            requirement_artifact_uri=requirement_ref.uri,
+            requirement_hash=requirement_ref.sha256,
+            retrieval_policy_version=policy.policy_version,
+            confirmed_by_user=True,
+        ),
+    )
+
+    assert result.status is StageStatus.SUCCEEDED
+    assert result.metrics["passed"] == 1
+    audit = json.loads(
+        store.read_bytes(
+            "artifact://stages/agent01/tqc-topology-pass/candidate_audit.jsonl"
+        ).decode("utf-8")
+    )
+    assert audit["elements"] == ["Bi", "Te"]
+    assert audit["decision"] == "PASS"
+    assert audit["scientific_target_evaluations"] == [
+        {
+            "name": "Topological materials",
+            "required_evidence_level": "L1_RETRIEVED",
+            "result": "MATCH",
+            "reason_code": "SCIENTIFIC_TARGET_EVIDENCE_PRESENT",
+            "observed_property": "tqc_topological_material_label",
+        }
+    ]
+    candidate = CandidateAuditRecordV2.model_validate(audit)
+    trivial = evaluate_candidate(
+        candidate.model_copy(
+            update={
+                "properties": [
+                    prop.model_copy(update={"value": False})
+                    if prop.name == "tqc_topological_material_label"
+                    else prop
+                    for prop in candidate.properties
+                ]
+            }
+        ),
+        tqc_requirement,
+        policy,
+    )
+    assert trivial.decision is Decision.REJECT
+    assert trivial.scientific_target_evaluations[0].reason_code == (
+        "TQC_TOPOLOGICAL_LABEL_NOT_MATCHED"
     )
 
 

@@ -414,6 +414,11 @@ def test_retryable_stage_failure_pauses_and_can_be_cancelled(
             "RETRY_CONFIRMATION"
         )
 
+        retried = runtime.retry(run_id="run-timeout")
+        assert retried.status is RunStatus.PAUSED
+        assert retried.stage_statuses == {"agent01": "RETRYABLE_FAILED"}
+        assert retried.interrupts[0].value["payload"]["attempt"] == 2
+
         cancelled = runtime.cancel(
             run_id="run-timeout", reason="do not retry"
         )
