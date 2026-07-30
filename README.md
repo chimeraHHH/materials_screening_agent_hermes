@@ -328,6 +328,25 @@ describe the model/overlap prerequisites. The upstream README/LICENSE and
 `setup.py` currently expose inconsistent license labels; freeze and review a
 specific upstream revision before any production deployment.
 
+### Agent02 ALIGNN property-prediction companion flow
+
+Agent02 additionally has an explicit, structure-based ALIGNN companion flow.
+It is independent from the frozen CHGNet v1 contracts and is not a default
+Orchestrator capability.  It accepts only a canonical CIF plus a caller-supplied
+and hash-verified official ALIGNN model ZIP; the worker never silently downloads
+weights.  v1 freezes the initial property choices to JARVIS-DFT OptB88-vdW or
+mBJ band-gap predictions and records the label method, model version, source
+revision and environment-lock hash.
+
+The worker runs in a dedicated Python environment, without a shell, and writes
+one JSON prediction artifact into an operation sandbox.  A successful process
+is only an ML prediction: before a frozen benchmark and applicability review,
+the result remains `evidence_level=NONE`, `benchmark_status=NOT_RUN`, and
+`scientific_conclusion=false`.  In particular it must not be described as an
+experimental band gap, a DFT result, or a thermodynamic-stability conclusion.
+The required isolated environment is pinned in `requirements-alignn.lock`; it
+must not be installed in the repository's default `.venv`.
+
 Run the Agent02 benchmark-v1 metadata-only dry-run against the existing Si
 fixture. This validates the manifest, structure hash/size and parsed metadata;
 it does not load CHGNet, evaluate reference values, or produce scientific

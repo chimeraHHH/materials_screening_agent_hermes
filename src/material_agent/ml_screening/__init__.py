@@ -44,6 +44,13 @@ from material_agent.ml_screening.deeph_models import (
     DeepHResult,
 )
 from material_agent.ml_screening.deeph_planner import build_deeph_plan
+from material_agent.ml_screening.alignn_models import (
+    AlignnExecutionPlan,
+    AlignnInferenceRequest,
+    AlignnProperty,
+    AlignnResult,
+)
+from material_agent.ml_screening.alignn_planner import build_alignn_plan
 
 __all__ = [
     "AGENT02_CONTRACT_VERSION",
@@ -79,4 +86,9 @@ __all__ = [
     "DeepHInferenceRequest",
     "DeepHResult",
     "build_deeph_plan",
+    "AlignnExecutionPlan",
+    "AlignnInferenceRequest",
+    "AlignnProperty",
+    "AlignnResult",
+    "build_alignn_plan",
 ]

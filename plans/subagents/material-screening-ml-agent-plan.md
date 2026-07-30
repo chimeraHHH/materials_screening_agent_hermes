@@ -44,6 +44,33 @@ schema 或数据库迁移；Fake/fixture 保持 `is_mock=true` 和最高 L1；�
 
 当前状态：**第 8.1–8.5 节的 P1 工程接入已完成。主环境仍不安装或导入 Torch/CHGNet/ASE；当且仅当显式 Worker 配置、lock 和 model card 校验通过时，真实 Agent02 production capability 才注册。**
 
+### ALIGNN 性质预测 companion 接入（进行中，2026-07-30）
+
+范围：新增与冻结 CHGNet v1 独立的、显式触发的 ALIGNN property-prediction
+companion flow。它只接受内容寻址的 CIF 和预先校验的 ALIGNN 权重包，通过独立
+Python worker 输出逐性质预测、模型/权重/训练标签 provenance 与适用域状态。主环境
+不得导入 Torch、DGL、ALIGNN 或其权重；不修改 Orchestrator、CHGNet v1 契约、默认
+production capability 或现有科学阈值。
+
+首个目标是 JARVIS-DFT 标签语义明确的单结构 band-gap 推理接口；formation energy
+或 `ehull` 即使未来由 ALIGNN 输出，也只能是 L2 ML 预测，绝不能表达为凸包稳定性或
+热力学证明。真实执行还依赖单独冻结的 Python/DGL/Torch/ALIGNN lock、模型 zip
+SHA-256、模型卡、适用域和课题组认可的 DFT benchmark；在这些 Gate 完成前，Fake
+结果与真实未 benchmark 结果均不得作科学结论或扩展 CHGNet 的已审计范围。
+
+验收：严格 request/plan/worker/result 契约与路径/hash/模型身份校验；无 shell 的
+独立 worker；fixture 跨进程、篡改和恢复测试；主环境轻量导入测试。真实 worker
+smoke 仅在依赖与指定权重经授权下载/配置后进行，并保持显式 opt-in。
+
+当前实现结果（2026-07-30）：已新增 `agent02-alignn-*-v1` 独立 request/plan/worker/
+result 契约、无 shell subprocess client、可复用 completion ledger 与 fake 跨进程
+回归。v1 输入为 canonical CIF 与显式 ZIP 权重 Artifact，首个性质限制为带有
+JARVIS-DFT label provenance 的 OptB88-vdW/mBJ band gap；结果固定为 `NONE` 证据，
+不注册 production capability。独立 macOS arm64/Python 3.11 环境成功解析
+`alignn==2025.4.1`、`torch==2.2.1`、`dgl==1.1.1` 并通过 `pip check`。官方 Figshare
+OptB88-vdW 权重下载在本次探测中返回空文件，故未运行真实模型、未生成真实预测，
+也未冻结模型 Artifact SHA-256 或适用域/benchmark 结论。
+
 ### Agent01 NOMAD v2 消费兼容（2026-07-29）
 
 Agent02 manifest loader 允许读取既有 MP `agent01-contract-v1` 或 NOMAD

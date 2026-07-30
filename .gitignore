@@ -4,6 +4,7 @@
 !.env.example
 .venv/
 .venv-agent02/
+.venv-alignn/
 __pycache__/
 *.py[cod]
 *.egg-info/
