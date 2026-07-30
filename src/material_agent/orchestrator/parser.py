@@ -81,6 +81,7 @@ class OfflineRequirementParser:
             .strip()
         )
         include_elements = _parse_include_elements(normalized)
+        exact_formula = _parse_formula(normalized)
         band_gap = _parse_range(
             normalized,
             (
@@ -122,6 +123,7 @@ class OfflineRequirementParser:
                 "simple_semiconductor" if band_gap and is_nonmetal else "custom"
             ),
             "hard_constraints": {
+                "exact_formula": exact_formula,
                 "include_elements": include_elements,
                 "exclude_elements": [],
                 "band_gap_ev": band_gap,
@@ -203,6 +205,8 @@ class OfflineRequirementParser:
 
         if parsed_hard["include_elements"]:
             current_hard["include_elements"] = parsed_hard["include_elements"]
+        if parsed_hard["exact_formula"]:
+            current_hard["exact_formula"] = parsed_hard["exact_formula"]
         for field_name in (
             "band_gap_ev",
             "energy_above_hull_ev_atom",
@@ -473,6 +477,15 @@ def _parse_include_elements(text: str) -> list[str]:
     if re.search(r"\bSi\b", text) and re.search(r"\bO\b", text):
         return ["O", "Si"]
     return []
+
+
+def _parse_formula(text: str) -> str | None:
+    """Recognize an explicit formula token without treating element lists as one."""
+
+    for token in re.findall(r"\b(?:[A-Z][a-z]?\d*){2,}\b", text):
+        if any(char.isdigit() for char in token):
+            return token
+    return None
 
 
 def _parse_range(text: str, pattern: str, unit: str) -> dict[str, Any] | None:

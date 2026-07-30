@@ -19,6 +19,7 @@ from material_agent.retrieval.query import (
     MULTI_SOURCE_REQUIRED_FIELDS,
     build_query_plan,
     retrieval_policy_for_source,
+    select_retrieval_source,
 )
 from material_agent.retrieval.runner import RetrievalStageRunner
 from material_agent.retrieval.storage import LocalArtifactStore
@@ -94,6 +95,19 @@ def test_new_source_policies_and_query_plans(requirement) -> None:
     )
     assert "band_gap" in mc3d.local_only_constraints
     assert "energy_above_hull" in mc3d.local_only_constraints
+
+
+def test_auto_source_selection_is_deterministic_and_constraint_conservative(
+    requirement,
+) -> None:
+    assert select_retrieval_source("auto", requirement) is SourceDatabase.MATERIALS_PROJECT
+    assert select_retrieval_source(
+        "auto", requirement.model_copy(update={"target_class": "fm_2d_semiconductor"})
+    ) is SourceDatabase.C2DB
+    assert select_retrieval_source(
+        "auto", requirement.model_copy(update={"target_class": "topological_flat_band"})
+    ) is SourceDatabase.TOPOLOGICAL_QUANTUM_CHEMISTRY
+    assert select_retrieval_source("nomad", requirement) is SourceDatabase.NOMAD
 
     c2db = build_query_plan(
         requirement,

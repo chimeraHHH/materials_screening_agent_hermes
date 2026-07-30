@@ -64,7 +64,10 @@ from material_agent.retrieval.models import (
     RetrievalPolicy,
     SourceDatabase,
 )
-from material_agent.retrieval.query import retrieval_policy_for_source
+from material_agent.retrieval.query import (
+    retrieval_policy_for_source,
+    select_retrieval_source,
+)
 from material_agent.retrieval.runner import RetrievalStageRunner
 from material_agent.retrieval.storage import (
     LocalArtifactStore,
@@ -686,6 +689,10 @@ class OrchestratorGraph:
         self, state: OrchestratorState
     ) -> dict[str, Any]:
         requirement = Requirement.model_validate(state["requirement_draft"])
+        retrieval_source = select_retrieval_source(
+            state.get("retrieval_source", SourceDatabase.MATERIALS_PROJECT.value),
+            requirement,
+        )
         requirement_pointer = ArtifactPointer(
             uri=state["requirement_artifact_uri"],
             sha256=state["requirement_artifact_sha256"],
@@ -698,6 +705,7 @@ class OrchestratorGraph:
             "run_id": state["run_id"],
             "requirement": requirement_pointer.model_dump(mode="json"),
             "policy_version": ROUTING_POLICY_VERSION,
+            "retrieval_source": retrieval_source.value,
             "routes": [
                 route.model_dump(mode="json")
                 for route in routes
@@ -736,6 +744,7 @@ class OrchestratorGraph:
             "current_route": None,
             "pending_control_outcome": None,
             "current_stage": "routing",
+            "retrieval_source": retrieval_source.value,
             "updated_at": self._now(),
         }
 

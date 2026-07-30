@@ -26,7 +26,11 @@ from material_agent.retrieval.models import (
     SourceDatabase,
     StageStatus,
 )
-from material_agent.retrieval.query import retrieval_policy_for_source
+from material_agent.retrieval.query import (
+    AUTO_SOURCE,
+    retrieval_policy_for_source,
+    select_retrieval_source,
+)
 from material_agent.retrieval.runner import RetrievalStageRunner
 from material_agent.retrieval.storage import (
     LocalArtifactStore,
@@ -65,7 +69,7 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("--fixture", type=Path)
     run.add_argument(
         "--source",
-        choices=tuple(source.value for source in SourceDatabase),
+        choices=(*tuple(source.value for source in SourceDatabase), AUTO_SOURCE),
         default=SourceDatabase.MATERIALS_PROJECT.value,
     )
     run.add_argument("--run-id")
@@ -138,7 +142,7 @@ def main(argv: list[str] | None = None) -> int:
     retrieval.add_argument("--fixture", type=Path)
     retrieval.add_argument(
         "--source",
-        choices=tuple(source.value for source in SourceDatabase),
+        choices=(*tuple(source.value for source in SourceDatabase), AUTO_SOURCE),
         default=SourceDatabase.MATERIALS_PROJECT.value,
     )
     arguments = parser.parse_args(argv)
@@ -400,7 +404,7 @@ def _run_retrieval(arguments: argparse.Namespace) -> int:
         "application/json",
         immutable=True,
     )
-    source = SourceDatabase(arguments.source)
+    source = select_retrieval_source(arguments.source, requirement)
     if arguments.fixture:
         fixture_payload = json.loads(arguments.fixture.read_text(encoding="utf-8"))
         adapter = InMemoryMaterialsAdapter(

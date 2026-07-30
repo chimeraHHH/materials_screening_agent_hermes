@@ -84,6 +84,7 @@ class SourceDatabase(StrEnum):
     C2DB = "c2db"
     TOPOLOGICAL_QUANTUM_CHEMISTRY = "topological_quantum_chemistry"
     NIMS_SUPERCON = "nims_supercon"
+    ATOMLY = "atomly"
 
 
 class NumericRange(StrictModel):
@@ -111,6 +112,7 @@ class NumericRange(StrictModel):
 
 
 class HardConstraints(StrictModel):
+    exact_formula: str | None = None
     include_elements: list[str] = Field(default_factory=list)
     exclude_elements: list[str] = Field(default_factory=list)
     band_gap_ev: NumericRange | None = None

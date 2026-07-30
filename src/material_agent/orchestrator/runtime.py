@@ -45,6 +45,7 @@ from material_agent.orchestrator.runners import (
 from material_agent.orchestrator.storage import OrchestratorRepository
 from material_agent.retrieval.storage import LocalArtifactStore
 from material_agent.retrieval.models import SourceDatabase
+from material_agent.retrieval.query import AUTO_SOURCE
 
 
 _SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
@@ -198,7 +199,9 @@ class OrchestratorRuntime:
         run_id: str | None = None,
         retrieval_source: SourceDatabase | str = SourceDatabase.MATERIALS_PROJECT,
     ) -> RuntimeView:
-        selected_source = SourceDatabase(retrieval_source)
+        selected_source = str(retrieval_source)
+        if selected_source != AUTO_SOURCE:
+            selected_source = SourceDatabase(selected_source).value
         selected_run_id = _validate_id(
             run_id or self.id_factory.new_id("run"), "run_id"
         )
@@ -299,7 +302,7 @@ class OrchestratorRuntime:
                 initial_requirement=None,
                 created_at=created_at,
                 fixture_uri=None,
-                retrieval_source=SourceDatabase.MATERIALS_PROJECT,
+                retrieval_source=SourceDatabase.MATERIALS_PROJECT.value,
             )
             initial_state.update(
                 {
@@ -577,7 +580,7 @@ class OrchestratorRuntime:
         initial_requirement: dict[str, Any] | None,
         created_at: str,
         fixture_uri: str | None,
-        retrieval_source: SourceDatabase,
+        retrieval_source: str,
     ) -> dict[str, Any]:
         return {
             "schema_version": ORCHESTRATOR_CONTRACT_VERSION,
@@ -602,7 +605,7 @@ class OrchestratorRuntime:
             "candidate_ids": [],
             "pending_interaction": None,
             "retrieval_fixture_uri": fixture_uri,
-            "retrieval_source": retrieval_source.value,
+            "retrieval_source": retrieval_source,
             "retry_counters": {},
             "warnings": [],
             "errors": [],

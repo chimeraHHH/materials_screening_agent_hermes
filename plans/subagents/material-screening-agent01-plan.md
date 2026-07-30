@@ -166,6 +166,51 @@
   Agent02 候选来源；
 - 尚未实现跨库联合检索、fallback 或跨库去重；每个 Run 继续只冻结一个来源。
 
+### 外部来源接入核查：Atomly 与 SpringerMaterials（2026-07-30）
+
+结论：本次未新增 Adapter 或 source enum，避免将网页抓取误包装成公开数据接口。
+
+- Atomly 已由用户在 macOS Keychain 注入授权 API Key；受限只读 probe 验证
+  `POST /api/matdata/search_by_formula/`、`Authorization: token …` 和
+  `POST /api/matdata/get_struct_detail/` 可用。前者返回未命名位置数组，后者返回
+  `output_structs`、lattice、band_gap、decomposition、run_type 等结构/性质对象。
+  但 `POST /api/matdata/search_by_elements/` 对 `{"include":["Si","O"]}` 和
+  `{"include":"Si,O"}` 均返回 HTTP 500，公开页面没有元素检索 body、结果列含义、
+  分页或 `output_structs` 内 CIF 路径的 schema；不得猜测字段含义或以公式检索替代
+  通用元素约束。
+- SpringerMaterials 是受许可访问的材料数据库。Springer Nature 公开 API 覆盖文献
+  metadata/open-access 内容，而非可供 Agent01 使用的 SpringerMaterials 结构/性质
+  检索契约；官方说明的 TDM 使用必须遵循许可并取得相应 API/TDM 条款。
+
+Atomly 后续依赖：提供方需给出 `search_by_elements` 的有效请求/响应 schema 并修复
+500，明确公式检索数组列名、分页和限流、`output_structs` 的 CIF 路径以及 band gap /
+decomposition 的单位与方法；随后才能制作脱敏离线 fixture 并实现 Adapter。Springer
+Materials 仍需数据提供方或机构的书面自动化/TDM授权、版本化 API/OpenAPI 或等价
+schema、认证/secret-store 交付、查询/分页/限流语义、结构与单位映射示例、可归档与
+再分发范围及授权测试样本。两者在满足各自依赖前保持不可选择，不能用浏览器 cookie、
+页面 HTML 或下载按钮替代正式 API。
+
+### 当前任务：P1 自动数据源选择（2026-07-30）
+
+范围与验收：在不改变 Agent01 单来源原生 Envelope、原始数据隔离和 provenance
+边界的前提下，CLI/Orchestrator 接受 `--source auto`。Requirement 确认后按冻结字段
+确定性选择一个来源：`topological_flat_band`→TQC、`fm_2d_semiconductor`→C2DB、其余
+当前支持目标→Materials Project。最终 source 必须进入 checkpoint、Agent01 query plan 与报告；
+不能根据网络可达性、返回候选数或未记录的启发式回退，也不能跨库补齐缺失性质。
+
+实现结果：
+
+- [x] 增加 `auto` source selection；standalone Agent01 与 Orchestrator 使用同一纯函数；
+- [x] resolved source 在 Requirement Gate 后、ExecutionPlan 写入前被冻结，保留既有显式
+  单来源默认与契约；
+- [x] 增加 MP/C2DB/TQC 三个选择分支及 Orchestrator resolved query-plan/report 的离线
+  覆盖；完整离线 Gate 为 `425 passed, 9 skipped`，`pip check` 与 `git diff --check`
+  通过；联网来源探针未运行。
+
+剩余限制：这不是多库联合检索。实现“同一 Run 返回多个数据库结果”需要新的聚合
+Envelope、每来源 Artifact namespace、候选去重/冲突政策和下游 manifest 版本，必须单独
+设计并协调 Agent02/Orchestrator 公共契约后再做。
+
 ## 0. 当前实施进度
 
 当前状态：**Agent 01 P0 与第 8 节增强 Gate 已完成；Materials Project 公共契约继续

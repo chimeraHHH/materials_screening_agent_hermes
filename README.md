@@ -475,7 +475,12 @@ preparing or submitting it again.
 ## Run Agent 01 standalone
 
 Each run selects exactly one retrieval source. Materials Project remains the
-default. The available `--source` values are:
+default. `--source auto` makes a deterministic choice after Requirement
+confirmation: `topological_flat_band` selects TQC,
+`fm_2d_semiconductor` selects C2DB, and all other supported targets select
+Materials Project. The resolved source is frozen in the run checkpoint and
+Agent01 native query plan, then shown in the report; automatic selection never merges databases or fills missing fields
+across sources. The available explicit `--source` values are:
 
 | Source | Interface | Safely mapped properties | Important limit |
 |---|---|---|---|
@@ -509,9 +514,24 @@ properties are never filled from another source. The NIMS source is useful for
 auditing SuperCon metadata only: Agent01's structure-required downstream
 contract intentionally marks every structureless record `FAILED`.
 
-Atomly is not a selectable source. Its public site currently states that API
-access is limited to internal testing and collaborators; an authorized API
-contract is required before Agent01 can automate it.
+Atomly is not yet a selectable source. A credentialed 2026-07-30 read-only
+probe confirmed that `search_by_formula` and `get_struct_detail` accept the
+documented `Authorization: token …` header, and the latter returns structure
+and property payloads. However, `search_by_elements` returned HTTP 500 for the
+documented-style `{"include": ["Si", "O"]}` request, and the public page does
+not define its valid request body, result-column names, pagination, or the CIF
+location inside `output_structs`. Agent01 must not infer those scientific field
+mappings. Keep Atomly unavailable until its provider supplies the schema or
+fixes the elements endpoint; use a Keychain entry named
+`material-screening-agent-atomly-api` rather than storing the token in files.
+
+SpringerMaterials is also not a selectable source. It is a licensed database;
+the public Springer Nature APIs cover publication metadata and open-access
+content, not a documented SpringerMaterials structure/property query API.
+Before any integration, obtain institutional access plus written TDM/API terms,
+an authenticated endpoint specification, a credential delivery mechanism, and
+permission to archive the returned data as Agent01 Artifacts. Do not automate
+the interactive website or use a subscription cookie as an API substitute.
 
 For the deterministic offline fixture, add
 `--fixture tests/fixtures/mp-summary.si-o.json`; fixture results remain

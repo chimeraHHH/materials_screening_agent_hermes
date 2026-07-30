@@ -65,6 +65,33 @@ class QueryPlanningError(ValueError):
     """Raised when a requirement cannot be translated safely."""
 
 
+AUTO_SOURCE = "auto"
+
+
+def select_retrieval_source(
+    requested_source: SourceDatabase | str,
+    requirement: Requirement,
+) -> SourceDatabase:
+    """Resolve an explicit source or the conservative automatic choice.
+
+    The choice is based only on frozen Requirement fields.  It deliberately
+    does not combine records or use one source to fill another source's
+    missing properties.
+    """
+
+    if requested_source != AUTO_SOURCE:
+        return SourceDatabase(requested_source)
+
+    if requirement.target_class == "topological_flat_band":
+        return SourceDatabase.TOPOLOGICAL_QUANTUM_CHEMISTRY
+    if requirement.target_class == "fm_2d_semiconductor":
+        return SourceDatabase.C2DB
+    # The remaining supported hard constraints have the most complete,
+    # normalized coverage in Materials Project.  In particular, it is the
+    # only default choice that supports the generic hull-energy constraint.
+    return SourceDatabase.MATERIALS_PROJECT
+
+
 def validate_element_symbols(requirement: Requirement) -> None:
     for symbol in (
         requirement.hard_constraints.include_elements
