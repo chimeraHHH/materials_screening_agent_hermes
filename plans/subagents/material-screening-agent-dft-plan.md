@@ -35,6 +35,35 @@
    专家审批和结构化 VASPilot/Slurm bridge Gate。
 4. 在这些 P2 Gate 通过前，不实现或注册真实 DFT backend。
 
+### 本次非 VASP 完善范围（2026-07-30）
+
+在没有 VASP、POTCAR、Slurm 或真实 bridge 服务的条件下，只补齐可脱离这些
+运行时依赖的 Agent03 结果校验契约：冻结真实任务的 execution/numerical evidence、
+approved-policy 绑定、输出对账和 fail-closed 状态判定，并覆盖“backend 报告
+`SUCCEEDED` 但电子收敛失败”的离线回归。该切片不解析或生成 VASP 文件，不提供
+方法参数或阈值，不启用 `ExecutionMode.REAL` planner/runner/registry，也不产生
+claim、候选 evidence 或 `L3_DFT_VALIDATED`。实际 policy、parser、bridge 服务和
+科学 validator Gate 仍须等待 P2 前置条件。
+
+实际完成与验证（2026-07-30）：
+
+- [x] 新增 `validation.py`：对非 mock 的、已解析 `TaskExecutionEvidence` 进行
+  task/result/execution hash、method/structure lineage、backend/exit/termination、
+  输出 Artifact、收敛、有限数值、最大力和 parser warning 的纯数据校验；所有未知或
+  不一致状态 fail closed 为 `INCOMPLETE` 或 `INVALID`。
+- [x] `DFTTaskValidationPolicy` 强制绑定 immutable policy Artifact、`APPROVED`
+  状态、approved method hash 和显式 validator requirements；代码不包含任何具体的
+  VASP 方法、元素 mapping 或科学阈值。
+- [x] 新增离线测试，确认 backend `SUCCEEDED` 不能覆盖电子未收敛，且收敛事实缺失
+  保持 `INCOMPLETE`；此层只返回 task validation，不能创建 claim 或提升 evidence。
+- [x] 完整离线 Gate：`432 passed, 9 skipped, 162 warnings`；跳过项均为 explicit
+  opt-in live LLM/MP/NOMAD 和 real-ML 测试。`pip check` 与 `git diff --check` 通过。
+
+本切片不是完整 P2 scientific validator：尚无已批准的课题组 policy、真实 VASP
+parser/输入、VASP/POTCAR、Slurm、真实 bridge 服务或端到端 real-backend contract
+test。因此 Agent03 production capability、REAL planner 与 `L3_DFT_VALIDATED` 仍保持
+不可用；P2 DoD 和主计划中的真实 backend 验收项不因本离线契约而完成。
+
 本次 P0 收口验收：不修改公共 Orchestrator/checkpoint schema、数据库迁移或
 Agent01/02 权威输入；mock 始终 `is_mock=true`、不产生科研数值或
 `L3_DFT_VALIDATED`；完整离线 Gate、`pip check` 与 `git diff --check` 通过。
