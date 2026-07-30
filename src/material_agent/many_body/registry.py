@@ -21,6 +21,7 @@ from .models import (
     canonical_hash,
     canonical_json,
 )
+from .research_catalog import research_catalog_hash, research_entry
 
 
 REGISTRY_VERSION = "many-body-capability-registry/v1"
@@ -67,6 +68,7 @@ def build_registry() -> CapabilityRegistry:
             solver_id="mock-many-body/v1",
             backend_id="mock-many-body",
             backend_version="1.0.0",
+            method_family="CONTROL_FLOW",
             is_mock=True,
             lifecycle="AVAILABLE",
             registered=True,
@@ -85,6 +87,7 @@ def build_registry() -> CapabilityRegistry:
             solver_id="exact-diagonalization/v1-planned",
             backend_id="exact-diagonalization",
             backend_version="1.0.0-planned",
+            method_family="ED",
             is_mock=False,
             lifecycle="PLANNED",
             registered=False,
@@ -104,12 +107,102 @@ def build_registry() -> CapabilityRegistry:
             registry_snapshot=ArtifactRef(uri=REGISTRY_URI, sha256="0" * 64),
             **common,
         ),
+        _planned_research_capability(
+            solver_id="qmc/alf-v2.4-planned",
+            backend_id="alf-qmc",
+            catalog_id="qmc/alf-v2.4",
+            supported_dimensions=(1, 2),
+            supported_boundaries=(BoundaryCondition.OPEN, BoundaryCondition.PERIODIC),
+            supported_temperatures=("ZERO_T", "FINITE_T"),
+            supported_observables=(
+                "ground_state_energy", "energy_density", "site_density",
+                "spin_correlation_zz", "charge_correlation_connected",
+                "average_sign", "autocorrelation_time", "statistical_error",
+            ),
+        ),
+        _planned_research_capability(
+            solver_id="dmrg/tenpy-v1-planned",
+            backend_id="tenpy",
+            catalog_id="dmrg/tenpy-v1",
+            supported_dimensions=(1,),
+            supported_boundaries=(BoundaryCondition.OPEN,),
+            supported_temperatures=("ZERO_T",),
+            supported_observables=(
+                "ground_state_energy", "site_density", "double_occupancy",
+                "spin_correlation_zz", "charge_correlation_connected",
+                "discarded_weight", "energy_variance",
+            ),
+        ),
+        _planned_research_capability(
+            solver_id="dmft/solid-dmft-triqs4-planned",
+            backend_id="solid-dmft",
+            catalog_id="dmft/solid-dmft-triqs4",
+            supported_dimensions=(1, 2, 3),
+            supported_geometry_types=(GeometryType.PERIODIC_LATTICE,),
+            supported_boundaries=(BoundaryCondition.PERIODIC,),
+            supported_temperatures=("FINITE_T",),
+            supported_ensembles=("GRAND_CANONICAL",),
+            supported_observables=(
+                "self_energy", "local_green_function", "quasiparticle_weight",
+                "occupancy", "local_moment", "spectral_function",
+            ),
+            max_sites=None,
+            max_active_orbitals=None,
+        ),
     )
     snapshot = tuple(_capability_payload(item) for item in raw)
     snapshot_hash = canonical_hash({"registry_version": REGISTRY_VERSION, "capabilities": snapshot})
     ref = ArtifactRef(uri=REGISTRY_URI, sha256=snapshot_hash)
     capabilities = tuple(item.model_copy(update={"registry_snapshot": ref}) for item in raw)
     return CapabilityRegistry(REGISTRY_VERSION, capabilities, snapshot_hash, canonical_json({"registry_version": REGISTRY_VERSION, "capabilities": snapshot}))
+
+
+def _planned_research_capability(
+    *,
+    solver_id: str,
+    backend_id: str,
+    catalog_id: str,
+    supported_dimensions: tuple[int, ...],
+    supported_boundaries: tuple[BoundaryCondition, ...],
+    supported_temperatures: tuple[str, ...],
+    supported_ensembles: tuple[str, ...] = ("CANONICAL",),
+    supported_observables: tuple[str, ...],
+    supported_geometry_types: tuple[GeometryType, ...] = (GeometryType.FINITE_GRAPH,),
+    max_sites: int | None = 4,
+    max_active_orbitals: int | None = 4,
+) -> SolverCapability:
+    entry = research_entry(catalog_id)
+    return SolverCapability(
+        solver_id=solver_id,
+        backend_id=backend_id,
+        backend_version=f"{entry.project} planned",
+        method_family=entry.method_family,
+        research_catalog_id=entry.catalog_id,
+        is_mock=False,
+        lifecycle="PLANNED",
+        registered=False,
+        executable=False,
+        supported_model_families=(ModelFamily.SINGLE_BAND_HUBBARD,),
+        supported_geometry_types=supported_geometry_types,
+        supported_dimensions=supported_dimensions,
+        supports_real_hopping=True,
+        supports_complex_hopping=False,
+        supports_soc=False,
+        supported_interaction_kinds=(InteractionKind.ONSITE_HUBBARD_U,),
+        supported_ensembles=supported_ensembles,
+        supported_temperatures=supported_temperatures,
+        supported_boundaries=supported_boundaries,
+        supported_observables=supported_observables,
+        max_sites=max_sites,
+        max_active_orbitals=max_active_orbitals,
+        evidence_ceiling=EvidenceLevel.L3_DFT_VALIDATED,
+        limitations=entry.limitations + (
+            f"research catalog hash: {research_catalog_hash()}",
+            "planned capability; no backend is implemented or registered",
+            "does not itself establish material-level evidence",
+        ),
+        registry_snapshot=ArtifactRef(uri=REGISTRY_URI, sha256="0" * 64),
+    )
 
 
 DEFAULT_REGISTRY = build_registry()

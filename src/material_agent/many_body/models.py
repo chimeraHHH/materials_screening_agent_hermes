@@ -383,6 +383,8 @@ class SolverCapability(StrictModel):
     solver_id: str = Field(min_length=1)
     backend_id: str = Field(min_length=1)
     backend_version: str = Field(min_length=1)
+    method_family: Literal["CONTROL_FLOW", "ED", "QMC", "DMRG", "DMFT"] = "ED"
+    research_catalog_id: str | None = None
     is_mock: bool
     lifecycle: Literal["PLANNED", "AVAILABLE"]
     registered: bool = False
@@ -412,6 +414,8 @@ class SolverCapability(StrictModel):
             raise ValueError("executable capability must be registered")
         if self.is_mock and self.evidence_ceiling in (EvidenceLevel.L4_MANY_BODY_VALIDATED, EvidenceLevel.L5_EXPERT_REVIEWED):
             raise ValueError("mock capability cannot have an L4/L5 evidence ceiling")
+        if self.method_family == "CONTROL_FLOW" and not self.is_mock:
+            raise ValueError("only mock capabilities may use CONTROL_FLOW method family")
         return self
 
 

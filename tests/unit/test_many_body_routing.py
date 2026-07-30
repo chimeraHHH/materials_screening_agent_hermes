@@ -41,7 +41,7 @@ def mutate_package(**changes) -> EffectiveModelPackage:
     return parsed.model_copy(update={"package_hash": package_content_hash(parsed)})
 
 
-def test_registry_is_stable_and_separates_mock_from_planned_ed() -> None:
+def test_registry_is_stable_and_separates_mock_from_planned_research_methods() -> None:
     first, second = build_registry(), build_registry()
     assert first.snapshot_hash == second.snapshot_hash
     assert first.snapshot == second.snapshot
@@ -52,6 +52,17 @@ def test_registry_is_stable_and_separates_mock_from_planned_ed() -> None:
     assert first.get("exact-diagonalization/v1-planned").executable is False
     assert first.get("exact-diagonalization/v1-planned").lifecycle == "PLANNED"
     assert first.get("exact-diagonalization/v1-planned").registry_snapshot.sha256 == first.snapshot_hash
+    for solver_id, method_family, catalog_id in (
+        ("qmc/alf-v2.4-planned", "QMC", "qmc/alf-v2.4"),
+        ("dmrg/tenpy-v1-planned", "DMRG", "dmrg/tenpy-v1"),
+        ("dmft/solid-dmft-triqs4-planned", "DMFT", "dmft/solid-dmft-triqs4"),
+    ):
+        capability = first.get(solver_id)
+        assert capability.lifecycle == "PLANNED"
+        assert capability.registered is False
+        assert capability.executable is False
+        assert capability.method_family == method_family
+        assert capability.research_catalog_id == catalog_id
 
 
 def test_fixture_control_route_is_ready_but_never_claims_real_ed() -> None:
@@ -62,7 +73,11 @@ def test_fixture_control_route_is_ready_but_never_claims_real_ed() -> None:
     assert decision.executable is True
     assert decision.requires_approval is True
     assert decision.control_flow_simulators == ("mock-many-body/v1",)
-    assert decision.scientific_capability_matches == ("exact-diagonalization/v1-planned",)
+    assert decision.scientific_capability_matches == (
+        "exact-diagonalization/v1-planned",
+        "qmc/alf-v2.4-planned",
+        "dmrg/tenpy-v1-planned",
+    )
     assert "MOCK_CONTROL_FLOW_ONLY" in decision.reason_codes
     assert decision.registry_snapshot.sha256 == DEFAULT_REGISTRY.snapshot_hash
 
