@@ -36,6 +36,29 @@
 
 完成每个任务后，只在本计划记录实际完成项、测试证据、限制和对 Agent02/Orchestrator 的影响；公共契约或阈值变更需先同步相关 agent plan、fixture、contract test，并按职责更新主计划或技术架构。
 
+### 凭据解析修复（2026-07-30）
+
+范围：使真实 `MaterialsProjectAdapter` 与 Stage 0 LLM 保持一致的秘密来源策略，避免
+用户已经在 macOS Keychain 保存 MP 凭据后仍需手动导出环境变量。优先顺序固定为：显式
+Adapter 注入（仅测试/集成）→ `MP_API_KEY` → Keychain（服务
+`material-screening-agent-mp-api`、账户为当前用户）。失败信息不得包含密钥、Keychain
+输出或命令 stderr；不得改变 Agent01 public contract、Artifact 或 provenance。
+
+验收：覆盖优先级、Keychain 无 shell、缺凭据 fail-closed；相关 MP contract/E2E 测试、
+完整离线 Gate、`pip check`、`git diff --check` 通过。非 macOS 平台继续要求由其 secret
+store 注入 `MP_API_KEY`。
+
+实现结果：
+
+- [x] `MaterialsProjectAdapter` 按显式注入 → `MP_API_KEY` → macOS Keychain 解析，默认
+      Keychain service 为 `material-screening-agent-mp-api`、账户为当前用户；解析保持惰性；
+- [x] Keychain 调用使用参数数组而非 shell，限制 5 秒；缺失、空值或调用失败均 fail closed，
+      对外错误不含 secret 或 Keychain stderr；
+- [x] 增加优先级、Keychain 参数和缺失凭据的离线 contract 测试；README 已同步非 macOS
+      注入边界；Agent01 contract、Artifact/provenance 与查询语义未变；
+- [x] 相关测试 `19 passed`；完整离线 Gate `429 passed, 9 skipped`；`pip check` 和
+      `git diff --check` 通过。未运行需网络的 `live_mp` release Gate。
+
 ### 当前任务：P1 单数据源 NOMAD 接入（2026-07-29）
 
 范围：

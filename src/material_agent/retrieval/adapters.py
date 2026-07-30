@@ -4,12 +4,15 @@ from __future__ import annotations
 
 import importlib.metadata
 import csv
+import getpass
 import html
 import io
 import math
 import os
 import re
+import subprocess
 from collections.abc import Sequence
+from collections.abc import Callable, Mapping
 from typing import Any, Protocol
 from urllib.parse import urljoin
 
@@ -49,15 +52,70 @@ class MaterialsProjectAdapter:
     is_mock = False
     source_database = SourceDatabase.MATERIALS_PROJECT
 
-    def __init__(self, api_key: str | None = None) -> None:
+    def __init__(
+        self,
+        api_key: str | None = None,
+        *,
+        environment: Mapping[str, str] | None = None,
+        keychain_service: str = "material-screening-agent-mp-api",
+        keychain_account: str | None = None,
+        command_runner: Callable[..., subprocess.CompletedProcess[str]] | None = None,
+    ) -> None:
         self._api_key = api_key
+        self._environment = environment if environment is not None else os.environ
+        self._keychain_service = _safe_keychain_label(
+            keychain_service, "MP Keychain service"
+        )
+        self._keychain_account = _safe_keychain_label(
+            keychain_account or getpass.getuser(),
+            "MP Keychain account",
+        )
+        self._command_runner = command_runner or subprocess.run
+
+    def _resolve_api_key(self) -> str:
+        """Resolve lazily: explicit constructor key, environment, then Keychain."""
+
+        explicit_key = (self._api_key or "").strip()
+        if explicit_key:
+            return explicit_key
+        environment_key = self._environment.get("MP_API_KEY", "").strip()
+        if environment_key:
+            return environment_key
+        try:
+            result = self._command_runner(
+                [
+                    "security",
+                    "find-generic-password",
+                    "-a",
+                    self._keychain_account,
+                    "-s",
+                    self._keychain_service,
+                    "-w",
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+        except (OSError, subprocess.SubprocessError) as exc:
+            raise RuntimeError(
+                "Materials Project API key is unavailable from the configured secret sources"
+            ) from exc
+        if result.returncode != 0:
+            raise RuntimeError(
+                "Materials Project API key is unavailable from the configured secret sources"
+            )
+        keychain_key = result.stdout.strip()
+        if not keychain_key:
+            raise RuntimeError(
+                "Materials Project API key is empty in the configured secret source"
+            )
+        return keychain_key
 
     def _make_client(self):
         from mp_api.client import MPRester
 
-        key = self._api_key or os.environ.get("MP_API_KEY")
-        if not key:
-            raise RuntimeError("MP_API_KEY is required for live Materials Project retrieval")
+        key = self._resolve_api_key()
         return MPRester(
             api_key=key,
             use_document_model=False,
@@ -1404,3 +1462,12 @@ def _optional_float(value: Any) -> float | None:
     except (TypeError, ValueError):
         return None
     return parsed if math.isfinite(parsed) else None
+
+
+def _safe_keychain_label(value: str, label: str) -> str:
+    """Reject control characters before passing a Keychain label to a process."""
+
+    normalized = value.strip()
+    if not normalized or any(character in normalized for character in "\r\n\x00"):
+        raise ValueError(f"{label} must be a non-empty single-line value")
+    return normalized

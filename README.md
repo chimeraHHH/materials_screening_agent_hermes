@@ -26,8 +26,11 @@ python3.11 -m venv .venv
 .venv/bin/pip install --no-deps -e .
 ```
 
-The Materials Project API key is read from `MP_API_KEY`. It must not be placed
-in project configuration or artifacts.
+The Materials Project API key is resolved lazily from an explicit Adapter value
+(test/integration injection only), then `MP_API_KEY`, then the macOS Keychain
+entry for account `$USER` and service `material-screening-agent-mp-api`. It
+must not be placed in project configuration or artifacts. On non-macOS systems,
+inject `MP_API_KEY` from the platform secret store.
 
 ## Parse a Requirement draft without starting retrieval
 
@@ -573,7 +576,8 @@ historical optional real-ML Gate reported `5 passed`; sandbox MPS unavailability
 is an environmental limitation, not a hardware failure.
 
 The standalone Agent01 and Orchestrator-restart Materials Project release
-Gates are opt-in and require both network access and `MP_API_KEY`:
+Gates are opt-in and require network access plus a credential available from
+`MP_API_KEY` or the macOS Keychain entry described above:
 
 ```bash
 agent_mp_key="$(security find-generic-password \
@@ -583,9 +587,10 @@ MP_API_KEY="$agent_mp_key" .venv/bin/python -m pytest \
 unset agent_mp_key
 ```
 
-This macOS example keeps the key out of shell history and clears the temporary
-shell variable after the test. On another operating system, inject the key from
-its secret store or an already configured process environment.
+This compatibility example keeps the key out of shell history and clears the
+temporary shell variable after the test; it is no longer needed when the
+Keychain entry exists. On another operating system, inject the key from its
+secret store or an already configured process environment.
 
 The P0.2 release run completed both real Materials Project Gates with
 `2 passed` in `78.10s`; no API key or live run artifact was retained in the
