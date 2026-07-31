@@ -51,13 +51,13 @@ store 注入 `MP_API_KEY`。
 实现结果：
 
 - [x] `MaterialsProjectAdapter` 按显式注入 → `MP_API_KEY` → macOS Keychain 解析，默认
-      Keychain service 为 `material-screening-agent-mp-api`、账户为当前用户；解析保持惰性；
+  Keychain service 为 `material-screening-agent-mp-api`、账户为当前用户；解析保持惰性；
 - [x] Keychain 调用使用参数数组而非 shell，限制 5 秒；缺失、空值或调用失败均 fail closed，
-      对外错误不含 secret 或 Keychain stderr；
+  对外错误不含 secret 或 Keychain stderr；
 - [x] 增加优先级、Keychain 参数和缺失凭据的离线 contract 测试；README 已同步非 macOS
-      注入边界；Agent01 contract、Artifact/provenance 与查询语义未变；
+  注入边界；Agent01 contract、Artifact/provenance 与查询语义未变；
 - [x] 相关测试 `19 passed`；完整离线 Gate `429 passed, 9 skipped`；`pip check` 和
-      `git diff --check` 通过。未运行需网络的 `live_mp` release Gate。
+  `git diff --check` 通过。未运行需网络的 `live_mp` release Gate。
 
 ### TQC 真实检索回归修复（2026-07-30）
 
@@ -81,19 +81,19 @@ Gate、`pip check`、`git diff --check` 通过。对已有 `tqc-dialog-001` 的 
 实现结果：
 
 - [x] TQC 从 CIF Structure 提取元素时兼容 `Element` 与带氧化态 `Species`，统一发布裸
-      元素符号；Bi/Te 过滤不再被 `Bi3+`/`Te2-` 误拒绝；
+  元素符号；Bi/Te 过滤不再被 `Bi3+`/`Te2-` 误拒绝；
 - [x] `Topological materials` L1 target 仅在 TQC 记录同时具有非 `trivial` 分类、`soc=true`
-      和非空拓扑指数时通过；`trivial` 标签明确 `REJECT`，缺任一字段保持 `UNCERTAIN`；
-      这只是 TQC 数据库标签，不提升至实验、ML、DFT 或拓扑证明；
+  和非空拓扑指数时通过；`trivial` 标签明确 `REJECT`，缺任一字段保持 `UNCERTAIN`；
+  这只是 TQC 数据库标签，不提升至实验、ML、DFT 或拓扑证明；
 - [x] TQC 在一个 `similarICSD` item 达到上限后停止外层遍历，并在详情请求前再次切片，
-      保证不超过 `max_records_scanned`；
+  保证不超过 `max_records_scanned`；
 - [x] Agent01 prepare 阶段的 retry 记录 attempt，重试不会因复用 attempt 1 的不可变
-      operation key 失败；
+  operation key 失败；
 - [x] source/runner/Orchestrator/contract 回归与完整离线 Gate 为 `438 passed, 9 skipped`，
-      `pip check`、`git diff --check` 通过；
+  `pip check`、`git diff --check` 通过；
 - [ ] 使用原冻结 DeepSeek Requirement 的两个新真实 TQC Run 均在远端 metadata 调用返回
-      `ConnectionError`；第二次 Run 的人工 retry 已进入 attempt 2 且安全暂停，证明重试
-      控制修复有效，但不构成成功的联网候选复验。
+  `ConnectionError`；第二次 Run 的人工 retry 已进入 attempt 2 且安全暂停，证明重试
+  控制修复有效，但不构成成功的联网候选复验。
 
 ### 当前任务：P1 单数据源 NOMAD 接入（2026-07-29）
 
@@ -138,22 +138,22 @@ Gate、`pip check`、`git diff --check` 通过。对已有 `tqc-dialog-001` 的 
 实现结果：
 
 - [x] `material-agent retrieval` 与 Orchestrator `run` 均支持
-      `--source materials_project|nomad`，默认 MP；source selection 写入 Run state，
-      Runner factory 每次只构造一个 Adapter；
+  `--source materials_project|nomad`，默认 MP；source selection 写入 Run state，
+  Runner factory 每次只构造一个 Adapter；
 - [x] 新增 NOMAD public Archive Adapter、查询计划、OpenAPI 版本快照、稳定游标分页、
-      schema 校验、结构米→Å、band gap J→eV、method/parser provenance 和受控重试；
+  schema 校验、结构米→Å、band gap J→eV、method/parser provenance 和受控重试；
 - [x] NOMAD Candidate/Envelope 使用 `agent01-contract-v2` 与 source-qualified ID；
-      MP v1 Candidate/Envelope、ID namespace 和冻结 fixture 逐字节重建测试未改变；
+  MP v1 Candidate/Envelope、ID namespace 和冻结 fixture 逐字节重建测试未改变；
 - [x] NOMAD 没有被安全映射为 MP `energy_above_hull` 的字段；该值固定保留缺失，
-      相应硬约束得到 `MISSING`，Candidate 为 `UNCERTAIN`，不跨库补值；
+  相应硬约束得到 `MISSING`，Candidate 为 `UNCERTAIN`，不跨库补值；
 - [x] Agent02 loader 增加 v2 只读兼容；Orchestrator 报告按所选来源声明 L1，
-      控制契约、审批和 SQLite migration 未改变；
+  控制契约、审批和 SQLite migration 未改变；
 - [x] fake HTTP unit、standalone CLI、Orchestrator integration、MP v1 contract/frozen
-      fixture 与 Agent02 兼容回归通过；完整离线 Gate 为
-      `392 passed, 9 skipped`，`pip check` 为 `No broken requirements found`，
-      `git diff --check` 通过；
+  fixture 与 Agent02 兼容回归通过；完整离线 Gate 为
+  `392 passed, 9 skipped`，`pip check` 为 `No broken requirements found`，
+  `git diff --check` 通过；
 - [ ] 新增 `live_nomad` 发布探针默认跳过，本次未执行；实现前通过一次受限公开查询
-      验证了元素、band-gap 查询语法和 archive 映射，但这不替代正式 release Gate。
+  验证了元素、band-gap 查询语法和 archive 映射，但这不替代正式 release Gate。
 
 剩余限制：
 
@@ -199,20 +199,20 @@ Gate、`pip check`、`git diff --check` 通过。对已有 `tqc-dialog-001` 的 
 实现结果：
 
 - [x] 新增 `mc3d`、`c2db`、`topological_quantum_chemistry` 和
-      `nims_supercon` source selection、policy、CLI/Orchestrator factory 与报告标签；
+  `nims_supercon` source selection、policy、CLI/Orchestrator factory 与报告标签；
 - [x] MC3D 使用 PBE-v1 OPTIMADE 1.2 分页结构查询；真实受限 probe 返回并解析 100 条
-      Si/O 结构，带隙、凸包能和金属标记保持缺失；
+  Si/O 结构，带隙、凸包能和金属标记保持缺失；
 - [x] C2DB 使用官方 search session、确定性分页和逐 UID ASE JSON；真实固定 Si/O
-      条件为零结果，补充 Mo/S probe 成功映射 25 条结构、PBE gap/ehull；
+  条件为零结果，补充 Mo/S probe 成功映射 25 条结构、PBE gap/ehull；
 - [x] TQC 使用公开配置所指向的 v4 search/v1 detail，保存 ICSD、SOC、拓扑分类和
-      指数 provenance；历史无效 CIF 按单记录结构失败处理；
+  指数 provenance；历史无效 CIF 按单记录结构失败处理；
 - [x] NIMS SuperCon 固定 DOI `10.48505/nims.4487`/Ver.240322，解析双行 TSV header；
-      真实 probe 找到 9 条 Si/O 记录，全部明确无原子坐标并通过测试证明不发布下游；
+  真实 probe 找到 9 条 Si/O 记录，全部明确无原子坐标并通过测试证明不发布下游；
 - [x] Atomly 未接入：公开站点说明 API 仅供内部测试和合作者使用，当前缺授权 API
-      文档/凭据；未反向工程私有接口或批量抓取；
+  文档/凭据；未反向工程私有接口或批量抓取；
 - [x] 新增 fake HTTP/schema/映射、结构缺失下游阻断和全部非 MP CLI source 测试；
-      完整离线 Gate `423 passed, 9 skipped`，`pip check` 无破损依赖，
-      `git diff --check` 通过。
+  完整离线 Gate `423 passed, 9 skipped`，`pip check` 无破损依赖，
+  `git diff --check` 通过。
 
 剩余限制：
 
@@ -232,7 +232,7 @@ Gate、`pip check`、`git diff --check` 通过。对已有 `tqc-dialog-001` 的 
 - Atomly 已由用户在 macOS Keychain 注入授权 API Key；受限只读 probe 验证
   `POST /api/matdata/search_by_formula/`、`Authorization: token …` 和
   `POST /api/matdata/get_struct_detail/` 可用。前者返回未命名位置数组，后者返回
-  `output_structs`、lattice、band_gap、decomposition、run_type 等结构/性质对象。
+  `output_structs`、lattice、band\_gap、decomposition、run\_type 等结构/性质对象。
   但 `POST /api/matdata/search_by_elements/` 对 `{"include":["Si","O"]}` 和
   `{"include":"Si,O"}` 均返回 HTTP 500，公开页面没有元素检索 body、结果列含义、
   分页或 `output_structs` 内 CIF 路径的 schema；不得猜测字段含义或以公式检索替代
@@ -273,7 +273,7 @@ Envelope、每来源 Artifact namespace、候选去重/冲突政策和下游 man
 ## 0. 当前实施进度
 
 当前状态：**Agent 01 P0 与第 8 节增强 Gate 已完成；Materials Project 公共契约继续
-冻结为 `agent01-contract-v1`。P1 已完成 NOMAD 单来源接入并发布
+冻结为** **`agent01-contract-v1`。P1 已完成 NOMAD 单来源接入并发布
 `agent01-contract-v2`，其他性能和扩展项尚未开始。**
 
 ### 0.1 已完成
@@ -290,7 +290,7 @@ Envelope、每来源 Artifact namespace、候选去重/冲突政策和下游 man
 - [x] 实现 gzip JSONL 原始响应归档、manifest、原子写入、hash 校验和 artifact 路径保护；
 - [x] 实现结构解析、source JSON、canonical CIF、稳定 candidate ID、structure ID 和 query ID；
 - [x] 实现 summary/structure 一致性检查、CrystalNN + Larsen 维度分析及显式质量标记；
-- [x] 实现 band gap、energy above hull、is_metal 等性质的 origin task 解析和降级状态；
+- [x] 实现 band gap、energy above hull、is\_metal 等性质的 origin task 解析和降级状态；
 - [x] 实现 `PASS/REJECT/UNCERTAIN/FAILED` 决策、闭区间容差和缺失证据处理；
 - [x] 实现精确重复标注、非破坏性 StructureMatcher 相似聚类和确定性排序；
 - [x] 实现全量审计账本、下游 candidate manifest、JSON/Markdown 报告和幂等结果复用；
@@ -315,6 +315,7 @@ P2 系统 v1 收尾复核（2026-07-28）：Agent01 继续是默认生产科学 
 及确定性筛选阈值保持不变。完整离线 Gate 为 `337 passed, 7 skipped`；未运行联网
 Materials Project Gate、未读取或生成 `MP_API_KEY`。benchmark、扩展适用域、OOD 与
 不确定性校准不属于本次收尾。
+
 - [x] 冻结 `validate_input/prepare/start/reconcile` StageRunner 生命周期以及 Candidate、PropertyValue、StageResultEnvelope 公共契约，版本为 `agent01-contract-v1`；
 - [x] 生成 44 KB 最小离线冻结契约 fixture，包含 1 条候选、source JSON、CIF、manifest、StageResult 与 JSON Schema，并验证 artifact hash 和逐字节确定性重建；
 - [x] Orchestrator P0.1 通过 `Agent01RunnerAdapter` 使用冻结契约，代码、依赖和测试基线提交为 `d681de8`；
@@ -433,18 +434,14 @@ MP 官方客户端的 Summary endpoint 当前支持 `elements`、`exclude_elemen
   - 上下界均为闭区间；
   - 至少一个边界非空；
   - 禁止 `NaN`、无穷值及 `min > max`。
-
 - `hard_constraints.is_metal: bool | null`
   - 固定验收用例取 `false`。
-
 - `hard_constraints.dimensionality: 0 | 1 | 2 | 3 | null`
-
 - `RankingPreference`
   - `property`：v1 只接受 `energy_above_hull`、`band_gap`、`num_sites`；
   - `mode`：`minimize | maximize | target`；
   - `target`：仅 `target` 模式必填；
   - 多条偏好按用户声明顺序做字典序比较，不使用隐式加权总分。
-
 - `data_sources.materials_project.include_gnome`
   - 默认 `false`；
   - 开启时必须产生新的 Requirement revision 并由用户确认。
@@ -580,19 +577,19 @@ MP 数据库的 consolidated material 数据会随数据库发布改变，因此
 
 ### 3.2 查询下推规则
 
-| Requirement 约束 | MP 查询下推 | 本地复核 |
-|---|---|---|
-| `include_elements` | `elements=[...]` | 必须全部出现 |
-| `exclude_elements` | `exclude_elements=[...]` | 不得出现任一元素 |
-| 完整 band gap 范围 | `band_gap=(min,max)` | 按闭区间复核 |
-| 仅 band gap 上限 | `band_gap=(0,max)` | 按用户边界复核 |
-| 仅 band gap 下限 | v1 不构造虚假上限，留给本地筛选 | 本地复核 |
-| 完整 hull energy 范围 | `energy_above_hull=(min,max)` | 按闭区间复核 |
-| 仅 hull energy 上限 | `energy_above_hull=(0,max)` | 本地复核 |
-| `is_metal` | `is_metal=...` | 本地复核 |
-| `max_num_sites` | `num_sites=(1,max)` | 以解析后结构位点数复核 |
-| `dimensionality` | 不下推 | 本地结构算法 |
-| 高级科学目标 | 不下推 | 生成证据缺口 |
+| Requirement 约束     | MP 查询下推                       | 本地复核        |
+| ------------------ | ----------------------------- | ----------- |
+| `include_elements` | `elements=[...]`              | 必须全部出现      |
+| `exclude_elements` | `exclude_elements=[...]`      | 不得出现任一元素    |
+| 完整 band gap 范围     | `band_gap=(min,max)`          | 按闭区间复核      |
+| 仅 band gap 上限      | `band_gap=(0,max)`            | 按用户边界复核     |
+| 仅 band gap 下限      | v1 不构造虚假上限，留给本地筛选             | 本地复核        |
+| 完整 hull energy 范围  | `energy_above_hull=(min,max)` | 按闭区间复核      |
+| 仅 hull energy 上限   | `energy_above_hull=(0,max)`   | 本地复核        |
+| `is_metal`         | `is_metal=...`                | 本地复核        |
+| `max_num_sites`    | `num_sites=(1,max)`           | 以解析后结构位点数复核 |
+| `dimensionality`   | 不下推                           | 本地结构算法      |
+| 高级科学目标             | 不下推                           | 生成证据缺口      |
 
 所有已下推约束必须再次本地复核，避免 API 字段映射、边界或版本变化造成静默误筛。
 
@@ -644,7 +641,6 @@ P0 不依赖逐页流式恢复：官方 Python 客户端完成受控 chunk 查�
 1. `source_structure.json`
    - 保存 MP 返回结构的规范化 JSON 表示；
    - 不做原胞、惯用胞或对称化变换。
-
 2. `canonical.cif`
    - 周期性坐标移回单位胞；
    - 按 species 和分数坐标稳定排序；
@@ -746,7 +742,6 @@ pymatgen 明确提供 Larsen dimensionality 算法，并要求先构建带键信
    - 对所有成功解析结构按完整 canonical structure hash 分组；
    - 相同 structure ID 的不同 candidate 建立 `exact_duplicate_group_id`；
    - 所有 candidate 均保留。
-
 2. 结构相似簇
    - 只对排序后拟发布的最多 200 个候选执行；
    - 先按 reduced composition 分桶；
@@ -1134,7 +1129,6 @@ Agent 02 和 Orchestrator 可依赖的冻结输出至少包括：
    - include `all-of`、exclude `none-of`；
    - GNoME 开关；
    - query/candidate ID 和 fingerprint 稳定性。
-
 2. 筛选与排序
    - 元素、金属性、原子数和维度；
    - 已知违反优先于其他缺失；
@@ -1143,7 +1137,6 @@ Agent 02 和 Orchestrator 可依赖的冻结输出至少包括：
    - 多偏好字典序；
    - 排序字段缺失；
    - 最终 MP material ID 稳定打破平局。
-
 3. 结构
    - 固定 0D、1D、2D、3D fixture；
    - 位点顺序不改变 structure ID；
@@ -1152,7 +1145,6 @@ Agent 02 和 Orchestrator 可依赖的冻结输出至少包括：
    - summary composition/formula/nsites 不一致；
    - CIF round-trip；
    - dimensionality 失败保持 `UNCERTAIN`。
-
 4. Adapter、恢复和失败注入
    - metadata/search/origin 的 timeout、429 和 5xx；
    - 三次重试耗尽；

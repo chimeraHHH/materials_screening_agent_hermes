@@ -530,7 +530,7 @@ class RetrievalStageRunner:
                     ),
                     self.store.write_text(
                         f"{stage_prefix}/retrieval_report.md",
-                        report_to_markdown(report),
+                        report_to_markdown(report, str(self.store.root)),
                         "text/markdown",
                     ),
                 ]
@@ -878,7 +878,7 @@ class RetrievalStageRunner:
             )
             report_md_ref = self.store.write_text(
                 f"{stage_prefix}/retrieval_report.md",
-                report_to_markdown(report),
+                report_to_markdown(report, str(self.store.root)),
                 "text/markdown",
                 immutable=True,
             )
