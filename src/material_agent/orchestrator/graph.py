@@ -717,6 +717,7 @@ class OrchestratorGraph:
             plan_id=_stable_id("plan", input_snapshot_hash),
             run_id=state["run_id"],
             requirement_revision=state["requirement_revision"],
+            raw_request=state.get("raw_request"),
             requirement_artifact=requirement_pointer,
             routes=routes,
             required_gates=[
@@ -2291,6 +2292,7 @@ class OrchestratorGraph:
             agent_id=route.agent_id,
             attempt=attempt,
             requirement_revision=state["requirement_revision"],
+            raw_request=state.get("raw_request"),
             requirement_artifact=ArtifactPointer(
                 uri=state["requirement_artifact_uri"],
                 sha256=state["requirement_artifact_sha256"],

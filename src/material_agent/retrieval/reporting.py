@@ -16,6 +16,7 @@ from material_agent.retrieval.models import (
 
 def build_report(
     *,
+    raw_request: str | None = None,
     query_plan: RetrievalQueryPlan,
     candidates: list[CandidateRecord],
     raw_count: int,
@@ -44,6 +45,7 @@ def build_report(
         "stage": "agent01",
         "status": status.value,
         "query": {
+            "raw_request": raw_request,
             "source_database": query_plan.source_database.value,
             "query_id": query_plan.query_id,
             "query_fingerprint": query_plan.query_fingerprint,
@@ -134,6 +136,16 @@ def report_to_markdown(report: dict[str, Any], workspace_dir: str | None = None)
     lines = [
         f"# Agent 01 {source_label} 检索报告",
         "",
+    ]
+    raw_request_text = query.get("raw_request")
+    if raw_request_text:
+        lines.extend([
+            "**用户原始需求 (User Prompt)**：",
+            f"> {raw_request_text}",
+            ""
+        ])
+
+    lines.extend([
         "**报告概述**：",
         "本报告详细记录了 Agent 01 (Retrieval Agent) 在 Materials Project 数据库中执行的自动化高通量检索与复核结果。基于前期大语言模型（LLM）解析并经过专家审批的约束条件（如带隙 1.5~2.0 eV、剔除有毒元素、结构稳定等），系统初步拉取了原始数据。随后，Agent 01 在本地进行了严格的确定性物理复核、结构规范化与维度分析，成功剔除不符合要求的候选项，最终确认高置信度候选材料通过（PASS）并发布至下游。报告内详细列出了候选材料的基础热力学属性、晶体对称性、能带特征，以及基于本地生成的原生 3D 晶体结构可视化图片。",
         "",
@@ -195,7 +207,7 @@ def report_to_markdown(report: dict[str, Any], workspace_dir: str | None = None)
         "",
         "### 本地复核约束",
         "",
-    ]
+    ])
     local_constraints = query.get("local_only_constraints", [])
     if local_constraints:
         lines.extend(f"- `{constraint}`" for constraint in local_constraints)
@@ -236,7 +248,9 @@ def report_to_markdown(report: dict[str, Any], workspace_dir: str | None = None)
     if enrichments:
         lines.extend(["", "## Materials Project 候选详情", ""])
         for item in enrichments:
-            lines.extend([f"### {item['material_id']}", ""])
+            formula_text = item.get('formula', '')
+            header = f"### {item['material_id']} ({formula_text})" if formula_text else f"### {item['material_id']}"
+            lines.extend([header, ""])
             lines.extend(["#### Summary", "", "| 属性 | 数值 | 单位 |", "|---|---|---|"])
             for field in item.get("sections", {}).get("summary", {}).get("fields", []):
                 lines.append(f"| {field['label']} | {field['value']} | {field.get('unit') or '—'} |")

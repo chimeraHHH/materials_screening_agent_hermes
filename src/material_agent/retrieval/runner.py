@@ -514,6 +514,7 @@ class RetrievalStageRunner:
                 ),
             )
             report = build_report(
+                raw_request=stage_input.raw_request,
                 query_plan=plan,
                 candidates=[],
                 raw_count=0,
@@ -861,6 +862,7 @@ class RetrievalStageRunner:
                     status = StageStatus.PARTIAL
 
             report = build_report(
+                raw_request=stage_input.raw_request,
                 query_plan=plan,
                 candidates=candidates,
                 raw_count=raw_count,

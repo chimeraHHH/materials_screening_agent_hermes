@@ -64,6 +64,7 @@ def enrich_published_candidates(
             "schema_version": "agent01-mp-report-v1",
             "candidate_id": candidate_id,
             "material_id": candidate.source_material_id,
+            "formula": candidate.formula,
             "heavy_status": "SKIPPED_RANK_LIMIT" if index >= policy.heavy_candidate_limit else "PENDING",
             "sections": {},
             "assets": [],

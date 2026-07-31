@@ -168,6 +168,7 @@ class ExecutionPlan(StrictModel):
     run_id: str
     requirement_revision: int = Field(ge=1)
     requirement_artifact: ArtifactPointer
+    raw_request: str | None = None
     routes: list[StageRoute]
     required_gates: list[str]
     input_snapshot_sha256: str
@@ -235,6 +236,7 @@ class StageExecutionContext(StrictModel):
     attempt: int = Field(ge=1)
     requirement_revision: int = Field(ge=1)
     requirement_artifact: ArtifactPointer
+    raw_request: str | None = None
     input_artifacts: dict[str, ArtifactPointer] = Field(default_factory=dict)
     capability: StageCapability
     input_snapshot: ArtifactPointer | None = None

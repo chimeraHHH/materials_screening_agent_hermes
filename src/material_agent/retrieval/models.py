@@ -222,6 +222,7 @@ class RetrievalStageInput(StrictModel):
     requirement_revision: int = Field(ge=1)
     requirement_artifact_uri: str
     requirement_hash: str
+    raw_request: str | None = None
     retrieval_policy_version: str
     confirmed_by_user: bool
 
@@ -253,6 +254,7 @@ class RetrievalQueryPlan(StrictModel):
     endpoint: str
     database_version: str
     requirement_hash: str
+    raw_request: str | None = None
     pushdown_filters: dict[str, Any]
     local_only_constraints: list[str]
     requested_fields: list[str]

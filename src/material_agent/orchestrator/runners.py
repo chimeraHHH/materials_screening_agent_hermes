@@ -431,6 +431,7 @@ class Agent01RunnerAdapter:
                 requirement_revision=context.requirement_revision,
                 requirement_artifact_uri=context.requirement_artifact.uri,
                 requirement_hash=context.requirement_artifact.sha256,
+                raw_request=context.raw_request,
                 retrieval_policy_version=policy.policy_version,
                 confirmed_by_user=requirement.confirmed_by_user,
             ),
