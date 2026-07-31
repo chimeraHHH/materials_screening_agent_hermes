@@ -29,6 +29,19 @@ ORIGIN_NAME_ALIASES = {
     "structural_dimensionality": ("structure",),
 }
 
+ADAPTIVE_SUMMARY_PROPERTIES = {
+    "formation_energy_per_atom": ("formation_energy_per_atom", "eV/atom"),
+    "is_stable": ("is_stable", "dimensionless"),
+    "equilibrium_reaction_energy_per_atom": ("equilibrium_reaction_energy_per_atom", "eV/atom"),
+    "density": ("density", "g/cm^3"),
+    "volume": ("volume", "A^3"),
+    "is_gap_direct": ("is_gap_direct", "dimensionless"),
+    "ordering": ("ordering", "label"),
+    "total_magnetization": ("total_magnetization", "muB"),
+    "possible_species": ("possible_species", "species"),
+    "theoretical": ("theoretical", "dimensionless"),
+}
+
 
 def candidate_id_for(
     project_id: str,
@@ -92,6 +105,14 @@ def normalize_candidate(
             retrieved_at=retrieved_at,
         ),
     ]
+    if query_plan.policy_version == "retrieval-policy-mp-adaptive-v2":
+        for field, (name, unit) in ADAPTIVE_SUMMARY_PROPERTIES.items():
+            value = document.get(field)
+            if value is not None:
+                properties.append(_property(
+                    name=name, value=value, unit=unit, origins=origins,
+                    plan=query_plan, retrieved_at=retrieved_at,
+                ))
     if query_plan.source_database is SourceDatabase.TOPOLOGICAL_QUANTUM_CHEMISTRY:
         properties.extend(
             _tqc_topology_properties(

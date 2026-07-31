@@ -181,6 +181,7 @@ class Requirement(StrictModel):
 
 class RetrievalPolicy(StrictModel):
     policy_version: str = "retrieval-policy-v1"
+    adaptive_mp_screening: bool = False
     source_database: SourceDatabase = SourceDatabase.MATERIALS_PROJECT
     endpoint: str = "/materials/summary"
     include_deprecated: bool = False
@@ -223,6 +224,8 @@ class RetrievalStageInput(StrictModel):
     requirement_artifact_uri: str
     requirement_hash: str
     raw_request: str | None = None
+    mp_screening_spec_uri: str | None = None
+    mp_screening_spec_sha256: str | None = None
     retrieval_policy_version: str
     confirmed_by_user: bool
 

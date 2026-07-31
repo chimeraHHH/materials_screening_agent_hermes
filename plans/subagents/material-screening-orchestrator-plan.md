@@ -898,6 +898,12 @@ validate_stage_input
 
 ### 8.6 完成后的主线切换
 
+### Adaptive MP screening handoff（2026-07-31）
+
+Requirement review/freeze 现在可携带独立 MP screening spec，并将其作为 Agent01
+`input_artifacts` 指针；联合 review bundle 哈希绑定 Requirement、spec 与 catalog。
+新增 `--mp-adaptive-screening` 显式启用 v2，未启用时保持既有 v1 路由与契约。
+
 ### 8.7 Agent01 MP 报告限额状态（2026-07-30）
 
 - Orchestrator state 新增可选 `mp_report_heavy_limit`，只作用于 Materials Project

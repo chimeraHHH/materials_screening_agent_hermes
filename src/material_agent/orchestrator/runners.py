@@ -432,6 +432,16 @@ class Agent01RunnerAdapter:
                 requirement_artifact_uri=context.requirement_artifact.uri,
                 requirement_hash=context.requirement_artifact.sha256,
                 raw_request=context.raw_request,
+                mp_screening_spec_uri=(
+                    context.input_artifacts.get("mp_screening_spec").uri
+                    if context.input_artifacts.get("mp_screening_spec")
+                    else None
+                ),
+                mp_screening_spec_sha256=(
+                    context.input_artifacts.get("mp_screening_spec").sha256
+                    if context.input_artifacts.get("mp_screening_spec")
+                    else None
+                ),
                 retrieval_policy_version=policy.policy_version,
                 confirmed_by_user=requirement.confirmed_by_user,
             ),

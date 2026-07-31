@@ -118,10 +118,13 @@ def generate(output_root: Path, fixture_root: Path) -> None:
     candidate = candidates[0]
     assert published and candidate.published_downstream
 
+    stage_input_payload = stage_input.model_dump(mode="json")
+    for optional_field in ("raw_request", "mp_screening_spec_uri", "mp_screening_spec_sha256"):
+        stage_input_payload.pop(optional_field, None)
     input_ref = store.write_json(
         "stages/agent01/run-contract-fixture/input_snapshot.json",
         {
-            "stage_input": stage_input.model_dump(mode="json"),
+            "stage_input": stage_input_payload,
             "requirement": requirement.model_dump(mode="json"),
         },
     )

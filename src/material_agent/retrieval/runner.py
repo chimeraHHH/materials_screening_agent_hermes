@@ -44,6 +44,7 @@ from material_agent.retrieval.models import (
     StageResultEnvelopeV2,
     StageStatus,
 )
+from material_agent.retrieval.mp_screening import MPScreeningSpec
 from material_agent.retrieval.normalizer import (
     add_dimensionality_property,
     apply_task_metadata,
@@ -126,6 +127,16 @@ class RetrievalStageRunner:
             missing.append("requirement_hash")
         if not stage_input.requirement_artifact_uri:
             missing.append("requirement_artifact_uri")
+        if bool(stage_input.mp_screening_spec_uri) != bool(
+            stage_input.mp_screening_spec_sha256
+        ):
+            errors.append("MP screening spec URI and hash must be provided together")
+            error_category = "INPUT_INTEGRITY_ERROR"
+        if stage_input.mp_screening_spec_uri and not self.policy.adaptive_mp_screening:
+            errors.append(
+                "MP screening spec requires retrieval-policy-mp-adaptive-v2"
+            )
+            error_category = "INVALID_INPUT"
         try:
             validate_requirement_contract(requirement)
         except QueryPlanningError as exc:
@@ -177,6 +188,30 @@ class RetrievalStageRunner:
                         )
                         error_category = "INPUT_INTEGRITY_ERROR"
 
+        if stage_input.mp_screening_spec_uri and stage_input.mp_screening_spec_sha256:
+            try:
+                spec_ref = self.store.inspect(
+                    stage_input.mp_screening_spec_uri,
+                    media_type="application/json",
+                )
+                spec_payload = self.store.read_json(stage_input.mp_screening_spec_uri)
+                spec = MPScreeningSpec.model_validate(spec_payload)
+                if spec_ref.sha256 != stage_input.mp_screening_spec_sha256:
+                    errors.append("MP screening spec hash mismatch")
+                    error_category = "INPUT_INTEGRITY_ERROR"
+                if spec.requirement_id != requirement.requirement_id:
+                    errors.append("MP screening spec requirement ID mismatch")
+                    error_category = "INPUT_INTEGRITY_ERROR"
+                if spec.requirement_revision != requirement.revision:
+                    errors.append("MP screening spec revision mismatch")
+                    error_category = "INPUT_INTEGRITY_ERROR"
+                if not spec.confirmed_by_user:
+                    errors.append("MP screening spec is not confirmed")
+                    error_category = "INPUT_INTEGRITY_ERROR"
+            except (FileNotFoundError, ArtifactStoreError, ValueError, ValidationError):
+                errors.append("MP screening spec artifact is invalid")
+                error_category = "INPUT_INTEGRITY_ERROR"
+
         if missing:
             error_category = "MISSING_INPUT"
         elif errors and error_category is None:
@@ -208,11 +243,17 @@ class RetrievalStageRunner:
             f"{self.policy.source_database.value}.metadata",
             self.adapter.metadata,
         )
+        screening_spec = None
+        if stage_input.mp_screening_spec_uri:
+            screening_spec = MPScreeningSpec.model_validate(
+                self.store.read_json(stage_input.mp_screening_spec_uri)
+            )
         query_plan = build_query_plan(
             requirement,
             stage_input.requirement_hash,
             source_metadata,
             self.policy,
+            screening_spec,
         )
         query_plan = query_plan.model_copy(
             update={"created_at": self.clock()}
@@ -324,10 +365,18 @@ class RetrievalStageRunner:
             )
 
         try:
+            stage_input_payload = stage_input.model_dump(mode="json")
+            # Keep the frozen v1 artifact byte-compatible when adaptive MP is
+            # not enabled; the optional fields are emitted only for v2 runs.
+            if not stage_input.mp_screening_spec_uri:
+                stage_input_payload.pop("mp_screening_spec_uri", None)
+                stage_input_payload.pop("mp_screening_spec_sha256", None)
+            if stage_input_payload.get("raw_request") is None:
+                stage_input_payload.pop("raw_request", None)
             input_ref = self.store.write_json(
                 f"{stage_prefix}/input_snapshot.json",
                 {
-                    "stage_input": stage_input.model_dump(mode="json"),
+                    "stage_input": stage_input_payload,
                     "requirement": requirement.model_dump(mode="json"),
                 },
                 immutable=True,
@@ -398,6 +447,10 @@ class RetrievalStageRunner:
                 )
             metadata = stage_plan.source_metadata
             prepared_plan = stage_plan.query_plan
+            screening_spec = (
+                MPScreeningSpec.model_validate(self.store.read_json(stage_input.mp_screening_spec_uri))
+                if stage_input.mp_screening_spec_uri else None
+            )
         except Exception as exc:
             retryable = _is_retryable(exc)
             category = _error_category(exc, operation="prepare")
@@ -753,6 +806,7 @@ class RetrievalStageRunner:
                     apply_task_metadata(candidate, resolved_task_metadata),
                     requirement,
                     self.policy,
+                    screening_spec,
                 )
                 if candidate.decision is not Decision.FAILED
                 else candidate

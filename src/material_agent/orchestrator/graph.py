@@ -329,6 +329,7 @@ class OrchestratorGraph:
         )
         return {
             "requirement_draft": parsed.requirement,
+            "mp_screening_spec": parsed.mp_screening_spec,
             "parser_name": parsed.parser_name,
             "parser_version": parsed.parser_version,
             "clarification_questions": questions,
@@ -392,7 +393,9 @@ class OrchestratorGraph:
                     ),
                 },
             )
+            parsed_spec = parsed.mp_screening_spec
         else:
+            parsed_spec = state.get("mp_screening_spec")
             try:
                 updated = self.parser.apply_response(
                     state["requirement_draft"], response
@@ -419,6 +422,7 @@ class OrchestratorGraph:
         )
         return {
             "requirement_draft": updated,
+            "mp_screening_spec": parsed_spec,
             "clarification_questions": [],
             "clarification_decision": "continue",
             "pending_interaction": None,
@@ -503,10 +507,14 @@ class OrchestratorGraph:
     ) -> dict[str, Any]:
         requirement = Requirement.model_validate(state["requirement_draft"])
         draft_payload = requirement.model_dump(mode="json")
-        draft_hash = _sha256(draft_payload)
+        screening_payload = state.get("mp_screening_spec")
+        review_payload: dict[str, Any] = {"requirement": draft_payload}
+        if screening_payload is not None:
+            review_payload["mp_screening_spec"] = screening_payload
+        draft_hash = _sha256(review_payload)
         draft_ref = self.store.write_json(
             f"requirements/drafts/{state['run_id']}.{draft_hash[:16]}.json",
-            draft_payload,
+            review_payload,
             immutable=True,
         )
         review_round = state.get("review_round", 0) + 1
@@ -530,6 +538,7 @@ class OrchestratorGraph:
                 "approval_id": approval_id,
                 "gate_type": "REQUIREMENT_CONFIRMATION",
                 "requirement": draft_payload,
+                "mp_screening_spec": screening_payload,
                 "input_snapshot_uri": draft_ref.uri,
                 "input_snapshot_sha256": draft_ref.sha256,
                 "allowed_decisions": ["approve", "revise", "cancel"],
@@ -626,6 +635,15 @@ class OrchestratorGraph:
             requirement.model_dump(mode="json"),
             immutable=True,
         )
+        screening_ref = None
+        if state.get("mp_screening_spec") is not None:
+            screening_payload = dict(state["mp_screening_spec"])
+            screening_payload["confirmed_by_user"] = True
+            screening_ref = self.store.write_json(
+                f"requirements/{state['run_id']}/mp-screening-spec.json",
+                screening_payload,
+                immutable=True,
+            )
         self.repository.record_requirement(
             run_id=state["run_id"],
             revision=revision,
@@ -643,6 +661,11 @@ class OrchestratorGraph:
             "requirement_revision": revision,
             "requirement_artifact_uri": requirement_ref.uri,
             "requirement_artifact_sha256": requirement_ref.sha256,
+            "mp_screening_spec": (
+                screening_payload if screening_ref is not None else None
+            ),
+            "mp_screening_spec_uri": screening_ref.uri if screening_ref else None,
+            "mp_screening_spec_sha256": screening_ref.sha256 if screening_ref else None,
             "run_status": RunStatus.PLANNED.value,
             "current_stage": "planning",
             "updated_at": self._now(),
@@ -697,16 +720,27 @@ class OrchestratorGraph:
             uri=state["requirement_artifact_uri"],
             sha256=state["requirement_artifact_sha256"],
         )
+        screening_pointer = None
+        if state.get("mp_screening_spec_uri"):
+            screening_pointer = ArtifactPointer(
+                uri=state["mp_screening_spec_uri"],
+                sha256=state["mp_screening_spec_sha256"],
+            )
         if state.get("run_mode") == "direct-stage":
-            routes = self._direct_routes(state, requirement_pointer)
+            routes = self._direct_routes(state, requirement_pointer, screening_pointer)
         else:
-            routes = self._policy_routes(requirement, requirement_pointer)
+            routes = self._policy_routes(requirement, requirement_pointer, screening_pointer)
         seed = {
             "run_id": state["run_id"],
             "requirement": requirement_pointer.model_dump(mode="json"),
             "policy_version": ROUTING_POLICY_VERSION,
             "retrieval_source": retrieval_source.value,
             "mp_report_heavy_limit": state.get("mp_report_heavy_limit"),
+            **(
+                {"mp_adaptive_screening": True}
+                if state.get("mp_adaptive_screening", False)
+                else {}
+            ),
             "routes": [
                 route.model_dump(mode="json")
                 for route in routes
@@ -754,6 +788,7 @@ class OrchestratorGraph:
         self,
         requirement: Requirement,
         requirement_pointer: ArtifactPointer,
+        screening_pointer: ArtifactPointer | None = None,
     ) -> list[StageRoute]:
         required_evidence = max(
             (
@@ -803,7 +838,14 @@ class OrchestratorGraph:
                     reason=reason,
                     required_inputs=list(capability.required_inputs),
                     input_artifacts=(
-                        {"requirement": requirement_pointer}
+                        {
+                            "requirement": requirement_pointer,
+                            **(
+                                {"mp_screening_spec": screening_pointer}
+                                if stage is StageId.RETRIEVAL and screening_pointer
+                                else {}
+                            ),
+                        }
                         if stage is StageId.RETRIEVAL
                         else {}
                     ),
@@ -822,6 +864,7 @@ class OrchestratorGraph:
         self,
         state: OrchestratorState,
         requirement_pointer: ArtifactPointer,
+        screening_pointer: ArtifactPointer | None = None,
     ) -> list[StageRoute]:
         target = StageId(state["direct_stage"])
         payload = state["direct_stage_input"]
@@ -830,6 +873,8 @@ class OrchestratorGraph:
             for name, pointer in payload.get("artifacts", {}).items()
         }
         supplied["requirement"] = requirement_pointer
+        if screening_pointer is not None:
+            supplied["mp_screening_spec"] = screening_pointer
         routes: list[StageRoute] = []
         for stage in StageId:
             capability = self.runners.capability(stage)
@@ -2322,6 +2367,7 @@ class OrchestratorGraph:
                     SourceDatabase.MATERIALS_PROJECT.value,
                 ),
                 mp_report_heavy_limit=state.get("mp_report_heavy_limit"),
+                adaptive_mp_screening=state.get("mp_adaptive_screening", False),
             )
             return Agent01RunnerAdapter(
                 native_runner=self._agent01_runner(state, policy),

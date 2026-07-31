@@ -77,6 +77,10 @@ def main(argv: list[str] | None = None) -> int:
         "--mp-report-heavy-limit", type=int, default=None,
         help="Materials Project heavy report assets for top N published candidates (0-200)",
     )
+    run.add_argument(
+        "--mp-adaptive-screening", action="store_true",
+        help="enable versioned LLM-mapped Materials Project adaptive screening",
+    )
 
     run_stage = subparsers.add_parser(
         "run-stage", help="start one stage from explicit immutable inputs"
@@ -273,6 +277,7 @@ def _start_orchestrator_run(arguments: argparse.Namespace) -> int:
             run_id=arguments.run_id,
             retrieval_source=arguments.source,
             mp_report_heavy_limit=arguments.mp_report_heavy_limit,
+            mp_adaptive_screening=arguments.mp_adaptive_screening,
         )
     _print_model(view)
     return 0
@@ -436,6 +441,7 @@ def _run_retrieval(arguments: argparse.Namespace) -> int:
     policy = retrieval_policy_for_source(
         source,
         mp_report_heavy_limit=arguments.mp_report_heavy_limit,
+        adaptive_mp_screening=getattr(arguments, "mp_adaptive_screening", False),
     )
     stage_input = RetrievalStageInput(
         project_id=arguments.project_id,

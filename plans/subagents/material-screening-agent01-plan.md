@@ -1209,6 +1209,13 @@ StageResult。真实产物在指标提取后删除，不作为公共 fixture。
 - `pip check` 通过；
 - 所有离线 unit、contract、integration 和 E2E 测试通过；
 - 真实 MP Si/O release test 通过；
+
+### Adaptive MP screening v2（2026-07-31）
+
+- 新增版本化 `mp-capability-catalog-v1` 与独立 `mp-screening-spec-v1`；LLM 只能选择受控 capability ID。
+- `retrieval-policy-mp-adaptive-v2` 编译 Summary pushdown/返回字段，代理条件仅参与排序，v1 fixture 保持兼容。
+- 增加带宽、交叉风险、常见价态和周期连通性特征提取器，以及 spec hash、预算和确认校验。
+- 离线 Gate：447 passed, 9 skipped；`pip check` 与 `git diff --check` 通过。
 - Requirement 和全部输出 artifact 的 hash 校验闭环；
 - run-scoped manifest 和结构 lineage 可供 Agent 02 使用；
 - resume 不重复查询、不覆盖已完成证据；

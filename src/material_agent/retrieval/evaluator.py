@@ -17,6 +17,11 @@ from material_agent.retrieval.models import (
     RetrievalPolicy,
     ScientificTargetEvaluation,
 )
+from material_agent.retrieval.mp_screening import (
+    MPScreeningSpec,
+    MP_CAPABILITY_CATALOG,
+    ScreeningIntent,
+)
 
 
 SUPPORTED_TARGET_PROPERTIES = {
@@ -33,6 +38,7 @@ def evaluate_candidate(
     candidate: CandidateAuditRecord,
     requirement: Requirement,
     policy: RetrievalPolicy,
+    screening_spec: MPScreeningSpec | None = None,
 ) -> CandidateAuditRecord:
     hard = requirement.hard_constraints
     evaluations: list[ConstraintEvaluation] = []
@@ -176,6 +182,9 @@ def evaluate_candidate(
             )
         )
 
+    if screening_spec is not None:
+        evaluations.extend(_evaluate_mp_clauses(candidate, screening_spec))
+
     target_evaluations = [
         _evaluate_scientific_target(candidate, target)
         for target in requirement.scientific_targets
@@ -232,6 +241,70 @@ def evaluate_candidate(
             "decision_reasons": sorted(set(reasons)),
         }
     )
+
+
+def _evaluate_mp_clauses(
+    candidate: CandidateAuditRecord, spec: MPScreeningSpec
+) -> list[ConstraintEvaluation]:
+    """Evaluate only exact/derived hard clauses with locally available evidence."""
+    evaluations: list[ConstraintEvaluation] = []
+    aliases = {
+        "structure.dimension": "structural_dimensionality",
+        "deep.sampled_bandwidth": "sampled_bandwidth_ev",
+        "deep.oxidation_common": "oxidation_common",
+        "deep.layered": "structural_dimensionality",
+    }
+    for clause in spec.mapped_clauses:
+        capability = MP_CAPABILITY_CATALOG[clause.capability_id]
+        if clause.intent is not ScreeningIntent.HARD or capability.evidence_kind.value == "PROXY":
+            continue
+        property_name = aliases.get(clause.capability_id, capability.field or clause.capability_id)
+        prop = _property(candidate, property_name)
+        observed = prop.value if prop else None
+        if clause.capability_id == "elements.include":
+            observed = candidate.elements
+        elif clause.capability_id == "elements.exclude":
+            observed = candidate.elements
+        elif clause.capability_id == "structure.num_sites":
+            observed = candidate.num_sites
+        result = ConstraintResult.MISSING
+        reason = "MP_PROPERTY_MISSING"
+        expected = clause.value
+        if observed is not None:
+            try:
+                if clause.operator in {"lte", "gte", "lt", "gt", "eq"} and isinstance(observed, (int, float, bool)):
+                    left = float(observed) if not isinstance(observed, bool) else observed
+                    right = float(expected) if not isinstance(expected, bool) else expected
+                    result = ConstraintResult.MATCH if {
+                        "lte": left <= right, "gte": left >= right,
+                        "lt": left < right, "gt": left > right,
+                        "eq": left == right,
+                    }.get(clause.operator, False) else ConstraintResult.MISMATCH
+                elif clause.operator == "range" and isinstance(expected, (list, tuple)):
+                    low, high = expected
+                    result = ConstraintResult.MATCH if (low is None or observed >= low) and (high is None or observed <= high) else ConstraintResult.MISMATCH
+                elif clause.operator == "contains_all":
+                    result = ConstraintResult.MATCH if set(expected).issubset(set(observed)) else ConstraintResult.MISMATCH
+                elif clause.operator == "contains_none":
+                    result = ConstraintResult.MATCH if not set(expected) & set(observed) else ConstraintResult.MISMATCH
+                elif clause.operator in {"eq", "in", "has"}:
+                    values = expected if isinstance(expected, (list, tuple, set)) else [expected]
+                    result = ConstraintResult.MATCH if (observed in values if clause.operator == "in" else observed == expected) else ConstraintResult.MISMATCH
+                reason = "MP_PROPERTY_MATCH" if result is ConstraintResult.MATCH else "MP_PROPERTY_MISMATCH"
+            except (TypeError, ValueError):
+                result = ConstraintResult.ERROR
+                reason = "MP_PROPERTY_INVALID"
+        evaluations.append(ConstraintEvaluation(
+            constraint_id=clause.clause_id,
+            constraint_type=clause.capability_id,
+            expected=expected,
+            observed=observed,
+            unit=clause.unit or capability.unit,
+            result=result,
+            reason_code=reason,
+            property_origin=prop.origin if prop else None,
+        ))
+    return evaluations
 
 
 def _range_evaluation(

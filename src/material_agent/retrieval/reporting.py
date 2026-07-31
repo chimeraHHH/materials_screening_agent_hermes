@@ -260,9 +260,10 @@ def report_to_markdown(report: dict[str, Any], workspace_dir: str | None = None)
             lines.extend(["#### Crystal Structure", "", f"状态：`{crystal.get('status', 'NOT_AVAILABLE')}`"])
             for asset in item.get("assets", []):
                 if asset.get("media_type") == "image/png":
-                    import os
                     relative = asset["uri"].removeprefix("artifact://")
-                    image_path = os.path.join(workspace_dir, relative) if workspace_dir else relative
+                    # Keep markdown artifacts workspace-independent and
+                    # reproducible; consumers resolve the artifact URI.
+                    image_path = relative
                     label = relative.rsplit("/", 1)[-1].removesuffix(".png").replace("_", " ")
                     lines.extend(["", f"![{label}]({image_path})"])
             symmetry = crystal.get("symmetry")

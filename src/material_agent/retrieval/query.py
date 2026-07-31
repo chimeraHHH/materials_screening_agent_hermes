@@ -16,6 +16,10 @@ from material_agent.retrieval.models import (
     SourceDatabase,
     SourceMetadata,
 )
+from material_agent.retrieval.mp_screening import (
+    MPScreeningSpec,
+    compile_mp_screening_spec,
+)
 
 
 CORE_FIELDS = [
@@ -134,6 +138,7 @@ def build_query_plan(
     requirement_hash: str,
     metadata: SourceMetadata,
     policy: RetrievalPolicy,
+    mp_screening_spec: MPScreeningSpec | None = None,
 ) -> RetrievalQueryPlan:
     if policy.source_database is SourceDatabase.NOMAD:
         return _build_nomad_query_plan(
@@ -169,6 +174,20 @@ def build_query_plan(
     }
     local_only: list[str] = []
 
+    compiled_spec = None
+    if mp_screening_spec is not None:
+        if policy.source_database is not SourceDatabase.MATERIALS_PROJECT:
+            raise QueryPlanningError(
+                "MP screening spec can only be used with Materials Project"
+            )
+        if not mp_screening_spec.confirmed_by_user:
+            raise QueryPlanningError("MP screening spec must be confirmed")
+        compiled_spec = compile_mp_screening_spec(mp_screening_spec)
+        filters.update(compiled_spec.pushdown_filters)
+        requested_spec_fields = set(compiled_spec.requested_fields)
+    else:
+        requested_spec_fields = set()
+
     if hard.include_elements:
         filters["elements"] = sorted(set(hard.include_elements))
     if hard.exclude_elements:
@@ -201,6 +220,7 @@ def build_query_plan(
     requested_fields = sorted(
         set(CORE_FIELDS)
         | (set(MP_REPORT_OPTIONAL_FIELDS) & set(metadata.available_fields))
+        | (requested_spec_fields & set(metadata.available_fields))
     )
     fingerprint_payload = {
         "database_version": metadata.database_version,
@@ -215,6 +235,8 @@ def build_query_plan(
         "policy_version": policy.policy_version,
         "sort_fields": "local:material_id",
     }
+    if mp_screening_spec is not None:
+        fingerprint_payload["mp_screening_spec"] = mp_screening_spec.model_dump(mode="json")
     fingerprint = hashlib.sha256(
         json.dumps(
             fingerprint_payload, sort_keys=True, separators=(",", ":")
@@ -247,10 +269,18 @@ def retrieval_policy_for_source(
     source_database: SourceDatabase | str,
     *,
     mp_report_heavy_limit: int | None = None,
+    adaptive_mp_screening: bool = False,
 ) -> RetrievalPolicy:
     source = SourceDatabase(source_database)
     if source is SourceDatabase.MATERIALS_PROJECT:
         policy = RetrievalPolicy()
+        if adaptive_mp_screening:
+            policy = policy.model_copy(
+                update={
+                    "policy_version": "retrieval-policy-mp-adaptive-v2",
+                    "adaptive_mp_screening": True,
+                }
+            )
         if mp_report_heavy_limit is not None:
             policy = policy.model_copy(
                 update={

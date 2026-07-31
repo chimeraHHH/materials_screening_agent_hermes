@@ -452,6 +452,7 @@ class ParseResult(StrictModel):
     parser_name: str
     parser_version: str
     llm_audit: LLMCallAudit | None = None
+    mp_screening_spec: dict[str, Any] | None = None
 
 
 class PendingInteraction(StrictModel):
@@ -497,6 +498,9 @@ class OrchestratorState(TypedDict, total=False):
     requirement_revision: int
     requirement_artifact_uri: str
     requirement_artifact_sha256: str
+    mp_screening_spec: dict[str, Any] | None
+    mp_screening_spec_uri: str | None
+    mp_screening_spec_sha256: str | None
     parser_name: str
     parser_version: str
     clarification_questions: list[str]
@@ -526,6 +530,7 @@ class OrchestratorState(TypedDict, total=False):
     retrieval_fixture_uri: str | None
     retrieval_source: str
     mp_report_heavy_limit: int | None
+    mp_adaptive_screening: bool
     retry_counters: dict[str, int]
     report_uri: str | None
     report_sha256: str | None
