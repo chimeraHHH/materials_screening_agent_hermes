@@ -76,6 +76,11 @@ live MP、live NOMAD 和五项 real-ML/Metal Gate；warning 为已知 pymatgen �
 历史分计划中的较小测试数字只记录当时任务快照；当前状态以该结果、源码和测试为准。
 Agent03/04 mock 控制链及 bridge PoC 不等于真实科学后端。
 
+2026-08-04 的公开来源复检确认 NOMAD 与 C2DB 均可通过受控访问链路完成真实 Agent01
+检索。对 `topological_flat_band`，来源 coverage 明确缺少的平带证据现在必须产生
+`UNCERTAIN` 而非 `PASS`；该变化保持“数据库未明确证伪即可发布下游”的既定策略，但
+不把结构/元素匹配误表述为平带确认。具体运行证据和限制记录在 Agent01 计划。
+
 ### 1.2 当前 v1 验收目标
 
 v1 的系统级退出目标是：

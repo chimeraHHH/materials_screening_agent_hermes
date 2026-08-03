@@ -23,6 +23,7 @@ from material_agent.retrieval.mp_screening import (
     ScreeningIntent,
     TRANSITION_METAL_ELEMENTS,
 )
+from material_agent.retrieval.source_capabilities import source_property_coverage
 
 
 SUPPORTED_TARGET_PROPERTIES = {
@@ -33,6 +34,19 @@ SUPPORTED_TARGET_PROPERTIES = {
     "nonmetal": "is_metal",
 }
 TQC_TOPOLOGICAL_TARGET = "topological_materials"
+
+
+_TARGET_CLASS_SOURCE_EVIDENCE = {
+    "topological_flat_band": {
+        "flat_band_bandwidth",
+        "first_band_in_fermi_window",
+        "projected_orbital_weight",
+        "band_crossing_topology",
+        "transition_metal_oxidation_state",
+        "flat_band_contributor_connectivity",
+        "layered_vdw_gap",
+    },
+}
 
 
 def evaluate_candidate(
@@ -186,6 +200,7 @@ def evaluate_candidate(
     if screening_spec is not None:
         evaluations.extend(_evaluate_mp_clauses(candidate, screening_spec))
         evaluations.extend(_evaluate_unmapped_mp_clauses(screening_spec))
+    evaluations.extend(_evaluate_target_class_source_coverage(candidate, requirement))
 
     target_evaluations = [
         _evaluate_scientific_target(candidate, target)
@@ -243,6 +258,34 @@ def evaluate_candidate(
             "decision_reasons": sorted(set(reasons)),
         }
     )
+
+
+def _evaluate_target_class_source_coverage(
+    candidate: CandidateAuditRecord,
+    requirement: Requirement,
+) -> list[ConstraintEvaluation]:
+    """Keep unprovided target-class evidence explicitly uncertain.
+
+    A source's structural record may satisfy generic dimensionality and element
+    filters while still not contain the electronic evidence demanded by the
+    requested material class.  Such a record is eligible for downstream work
+    under the permissive publication policy, but must never be called a PASS.
+    """
+    required = _TARGET_CLASS_SOURCE_EVIDENCE.get(requirement.target_class, set())
+    unavailable = set(
+        source_property_coverage(candidate.source_database)["not_judged_at_agent01"]
+    )
+    return [
+        ConstraintEvaluation(
+            constraint_id=f"target_class_evidence:{name}",
+            constraint_type="target_class_evidence",
+            expected="source evidence required for requested target class",
+            observed=None,
+            result=ConstraintResult.MISSING,
+            reason_code="SOURCE_DOES_NOT_JUDGE_TARGET_PROPERTY",
+        )
+        for name in sorted(required & unavailable)
+    ]
 
 
 def _evaluate_mp_clauses(

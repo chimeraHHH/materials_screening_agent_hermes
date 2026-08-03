@@ -315,7 +315,7 @@ def retrieval_policy_for_source(
         SourceDatabase.NOMAD: (
             "retrieval-policy-nomad-v1",
             "/entries/archive/query",
-            100,
+            500,
             5000,
         ),
         SourceDatabase.MC3D: (

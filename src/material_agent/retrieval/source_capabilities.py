@@ -31,6 +31,9 @@ def source_property_coverage(source: SourceDatabase | str) -> dict[str, Any]:
         "first_band_in_fermi_window",
         "projected_orbital_weight",
         "band_crossing_topology",
+        "transition_metal_oxidation_state",
+        "flat_band_contributor_connectivity",
+        "layered_vdw_gap",
     ]
     if database is SourceDatabase.MATERIALS_PROJECT:
         native = {

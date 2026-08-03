@@ -1383,3 +1383,22 @@ Agent 02、Agent 03 和 Agent 04 可在公共契约冻结后使用 fixture 并�
   数据表检索成功。NIMS 明确没有原子坐标，仍阻止其记录进入下游结构筛选。
 - 验收：来源 adapter/query/orchestrator/CLI 聚焦测试 `35 passed`；完整离线 Gate
   `463 passed, 9 skipped`，`pip check`、`git diff --check` 通过。
+
+### NOMAD/C2DB 公开访问重试与平带证据语义修正（2026-08-04）
+
+- 以公开、只读 HTTPS 验证 NOMAD OpenAPI（`v1, NOMAD 1.4.3.post1`）和 C2DB
+  `/help` 可访问；NOMAD 的显式 `live_nomad` release Gate 成功（`1 passed`）。此前
+  NOMAD 批量失败源于大页/不完整 archive，而非服务不可达；当前以 10 条分页和 5.2 秒
+  限流完成 20 条 Fe 限定窗口。
+- C2DB 以 Fe 限定、小页会话检索完成 20 条窗口，并逐条取得官方结构 JSON；两来源的
+  Agent01 运行均完整保存 raw response、query fingerprint、coverage 和 manifest。
+- 修复一个目标语义缺口：`topological_flat_band` 目标现在将所选来源在 coverage catalog
+  中明确“不判定”的带宽、费米窗第一带、轨道投影、交叉、TM 价态、贡献子晶格连通性及
+  vdW gap 写入每条候选的 `missing_evidence`，从而得到 `UNCERTAIN` 而非仅因 Fe/二维
+  结构匹配而得出的 `PASS`。`UNCERTAIN` 仍遵守发布策略进入下游；明确 `REJECT` 或
+  `FAILED` 仍被阻断。
+- 真实结果：C2DB 返回 20、明确拒绝 5、发布 15 个 `UNCERTAIN`；NOMAD 返回 20、结构
+  无法规范化 6、明确拒绝 13、发布 1 个 `UNCERTAIN`。两次均为 `PARTIAL`，原因是有界
+  窗口截断（以及 NOMAD 的 6 个无效结构），不表示数据库访问失败。
+- 新增目标证据单元覆盖；相关 evaluator/source capability/NOMAD/C2DB 测试
+  `29 passed`。本次最终完整离线 Gate、`pip check` 与 `git diff --check` 待提交前复跑。

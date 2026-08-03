@@ -197,6 +197,42 @@ def test_nomad_adapter_paginates_and_maps_si_units_to_agent01_units(
     assert warnings == []
 
 
+def test_nomad_adapter_skips_incomplete_archive_entries_and_keeps_paginating(
+    requirement, requirement_hash
+) -> None:
+    incomplete = _nomad_entry("nomad-incomplete")
+    incomplete["archive"]["results"].pop("material")
+    session = FakeSession(
+        [
+            _page([incomplete], next_cursor="cursor-1"),
+            _page([_nomad_entry("nomad-valid")]),
+        ]
+    )
+    adapter = NomadAdapter(session=session)
+    policy = RetrievalPolicy(
+        policy_version="retrieval-policy-nomad-v1",
+        source_database=SourceDatabase.NOMAD,
+        endpoint="/entries/archive/query",
+        chunk_size=1,
+        max_records_scanned=1,
+        retry_base_seconds=0,
+    )
+    plan = build_query_plan(
+        requirement,
+        requirement_hash,
+        adapter.metadata(),
+        policy,
+    )
+
+    documents = adapter.search(plan)
+    _, warnings = adapter.resolve_task_metadata(["nomad-valid"], ["nomad-valid"], 1)
+
+    assert [item["material_id"] for item in documents] == ["nomad-valid"]
+    assert warnings == [
+        "NOMAD skipped 1 incomplete archive entries without a canonical material record"
+    ]
+
+
 def test_nomad_runner_emits_v2_uncertain_record_without_fabricating_hull(
     tmp_path, requirement
 ) -> None:

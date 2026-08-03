@@ -457,14 +457,38 @@ class RetrievalStageRunner:
                         message=str(exc),
                     )
 
+        resume_from_interrupted_snapshot = False
+        if prior_plan is not None:
+            try:
+                prior_result = self.store.read_json(f"{stage_prefix}/stage_result.json")
+            except FileNotFoundError:
+                # The process stopped after durable raw-response persistence.
+                resume_from_interrupted_snapshot = True
+            else:
+                resume_from_interrupted_snapshot = prior_result.get("status") not in {
+                    StageStatus.SUCCEEDED.value,
+                    StageStatus.PARTIAL.value,
+                }
+
         try:
-            stage_plan = prepared_stage_plan or self.prepare(context)
-            if stage_plan.context != context:
-                raise QueryPlanningError(
-                    "prepared StagePlan context does not match run input"
+            # A persisted plan plus raw response snapshot is a complete
+            # retrieval boundary.  Re-querying live metadata during resume
+            # makes a locally recoverable run fail whenever the remote service
+            # is transiently unavailable, despite all input evidence already
+            # being frozen and hash-checked below.
+            if resume_from_interrupted_snapshot and prepared_stage_plan is None:
+                metadata = SourceMetadata.model_validate(
+                    self.store.read_json(f"{stage_prefix}/capability_snapshot.json")
                 )
-            metadata = stage_plan.source_metadata
-            prepared_plan = stage_plan.query_plan
+                prepared_plan = prior_plan
+            else:
+                stage_plan = prepared_stage_plan or self.prepare(context)
+                if stage_plan.context != context:
+                    raise QueryPlanningError(
+                        "prepared StagePlan context does not match run input"
+                    )
+                metadata = stage_plan.source_metadata
+                prepared_plan = stage_plan.query_plan
             screening_spec = (
                 MPScreeningSpec.model_validate(self.store.read_json(stage_input.mp_screening_spec_uri))
                 if stage_input.mp_screening_spec_uri else None
@@ -715,7 +739,11 @@ class RetrievalStageRunner:
                 f"{prefilter_count} records that do not contain a transition metal"
             )
         documents, layered_prefilter = _prefilter_adaptive_layered_documents(
-            documents, screening_spec, self.policy
+            documents,
+            screening_spec,
+            self.policy,
+            checkpoint_store=self.store,
+            checkpoint_prefix=f"{stage_prefix}/adaptive_layered_prefilter_batches",
         )
         if layered_prefilter:
             output_artifacts.append(
@@ -1489,6 +1517,10 @@ def _prefilter_adaptive_layered_documents(
     documents: list[dict[str, Any]],
     screening_spec: MPScreeningSpec | None,
     policy: RetrievalPolicy,
+    *,
+    checkpoint_store: LocalArtifactStore | None = None,
+    checkpoint_prefix: str | None = None,
+    checkpoint_size: int = 100,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Classify dimensionality without retaining every processed Structure.
 
@@ -1506,39 +1538,60 @@ def _prefilter_adaptive_layered_documents(
     )
     if not needs_layered:
         return documents, []
+    if (checkpoint_store is None) != (checkpoint_prefix is None):
+        raise ValueError("layered-prefilter checkpoint store and prefix must be supplied together")
     retained: list[dict[str, Any]] = []
     audit: list[dict[str, Any]] = []
-    for document in sorted(documents, key=lambda item: str(item.get("material_id", ""))):
-        material_id = str(document.get("material_id") or "unknown")
-        try:
-            with warnings.catch_warnings():
-                warnings.filterwarnings("ignore", category=FutureWarning)
-                warnings.filterwarnings("ignore", category=UserWarning)
-                processed = process_structure(
-                    document.get("structure"),
-                    summary_elements=document.get("elements"),
-                    summary_num_sites=document.get("nsites"),
-                    summary_formula=document.get("formula_pretty"),
-                    policy=policy,
-                )
-                dimensionality = calculate_dimensionality(processed.structure)
-            value = dimensionality.value
-            audit.append({
-                "material_id": material_id,
-                "structural_dimensionality": value,
-                "status": "RESOLVED" if value is not None else "MISSING",
-                "method": dimensionality.method,
-            })
-            if value == 2:
-                retained.append(document)
-        except (StructureValidationError, KeyError, TypeError, ValueError) as exc:
-            audit.append({
-                "material_id": material_id,
-                "structural_dimensionality": None,
-                "status": "MISSING",
-                "method": None,
-                "warning": type(exc).__name__,
-            })
+    ordered = sorted(documents, key=lambda item: str(item.get("material_id", "")))
+    by_material_id = {str(document.get("material_id") or "unknown"): document for document in ordered}
+    for batch_index, start in enumerate(range(0, len(ordered), checkpoint_size), start=1):
+        batch = ordered[start : start + checkpoint_size]
+        checkpoint_path = (
+            f"{checkpoint_prefix}/batch-{batch_index:05d}.jsonl"
+            if checkpoint_prefix is not None else None
+        )
+        if checkpoint_path is not None and checkpoint_store is not None and checkpoint_store.exists(checkpoint_path):
+            rows = checkpoint_store.read_jsonl(checkpoint_path)
+        else:
+            rows = []
+            for document in batch:
+                material_id = str(document.get("material_id") or "unknown")
+                try:
+                    with warnings.catch_warnings():
+                        warnings.filterwarnings("ignore", category=FutureWarning)
+                        warnings.filterwarnings("ignore", category=UserWarning)
+                        processed = process_structure(
+                            document.get("structure"),
+                            summary_elements=document.get("elements"),
+                            summary_num_sites=document.get("nsites"),
+                            summary_formula=document.get("formula_pretty"),
+                            policy=policy,
+                        )
+                        dimensionality = calculate_dimensionality(processed.structure)
+                    value = dimensionality.value
+                    rows.append({
+                        "material_id": material_id,
+                        "structural_dimensionality": value,
+                        "status": "RESOLVED" if value is not None else "MISSING",
+                        "method": dimensionality.method,
+                    })
+                except (StructureValidationError, KeyError, TypeError, ValueError) as exc:
+                    rows.append({
+                        "material_id": material_id,
+                        "structural_dimensionality": None,
+                        "status": "MISSING",
+                        "method": None,
+                        "warning": type(exc).__name__,
+                    })
+            if checkpoint_path is not None and checkpoint_store is not None:
+                checkpoint_store.write_jsonl(checkpoint_path, rows, immutable=True)
+        audit.extend(rows)
+        retained.extend(
+            by_material_id[row["material_id"]]
+            for row in rows
+            if row.get("structural_dimensionality") == 2
+            and row.get("material_id") in by_material_id
+        )
     return retained, audit
 
 

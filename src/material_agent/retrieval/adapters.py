@@ -11,6 +11,7 @@ import math
 import os
 import re
 import subprocess
+import time
 from collections.abc import Sequence
 from collections.abc import Callable, Mapping
 from typing import Any, Protocol
@@ -32,6 +33,10 @@ from material_agent.retrieval.query import (
     NOMAD_REQUIRED_FIELDS,
     assert_mp_client_contract,
 )
+
+
+class _NomadIncompleteEntry(ValueError):
+    """A public NOMAD archive entry that lacks usable canonical material data."""
 
 
 class MaterialsSourceAdapter(Protocol):
@@ -368,10 +373,16 @@ class NomadAdapter:
         self.base_url = base_url.rstrip("/")
         self.session = session or requests.Session()
         self.timeout_seconds = timeout_seconds
+        # NOMAD's public archive endpoint permits only one new connection per
+        # five seconds.  Injected sessions are test doubles, so they must not
+        # make unit tests wait.
+        self._request_interval_seconds = 5.2 if session is None else 0.0
+        self._last_request_monotonic: float | None = None
         self._method_metadata: dict[str, dict[str, Any]] = {}
+        self._skipped_incomplete_entries = 0
 
     def metadata(self) -> SourceMetadata:
-        response = self.session.get(
+        response = self._get(
             f"{self.base_url}/openapi.json",
             timeout=self.timeout_seconds,
         )
@@ -404,7 +415,7 @@ class NomadAdapter:
             }
             if page_after_value is not None:
                 pagination["page_after_value"] = page_after_value
-            response = self.session.post(
+            response = self._post(
                 f"{self.base_url}{plan.endpoint}",
                 json={
                     "owner": "public",
@@ -421,7 +432,14 @@ class NomadAdapter:
             for entry in data:
                 if not isinstance(entry, dict):
                     raise ValueError("NOMAD archive response contains a non-object entry")
-                documents.append(self._map_entry(entry))
+                # Public archive pagination can include incomplete uploads without
+                # ``results.material``.  They cannot yield a canonical structure,
+                # but must not make otherwise valid later records disappear.
+                # Keep the cursor moving and record their count as provenance.
+                try:
+                    documents.append(self._map_entry(entry))
+                except _NomadIncompleteEntry:
+                    self._skipped_incomplete_entries += 1
                 if len(documents) >= plan.max_records_scanned:
                     break
 
@@ -445,6 +463,21 @@ class NomadAdapter:
             key=lambda item: str(item.get("material_id", "")),
         )
 
+    def _wait_for_request_slot(self) -> None:
+        if self._last_request_monotonic is not None:
+            elapsed = time.monotonic() - self._last_request_monotonic
+            if elapsed < self._request_interval_seconds:
+                time.sleep(self._request_interval_seconds - elapsed)
+        self._last_request_monotonic = time.monotonic()
+
+    def _get(self, url: str, **kwargs: Any) -> requests.Response:
+        self._wait_for_request_slot()
+        return self.session.get(url, **kwargs)
+
+    def _post(self, url: str, **kwargs: Any) -> requests.Response:
+        self._wait_for_request_slot()
+        return self.session.post(url, **kwargs)
+
     def resolve_task_metadata(
         self, task_ids: Sequence[str], material_ids: Sequence[str], batch_size: int
     ) -> tuple[dict[str, dict[str, Any]], list[str]]:
@@ -460,6 +493,12 @@ class NomadAdapter:
             if missing
             else []
         )
+        if self._skipped_incomplete_entries:
+            warnings.append(
+                "NOMAD skipped "
+                f"{self._skipped_incomplete_entries} incomplete archive entries "
+                "without a canonical material record"
+            )
         return resolved, warnings
 
     def _map_entry(self, entry: dict[str, Any]) -> dict[str, Any]:
@@ -469,15 +508,21 @@ class NomadAdapter:
         archive = entry.get("archive")
         results = archive.get("results") if isinstance(archive, dict) else None
         if not isinstance(results, dict):
-            raise ValueError(f"NOMAD entry {entry_id} is missing archive.results")
+            raise _NomadIncompleteEntry(
+                f"NOMAD entry {entry_id} is missing archive.results"
+            )
         material = results.get("material")
         if not isinstance(material, dict):
-            raise ValueError(f"NOMAD entry {entry_id} is missing results.material")
+            raise _NomadIncompleteEntry(
+                f"NOMAD entry {entry_id} is missing results.material"
+            )
         elements = material.get("elements")
         if not isinstance(elements, list) or not all(
             isinstance(value, str) for value in elements
         ):
-            raise ValueError(f"NOMAD entry {entry_id} has invalid material elements")
+            raise _NomadIncompleteEntry(
+                f"NOMAD entry {entry_id} has invalid material elements"
+            )
 
         structure = _nomad_structure(material.get("topology"))
         nsites = (
