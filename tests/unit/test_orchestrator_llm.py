@@ -85,8 +85,8 @@ def test_deepseek_provider_sends_json_request_and_returns_safe_audit() -> None:
     assert call["headers"]["Authorization"] == f"Bearer {SECRET}"
     assert call["payload"]["model"] == DEEPSEEK_MODEL_ID
     assert call["payload"]["response_format"] == {"type": "json_object"}
-    assert call["payload"]["thinking"] == {"type": "enabled"}
-    assert call["payload"]["reasoning_effort"] == "high"
+    assert call["payload"]["thinking"] == {"type": "disabled"}
+    assert "reasoning_effort" not in call["payload"]
     assert call["payload"]["stream"] is False
     assert "temperature" not in call["payload"]
     assert SECRET not in json.dumps(result.audit.model_dump(mode="json"))
@@ -116,6 +116,28 @@ def test_deepseek_provider_retries_only_retryable_statuses() -> None:
     assert result.payload == {"ok": True}
     assert len(transport.calls) == 2
     assert sleeps == [0.5]
+
+
+def test_deepseek_provider_retries_empty_json_content() -> None:
+    transport = ScriptedTransport([
+        _provider_response(""),
+        _provider_response('{"ok":true}'),
+    ])
+    sleeps: list[float] = []
+    provider = DeepSeekProvider(
+        secret_resolver=StaticSecretResolver(), transport=transport,
+        retry_base_seconds=0.5, sleeper=sleeps.append,
+    )
+
+    result = provider.structured_generate(
+        system_prompt="Return JSON.", user_payload={"raw_request": "find Si"},
+        prompt_version="prompt-v1",
+    )
+
+    assert result.payload == {"ok": True}
+    assert len(transport.calls) == 2
+    assert sleeps == [0.5]
+    assert result.audit.thinking_mode == "disabled"
 
 
 def test_deepseek_provider_redacts_authentication_failure() -> None:
@@ -286,6 +308,149 @@ def test_llm_requirement_parser_overrides_controlled_identity_fields(
         "raw_request": "寻找 Si/O 半导体"
     }
     assert "JSON Schema" in provider.calls[0]["system_prompt"]
+
+
+def test_llm_requirement_parser_accepts_canonical_adaptive_flat_band_mapping(
+    requirement: Requirement,
+) -> None:
+    payload = requirement.model_dump(mode="json")
+    payload["hard_constraints"]["dimensionality"] = 2
+    provider = FakeProvider(
+        {
+            "requirement": payload,
+            "clarification_questions": [],
+            "mp_screening": {
+                "mapped_clauses": [
+                    {
+                        "clause_id": "tm",
+                        "source_text": "transition metal",
+                        "capability_id": "composition.has_transition_metal",
+                        "intent": "HARD",
+                        "operator": "eq",
+                        "value": True,
+                        "unit": "dimensionless",
+                        "priority": 100,
+                    },
+                    {
+                        "clause_id": "layered",
+                        "source_text": "layered",
+                        "capability_id": "deep.layered",
+                        "intent": "HARD",
+                        "operator": "eq",
+                        "value": True,
+                        "unit": "dimensionless",
+                        "priority": 100,
+                    },
+                    {
+                        "clause_id": "bandwidth",
+                        "source_text": "W <= 50 meV",
+                        "capability_id": "deep.sampled_bandwidth",
+                        "intent": "HARD",
+                        "operator": "lte",
+                        "value": 0.05,
+                        "unit": "eV",
+                        "priority": 100,
+                    },
+                    {
+                        "clause_id": "vdw",
+                        "source_text": "vdW gap preferred",
+                        "capability_id": "proxy.vdw_gap",
+                        "intent": "PREFERENCE",
+                        "operator": "maximize",
+                        "value": None,
+                        "unit": "dimensionless",
+                        "priority": 10,
+                    },
+                ],
+                "unmapped_clauses": [],
+                "deep_screen_limit": 20,
+            },
+        }
+    )
+
+    parsed = LLMRequirementParser(provider).parse("flat-band request", "req-local")
+
+    assert parsed.mp_screening_spec is not None
+    assert [
+        clause["capability_id"] for clause in parsed.mp_screening_spec["mapped_clauses"]
+    ] == [
+        "composition.has_transition_metal",
+        "deep.layered",
+        "deep.sampled_bandwidth",
+        "proxy.vdw_gap",
+    ]
+    assert parsed.mp_screening_spec["deep_endpoints"] == [
+        "bandstructure_uniform",
+        "robocrys",
+    ]
+    assert "50 meV" in provider.calls[0]["system_prompt"]
+
+
+def test_llm_requirement_parser_repairs_omitted_flat_band_mapping(
+    requirement: Requirement,
+) -> None:
+    provider = FakeProvider(
+        {
+            "requirement": requirement.model_dump(mode="json"),
+            "clarification_questions": [],
+            "mp_screening": None,
+        }
+    )
+
+    parsed = LLMRequirementParser(provider).parse(
+        "过渡金属层状材料，vdW gap 最优先，带宽 W<=50meV；"
+        "进行价态分析；避免能带交点和孤立 cluster，要求互连子晶格。"
+        "费米面附近的第一条能带应由杂化态构成。",
+        "req-local",
+    )
+
+    assert parsed.mp_screening_spec is not None
+    spec = parsed.mp_screening_spec
+    assert {clause["capability_id"] for clause in spec["mapped_clauses"]} == {
+        "composition.has_transition_metal",
+        "deep.layered",
+        "proxy.vdw_gap",
+        "deep.sampled_bandwidth",
+        "deep.oxidation_common",
+        "proxy.band_crossing",
+        "proxy.connected_sublattice",
+    }
+    bandwidth = next(
+        clause for clause in spec["mapped_clauses"]
+        if clause["capability_id"] == "deep.sampled_bandwidth"
+    )
+    assert bandwidth["value"] == 0.05
+    assert bandwidth["unit"] == "eV"
+    assert {gap["status"] for gap in spec["unmapped_clauses"]} == {
+        "MISSING_THRESHOLD"
+    }
+
+
+def test_llm_requirement_parser_repairs_malformed_optional_mapping(
+    requirement: Requirement,
+) -> None:
+    parser = LLMRequirementParser(
+        FakeProvider(
+            {
+                "requirement": requirement.model_dump(mode="json"),
+                "clarification_questions": [],
+                "mp_screening": {"mapped_clauses": "not-a-list"},
+            }
+        )
+    )
+
+    parsed = parser.parse("过渡金属层状材料，带宽 W<=50meV。", "req-local")
+
+    assert parsed.mp_screening_spec is not None
+    assert {clause["capability_id"] for clause in parsed.mp_screening_spec["mapped_clauses"]} == {
+        "composition.has_transition_metal",
+        "deep.layered",
+        "deep.sampled_bandwidth",
+    }
+    assert any(
+        clause["clause_id"] == "invalid-mapping-envelope"
+        for clause in parsed.mp_screening_spec["unmapped_clauses"]
+    )
 
 
 def test_llm_requirement_parser_fails_closed_on_invalid_scientific_unit(

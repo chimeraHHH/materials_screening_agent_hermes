@@ -6,6 +6,7 @@ import hashlib
 import importlib.metadata
 import random
 import time
+import warnings
 from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any, TypeVar
@@ -44,7 +45,11 @@ from material_agent.retrieval.models import (
     StageResultEnvelopeV2,
     StageStatus,
 )
-from material_agent.retrieval.mp_screening import MPScreeningSpec
+from material_agent.retrieval.mp_screening import (
+    MPScreeningSpec,
+    ScreeningIntent,
+    TRANSITION_METAL_ELEMENTS,
+)
 from material_agent.retrieval.normalizer import (
     add_dimensionality_property,
     apply_task_metadata,
@@ -658,6 +663,14 @@ class RetrievalStageRunner:
                 "duplicate material IDs were returned and normalized once: "
                 + ", ".join(duplicate_material_ids)
             )
+        documents, prefilter_count = _prefilter_adaptive_summary_documents(
+            documents, screening_spec
+        )
+        if prefilter_count:
+            warnings.append(
+                "adaptive Summary prefilter skipped structure processing for "
+                f"{prefilter_count} records that do not contain a transition metal"
+            )
 
         retrieved_at = plan.created_at
         candidates: list[CandidateRecord] = []
@@ -671,13 +684,20 @@ class RetrievalStageRunner:
                 plan.source_database,
             )
             try:
-                processed = process_structure(
-                    document.get("structure"),
-                    summary_elements=document.get("elements"),
-                    summary_num_sites=document.get("nsites"),
-                    summary_formula=document.get("formula_pretty"),
-                    policy=self.policy,
-                )
+                # pymatgen currently emits this dependency deprecation once
+                # per composition.  It is neither a structure-quality signal
+                # nor an action users can take, so keep the run log useful.
+                with warnings.catch_warnings():
+                    warnings.filterwarnings(
+                        "ignore", message="gcd is deprecated", category=FutureWarning,
+                    )
+                    processed = process_structure(
+                        document.get("structure"),
+                        summary_elements=document.get("elements"),
+                        summary_num_sites=document.get("nsites"),
+                        summary_formula=document.get("formula_pretty"),
+                        policy=self.policy,
+                    )
                 for warning in processed.data_quality_warnings:
                     warnings.append(
                         f"{material_id}: CIF round-trip warning "
@@ -1289,6 +1309,33 @@ def _deduplicate_documents(
         seen.add(key)
         unique.append(document)
     return unique, sorted(duplicates)
+
+
+def _prefilter_adaptive_summary_documents(
+    documents: list[dict[str, Any]], screening_spec: MPScreeningSpec | None,
+) -> tuple[list[dict[str, Any]], int]:
+    """Apply safe Summary-only adaptive hard filters before structure work.
+
+    The MP ``elements`` search parameter is an AND filter and cannot express
+    "contains any transition metal".  The returned Summary document can, so
+    this local check avoids expensive structure canonicalization for records
+    that cannot satisfy the frozen hard clause.
+    """
+
+    if screening_spec is None or not any(
+        clause.capability_id == "composition.has_transition_metal"
+        and clause.intent is ScreeningIntent.HARD
+        and clause.operator == "eq"
+        and clause.value is True
+        for clause in screening_spec.mapped_clauses
+    ):
+        return documents, 0
+    retained = [
+        document for document in documents
+        if set(str(item) for item in (document.get("elements") or []))
+        & TRANSITION_METAL_ELEMENTS
+    ]
+    return retained, len(documents) - len(retained)
 
 
 def _stage_outcome(

@@ -20,6 +20,13 @@ from material_agent.retrieval.models import StrictModel
 MP_SCREENING_SPEC_VERSION = "mp-screening-spec-v1"
 MP_CAPABILITY_CATALOG_VERSION = "mp-capability-catalog-v1"
 
+# Frozen for the catalog version. This means "contains a transition metal" and
+# does not misuse the MP `elements` query parameter, whose list semantics are
+# an AND rather than an OR.
+TRANSITION_METAL_ELEMENTS: frozenset[str] = frozenset(
+    "Sc Ti V Cr Mn Fe Co Ni Cu Zn Y Zr Nb Mo Tc Ru Rh Pd Ag Cd Hf Ta W Re Os Ir Pt Au Hg Rf Db Sg Bh Hs Mt Ds Rg Cn".split()
+)
+
 
 class ScreeningIntent(StrEnum):
     HARD = "HARD"
@@ -201,6 +208,7 @@ def _cap(
 MP_CAPABILITY_CATALOG: dict[str, MPCapability] = {
     "elements.include": _cap("elements.include", "required elements", field="elements", query_parameter="elements", value_type="string_list", operators=("contains_all",)),
     "elements.exclude": _cap("elements.exclude", "excluded elements", field="elements", query_parameter="exclude_elements", value_type="string_list", operators=("contains_none",)),
+    "composition.has_transition_metal": _cap("composition.has_transition_metal", "contains at least one frozen transition-metal element", field=None, value_type="derived", unit="dimensionless", operators=("eq",), evidence_kind=EvidenceKind.DERIVED, pushdown=False),
     "formula.exact": _cap("formula.exact", "exact formula", field="formula_pretty", query_parameter="formula", value_type="string", operators=("eq",)),
     "structure.num_sites": _cap("structure.num_sites", "number of sites", field="nsites", query_parameter="num_sites", unit="count", operators=("lte", "gte", "range")),
     "structure.crystal_system": _cap("structure.crystal_system", "crystal system", field="symmetry.crystal_system", query_parameter="crystal_system", value_type="string", operators=("eq", "in")),

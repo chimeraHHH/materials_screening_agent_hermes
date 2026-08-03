@@ -904,6 +904,12 @@ Requirement review/freeze 现在可携带独立 MP screening spec，并将其作
 `input_artifacts` 指针；联合 review bundle 哈希绑定 Requirement、spec 与 catalog。
 新增 `--mp-adaptive-screening` 显式启用 v2，未启用时保持既有 v1 路由与契约。
 
+### DeepSeek JSON Output 兼容性修正（2026-07-31）
+
+- 根据 DeepSeek JSON Output 文档，Stage0 在 JSON mode 下关闭 thinking，并在返回空
+  `content` 时只重试一次受控请求；不读取或持久化 `reasoning_content`。
+- system prompt 增加 JSON 样例，满足 DeepSeek 对 JSON Output prompt 的要求。
+
 ### 8.7 Agent01 MP 报告限额状态（2026-07-30）
 
 - Orchestrator state 新增可选 `mp_report_heavy_limit`，只作用于 Materials Project

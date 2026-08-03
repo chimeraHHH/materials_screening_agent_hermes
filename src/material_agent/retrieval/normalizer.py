@@ -109,6 +109,12 @@ def normalize_candidate(
         for field, (name, unit) in ADAPTIVE_SUMMARY_PROPERTIES.items():
             value = document.get(field)
             if value is not None:
+                # PropertyValue is a frozen v1 scalar contract.  MP returns
+                # possible_species as a list, so retain it losslessly enough
+                # for deterministic display as a canonical label string; the
+                # full list remains in the archived raw summary response.
+                if field == "possible_species" and isinstance(value, list):
+                    value = "; ".join(sorted(str(item) for item in value))
                 properties.append(_property(
                     name=name, value=value, unit=unit, origins=origins,
                     plan=query_plan, retrieved_at=retrieved_at,
@@ -279,7 +285,7 @@ def _property(
     task_id = next(
         (
             origins[alias]
-            for alias in ORIGIN_NAME_ALIASES[name]
+            for alias in ORIGIN_NAME_ALIASES.get(name, (name,))
             if alias in origins
         ),
         None,

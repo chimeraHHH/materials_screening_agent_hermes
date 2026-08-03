@@ -21,6 +21,7 @@ from material_agent.retrieval.mp_screening import (
     MPScreeningSpec,
     MP_CAPABILITY_CATALOG,
     ScreeningIntent,
+    TRANSITION_METAL_ELEMENTS,
 )
 
 
@@ -267,6 +268,8 @@ def _evaluate_mp_clauses(
             observed = candidate.elements
         elif clause.capability_id == "structure.num_sites":
             observed = candidate.num_sites
+        elif clause.capability_id == "composition.has_transition_metal":
+            observed = bool(set(candidate.elements) & TRANSITION_METAL_ELEMENTS)
         result = ConstraintResult.MISSING
         reason = "MP_PROPERTY_MISSING"
         expected = clause.value

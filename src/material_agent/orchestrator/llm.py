@@ -17,7 +17,7 @@ from urllib.parse import urlparse
 from material_agent.orchestrator.models import LLMCallAudit
 
 
-DEEPSEEK_PROVIDER_VERSION = "deepseek-openai-compatible-v1"
+DEEPSEEK_PROVIDER_VERSION = "deepseek-openai-compatible-v2"
 DEEPSEEK_BASE_URL = "https://api.deepseek.com"
 DEEPSEEK_MODEL_ID = "deepseek-v4-pro"
 DEFAULT_LLM_API_KEY_ENV = "MATERIAL_AGENT_LLM_API_KEY"
@@ -243,8 +243,10 @@ class DeepSeekProvider:
             ],
             "stream": False,
             "response_format": {"type": "json_object"},
-            "thinking": {"type": "enabled"},
-            "reasoning_effort": "high",
+            # DeepSeek documents that JSON Output can occasionally return an
+            # empty ``content``. Stage0 needs only the final JSON, not a chain
+            # of thought, so disable thinking and retry an empty final answer.
+            "thinking": {"type": "disabled"},
             "max_tokens": 4096,
         }
         request_sha256 = hashlib.sha256(
@@ -265,7 +267,7 @@ class DeepSeekProvider:
         }
         endpoint = f"{self.base_url}/chat/completions"
         status = 0
-        response_body = b""
+        response: dict[str, Any] | None = None
         for attempt in range(1, self.max_attempts + 1):
             try:
                 status, response_body = self.transport.post_json(
@@ -280,27 +282,43 @@ class DeepSeekProvider:
                     raise
             else:
                 if 200 <= status < 300:
-                    break
-                retryable = status == 429 or 500 <= status <= 599
-                if not retryable or attempt == self.max_attempts:
-                    category = (
-                        "AUTHENTICATION_FAILED"
-                        if status in {401, 403}
-                        else "TRANSIENT_EXTERNAL"
-                        if retryable
-                        else "PERMANENT_CONFIGURATION"
-                    )
-                    raise LLMProviderError(
-                        category,
-                        f"LLM provider returned HTTP status {status}",
-                        retryable=retryable,
-                    )
+                    try:
+                        response = _parse_provider_response(
+                            response_body, expected_model=self.model_id
+                        )
+                    except LLMProviderError as exc:
+                        if exc.category != "EMPTY_CONTENT" or attempt == self.max_attempts:
+                            if exc.category == "EMPTY_CONTENT":
+                                raise LLMProviderError(
+                                    "INVALID_RESPONSE",
+                                    "LLM provider returned empty structured content after retry",
+                                    retryable=False,
+                                ) from exc
+                            raise
+                    else:
+                        break
+                else:
+                    retryable = status == 429 or 500 <= status <= 599
+                    if not retryable or attempt == self.max_attempts:
+                        category = (
+                            "AUTHENTICATION_FAILED"
+                            if status in {401, 403}
+                            else "TRANSIENT_EXTERNAL"
+                            if retryable
+                            else "PERMANENT_CONFIGURATION"
+                        )
+                        raise LLMProviderError(
+                            category,
+                            f"LLM provider returned HTTP status {status}",
+                            retryable=retryable,
+                        )
             if self.retry_base_seconds:
                 self.sleeper(self.retry_base_seconds * attempt)
 
-        response = _parse_provider_response(
-            response_body, expected_model=self.model_id
-        )
+        if response is None:  # defensive: loop either returned a response or raised
+            raise LLMProviderError(
+                "TRANSIENT_EXTERNAL", "LLM provider did not return a usable response", retryable=True
+            )
         content = response["content"]
         try:
             structured_payload = json.loads(content)
@@ -329,8 +347,8 @@ class DeepSeekProvider:
                 response_sha256=hashlib.sha256(
                     content.encode("utf-8")
                 ).hexdigest(),
-                thinking_mode="enabled",
-                reasoning_effort="high",
+                thinking_mode="disabled",
+                reasoning_effort="none",
                 response_format="json_object",
                 prompt_tokens=usage.get("prompt_tokens"),
                 completion_tokens=usage.get("completion_tokens"),
@@ -373,9 +391,9 @@ def _parse_provider_response(
     content = message.get("content") if isinstance(message, dict) else None
     if not isinstance(content, str) or not content.strip():
         raise LLMProviderError(
-            "INVALID_RESPONSE",
+            "EMPTY_CONTENT",
             "LLM provider returned empty structured content",
-            retryable=False,
+            retryable=True,
         )
     usage = payload.get("usage", {})
     if not isinstance(usage, dict):

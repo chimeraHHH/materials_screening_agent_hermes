@@ -1216,6 +1216,30 @@ StageResult。真实产物在指标提取后删除，不作为公共 fixture。
 - `retrieval-policy-mp-adaptive-v2` 编译 Summary pushdown/返回字段，代理条件仅参与排序，v1 fixture 保持兼容。
 - 增加带宽、交叉风险、常见价态和周期连通性特征提取器，以及 spec hash、预算和确认校验。
 - 离线 Gate：447 passed, 9 skipped；`pip check` 与 `git diff --check` 通过。
+
+### Adaptive Summary provenance 修正（2026-07-31）
+
+- 修复 adaptive v2 新增 Summary 属性缺少 origin alias 时触发的 `KeyError`；该错误此前会被
+  外层错误标记成 `STRUCTURE_INVALID`。新增属性现在以其自身字段名作为 provenance fallback。
+- 真实 MP `run_008` 证实原始结构 payload 有效；该 run 保留为失败审计证据，后续运行使用新 run ID。
+
+### Adaptive Summary 标量契约修正（2026-07-31）
+
+- 真实 MP `run_011` 发现 `possible_species` 是字符串列表；将其直接写入冻结的
+  `PropertyValue` 标量字段会触发 `ValidationError`，并被外层误报为结构处理失败。
+- adaptive v2 现在以排序后的 `"; "` 分隔字符串记录该报告属性，原始列表继续保留在
+  不可变的 Summary gzip artifact 中；不改变 `agent01-contract-v1` JSON Schema 或 fixture。
+
+### Adaptive Summary 早期过滤与运行反馈（2026-07-31）
+
+- `composition.has_transition_metal` 为本地精确硬条件，不可错误下推为 MP `elements` 的
+  AND 查询；现在在原始 Summary 归档后、结构规范化前执行，因此不匹配记录不会触发 CIF
+  往返或 CrystalNN 二维性计算。
+- 仅抑制 pymatgen 已知的 `gcd is deprecated` 重复 `FutureWarning`；其余结构与
+  二维性 warning 继续写入审计和报告。
+- 真实 `run_012` 在 5000 条截断 Summary 中仅有 191 条包含过渡金属、其中 2 条为二维；
+  因此该截断窗口不能用于“数据库中不存在候选”的科学结论。均匀 k 网格带宽仍需要用户
+  明确费米能量窗口，缺失时保持 `UNCERTAIN`。
 - Requirement 和全部输出 artifact 的 hash 校验闭环；
 - run-scoped manifest 和结构 lineage 可供 Agent 02 使用；
 - resume 不重复查询、不覆盖已完成证据；
