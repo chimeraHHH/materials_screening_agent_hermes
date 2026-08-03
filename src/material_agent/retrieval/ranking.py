@@ -25,9 +25,14 @@ def rank_and_publish(
     preferences: list[RankingPreference],
     max_candidates: int,
 ) -> tuple[list[CandidateAuditRecord], list[CandidateAuditRecord]]:
-    # Only deterministic PASS records are safe to hand to downstream stages.
-    # UNCERTAIN records remain in the audit output, but are not published.
-    eligible = [candidate for candidate in candidates if candidate.decision is Decision.PASS]
+    # Database evidence gaps are downstream work, not a rejection.  Preserve
+    # the distinction in the immutable record and rank PASS before UNCERTAIN;
+    # only explicit mismatch/failure is blocked from downstream publication.
+    eligible = [
+        candidate
+        for candidate in candidates
+        if candidate.decision in {Decision.PASS, Decision.UNCERTAIN}
+    ]
     eligible.sort(key=lambda candidate: ranking_key(candidate, preferences))
     published_ids = {
         candidate.candidate_id for candidate in eligible[:max_candidates]

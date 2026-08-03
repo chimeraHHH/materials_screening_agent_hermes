@@ -130,6 +130,14 @@ uniform/line band structure、oxidation-state、robocrys/bonds 的可序列化�
   `nbrFermiCrossing`、`smLineCrossing` 与 crossing type，但没有能量—k 数组、轨道投影或
   氧化态。将 crossing count/label 作为 L1 诊断 PropertyValue 接入；因无法识别交叉属于
   哪条能带，严格无交叉条件仍保持 Agent01 不判断。
+- [x] 发布策略更新：数据库证据缺失导致的 `UNCERTAIN` 与 `PASS` 一同进入
+  `candidate_manifest.jsonl`（排序在 PASS 之后），携带完整 `missing_evidence` 与 L1 ceiling；
+  仅明确 `MISMATCH` 的 `REJECT` 和 `FAILED` 记录被阻断。Agent01、NOMAD 与 Agent02/
+  Orchestrator 契约回归 `48 passed`。
+- [x] MP oxidation-state 端点返回的 `average_oxidation_states` 现被保守解析：每个 TM 的
+  整数平均价态属于 pymatgen 常见价态时可作为 L1 `oxidation_common=True`；分数平均或
+  非常见平均价态不被冒充为混合价态证明，继续 `MISSING`。对冻结的 20 条二维 TM replay
+  得到 10 条价态通过、10 条不确定；完整 Gate `474 passed, 9 skipped`。
 
 完成每个任务后，只在本计划记录实际完成项、测试证据、限制和对 Agent02/Orchestrator 的影响；公共契约或阈值变更需先同步相关 agent plan、fixture、contract test，并按职责更新主计划或技术架构。
 
@@ -1280,9 +1288,11 @@ StageResult。真实产物在指标提取后删除，不作为公共 fixture。
 
 ### 8.8 Agent 01 完成 Gate
 
-### 8.9 C2DB 发布与溯源修正（2026-07-30）
+### 8.9 C2DB 发布与溯源修正（2026-07-30；2026-08-03 更新）
 
-- `UNCERTAIN` 候选仅保留在审计结果，不再设置 `published_downstream`，防止下游阶段误用未确认记录。
+- `PASS` 与 `UNCERTAIN` 候选均可进入下游 manifest；后者保留完整 `missing_evidence`、
+  `UNCERTAIN` decision 和 L1 evidence ceiling，供下游科学复核。只有数据库证据明确
+  `MISMATCH` 的 `REJECT` 记录以及 `FAILED` 记录被阻断。
 - Agent01 Markdown 报告显示 `local_only_constraints`、检索时间，并对 C2DB `undated-live-web` 快照限制给出提示。
 - Stage0 DeepSeek 提示明确：数据库筛选描述应建模为硬约束，不得生成无法由所选数据库验证的自由文本 `scientific_targets`。
 - 相关单元测试通过（35 passed）；完整离线 Gate 通过（439 passed, 9 skipped）。

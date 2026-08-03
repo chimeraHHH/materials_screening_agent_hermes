@@ -629,6 +629,11 @@ Materials Project `energy_above_hull`; when that property is required it stays
 missing and the candidate is `UNCERTAIN`. A run never fills missing NOMAD
 properties from Materials Project.
 
+`candidate_manifest.jsonl` publishes both `PASS` and `UNCERTAIN` records, in
+that order. An `UNCERTAIN` record retains its `missing_evidence` and L1 ceiling
+for downstream review; only `REJECT` (explicitly conflicting database evidence)
+and `FAILED` records are blocked from downstream publication.
+
 MC3D, C2DB, TQC, and NIMS retrieval also require no secret. Unsupported
 properties are never filled from another source. The NIMS source is useful for
 auditing SuperCon metadata only: Agent01's structure-required downstream

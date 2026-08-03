@@ -75,7 +75,7 @@ def build_report(
                 [
                     candidate
                     for candidate in candidates
-                    if candidate.decision is Decision.PASS
+                    if candidate.decision in {Decision.PASS, Decision.UNCERTAIN}
                 ]
             )
             > query_plan.max_candidates_published,

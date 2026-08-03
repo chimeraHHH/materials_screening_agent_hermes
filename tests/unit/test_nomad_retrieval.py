@@ -249,10 +249,17 @@ def test_nomad_runner_emits_v2_uncertain_record_without_fabricating_hull(
         / "run-nomad"
         / "candidate_manifest.jsonl"
     )
-    # The record remains available in the audit artifact, but an uncertain
-    # record must not be published to downstream stages.
-    assert manifest_path.read_text(encoding="utf-8").strip() == ""
-    assert result.candidate_ids == []
+    # Missing NOMAD hull evidence is preserved for downstream review rather
+    # than being treated as an Agent01 rejection.
+    manifest = [
+        json.loads(line)
+        for line in manifest_path.read_text(encoding="utf-8").splitlines()
+        if line
+    ]
+    assert len(manifest) == 1
+    assert manifest[0]["decision"] == "UNCERTAIN"
+    assert manifest[0]["published_downstream"] is True
+    assert result.candidate_ids == [manifest[0]["candidate_id"]]
 
 
 def test_nomad_adapter_rejects_repeated_pagination_cursor(

@@ -141,9 +141,51 @@ def common_transition_metal_valence(
             common[symbol] = set(int(value) for value in Element(symbol).common_oxidation_states)
         except (TypeError, ValueError):
             common[symbol] = set()
-    possible = oxidation_payload.get("possible_valences") or oxidation_payload.get("possible_species")
+    possible = (
+        oxidation_payload.get("possible_valences")
+        or oxidation_payload.get("possible_species")
+    )
     if not isinstance(possible, Mapping):
-        return DeepFeature("oxidation_common", None, "MISSING", "mp_oxidation_states")
+        average = oxidation_payload.get("average_oxidation_states")
+        if not isinstance(average, Mapping):
+            return DeepFeature(
+                "oxidation_common", None, "MISSING", "mp_oxidation_states"
+            )
+        observed_average: dict[str, int] = {}
+        for symbol in common:
+            try:
+                value = float(average[symbol])
+            except (KeyError, TypeError, ValueError):
+                return DeepFeature(
+                    "oxidation_common", None, "MISSING",
+                    "mp_oxidation_states_average",
+                    "average oxidation state is missing for a transition metal",
+                )
+            rounded = round(value)
+            # A fractional average can arise from mixed valence, but does not
+            # identify the individual site assignments.  It cannot establish
+            # the user's common/mixed-valence requirement by itself.
+            if not isfinite(value) or abs(value - rounded) > 1e-8:
+                return DeepFeature(
+                    "oxidation_common", None, "MISSING",
+                    "mp_oxidation_states_average",
+                    "fractional average oxidation state does not prove site valences",
+                )
+            observed_average[symbol] = int(rounded)
+        if not all(
+            observed_average[symbol] in common[symbol]
+            for symbol in observed_average
+        ):
+            return DeepFeature(
+                "oxidation_common", None, "MISSING",
+                "mp_oxidation_states_average",
+                "average oxidation state is not sufficient to reject a possible mixed valence",
+            )
+        return DeepFeature(
+            "oxidation_common", True, "RESOLVED",
+            "mp_oxidation_states_average",
+            "integer average TM oxidation states are common; mixed site assignments remain unresolved",
+        )
     observed: dict[str, set[int]] = defaultdict(set)
     for symbol, values in possible.items():
         if symbol not in common:
