@@ -51,6 +51,26 @@ from material_agent.ml_screening.alignn_models import (
     AlignnResult,
 )
 from material_agent.ml_screening.alignn_planner import build_alignn_plan
+from material_agent.ml_screening.property_catalog import reviewed_property_model_families
+from material_agent.ml_screening.property_models import (
+    PropertyCapability,
+    PropertyInputKind,
+    PropertyModelAvailability,
+    PropertyModelFamily,
+    PropertyModelRegistry,
+    PropertyModelSelection,
+    PropertyModelSpec,
+    PropertyNeed,
+    PropertyPredictionRequest,
+    select_property_model,
+)
+from material_agent.ml_screening.property_execution import (
+    PropertyExecutionPlan,
+    PropertyPredictionResult,
+    PropertyWorkerRequest,
+    PropertyWorkerResponse,
+    build_property_execution_plan,
+)
 
 __all__ = [
     "AGENT02_CONTRACT_VERSION",
@@ -91,4 +111,20 @@ __all__ = [
     "AlignnProperty",
     "AlignnResult",
     "build_alignn_plan",
+    "PropertyCapability",
+    "PropertyInputKind",
+    "PropertyModelAvailability",
+    "PropertyModelFamily",
+    "PropertyModelRegistry",
+    "PropertyModelSelection",
+    "PropertyModelSpec",
+    "PropertyNeed",
+    "PropertyPredictionRequest",
+    "reviewed_property_model_families",
+    "select_property_model",
+    "PropertyExecutionPlan",
+    "PropertyPredictionResult",
+    "PropertyWorkerRequest",
+    "PropertyWorkerResponse",
+    "build_property_execution_plan",
 ]

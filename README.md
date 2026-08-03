@@ -347,6 +347,49 @@ experimental band gap, a DFT result, or a thermodynamic-stability conclusion.
 The required isolated environment is pinned in `requirements-alignn.lock`; it
 must not be installed in the repository's default `.venv`.
 
+### Agent02 multi-model property-prediction companion flow
+
+The optional `property-predict` flow adds model-family selection after CHGNet
+without changing its frozen v1 stage contract. It supports registry entries
+for [Crystalformer](https://github.com/omron-sinicx/crystalformer),
+[CrystalFramer](https://github.com/omron-sinicx/crystalframer),
+[ct-UAE](https://github.com/fduabinitio/ct-UAE),
+[CrabNet](https://github.com/anthony-wang/CrabNet), and
+[MODNet](https://github.com/ppdebreuck/modnet). The request fixes a property,
+unit, candidate composition, optional canonical CIF and user model preference.
+The selector considers only matching `READY` entries; it rejects wrong units,
+missing structure input, mock models, disabled real inference, or unregistered
+assets deterministically.
+
+Every `READY` entry must contain a fixed upstream revision, explicit trained
+property label/dataset, dedicated environment-lock artifact and checkpoint
+artifact. Both assets and the input CIF are re-hashed inside the artifact root
+before a plan can be created. `CrabNet` is composition-only and requires a
+property-specific trained head. Crystalformer, CrystalFramer and ct-UAE use
+structure input. MODNet's native `.pkl` files are prohibited by the artifact
+policy; a reviewed non-pickle safe export is required before MODNet can be
+`READY`.
+
+Run a frozen request and registry through a dedicated worker environment:
+
+```bash
+material-agent property-predict \
+  --artifact-root /absolute/path/to/artifacts \
+  --request /absolute/path/to/property-request.json \
+  --registry /absolute/path/to/property-registry.json \
+  --worker-python /absolute/path/to/isolated-python \
+  --ct-uae-source-root /absolute/path/to/verified/ct-uae
+```
+
+The CLI never downloads models. It persists immutable plan/result/completion
+records and runs the adapter with no shell. A result is always an unbenchmarked
+`L1_RETRIEVED` model estimate with `scientific_conclusion=false`; it is not a
+DFT, formation-energy, stability, magnetic-ground-state or experimental claim.
+The public ct-UAE band-gap checkpoint has passed the current isolated CPU smoke
+test. The other families remain unavailable until their complete verified
+weights, worker locks and family-specific safe loaders have passed the same
+deployment Gate.
+
 Run the Agent02 benchmark-v1 metadata-only dry-run against the existing Si
 fixture. This validates the manifest, structure hash/size and parsed metadata;
 it does not load CHGNet, evaluate reference values, or produce scientific

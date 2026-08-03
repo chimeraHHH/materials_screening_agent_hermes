@@ -154,6 +154,25 @@ def main(argv: list[str] | None = None) -> int:
         default=SourceDatabase.MATERIALS_PROJECT.value,
     )
     retrieval.add_argument("--mp-report-heavy-limit", type=int, default=None)
+
+    property_predict = subparsers.add_parser(
+        "property-predict",
+        help="run one Agent02 property-model prediction from frozen inputs",
+    )
+    property_predict.add_argument("--artifact-root", required=True, type=Path)
+    property_predict.add_argument("--request", required=True, type=Path)
+    property_predict.add_argument("--registry", required=True, type=Path)
+    property_predict.add_argument(
+        "--worker-python",
+        required=True,
+        type=Path,
+        help="trusted executable from the model-specific isolated environment",
+    )
+    property_predict.add_argument(
+        "--ct-uae-source-root",
+        type=Path,
+        help="trusted ct-UAE source checkout; used only for ct-UAE selections",
+    )
     arguments = parser.parse_args(argv)
 
     try:
@@ -181,6 +200,8 @@ def main(argv: list[str] | None = None) -> int:
             return _report_command(arguments)
         if arguments.command == "retrieval":
             return _run_retrieval(arguments)
+        if arguments.command == "property-predict":
+            return _property_predict_command(arguments)
     except (FileNotFoundError, KeyError, RuntimeError, ValueError) as exc:
         print(
             json.dumps(
@@ -355,6 +376,34 @@ def _report_command(arguments: argparse.Namespace) -> int:
     ) as runtime:
         report = runtime.read_report(arguments.run_id)
     print(report, end="" if report.endswith("\n") else "\n")
+    return 0
+
+
+def _property_predict_command(arguments: argparse.Namespace) -> int:
+    """Run the optional property companion flow without altering ML stage v1."""
+
+    from material_agent.ml_screening.property_client import (
+        PropertyPredictionFlowRunner,
+        PropertySubprocessClient,
+    )
+    from material_agent.ml_screening.property_models import (
+        PropertyModelRegistry,
+        PropertyPredictionRequest,
+    )
+
+    root = arguments.artifact_root.resolve()
+    request = PropertyPredictionRequest.model_validate(_read_json_file(arguments.request))
+    registry = PropertyModelRegistry.model_validate(_read_json_file(arguments.registry))
+    store = LocalArtifactStore(root)
+    client = PropertySubprocessClient(
+        worker_python=arguments.worker_python,
+        artifact_root=root,
+        ct_uae_source_root=arguments.ct_uae_source_root,
+    )
+    result = PropertyPredictionFlowRunner(
+        artifact_store=store, client=client, registry=registry
+    ).execute(request)
+    _print_model(result)
     return 0
 
 

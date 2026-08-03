@@ -1824,6 +1824,39 @@ Gate、Mac Gate 和安全 Gate 均保留可单独执行。
 - 生产 capability 只在全部 Gate 后显式注册，且永不回退 Fake；
 - 报告没有把 ML 能量冒充 formation energy、hull 或 DFT 结果。
 
+### 9.1 多模型性质预测 companion flow（进行中，2026-08-03）
+
+范围：在不修改冻结的 `agent02-request-v1`、CHGNet worker 或 Orchestrator
+checkpoint 契约的前提下，新增独立、版本化的性质预测流。它接收用户明确的性质、单位、
+候选成分/结构和模型偏好，以冻结 registry 选择模型；不把模型输出倒灌为 Agent01
+筛选条件，也不把 ML 预测表述为 DFT、凸包稳定性或实验结论。
+
+- 已核验用户指定的上游源：`omron-sinicx/crystalformer`、
+  `omron-sinicx/crystalframer`、`fduabinitio/ct-UAE`、
+  `anthony-wang/CrabNet`、`ppdebreuck/modnet`。模型的输入和可用预训练头不同：前
+  三者为结构输入，CrabNet 仅消费 composition，MODNet 的公开预训练头为 refractive
+  index 与 vibrational thermodynamics。
+- 已实现轻量 `agent02-property-registry-v1`、用户 `PropertyNeed`、输入类型检查和
+  确定性选择；只有同时冻结 source revision、环境 lock、checkpoint、训练标签/单位且
+  模型为 `READY` 时才会选择。缺 checkpoint、缺结构或禁用真实推理均 fail-closed。
+- 特殊安全约束：MODNet 上游 `MODNetModel.load()` 使用 pickle，而项目 Artifact
+  policy 禁止 pickle；不得直接接收或执行 `.pkl`，需要可验证的非 pickle 安全导出后才
+  能注册为 `READY`。Crystalformer/CrystalFramer/ct-UAE/CrabNet 的 PyTorch checkpoint
+  也必须在独立环境使用受限加载、hash/size 校验和固定 source revision。
+- 已完成 ct-UAE 的隔离 CPU smoke test（上游示例 `mvc-776.cif`、公开
+  `model_best_band_256.tar`、已核验 revision），输出 `SUCCEEDED` 与
+  `0.0959755192 eV` 的带隙估计。当前仓库源码的两层回归头与公开 checkpoint 的单层
+  state-dict 不同；adapter 只对该精确 schema 使用严格加载的兼容头，其他不匹配一律
+  拒绝，不能用 `strict=False` 掩盖差异。
+- 用户入口为 `material-agent property-predict`：它读取冻结的 request/registry，要求
+  显式 artifact root 与隔离 worker Python，并只将受信任的 ct-UAE source root 传给
+  ct-UAE adapter。已以同一公开样本完成 CLI→选模→子进程→Artifact/result 的端到端
+  smoke test；该命令是 CHGNet v1 stage 之外的 companion flow。
+- 后续验收：每个家族必须具备独立 worker、模型卡、环境 lock、已验证 checkpoint、
+  单候选预测 smoke test、Artifact/hash/路径/超时失败注入、benchmark 与适用域记录；
+  在这些 Gate 之前输出只保留 `L1_RETRIEVED`/无科学结论，且不得注册为默认生产
+  Agent02 capability。
+
 ## 10. P1：可靠 ML 筛选路线
 
 P1 首要目标不是增加更多模型，而是证明 v1 模型的可靠边界。
