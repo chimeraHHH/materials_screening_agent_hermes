@@ -648,14 +648,15 @@ def _make_repaired_mp_spec(
     mapped: list[MappedClause], unmapped: list[UnmappedClause],
 ) -> MPScreeningSpec | None:
     repaired = _add_deterministic_fallback_clauses(raw_request, mapped)
-    if not repaired:
+    evidence_gaps = _known_mp_evidence_gaps(raw_request)
+    if not repaired and not unmapped and not evidence_gaps:
         return None
     return make_spec(
         requirement_id=requirement_id,
         requirement_revision=requirement_revision,
         raw_request_sha256=hashlib.sha256(raw_request.encode("utf-8")).hexdigest(),
         mapped_clauses=repaired,
-        unmapped_clauses=[*unmapped, *_known_mp_evidence_gaps(raw_request)],
+        unmapped_clauses=[*unmapped, *evidence_gaps],
     )
 
 
@@ -663,14 +664,15 @@ def _deterministic_mp_fallback(
     requirement: Requirement, raw_request: str
 ) -> MPScreeningSpec | None:
     mapped = _add_deterministic_fallback_clauses(raw_request, [])
-    if not mapped:
+    evidence_gaps = _known_mp_evidence_gaps(raw_request)
+    if not mapped and not evidence_gaps:
         return None
     return make_spec(
         requirement_id=requirement.requirement_id,
         requirement_revision=requirement.revision,
         raw_request_sha256=hashlib.sha256(raw_request.encode("utf-8")).hexdigest(),
         mapped_clauses=mapped,
-        unmapped_clauses=_known_mp_evidence_gaps(raw_request),
+        unmapped_clauses=evidence_gaps,
     )
 
 
@@ -732,18 +734,40 @@ def _known_mp_evidence_gaps(raw_request: str) -> list[UnmappedClause]:
     normalized = re.sub(r"\s+", "", raw_request).lower()
     gaps: list[UnmappedClause] = []
     if "费米面附近" in normalized or "第一条能带" in normalized:
+        window = re.search(r"(?:±|\+/-|\+-)([0-9]+(?:\.[0-9]+)?)ev", normalized)
         gaps.append(UnmappedClause(
             clause_id="fallback-fermi-window",
-            source_text="费米面附近的第一条能带",
-            status=MappingStatus.MISSING_THRESHOLD,
-            reason="no target energy window or band-selection rule was supplied",
+            source_text=(
+                f"费米窗 E_F±{window.group(1)} eV 内的第一条能带"
+                if window else "费米面附近的第一条能带"
+            ),
+            status=(
+                MappingStatus.UNSUPPORTED if window else MappingStatus.MISSING_THRESHOLD
+            ),
+            reason=(
+                "the requested Fermi window is specified, but the active MP "
+                "capability catalog has no band-identity or Fermi-window predicate"
+                if window else "no target energy window or band-selection rule was supplied"
+            ),
         ))
     if "电子轨道" in normalized or "杂化态" in normalized or "轨道贡献" in normalized:
+        contribution = re.search(r"(?:≥|>=|>)([0-9]+(?:\.[0-9]+)?)%", normalized)
         gaps.append(UnmappedClause(
             clause_id="fallback-orbital-character",
-            source_text="过渡金属或配体杂化态的轨道贡献",
-            status=MappingStatus.MISSING_THRESHOLD,
-            reason="no orbital-projection contribution threshold was supplied",
+            source_text=(
+                "过渡金属或配体杂化态的轨道贡献"
+                f"≥{contribution.group(1)}%"
+                if contribution else "过渡金属或配体杂化态的轨道贡献"
+            ),
+            status=(
+                MappingStatus.UNSUPPORTED
+                if contribution else MappingStatus.MISSING_THRESHOLD
+            ),
+            reason=(
+                "the requested orbital-projection threshold is specified, but "
+                "the active MP capability catalog has no projected-orbital predicate"
+                if contribution else "no orbital-projection contribution threshold was supplied"
+            ),
         ))
     return gaps
 

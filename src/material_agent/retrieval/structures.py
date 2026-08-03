@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import re
 import warnings
 from dataclasses import dataclass
 from typing import Any
@@ -77,11 +78,17 @@ def process_structure(
     )
     digest = hashlib.sha256(serialized).hexdigest()
     structure_id = f"str_{digest[:24]}"
-    elements = sorted(str(element) for element in canonical.composition.elements)
+    # CIFs may preserve oxidation states (for example ``Fe0+``) in a
+    # composition. Retrieval constraints are defined on bare elements.
+    elements = sorted(
+        {_bare_element_symbol(element) for element in canonical.composition.elements}
+    )
     flags: list[str] = []
 
     if summary_elements is not None:
-        normalized_summary_elements = sorted(str(value) for value in summary_elements)
+        normalized_summary_elements = sorted(
+            {_bare_element_symbol(value) for value in summary_elements}
+        )
         if normalized_summary_elements != elements:
             flags.append("SOURCE_ELEMENT_SET_MISMATCH")
     if summary_num_sites is not None and int(summary_num_sites) != len(canonical):
@@ -159,6 +166,22 @@ def _coerce_structure(raw_structure: Any) -> Structure:
     raise StructureValidationError(
         f"unsupported structure value: {type(raw_structure).__name__}"
     )
+
+
+def _bare_element_symbol(value: Any) -> str:
+    """Return a validated chemical symbol while discarding oxidation labels."""
+
+    element = getattr(value, "element", None)
+    symbol = getattr(element, "symbol", None) or getattr(value, "symbol", None)
+    if not isinstance(symbol, str):
+        match = re.match(r"^([A-Z][a-z]?)", str(value).strip())
+        symbol = match.group(1) if match else None
+    if not isinstance(symbol, str):
+        raise StructureValidationError("structure has an invalid element label")
+    try:
+        return str(Composition({symbol: 1}).elements[0])
+    except (TypeError, ValueError) as exc:
+        raise StructureValidationError("structure has an invalid element label") from exc
 
 
 def _validate_structure(structure: Structure) -> None:

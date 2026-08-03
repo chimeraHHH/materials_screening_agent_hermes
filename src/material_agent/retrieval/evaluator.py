@@ -185,6 +185,7 @@ def evaluate_candidate(
 
     if screening_spec is not None:
         evaluations.extend(_evaluate_mp_clauses(candidate, screening_spec))
+        evaluations.extend(_evaluate_unmapped_mp_clauses(screening_spec))
 
     target_evaluations = [
         _evaluate_scientific_target(candidate, target)
@@ -253,7 +254,7 @@ def _evaluate_mp_clauses(
         "structure.dimension": "structural_dimensionality",
         "deep.sampled_bandwidth": "sampled_bandwidth_ev",
         "deep.oxidation_common": "oxidation_common",
-        "deep.layered": "structural_dimensionality",
+        "deep.layered": "layered_structure",
     }
     for clause in spec.mapped_clauses:
         capability = MP_CAPABILITY_CATALOG[clause.capability_id]
@@ -308,6 +309,21 @@ def _evaluate_mp_clauses(
             property_origin=prop.origin if prop else None,
         ))
     return evaluations
+
+
+def _evaluate_unmapped_mp_clauses(spec: MPScreeningSpec) -> list[ConstraintEvaluation]:
+    """Preserve unsupported user evidence as missing, never as an implicit pass."""
+    return [
+        ConstraintEvaluation(
+            constraint_id=clause.clause_id,
+            constraint_type="unsupported_mp_evidence",
+            expected=clause.source_text,
+            observed=None,
+            result=ConstraintResult.MISSING,
+            reason_code="MP_EVIDENCE_UNSUPPORTED",
+        )
+        for clause in spec.unmapped_clauses
+    ]
 
 
 def _range_evaluation(

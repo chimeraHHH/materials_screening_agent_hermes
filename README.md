@@ -97,6 +97,21 @@ queryable and reported but its records are blocked from downstream structure
 screening. Missing source properties remain `UNCERTAIN`; they are not inferred
 from Materials Project.
 
+Each Agent01 run writes `source_property_coverage.json`, which names the
+properties that the selected source can support at Agent01 and those deferred
+for lack of source evidence.
+
+| Source | Agent01 may judge | Deferred when unavailable |
+| --- | --- | --- |
+| C2DB | GPAW/PBE band gap, energy above hull, derived metallicity, layer group, magnetic label, structure dimensionality | band dispersion/flat-band width, Fermi-window band identity, orbital projections, crossings, oxidation states |
+| NOMAD | parsed archive band gap with entry-specific method provenance; structure dimensionality | any property absent from the selected archive, including dispersion/projections |
+| MC3D | structure dimensionality | electronic, orbital and thermodynamic properties |
+| TQC | topology label/SOC/index、费米交叉计数/标签（仅诊断）、structure dimensionality | flat-band dispersion, orbital projections, thermodynamics, oxidation states; 交叉不能归属到具体能带，不能单独判定严格无交叉条件 |
+| NIMS SuperCon | none (no canonical structure) | all structure and electronic properties |
+
+MP deep-endpoint values are source-specific and never fill a record from any
+other database.
+
 The command stops at the durable Requirement confirmation Gate and prints an
 `approval_id`. Resume the same checkpoint, including from a new process:
 

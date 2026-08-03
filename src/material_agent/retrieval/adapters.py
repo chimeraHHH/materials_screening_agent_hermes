@@ -24,6 +24,7 @@ from material_agent.retrieval.models import (
     SourceDatabase,
     SourceMetadata,
 )
+from material_agent.retrieval.mp_screening import DeepEndpoint
 from material_agent.retrieval.query import (
     CORE_FIELDS,
     ELECTRON_VOLT_JOULE,
@@ -46,6 +47,10 @@ class MaterialsSourceAdapter(Protocol):
     ) -> tuple[dict[str, dict[str, Any]], list[str]]: ...
 
     def fetch_report_data(self, material_id: str, *, heavy: bool) -> dict[str, Any]: ...
+
+    def fetch_deep_screen_data(
+        self, material_id: str, *, endpoints: Sequence[DeepEndpoint]
+    ) -> dict[str, Any]: ...
 
 
 class MaterialsProjectAdapter:
@@ -291,6 +296,59 @@ class MaterialsProjectAdapter:
                     result["charge_density"] = client.get_charge_density_from_material_id(material_id)
                 except Exception as exc:
                     result["errors"]["charge_density"] = type(exc).__name__
+        return result
+
+    def fetch_deep_screen_data(
+        self, material_id: str, *, endpoints: Sequence[DeepEndpoint]
+    ) -> dict[str, Any]:
+        """Fetch only the frozen adaptive-screening endpoints for one material.
+
+        Runtime band-structure objects are retained separately for deterministic
+        local feature extraction.  ``payloads`` is JSON-serializable evidence
+        suitable for immutable artifact storage and contains no credentials.
+        """
+        result: dict[str, Any] = {
+            "material_id": material_id, "payloads": {}, "objects": {}, "errors": {},
+        }
+        with self._make_client() as client:
+            for endpoint in sorted(set(endpoints), key=lambda item: item.value):
+                key = endpoint.value
+                try:
+                    if endpoint is DeepEndpoint.BANDSTRUCTURE_UNIFORM:
+                        value = client.get_bandstructure_by_material_id(
+                            material_id, line_mode=False
+                        )
+                        result["objects"][key] = value
+                        result["payloads"][key] = _nested_plain(value)
+                    elif endpoint is DeepEndpoint.BANDSTRUCTURE_LINE:
+                        value = client.get_bandstructure_by_material_id(
+                            material_id, line_mode=True
+                        )
+                        result["objects"][key] = value
+                        result["payloads"][key] = _nested_plain(value)
+                    elif endpoint is DeepEndpoint.ROBOCRYS:
+                        # In mp-api 0.45 the generic ``search`` is keyword
+                        # text search; material-ID retrieval is ``search_docs``.
+                        values = client.materials.robocrys.search_docs(
+                            material_ids=[material_id], all_fields=True,
+                            chunk_size=1, num_chunks=1,
+                        )
+                        result["payloads"][key] = [
+                            _plain_document(item) for item in values
+                        ]
+                    else:
+                        rester = getattr(client.materials, key)
+                        values = rester.search(
+                            material_ids=[material_id], all_fields=True,
+                            chunk_size=1, num_chunks=1,
+                        )
+                        result["payloads"][key] = [
+                            _plain_document(item) for item in values
+                        ]
+                except Exception as exc:
+                    # A missing endpoint is evidence missing for this candidate,
+                    # never a reason to silently relax a hard constraint.
+                    result["errors"][key] = type(exc).__name__
         return result
 
 
@@ -707,6 +765,7 @@ class C2dbAdapter:
                 "method": "GPAW/PBE",
                 "license": "CC-BY-NC-4.0",
                 "layer_group": row.get("layer_group"),
+                "magnetic_label": row.get("magnetic"),
             },
         }
 
@@ -917,6 +976,24 @@ class TopologicalQuantumChemistryAdapter:
                 "topological_subclassification": subclass,
                 "topological_indices": payload.get("indexCompounds"),
                 "soc": payload.get("type") == "COMPOUND_SOC",
+                # TQC exposes crossing counts/labels but not the underlying
+                # energy-vs-k arrays.  Preserve the values as database
+                # diagnostics; Agent01 must not infer which band crosses.
+                "fermi_crossing_count": _optional_nonnegative_int(
+                    payload.get("nbrFermiCrossing")
+                ),
+                "fermi_crossing_first_conduction": _optional_nonnegative_int(
+                    payload.get("nbrFermiCrossingFirstCond")
+                ),
+                "fermi_crossing_last_valence": _optional_nonnegative_int(
+                    payload.get("nbrFermiCrossingLastVal")
+                ),
+                "line_crossing_label": _optional_scalar_label(
+                    payload.get("smLineCrossing")
+                ),
+                "crossing_type_label": _optional_scalar_label(
+                    payload.get("smCrossingType")
+                ),
                 "structure_parse_status": (
                     "parsed" if structure is not None else "invalid_cif"
                 ),
@@ -1132,6 +1209,18 @@ class InMemoryMaterialsAdapter:
         del heavy
         payload = self.report_payloads.get(material_id, {})
         return {"material_id": material_id, "endpoints": {}, "errors": {}, **payload}
+
+    def fetch_deep_screen_data(
+        self, material_id: str, *, endpoints: Sequence[DeepEndpoint]
+    ) -> dict[str, Any]:
+        payload = self.report_payloads.get(material_id, {})
+        deep = payload.get("deep_screen", {}) if isinstance(payload, dict) else {}
+        return {
+            "material_id": material_id,
+            "payloads": dict(deep.get("payloads", {})),
+            "objects": dict(deep.get("objects", {})),
+            "errors": dict(deep.get("errors", {})),
+        }
 
 
 def _plain_document(document: Any) -> dict[str, Any]:
@@ -1513,6 +1602,30 @@ def _optional_float(value: Any) -> float | None:
     except (TypeError, ValueError):
         return None
     return parsed if math.isfinite(parsed) else None
+
+
+def _optional_nonnegative_int(value: Any) -> int | None:
+    """Accept a finite, integral, non-negative public database count only."""
+
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(numeric) or numeric < 0 or not numeric.is_integer():
+        return None
+    return int(numeric)
+
+
+def _optional_scalar_label(value: Any) -> str | None:
+    """Store a scalar database label without accepting nested API objects."""
+
+    if isinstance(value, str):
+        return value.strip() or None
+    if isinstance(value, (bool, int)):
+        return str(value)
+    if isinstance(value, float) and math.isfinite(value):
+        return str(value)
+    return None
 
 
 def _element_symbol(specie: Any) -> str:

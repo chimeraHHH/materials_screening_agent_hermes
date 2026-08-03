@@ -26,7 +26,10 @@ from material_agent.retrieval.models import (
     CandidateRecord,
     Decision,
     ErrorRecord,
+    EvidenceLevel,
     OperationRecord,
+    PropertyOrigin,
+    PropertyValue,
     ProvenanceStatus,
     Requirement,
     RetrievalPolicy,
@@ -46,9 +49,18 @@ from material_agent.retrieval.models import (
     StageStatus,
 )
 from material_agent.retrieval.mp_screening import (
+    DeepEndpoint,
     MPScreeningSpec,
     ScreeningIntent,
     TRANSITION_METAL_ELEMENTS,
+)
+from material_agent.retrieval.mp_deep_screen import (
+    DeepFeature,
+    common_transition_metal_valence,
+    line_band_crossing_risk,
+    periodic_connectivity_score,
+    sampled_bandwidth_ev,
+    transition_metal_elements,
 )
 from material_agent.retrieval.normalizer import (
     add_dimensionality_property,
@@ -65,6 +77,7 @@ from material_agent.retrieval.query import (
 )
 from material_agent.retrieval.ranking import rank_and_publish
 from material_agent.retrieval.reporting import build_report, report_to_markdown
+from material_agent.retrieval.source_capabilities import source_property_coverage
 from material_agent.retrieval.storage import (
     ArtifactConflictError,
     ArtifactStoreError,
@@ -464,6 +477,28 @@ class RetrievalStageRunner:
                 if retryable
                 else StageStatus.PERMANENT_FAILED
             )
+            # A non-MP source can be unreachable before it returns metadata.
+            # Preserve its static Agent01 evidence boundary nevertheless: users
+            # must be able to distinguish a transient source failure from a
+            # property that this source would never be allowed to decide.
+            failure_artifacts: list[ArtifactRef] = []
+            if self.policy.source_database is not SourceDatabase.MATERIALS_PROJECT:
+                try:
+                    failure_artifacts.append(
+                        self.store.write_json(
+                            f"{stage_prefix}/source_property_coverage.json",
+                            source_property_coverage(self.policy.source_database),
+                            immutable=True,
+                        )
+                    )
+                except ArtifactConflictError:
+                    return self._backend_inconsistent_result(
+                        stage_input=stage_input,
+                        input_uri=input_ref.uri,
+                        started_at=started_at,
+                        operation="source_property_coverage",
+                        message="immutable source property coverage changed",
+                    )
             return self._write_early_result(
                 stage_input=stage_input,
                 stage_prefix=stage_prefix,
@@ -478,6 +513,7 @@ class RetrievalStageRunner:
                 ),
                 warnings=[],
                 provenance={"policy_version": self.policy.policy_version},
+                output_artifacts=failure_artifacts,
             )
 
         if prior_plan is not None:
@@ -519,6 +555,13 @@ class RetrievalStageRunner:
                 self.store.write_json(
                     f"{stage_prefix}/capability_snapshot.json",
                     metadata.model_dump(mode="json"),
+                    immutable=True,
+                )
+            )
+            output_artifacts.append(
+                self.store.write_json(
+                    f"{stage_prefix}/source_property_coverage.json",
+                    source_property_coverage(plan.source_database),
                     immutable=True,
                 )
             )
@@ -671,6 +714,35 @@ class RetrievalStageRunner:
                 "adaptive Summary prefilter skipped structure processing for "
                 f"{prefilter_count} records that do not contain a transition metal"
             )
+        documents, layered_prefilter = _prefilter_adaptive_layered_documents(
+            documents, screening_spec, self.policy
+        )
+        if layered_prefilter:
+            output_artifacts.append(
+                self.store.write_jsonl(
+                    f"{stage_prefix}/adaptive_layered_prefilter.jsonl",
+                    layered_prefilter,
+                    immutable=True,
+                )
+            )
+            layered_count = sum(
+                item["structural_dimensionality"] == 2
+                for item in layered_prefilter
+            )
+            stage_warnings.append(
+                "adaptive structure prefilter evaluated "
+                f"{len(layered_prefilter)} transition-metal Summary records and retained "
+                f"{layered_count} two-dimensional records for deep-screen ranking"
+            )
+        documents, deep_budget_skipped = _limit_adaptive_deep_documents(
+            documents, screening_spec
+        )
+        if deep_budget_skipped:
+            stage_warnings.append(
+                "adaptive deep-screen budget selected the first "
+                f"{len(documents)} layered material IDs in deterministic order; "
+                f"{deep_budget_skipped} layered records were not deep screened"
+            )
 
         retrieved_at = plan.created_at
         candidates: list[CandidateRecord] = []
@@ -795,6 +867,18 @@ class RetrievalStageRunner:
                     f"{material_id}: structure processing failed ({type(exc).__name__})"
                 )
 
+        if screening_spec is not None and screening_spec.deep_endpoints:
+            candidates, deep_artifacts, deep_warnings = self._apply_mp_deep_screen(
+                candidates=candidates,
+                structures=structures,
+                screening_spec=screening_spec,
+                stage_prefix=stage_prefix,
+                database_version=plan.database_version,
+                retrieved_at=retrieved_at,
+            )
+            output_artifacts.extend(deep_artifacts)
+            stage_warnings.extend(deep_warnings)
+
         usable = [
             candidate
             for candidate in candidates
@@ -852,7 +936,7 @@ class RetrievalStageRunner:
             [candidate for candidate in candidates if candidate.published_downstream],
             key=lambda item: item.publication_rank or 0,
         )
-        scan_truncated = raw_count >= plan.max_records_scanned
+        scan_truncated = raw_count >= plan.max_records_scanned or deep_budget_skipped > 0
         critical_properties = {"band_gap", "energy_above_hull", "num_sites"}
         provenance_total = 0
         provenance_unresolved = 0
@@ -1029,6 +1113,57 @@ class RetrievalStageRunner:
             )
         return result
 
+    def _apply_mp_deep_screen(
+        self,
+        *,
+        candidates: list[CandidateRecord],
+        structures: dict[str, Any],
+        screening_spec: MPScreeningSpec,
+        stage_prefix: str,
+        database_version: str,
+        retrieved_at: datetime,
+    ) -> tuple[list[CandidateRecord], list[ArtifactRef], list[str]]:
+        """Attach bounded, endpoint-backed MP features before hard evaluation."""
+        artifacts: list[ArtifactRef] = []
+        warnings_out: list[str] = []
+        updated: list[CandidateRecord] = []
+        for candidate in candidates:
+            if candidate.decision is Decision.FAILED:
+                updated.append(candidate)
+                continue
+            try:
+                payload = self._call_with_retry(
+                    "materials_project.deep_screen",
+                    lambda candidate=candidate: self.adapter.fetch_deep_screen_data(
+                        candidate.source_material_id,
+                        endpoints=screening_spec.deep_endpoints,
+                    ),
+                )
+                raw_ref = self.store.write_json(
+                    f"{stage_prefix}/deep_screen/{candidate.candidate_id}.json",
+                    {key: value for key, value in payload.items() if key != "objects"},
+                    immutable=True,
+                )
+                artifacts.append(raw_ref)
+                for endpoint, error in sorted(payload.get("errors", {}).items()):
+                    warnings_out.append(
+                        f"{candidate.source_material_id}: deep {endpoint} unavailable ({error})"
+                    )
+                updated.append(_add_mp_deep_properties(
+                    candidate,
+                    structure=structures.get(candidate.candidate_id),
+                    payload=payload,
+                    endpoints=screening_spec.deep_endpoints,
+                    database_version=database_version,
+                    retrieved_at=retrieved_at,
+                ))
+            except Exception as exc:
+                warnings_out.append(
+                    f"{candidate.source_material_id}: deep screening failed ({type(exc).__name__})"
+                )
+                updated.append(candidate)
+        return updated, artifacts, warnings_out
+
     def _write_early_result(
         self,
         *,
@@ -1040,6 +1175,7 @@ class RetrievalStageRunner:
         error: ErrorRecord,
         warnings: list[str],
         provenance: dict[str, Any],
+        output_artifacts: list[ArtifactRef] | None = None,
         persist: bool = True,
     ) -> StageResult:
         input_hash = None
@@ -1054,7 +1190,7 @@ class RetrievalStageRunner:
             status=status,
             input_snapshot_uri=input_uri,
             input_snapshot_sha256=input_hash,
-            output_artifacts=[],
+            output_artifacts=output_artifacts or [],
             candidate_ids=[],
             warnings=warnings,
             errors=[error],
@@ -1336,6 +1472,158 @@ def _prefilter_adaptive_summary_documents(
         & TRANSITION_METAL_ELEMENTS
     ]
     return retained, len(documents) - len(retained)
+
+
+def _limit_adaptive_deep_documents(
+    documents: list[dict[str, Any]], screening_spec: MPScreeningSpec | None,
+) -> tuple[list[dict[str, Any]], int]:
+    """Bound structure materialization to the explicitly approved deep budget."""
+    if screening_spec is None or not screening_spec.deep_endpoints:
+        return documents, 0
+    ordered = sorted(documents, key=lambda item: str(item.get("material_id", "")))
+    selected = ordered[:screening_spec.deep_screen_limit]
+    return selected, len(ordered) - len(selected)
+
+
+def _prefilter_adaptive_layered_documents(
+    documents: list[dict[str, Any]],
+    screening_spec: MPScreeningSpec | None,
+    policy: RetrievalPolicy,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Classify dimensionality without retaining every processed Structure.
+
+    The deep endpoint budget is a network/Artifact budget, not permission to
+    choose arbitrary Summary rows before applying a requested structural hard
+    constraint.  This pass is deterministic and its complete outcome is
+    archived, while only retained 2D documents proceed to full processing.
+    """
+    needs_layered = screening_spec is not None and any(
+        clause.capability_id == "deep.layered"
+        and clause.intent is ScreeningIntent.HARD
+        and clause.operator == "eq"
+        and clause.value is True
+        for clause in screening_spec.mapped_clauses
+    )
+    if not needs_layered:
+        return documents, []
+    retained: list[dict[str, Any]] = []
+    audit: list[dict[str, Any]] = []
+    for document in sorted(documents, key=lambda item: str(item.get("material_id", ""))):
+        material_id = str(document.get("material_id") or "unknown")
+        try:
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", category=FutureWarning)
+                warnings.filterwarnings("ignore", category=UserWarning)
+                processed = process_structure(
+                    document.get("structure"),
+                    summary_elements=document.get("elements"),
+                    summary_num_sites=document.get("nsites"),
+                    summary_formula=document.get("formula_pretty"),
+                    policy=policy,
+                )
+                dimensionality = calculate_dimensionality(processed.structure)
+            value = dimensionality.value
+            audit.append({
+                "material_id": material_id,
+                "structural_dimensionality": value,
+                "status": "RESOLVED" if value is not None else "MISSING",
+                "method": dimensionality.method,
+            })
+            if value == 2:
+                retained.append(document)
+        except (StructureValidationError, KeyError, TypeError, ValueError) as exc:
+            audit.append({
+                "material_id": material_id,
+                "structural_dimensionality": None,
+                "status": "MISSING",
+                "method": None,
+                "warning": type(exc).__name__,
+            })
+    return retained, audit
+
+
+def _add_mp_deep_properties(
+    candidate: CandidateRecord,
+    *,
+    structure: Any,
+    payload: dict[str, Any],
+    endpoints: list[DeepEndpoint],
+    database_version: str,
+    retrieved_at: datetime,
+) -> CandidateRecord:
+    """Translate bounded endpoint evidence into immutable candidate properties."""
+    objects = payload.get("objects", {}) if isinstance(payload, dict) else {}
+    endpoint_payloads = payload.get("payloads", {}) if isinstance(payload, dict) else {}
+    selected_endpoints = set(endpoints)
+    features: list[tuple[DeepFeature, str, str]] = []
+    if DeepEndpoint.BANDSTRUCTURE_UNIFORM in selected_endpoints:
+        features.append((
+            sampled_bandwidth_ev(objects.get(DeepEndpoint.BANDSTRUCTURE_UNIFORM.value), energy_window_ev=(0.0, 0.1)),
+            DeepEndpoint.BANDSTRUCTURE_UNIFORM.value, "eV",
+        ))
+    if DeepEndpoint.OXIDATION_STATES in selected_endpoints:
+        oxidation = endpoint_payloads.get(DeepEndpoint.OXIDATION_STATES.value)
+        oxidation_payload = oxidation[0] if isinstance(oxidation, list) and oxidation else None
+        features.append((
+            common_transition_metal_valence(oxidation_payload, elements=candidate.elements),
+            DeepEndpoint.OXIDATION_STATES.value, "dimensionless",
+        ))
+    if DeepEndpoint.BANDSTRUCTURE_LINE in selected_endpoints:
+        features.append((
+            line_band_crossing_risk(objects.get(DeepEndpoint.BANDSTRUCTURE_LINE.value), energy_window_ev=(0.0, 0.1)),
+            DeepEndpoint.BANDSTRUCTURE_LINE.value, "dimensionless",
+        ))
+    if DeepEndpoint.BONDS in selected_endpoints:
+        features.append((
+            periodic_connectivity_score(
+                structure, contributor_elements=set(transition_metal_elements(candidate.elements))
+            ), DeepEndpoint.BONDS.value, "dimensionless",
+        ))
+    if DeepEndpoint.ROBOCRYS in selected_endpoints:
+        features.append((
+            _robocrys_vdw_gap_proxy(endpoint_payloads.get(DeepEndpoint.ROBOCRYS.value)),
+            DeepEndpoint.ROBOCRYS.value, "dimensionless",
+        ))
+
+    dimensionality = next((item.value for item in candidate.properties if item.name == "structural_dimensionality"), None)
+    features.append((
+        DeepFeature("layered_structure", dimensionality == 2 if dimensionality is not None else None,
+                    "RESOLVED" if dimensionality is not None else "MISSING", "larsen_dimensionality"),
+        "structure", "dimensionless",
+    ))
+    properties = list(candidate.properties)
+    for feature, endpoint, unit in features:
+        properties.append(PropertyValue(
+            name=feature.name,
+            value=feature.value,
+            unit=unit,
+            source="materials_project",
+            method=feature.method,
+            evidence_level=EvidenceLevel.L1_RETRIEVED,
+            origin=PropertyOrigin(
+                endpoint=endpoint,
+                database_version=database_version,
+                status=(ProvenanceStatus.RESOLVED if feature.status == "RESOLVED" else ProvenanceStatus.PARTIAL),
+            ),
+            retrieved_at=retrieved_at,
+            is_derived=True,
+            derived_from_structure_id=(candidate.structure_id if endpoint == "structure" else None),
+            derivation_policy_version="mp-deep-screen-v1",
+        ))
+    return candidate.model_copy(update={"properties": properties})
+
+
+def _robocrys_vdw_gap_proxy(payload: Any) -> DeepFeature:
+    """Positive-only text proxy; no negative claim from a missing description."""
+    text = str(payload).casefold() if payload is not None else ""
+    if not text:
+        return DeepFeature("vdw_gap_proxy", None, "MISSING", "mp_robocrys")
+    if "van der waals" in text or "vdw" in text:
+        return DeepFeature("vdw_gap_proxy", 1.0, "RESOLVED", "mp_robocrys")
+    return DeepFeature(
+        "vdw_gap_proxy", None, "MISSING", "mp_robocrys",
+        "Robocrystallographer text does not establish absence of a vdW gap",
+    )
 
 
 def _stage_outcome(

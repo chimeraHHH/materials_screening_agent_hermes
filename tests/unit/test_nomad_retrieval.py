@@ -228,6 +228,20 @@ def test_nomad_runner_emits_v2_uncertain_record_without_fabricating_hull(
 
     assert result.schema_version == "agent01-contract-v2"
     assert result.status is StageStatus.SUCCEEDED
+    coverage = json.loads(
+        (
+            tmp_path
+            / "stages"
+            / "agent01"
+            / "run-nomad"
+            / "source_property_coverage.json"
+        ).read_text(encoding="utf-8")
+    )
+    assert coverage["source_database"] == "nomad"
+    assert "flat_band_bandwidth" in coverage["not_judged_at_agent01"]
+    assert coverage["agent01_native_properties"]["band_gap"]["method"] == (
+        "NOMAD parsed archive; method varies by entry"
+    )
     manifest_path = (
         tmp_path
         / "stages"

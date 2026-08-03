@@ -54,6 +54,20 @@ def test_summary_mismatch_is_a_quality_flag(fixture_payload, policy) -> None:
     assert "SOURCE_NSITES_MISMATCH" in result.data_quality_flags
 
 
+def test_oxidation_state_labels_normalize_to_bare_elements(policy) -> None:
+    structure = Structure(Lattice.cubic(3), ["Fe0+"], [[0, 0, 0]])
+
+    result = process_structure(
+        structure.as_dict(),
+        summary_elements=["Fe"],
+        summary_num_sites=1,
+        policy=policy,
+    )
+
+    assert result.elements == ["Fe"]
+    assert "SOURCE_ELEMENT_SET_MISMATCH" not in result.data_quality_flags
+
+
 def test_summary_formula_mismatch_uses_structure_formula(
     fixture_payload, policy
 ) -> None:

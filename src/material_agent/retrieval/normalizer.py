@@ -27,6 +27,8 @@ ORIGIN_NAME_ALIASES = {
     "is_metal": ("is_metal", "electronic_structure", "dos"),
     "num_sites": ("structure",),
     "structural_dimensionality": ("structure",),
+    "c2db_layer_group": ("structure",),
+    "c2db_magnetic_label": ("structure",),
 }
 
 ADAPTIVE_SUMMARY_PROPERTIES = {
@@ -119,6 +121,23 @@ def normalize_candidate(
                     name=name, value=value, unit=unit, origins=origins,
                     plan=query_plan, retrieved_at=retrieved_at,
                 ))
+    if query_plan.source_database is SourceDatabase.C2DB:
+        source_provenance = document.get("source_provenance")
+        if isinstance(source_provenance, dict):
+            for name, key in (
+                ("c2db_layer_group", "layer_group"),
+                ("c2db_magnetic_label", "magnetic_label"),
+            ):
+                value = source_provenance.get(key)
+                if isinstance(value, str) and value.strip():
+                    properties.append(_property(
+                        name=name,
+                        value=value.strip(),
+                        unit="label",
+                        origins=origins,
+                        plan=query_plan,
+                        retrieved_at=retrieved_at,
+                    ))
     if query_plan.source_database is SourceDatabase.TOPOLOGICAL_QUANTUM_CHEMISTRY:
         properties.extend(
             _tqc_topology_properties(
@@ -378,6 +397,38 @@ def _tqc_topology_properties(
             origin=origin,
             retrieved_at=retrieved_at,
         ),
+        *[
+            PropertyValue(
+                name=name,
+                value=value,
+                unit=unit,
+                source=plan.source_database.value,
+                method="TQC crossing metadata provenance v1",
+                evidence_level=EvidenceLevel.L1_RETRIEVED,
+                origin=origin,
+                retrieved_at=retrieved_at,
+            )
+            for name, key, unit in (
+                ("tqc_fermi_crossing_count", "fermi_crossing_count", "count"),
+                (
+                    "tqc_fermi_crossing_first_conduction",
+                    "fermi_crossing_first_conduction",
+                    "count",
+                ),
+                (
+                    "tqc_fermi_crossing_last_valence",
+                    "fermi_crossing_last_valence",
+                    "count",
+                ),
+                ("tqc_line_crossing_label", "line_crossing_label", "database_label"),
+                (
+                    "tqc_crossing_type_label",
+                    "crossing_type_label",
+                    "database_label",
+                ),
+            )
+            if (value := provenance.get(key)) is not None
+        ],
     ]
 def _origin_map(raw_origins: Any) -> dict[str, str]:
     output: dict[str, str] = {}

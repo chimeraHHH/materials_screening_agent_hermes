@@ -272,6 +272,11 @@ Te2- Te1 0.5 0.5 0.5
                         "shortDescription": "SEBR"
                     },
                     "indexCompounds": {"items": [{"value": 1}]},
+                    "nbrFermiCrossing": 3,
+                    "nbrFermiCrossingFirstCond": 1,
+                    "nbrFermiCrossingLastVal": 2,
+                    "smLineCrossing": True,
+                    "smCrossingType": "nodal",
                 }
             ),
         ]
@@ -295,6 +300,8 @@ Te2- Te1 0.5 0.5 0.5
         ]
         == "TI"
     )
+    assert documents[0]["source_provenance"]["fermi_crossing_count"] == 3
+    assert documents[0]["source_provenance"]["line_crossing_label"] == "True"
 
 
 def test_tqc_adapter_never_resolves_more_than_frozen_scan_limit(requirement) -> None:
@@ -415,6 +422,9 @@ Te Te1 0.5 0.5 0.5
                     "topologicalClassification": {"shortDescription": "TI"},
                     "topologicalSubClassification": {"shortDescription": "SEBR"},
                     "indexCompounds": {"items": [{"value": 1}]},
+                    "nbrFermiCrossing": 2,
+                    "smLineCrossing": False,
+                    "smCrossingType": "none",
                 }
             ),
         ]
@@ -454,6 +464,14 @@ Te Te1 0.5 0.5 0.5
     )
     assert audit["elements"] == ["Bi", "Te"]
     assert audit["decision"] == "PASS"
+    crossing_properties = {
+        property_["name"]: property_["value"]
+        for property_ in audit["properties"]
+        if property_["name"].startswith("tqc_")
+    }
+    assert crossing_properties["tqc_fermi_crossing_count"] == 2
+    assert crossing_properties["tqc_line_crossing_label"] == "False"
+    assert crossing_properties["tqc_crossing_type_label"] == "none"
     assert audit["scientific_target_evaluations"] == [
         {
             "name": "Topological materials",

@@ -32,7 +32,104 @@
 3. 将并行结构分析、dimensionality 交叉验证和 Similarity endpoint 对照分别拆成独立可回退任务。
 4. 扩充科学 silver set、多数据库 Adapter 和扫描上限提升审批；每项都必须保留 provenance 和原有状态语义。
 
+### 当前任务：MP 过渡金属二维平带的有界深筛执行闭环（2026-08-03）
+
+范围：将已确认的 20 候选 MP 自适应筛选从仅声明深端点修正为实际执行；Summary 返回的
+记录先按冻结的过渡金属条件预筛，再按稳定 `material_id` 顺序限制为用户批准的
+`deep_screen_limit`，避免将数千个 pymatgen Structure 常驻内存。对每个入选材料归档
+uniform/line band structure、oxidation-state、robocrys/bonds 的可序列化响应，并仅以本地
+确定性函数生成带宽、价态、交点风险、连通性和 vdW 正向文本 proxy。费米窗内“第一条带”
+与投影轨道占比在 MP 当前 Agent01 能力目录中仍不可验证，必须保留为 `UNCERTAIN`，不得
+发布为满足全部用户条件的 PASS。
+
+验收：深端点在 runner 中真实调用且每项原始响应有 immutable Artifact；预算外 Summary
+记录和扫描截断写入 warning/report；缺失或不支持证据 fail closed；离线单元/集成回归、
+完整 Gate、`pip check`、`git diff --check` 通过。实现后需用新冻结 plan/hash 重新请求
+用户批准，不复用先前未完成运行的 plan。
+
+实现结果（待重新冻结的真实 MP run）：
+
+- [x] `MaterialsProjectAdapter` 与 fixture adapter 增加有界 deep-screen 调用；uniform/line
+  band structure 保留为运行时对象用于特征计算，同时将无凭据的可序列化端点响应归档；
+- [x] Runner 以 Summary 的过渡金属预筛后稳定 `material_id` 顺序选取最多 20 个，未选记录
+  在 warning 和 `scan_truncated` 中显式呈现；不再将所有原始 Summary 结构保留在内存；
+- [x] 深筛在 hard evaluation 前附加带宽、常见价态、层状、交点风险、TM 子晶格连通性及
+  vdW 正向文本 proxy；端点失败或缺字段保留 missing/uncertain，不放宽筛选；
+- [x] 未映射的费米窗首带身份与投影轨道阈值现在以 `MP_EVIDENCE_UNSUPPORTED` 进入每条
+  Candidate 的缺失证据，阻止其成为 PASS；
+- [x] 离线 Gate `464 passed, 9 skipped`、新增/相关单元 `27 passed`、`pip check` 和
+  `git diff --check` 通过。尚未运行新的 live MP 深筛，必须先为新的 Run ID 冻结计划并重新
+  绑定人工批准。
+- [x] 新计划已冻结在临时 Artifact Store：Run `tm-flat-band-v2`，plan SHA-256
+  `da24381bb7171cb61da9613e06419c486dd7bba84e67ed5e4c358de75faf3add`，idempotency key
+  `debcc04ea7e43797cb5f605084b2f9a05cc22eaab0285f66eda38c6c4ef51570`，MP database
+  version `2026.04.13`；待人工批准后才调用 Summary 与五个深端点。
+- [x] 已批准的 live MP 深筛以干净 Run `tm-flat-band-v3` 完成：复用同一 database version
+  与 query fingerprint 的 5,000 条不可变 Summary 原始响应；过渡金属预筛后有 2,932 条，
+  按已批准的 20 条预算实际执行。20/20 在结构维度硬约束失败（19 条为 3D、1 条为 1D），
+  因此没有发布候选。所有 uniform/line bandstructure 与 robocrys 请求分别以
+  `KeyError`/`OSError`/`TypeError` 或 MP REST 错误不可用，故带宽、交点和 vdW proxy 保持
+  缺失；这不是这些性质的负结论。两个用户指定但目录不支持的条件仍保留为 missing。
+  Stage 为 `PARTIAL`，完整审计、原始端点响应、报告和 operation record 已写入临时
+  Artifact Store；不得把该批的零发布解读为全数据库无候选。
+
+流程修复（2026-08-03，尚未重跑 live MP）：
+
+- [x] v3 审计发现 `deep_screen_limit` 曾在层状 hard constraint 前按 material ID 截断，
+  技术运行完成但科学上无效；现改为对全部过渡金属 Summary 记录进行不保留 Structure 的
+  维度预筛，并归档完整的 `adaptive_layered_prefilter.jsonl`，再对保留的 2D 记录消耗深筛
+  预算；
+- [x] 修复 mp-api 0.45 的 robocrys 调用：按 material ID 必须使用 `search_docs` 而不是
+  keyword-only 的 `search`；
+- [x] 新增“层状预筛必须先于深筛预算”回归测试；完整离线 Gate `466 passed, 9 skipped`，
+  `pip check`、`git diff --check` 通过；
+- [ ] 该修复改变了候选选择集合，必须以新的 Run ID 重跑一次已批准的最多 20 个深筛，不能
+  用 v3 的 20 个 3D/1D 记录代表修复后的结果。
+
+重跑结果（2026-08-03）：
+
+- [x] 修复后的 v4 使用同一版本的冻结 Summary：2,932 条过渡金属记录完成无常驻
+  Structure 的维度预筛，保留 209 条 2D；确定性选取其中 20 条做深端点访问，余 189 条
+  明确为未深筛，v3 的任意 3D/1D 选择问题已消除；
+- [x] robocrys `search_docs` 已成功返回结构描述；但 20 条的 MP line/uniform bandstructure
+  请求分别返回 `OSError`/`KeyError`/`MPRestError`，不能取得 W 或交点证据；部分 bonds
+  同样不可用。氧化态端点有响应但某些记录的 possible valences 为空，按缺失处理；
+- [x] v4 写入完整 prefilter、candidate audit、端点原始响应和 operation record，结果为
+  `PARTIAL`、20 条 `UNCERTAIN`、0 条 PASS/发布。此时 Agent01 流程已在结构筛选、预算和
+  失败闭环上跑通；没有材料可在现有 MP 端点证据下满足全部严格条件。
+
 跨 agent 依赖：Agent02 只消费 Agent01 发布的不可变 manifest/结构/性质 provenance；Orchestrator 只依赖冻结的 Agent01 原生 Envelope。当前无实现阻塞，P1 性能/扩展项不应改变 P0 契约或把 `REJECT` 重新发布为候选。
+
+### 当前任务：多数据库性质覆盖与 Agent01 判定边界（2026-08-03）
+
+范围：基于已有单来源 Adapter 启用 C2DB、NOMAD、MC3D、TQC 与 NIMS SuperCon 的可审计
+筛选；每个来源仅用其自身返回字段以及对其 canonical structure 执行的确定性结构计算。
+禁止跨库补值，禁止在无 band dispersion、投影轨道或氧化态数据时把平带、费米窗首带、
+轨道贡献、价态或交点条件判为通过。C2DB 的 GPAW/PBE band gap、凸包距离、层群和磁性
+标签应作为 L1 数据库证据保留；所有有结构来源继续计算结构维度。真实 Agent02 仅在既有
+独立 worker 配置和适用域 Gate 已满足时才可作为 L2 后续复核；Agent03/04 mock 不得用于
+补齐科学性质。
+
+实现进度：
+
+- [x] 新增 `source_property_coverage.json` Stage Artifact，按来源写入可在 Agent01 判断的
+  native/structure-derived 性质、方法及明确不判断的电子结构性质；
+- [x] C2DB 的 `layer_group`、磁性标签被规范化为带结构 task provenance 的 PropertyValue；
+  PBE band gap、凸包距离与金属性沿用既有 C2DB table 映射；
+- [x] 新增 C2DB coverage、native property 与 NOMAD Runner Artifact 单元覆盖；完整离线
+  Gate 为 `469 passed, 9 skipped`，`pip check` 和 `git diff --check` 通过，未进行跨库值
+  填充或证据升级；
+- [x] NOMAD public archive release gate 曾真实通过（结构、解析 band gap 与 entry-specific
+  method provenance）；随后的重复请求在 DNS 解析阶段失败，记录为外部瞬时不可用而非零
+  结果。C2DB `/help` 可达，但本次 Python metadata 探针超时；两者均没有取得可用于本任务
+  的 band dispersion、轨道投影或氧化态证据。
+- [x] 非 MP 来源在 `metadata` 网络失败前也会持久化其
+  `source_property_coverage.json` 并把它列入 retryable failure 的 Artifact；因此外部网络
+  故障不会掩盖 Agent01 的来源性质边界。针对 TQC metadata timeout 的注入测试已覆盖。
+- [x] TQC 真实只读探针验证 v4 Fe 搜索与一个 ICSD detail：详情含 CIF、拓扑分类、
+  `nbrFermiCrossing`、`smLineCrossing` 与 crossing type，但没有能量—k 数组、轨道投影或
+  氧化态。将 crossing count/label 作为 L1 诊断 PropertyValue 接入；因无法识别交叉属于
+  哪条能带，严格无交叉条件仍保持 Agent01 不判断。
 
 完成每个任务后，只在本计划记录实际完成项、测试证据、限制和对 Agent02/Orchestrator 的影响；公共契约或阈值变更需先同步相关 agent plan、fixture、contract test，并按职责更新主计划或技术架构。
 

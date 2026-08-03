@@ -7,7 +7,12 @@ import pytest
 import requests
 
 from material_agent.retrieval.adapters import InMemoryMaterialsAdapter
-from material_agent.retrieval.models import RetrievalPolicy, RetrievalStageInput, StageStatus
+from material_agent.retrieval.models import (
+    RetrievalPolicy,
+    RetrievalStageInput,
+    SourceDatabase,
+    StageStatus,
+)
 from material_agent.retrieval.query import CORE_FIELDS
 from material_agent.retrieval.runner import RetrievalStageRunner
 from material_agent.retrieval.storage import LocalArtifactStore
@@ -156,6 +161,39 @@ def test_exhausted_transient_search_returns_retryable_failure(
     assert result.errors[0].category == "TRANSIENT_EXTERNAL"
     assert result.errors[0].retryable is True
     assert adapter.search_calls == 3
+
+
+def test_non_mp_prepare_failure_preserves_source_evidence_boundary(
+    tmp_path, requirement, fixture_payload
+) -> None:
+    adapter = CountingAdapter(
+        fixture_payload["documents"],
+        source_database=SourceDatabase.TOPOLOGICAL_QUANTUM_CHEMISTRY,
+        metadata_failures=3,
+        database_version=fixture_payload["database_version"],
+        task_metadata=fixture_payload["task_metadata"],
+    )
+    policy = RetrievalPolicy(
+        source_database=SourceDatabase.TOPOLOGICAL_QUANTUM_CHEMISTRY,
+        retry_base_seconds=0,
+    )
+    store = LocalArtifactStore(tmp_path)
+    result = RetrievalStageRunner(
+        adapter=adapter,
+        artifact_store=store,
+        policy=policy,
+    ).run(requirement, stage_input(store, requirement, policy))
+
+    assert result.status is StageStatus.RETRYABLE_FAILED
+    assert adapter.metadata_calls == 3
+    coverage = store.read_json(
+        "stages/agent01/run-integration/source_property_coverage.json"
+    )
+    assert coverage["source_database"] == "topological_quantum_chemistry"
+    assert "flat_band_bandwidth" in coverage["not_judged_at_agent01"]
+    assert [artifact.uri for artifact in result.output_artifacts] == [
+        "artifact://stages/agent01/run-integration/source_property_coverage.json"
+    ]
 
 
 def test_unconfirmed_stage_input_blocks_without_search(

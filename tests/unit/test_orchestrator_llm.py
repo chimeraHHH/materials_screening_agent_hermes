@@ -426,6 +426,30 @@ def test_llm_requirement_parser_repairs_omitted_flat_band_mapping(
     }
 
 
+def test_llm_requirement_parser_preserves_specified_but_unsupported_flat_band_evidence(
+    requirement: Requirement,
+) -> None:
+    parsed = LLMRequirementParser(
+        FakeProvider(
+            {
+                "requirement": requirement.model_dump(mode="json"),
+                "clarification_questions": [],
+                "mp_screening": None,
+            }
+        )
+    ).parse(
+        "费米面附近第一条能带限定在 E_F±0.1 eV；电子轨道贡献≥50%。",
+        "req-local",
+    )
+
+    assert parsed.mp_screening_spec is not None
+    gaps = {item["clause_id"]: item for item in parsed.mp_screening_spec["unmapped_clauses"]}
+    assert gaps["fallback-fermi-window"]["status"] == "UNSUPPORTED"
+    assert "±0.1 eV" in gaps["fallback-fermi-window"]["source_text"]
+    assert gaps["fallback-orbital-character"]["status"] == "UNSUPPORTED"
+    assert "≥50%" in gaps["fallback-orbital-character"]["source_text"]
+
+
 def test_llm_requirement_parser_repairs_malformed_optional_mapping(
     requirement: Requirement,
 ) -> None:
