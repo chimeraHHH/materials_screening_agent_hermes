@@ -114,6 +114,10 @@ def test_auto_source_selection_is_deterministic_and_constraint_conservative(
         "auto", requirement.model_copy(update={"target_class": "topological_flat_band"})
     ) is SourceDatabase.TOPOLOGICAL_QUANTUM_CHEMISTRY
     assert select_retrieval_source("nomad", requirement) is SourceDatabase.NOMAD
+    import pytest
+
+    with pytest.raises(ValueError, match="not registered"):
+        select_retrieval_source("atomly", requirement)
 
     c2db = build_query_plan(
         requirement,

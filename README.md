@@ -71,6 +71,32 @@ material-agent run \
   --fixture tests/fixtures/mp-summary.si-o.json
 ```
 
+### Select an Agent01 database
+
+Each Agent01 run queries exactly one database. Pass `--source` to either
+`material-agent run` or the standalone `material-agent retrieval` command:
+
+```bash
+material-agent retrieval \
+  --source c2db \
+  --requirement /absolute/path/to/confirmed-requirement.json \
+  --output /absolute/path/to/artifact-root
+```
+
+Available choices are `materials_project`, `nomad`, `mc3d`, `c2db`,
+`topological_quantum_chemistry`, `nims_supercon`, and `auto`. `auto` chooses
+C2DB for `fm_2d_semiconductor`, TQC for `topological_flat_band`, and Materials
+Project otherwise. The run records the selected source, endpoint and version;
+it never combines databases or fills a missing property from another source.
+
+All sources use the same audited retrieval flow, but their scientific coverage
+differs. NOMAD, MC3D, C2DB and TQC can return canonical structures for
+downstream screening when their records pass validation. NIMS SuperCon is a
+versioned superconductivity datasheet without atomic coordinates, so it is
+queryable and reported but its records are blocked from downstream structure
+screening. Missing source properties remain `UNCERTAIN`; they are not inferred
+from Materials Project.
+
 The command stops at the durable Requirement confirmation Gate and prints an
 `approval_id`. Resume the same checkpoint, including from a new process:
 

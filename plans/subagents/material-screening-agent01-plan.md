@@ -1261,3 +1261,18 @@ StageResult。真实产物在指标提取后删除，不作为公共 fixture。
 > Requirement 确认与冻结 → ExecutionPlan → Agent 01 → Envelope 校验 → Report → checkpoint/resume
 
 Agent 02、Agent 03 和 Agent 04 可在公共契约冻结后使用 fixture 并行开发，但不阻塞 Orchestrator P0 的真实 Agent 01 主链。
+
+### 用户可选数据库入口核查与修正（2026-08-03）
+
+- `material-agent run` 和 `material-agent retrieval` 现只显示并接受已注册的
+  `materials_project`、`nomad`、`mc3d`、`c2db`、
+  `topological_quantum_chemistry`、`nims_supercon` 及 `auto`。未注册的
+  `atomly` 不再出现在 CLI，直接 API 调用也会在 query planning 阶段 fail closed；避免
+  用户在 runner factory 才看到无 Adapter 的错误。
+- 仍保持一个 Run 只选择一个来源。`auto` 对 `fm_2d_semiconductor` 选 C2DB、对
+  `topological_flat_band` 选 TQC、其余选 MP；不会跨库补全缺失性质或合并候选。
+- 当前公开只读联网 probe：MC3D metadata 与 1 条检索成功；C2DB metadata 成功、Si/O
+  限定查询返回 0 条；TQC metadata 与 1 条详情检索成功；NIMS SuperCon metadata 与 1 条
+  数据表检索成功。NIMS 明确没有原子坐标，仍阻止其记录进入下游结构筛选。
+- 验收：来源 adapter/query/orchestrator/CLI 聚焦测试 `35 passed`；完整离线 Gate
+  `463 passed, 9 skipped`，`pip check`、`git diff --check` 通过。

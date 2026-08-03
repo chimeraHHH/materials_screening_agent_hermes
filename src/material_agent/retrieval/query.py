@@ -81,6 +81,17 @@ class QueryPlanningError(ValueError):
 
 AUTO_SOURCE = "auto"
 
+USER_SELECTABLE_SOURCES = frozenset(
+    {
+        SourceDatabase.MATERIALS_PROJECT,
+        SourceDatabase.NOMAD,
+        SourceDatabase.MC3D,
+        SourceDatabase.C2DB,
+        SourceDatabase.TOPOLOGICAL_QUANTUM_CHEMISTRY,
+        SourceDatabase.NIMS_SUPERCON,
+    }
+)
+
 
 def select_retrieval_source(
     requested_source: SourceDatabase | str,
@@ -94,7 +105,12 @@ def select_retrieval_source(
     """
 
     if requested_source != AUTO_SOURCE:
-        return SourceDatabase(requested_source)
+        source = SourceDatabase(requested_source)
+        if source not in USER_SELECTABLE_SOURCES:
+            raise QueryPlanningError(
+                f"retrieval source is not registered for user selection: {source.value}"
+            )
+        return source
 
     if requirement.target_class == "topological_flat_band":
         return SourceDatabase.TOPOLOGICAL_QUANTUM_CHEMISTRY

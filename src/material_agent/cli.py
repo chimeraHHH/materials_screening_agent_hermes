@@ -28,6 +28,7 @@ from material_agent.retrieval.models import (
 )
 from material_agent.retrieval.query import (
     AUTO_SOURCE,
+    USER_SELECTABLE_SOURCES,
     retrieval_policy_for_source,
     select_retrieval_source,
 )
@@ -35,6 +36,11 @@ from material_agent.retrieval.runner import RetrievalStageRunner
 from material_agent.retrieval.storage import (
     LocalArtifactStore,
     canonical_json_bytes,
+)
+
+
+RETRIEVAL_SOURCE_CHOICES = tuple(
+    source.value for source in sorted(USER_SELECTABLE_SOURCES, key=lambda item: item.value)
 )
 
 
@@ -69,7 +75,7 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("--fixture", type=Path)
     run.add_argument(
         "--source",
-        choices=(*tuple(source.value for source in SourceDatabase), AUTO_SOURCE),
+        choices=(*RETRIEVAL_SOURCE_CHOICES, AUTO_SOURCE),
         default=SourceDatabase.MATERIALS_PROJECT.value,
     )
     run.add_argument("--run-id")
@@ -150,7 +156,7 @@ def main(argv: list[str] | None = None) -> int:
     retrieval.add_argument("--fixture", type=Path)
     retrieval.add_argument(
         "--source",
-        choices=(*tuple(source.value for source in SourceDatabase), AUTO_SOURCE),
+        choices=(*RETRIEVAL_SOURCE_CHOICES, AUTO_SOURCE),
         default=SourceDatabase.MATERIALS_PROJECT.value,
     )
     retrieval.add_argument("--mp-report-heavy-limit", type=int, default=None)
