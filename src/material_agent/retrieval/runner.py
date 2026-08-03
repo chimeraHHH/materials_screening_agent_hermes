@@ -511,7 +511,7 @@ class RetrievalStageRunner:
         )
 
         output_artifacts = []
-        warnings: list[str] = []
+        stage_warnings: list[str] = []
         errors: list[ErrorRecord] = []
 
         try:
@@ -659,7 +659,7 @@ class RetrievalStageRunner:
         raw_count = len(documents)
         documents, duplicate_material_ids = _deduplicate_documents(documents)
         if duplicate_material_ids:
-            warnings.append(
+            stage_warnings.append(
                 "duplicate material IDs were returned and normalized once: "
                 + ", ".join(duplicate_material_ids)
             )
@@ -667,7 +667,7 @@ class RetrievalStageRunner:
             documents, screening_spec
         )
         if prefilter_count:
-            warnings.append(
+            stage_warnings.append(
                 "adaptive Summary prefilter skipped structure processing for "
                 f"{prefilter_count} records that do not contain a transition metal"
             )
@@ -699,7 +699,7 @@ class RetrievalStageRunner:
                         policy=self.policy,
                     )
                 for warning in processed.data_quality_warnings:
-                    warnings.append(
+                    stage_warnings.append(
                         f"{material_id}: CIF round-trip warning "
                         f"({warning.split(':', 1)[0]})"
                     )
@@ -737,12 +737,12 @@ class RetrievalStageRunner:
                     warning_messages=dimensionality.warnings,
                 )
                 if dimensionality.error:
-                    warnings.append(
+                    stage_warnings.append(
                         f"{material_id}: dimensionality unavailable "
                         f"({dimensionality.error.split(':', 1)[0]})"
                     )
                 for warning in dimensionality.warnings or []:
-                    warnings.append(
+                    stage_warnings.append(
                         f"{material_id}: dimensionality warning "
                         f"({warning.split(':', 1)[0]})"
                     )
@@ -791,7 +791,7 @@ class RetrievalStageRunner:
                         candidate_id=candidate_id,
                     )
                 )
-                warnings.append(
+                stage_warnings.append(
                     f"{material_id}: structure processing failed ({type(exc).__name__})"
                 )
 
@@ -810,9 +810,9 @@ class RetrievalStageRunner:
                         task_ids, material_ids, self.policy.origin_batch_size
                     ),
                 )
-                warnings.extend(origin_warnings)
+                stage_warnings.extend(origin_warnings)
             except Exception as exc:
-                warnings.append(
+                stage_warnings.append(
                     f"origin metadata resolution failed ({type(exc).__name__})"
                 )
         origin_records = [
@@ -846,7 +846,7 @@ class RetrievalStageRunner:
             )
         except Exception as exc:
             similarity_clusters = []
-            warnings.append(f"structure clustering failed ({type(exc).__name__})")
+            stage_warnings.append(f"structure clustering failed ({type(exc).__name__})")
 
         published = sorted(
             [candidate for candidate in candidates if candidate.published_downstream],
@@ -931,7 +931,7 @@ class RetrievalStageRunner:
                         immutable=True,
                     )
                 )
-                warnings.extend(enrichment_warnings)
+                stage_warnings.extend(enrichment_warnings)
                 if enrichment_partial:
                     status = StageStatus.PARTIAL
 
@@ -942,7 +942,7 @@ class RetrievalStageRunner:
                 raw_count=raw_count,
                 scan_truncated=scan_truncated,
                 status=status,
-                warnings=warnings,
+                warnings=stage_warnings,
                 exact_duplicate_groups=exact_groups,
                 similarity_clusters=similarity_clusters,
                 report_enrichment=report_enrichment,
@@ -994,7 +994,7 @@ class RetrievalStageRunner:
             output_artifacts=_unique_artifacts(output_artifacts),
             candidate_manifest=candidate_manifest_ref,
             candidate_ids=[candidate.candidate_id for candidate in published],
-            warnings=sorted(set(warnings)),
+            warnings=sorted(set(stage_warnings)),
             errors=errors,
             metrics=report["funnel"] | report["limits"],
             provenance=provenance,

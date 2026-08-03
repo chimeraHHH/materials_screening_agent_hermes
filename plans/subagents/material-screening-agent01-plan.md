@@ -1240,6 +1240,14 @@ StageResult。真实产物在指标提取后删除，不作为公共 fixture。
 - 真实 `run_012` 在 5000 条截断 Summary 中仅有 191 条包含过渡金属、其中 2 条为二维；
   因此该截断窗口不能用于“数据库中不存在候选”的科学结论。均匀 k 网格带宽仍需要用户
   明确费米能量窗口，缺失时保持 `UNCERTAIN`。
+
+### StageRunner warning shadowing 修复（2026-08-03）
+
+- 修复 `run()` 内阶段 warning 列表覆盖 Python `warnings` 模块，导致结构处理在
+  `warnings.catch_warnings()` 处触发 `AttributeError` 并连锁破坏 Agent01/Orchestrator
+  回归的问题；阶段 warning 列表改用独立名称。
+- Agent01 契约、检索 E2E 与 adaptive 单元测试通过；完整离线 Gate 为 `454 passed,
+  9 skipped`，`pip check` 与 `git diff --check` 通过。
 - Requirement 和全部输出 artifact 的 hash 校验闭环；
 - run-scoped manifest 和结构 lineage 可供 Agent 02 使用；
 - resume 不重复查询、不覆盖已完成证据；
