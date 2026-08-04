@@ -1852,6 +1852,14 @@ checkpoint 契约的前提下，新增独立、版本化的性质预测流。它
   显式 artifact root 与隔离 worker Python，并只将受信任的 ct-UAE source root 传给
   ct-UAE adapter。已以同一公开样本完成 CLI→选模→子进程→Artifact/result 的端到端
   smoke test；该命令是 CHGNet v1 stage 之外的 companion flow。
+- 2026-08-04 真实三源运行修复：`PropertySubprocessClient` 不再解引用 virtualenv 的
+  `bin/python` 符号链接（否则会绕过 `pyvenv.cfg` 而启动缺少 Torch 的 base Python），并向
+  隔离 worker 提供受控的仓库 `src` `PYTHONPATH`。在 MatterSim 固定胞弛豫后的 43 个 CIF
+  （MP 20、C2DB 20、NOMAD 3）上，以固定 ct-UAE revision、环境 freeze 和 checkpoint
+  完成 43/43 个 `band_gap_ev` 预测；每项保留计划、输入 CIF hash、checkpoint hash 和
+  JSON 输出。结果仍是未对本候选集 benchmark 的 L1 标量估计，不可当作平带带宽、能带交叉、
+  稳定性、DFT 或实验结论。相关 focused tests：`test_property_model_selection.py` 与
+  `test_property_subprocess_environment.py`。
 - 后续验收：每个家族必须具备独立 worker、模型卡、环境 lock、已验证 checkpoint、
   单候选预测 smoke test、Artifact/hash/路径/超时失败注入、benchmark 与适用域记录；
   在这些 Gate 之前输出只保留 `L1_RETRIEVED`/无科学结论，且不得注册为默认生产

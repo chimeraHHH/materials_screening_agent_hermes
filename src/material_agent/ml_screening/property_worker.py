@@ -55,7 +55,14 @@ def execute(
     try:
         value = _predict_ct_uae(plan, root=root, source_root=ct_uae_source_root)
     except Exception as exc:
-        return _failed(plan, "PREDICTION_FAILED", f"ct-UAE prediction failed ({type(exc).__name__})")
+        # This remains a structured, non-traceback failure, but preserve the
+        # exception message so a missing reviewed runtime dependency can be
+        # diagnosed rather than being indistinguishable from model failure.
+        return _failed(
+            plan,
+            "PREDICTION_FAILED",
+            f"ct-UAE prediction failed ({type(exc).__name__}: {exc})",
+        )
     sandbox = root.joinpath(*plan.output_sandbox_relative_path.split("/"))
     sandbox.mkdir(parents=True, exist_ok=False)
     output_path = sandbox / "prediction.json"

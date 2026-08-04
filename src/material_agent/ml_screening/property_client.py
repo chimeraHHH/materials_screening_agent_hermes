@@ -45,7 +45,11 @@ class PropertySubprocessClient:
 
     def run(self, request: PropertyWorkerRequest) -> PropertyWorkerResponse:
         root = self.artifact_root.resolve(strict=True)
-        python = self.worker_python.resolve(strict=True)
+        # A virtualenv's ``bin/python`` is commonly a symlink to its base
+        # interpreter.  Resolving it would bypass ``pyvenv.cfg`` and silently
+        # launch the base environment instead of the reviewed worker runtime.
+        # Make it absolute without dereferencing that symlink.
+        python = self.worker_python.absolute()
         script = (self.worker_script or Path(__file__).with_name("property_worker.py")).resolve(strict=True)
         if not python.is_file() or not os.access(python, os.X_OK) or not script.is_file():
             raise PropertyProcessError("configured property worker is not executable")
@@ -57,12 +61,7 @@ class PropertySubprocessClient:
         if request.plan.selected_model.family is PropertyModelFamily.CT_UAE:
             if self.ct_uae_source_root is not None:
                 command.extend(["--ct-uae-source-root", str(self.ct_uae_source_root.resolve(strict=True))])
-        environment = {
-            "PATH": os.environ.get("PATH", ""),
-            "TMPDIR": os.environ.get("TMPDIR", "/tmp"),
-            "PYTHONNOUSERSITE": "1",
-            "LANG": "C.UTF-8",
-        }
+        environment = _worker_environment()
         try:
             completed = subprocess.run(
                 command,
@@ -109,6 +108,21 @@ class PropertySubprocessClient:
         if changed != allowed or any(not path.startswith(sandbox_prefix) for path in changed):
             raise PropertyProcessError("property worker wrote outside its declared output")
         return response
+
+
+def _worker_environment() -> dict[str, str]:
+    """Return the minimal, deterministic environment for an ML subprocess."""
+    return {
+        "PATH": os.environ.get("PATH", ""),
+        "TMPDIR": os.environ.get("TMPDIR", "/tmp"),
+        "PYTHONNOUSERSITE": "1",
+        # The model worker runs in an isolated environment where this project
+        # is intentionally not installed.  Expose only the repository source
+        # root required by the immutable worker script; do not inherit an
+        # arbitrary caller PYTHONPATH.
+        "PYTHONPATH": str(Path(__file__).resolve().parents[2]),
+        "LANG": "C.UTF-8",
+    }
 
 
 class PropertyPredictionFlowRunner:
