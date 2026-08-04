@@ -87,6 +87,22 @@ class StatusError(RuntimeError):
         self.status_code = status_code
 
 
+class MPRestError(RuntimeError):
+    """Minimal provider-shaped error used to test mp-api retry handling."""
+
+
+class MPRestFlakySearchAdapter(CountingAdapter):
+    def __init__(self, *args, failures: int, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.failures = failures
+
+    def search(self, plan):
+        self.search_calls += 1
+        if self.search_calls <= self.failures:
+            raise MPRestError("provider request temporarily unavailable")
+        return InMemoryMaterialsAdapter.search(self, plan)
+
+
 class StatusFlakySearchAdapter(CountingAdapter):
     def __init__(self, *args, status_code: int, failures: int, **kwargs) -> None:
         super().__init__(*args, **kwargs)
@@ -160,6 +176,24 @@ def test_exhausted_transient_search_returns_retryable_failure(
     assert result.status is StageStatus.RETRYABLE_FAILED
     assert result.errors[0].category == "TRANSIENT_EXTERNAL"
     assert result.errors[0].retryable is True
+    assert adapter.search_calls == 3
+
+
+def test_mp_rest_error_is_retried(tmp_path, requirement, fixture_payload) -> None:
+    adapter = MPRestFlakySearchAdapter(
+        fixture_payload["documents"],
+        failures=2,
+        database_version=fixture_payload["database_version"],
+        task_metadata=fixture_payload["task_metadata"],
+    )
+    policy = RetrievalPolicy(retry_base_seconds=0)
+    store = LocalArtifactStore(tmp_path)
+    result = RetrievalStageRunner(
+        adapter=adapter,
+        artifact_store=store,
+        policy=policy,
+    ).run(requirement, stage_input(store, requirement, policy))
+    assert result.status is StageStatus.SUCCEEDED
     assert adapter.search_calls == 3
 
 

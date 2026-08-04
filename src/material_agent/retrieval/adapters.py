@@ -158,7 +158,13 @@ class MaterialsProjectAdapter:
                 num_chunks=plan.num_chunks,
                 all_fields=False,
             )
-        plain_documents = [_plain_document(document) for document in documents]
+        plain_documents = []
+        for document in documents:
+            plain = _plain_document(document)
+            # Preserve the complete source record for the immutable raw
+            # response artifact, even when a field is not yet normalized into
+            # the Candidate contract.
+            plain_documents.append({**plain, "source_response": dict(plain)})
         return sorted(
             plain_documents, key=lambda item: str(item.get("material_id", ""))
         )
@@ -437,7 +443,9 @@ class NomadAdapter:
                 # but must not make otherwise valid later records disappear.
                 # Keep the cursor moving and record their count as provenance.
                 try:
-                    documents.append(self._map_entry(entry))
+                    mapped = self._map_entry(entry)
+                    mapped["source_response"] = entry
+                    documents.append(mapped)
                 except _NomadIncompleteEntry:
                     self._skipped_incomplete_entries += 1
                 if len(documents) >= plan.max_records_scanned:
@@ -640,11 +648,9 @@ class Mc3dAdapter:
         params: dict[str, Any] | None = {
             "filter": filters,
             "page_limit": min(plan.chunk_size, plan.max_records_scanned),
-            "response_fields": (
-                "id,elements,nelements,nsites,chemical_formula_reduced,"
-                "chemical_formula_descriptive,lattice_vectors,"
-                "cartesian_site_positions,species_at_sites,last_modified"
-            ),
+            # Omit response_fields so the OPTIMADE server returns its full
+            # advertised attribute set. The normalized structure below is
+            # still the only input to deterministic screening.
             "sort": "id",
         }
         documents: list[dict[str, Any]] = []
@@ -668,7 +674,9 @@ class Mc3dAdapter:
             for entry in data:
                 if not isinstance(entry, dict):
                     raise ValueError("MC3D OPTIMADE data contains a non-object")
-                documents.append(_map_optimade_structure(entry, "mc3d:pbe-v1"))
+                mapped = _map_optimade_structure(entry, "mc3d:pbe-v1")
+                mapped["source_response"] = entry
+                documents.append(mapped)
                 if len(documents) >= plan.max_records_scanned:
                     break
             links = payload.get("links")
@@ -764,7 +772,9 @@ class C2dbAdapter:
                 raise ValueError("C2DB search session changed during pagination")
             if not parsed_rows:
                 break
-            rows.extend(parsed_rows[: plan.max_records_scanned - len(rows)])
+            for parsed_row in parsed_rows[: plan.max_records_scanned - len(rows)]:
+                parsed_row["_table_response"] = response.text
+                rows.append(parsed_row)
             if not has_next or len(rows) >= plan.max_records_scanned:
                 break
             page += 1
@@ -811,6 +821,15 @@ class C2dbAdapter:
                 "license": "CC-BY-NC-4.0",
                 "layer_group": row.get("layer_group"),
                 "magnetic_label": row.get("magnetic"),
+            },
+            "source_response": {
+                "table_row": {
+                    key: value
+                    for key, value in row.items()
+                    if key != "_table_response"
+                },
+                "table_html": row.get("_table_response"),
+                "download_json": payload,
             },
         }
 
@@ -880,6 +899,7 @@ class TopologicalQuantumChemistryAdapter:
             "sort_by": "compound_complexity",
         }
         icsd_ids: list[str] = []
+        search_items: dict[str, dict[str, Any]] = {}
         page = 0
         total_pages = 1
         while page < total_pages and len(icsd_ids) < plan.max_records_scanned:
@@ -906,6 +926,7 @@ class TopologicalQuantumChemistryAdapter:
                     raise ValueError("TQC search item is missing similarICSD[]")
                 for value in ids:
                     identifier = str(value)
+                    search_items.setdefault(identifier, dict(item))
                     if identifier not in icsd_ids:
                         icsd_ids.append(identifier)
                     if len(icsd_ids) >= plan.max_records_scanned:
@@ -915,13 +936,18 @@ class TopologicalQuantumChemistryAdapter:
             page += 1
         return sorted(
             [
-                self._detail(identifier)
+                self._detail(identifier, search_response=search_items.get(identifier))
                 for identifier in icsd_ids[: plan.max_records_scanned]
             ],
             key=lambda item: str(item["material_id"]),
         )
 
-    def _detail(self, icsd_id: str) -> dict[str, Any]:
+    def _detail(
+        self,
+        icsd_id: str,
+        *,
+        search_response: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         payload = _response_json(
             self.session.get(
                 f"{self.api_base_url}/v1/compounds/icsd={icsd_id}/",
@@ -1042,6 +1068,11 @@ class TopologicalQuantumChemistryAdapter:
                 "structure_parse_status": (
                     "parsed" if structure is not None else "invalid_cif"
                 ),
+            },
+            "source_response": {
+                "search_item": search_response,
+                "detail": payload,
+                "cif_content": cif_text,
             },
         }
 

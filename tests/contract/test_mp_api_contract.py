@@ -156,4 +156,6 @@ def test_live_adapter_uses_only_supported_summary_arguments(
     documents = live_adapter.search(plan)
 
     assert [document["material_id"] for document in documents] == ["mp-1", "mp-2"]
+    assert documents[0]["source_response"]["material_id"] == "mp-1"
+    assert set(plan.requested_fields).issuperset(adapter.metadata().available_fields)
     assert "_sort_fields" not in fake_client.materials.summary.kwargs

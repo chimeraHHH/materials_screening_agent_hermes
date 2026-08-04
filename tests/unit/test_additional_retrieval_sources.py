@@ -23,6 +23,7 @@ from material_agent.retrieval.models import (
 )
 from material_agent.retrieval.query import (
     MULTI_SOURCE_REQUIRED_FIELDS,
+    NOMAD_REQUIRED_FIELDS,
     build_query_plan,
     retrieval_policy_for_source,
     select_retrieval_source,
@@ -103,19 +104,14 @@ def test_new_source_policies_and_query_plans(requirement) -> None:
     assert "energy_above_hull" in mc3d.local_only_constraints
 
 
-def test_auto_source_selection_is_deterministic_and_constraint_conservative(
+def test_source_selection_requires_an_explicit_user_confirmation(
     requirement,
 ) -> None:
-    assert select_retrieval_source("auto", requirement) is SourceDatabase.MATERIALS_PROJECT
-    assert select_retrieval_source(
-        "auto", requirement.model_copy(update={"target_class": "fm_2d_semiconductor"})
-    ) is SourceDatabase.C2DB
-    assert select_retrieval_source(
-        "auto", requirement.model_copy(update={"target_class": "topological_flat_band"})
-    ) is SourceDatabase.TOPOLOGICAL_QUANTUM_CHEMISTRY
     assert select_retrieval_source("nomad", requirement) is SourceDatabase.NOMAD
     import pytest
 
+    with pytest.raises(ValueError, match="explicitly confirmed"):
+        select_retrieval_source("auto", requirement)
     with pytest.raises(ValueError, match="not registered"):
         select_retrieval_source("atomly", requirement)
 
@@ -127,6 +123,57 @@ def test_auto_source_selection_is_deterministic_and_constraint_conservative(
     )
     assert c2db.pushdown_filters["band_gap"] == (0.5, 1.0)
     assert c2db.pushdown_filters["energy_above_hull"] == (0.0, 0.05)
+
+
+def test_exact_formula_is_local_for_every_selectable_database(requirement) -> None:
+    hard = requirement.hard_constraints.model_copy(update={"exact_formula": "SiO"})
+    changed = requirement.model_copy(update={"hard_constraints": hard})
+    mp_plan = build_query_plan(
+        changed,
+        "a" * 64,
+        SourceMetadata(
+            database_version="mp-fixture",
+            client_version="fixture-client",
+            available_fields=[
+                "material_id",
+                "formula_pretty",
+                "chemsys",
+                "elements",
+                "nelements",
+                "nsites",
+                "structure",
+                "band_gap",
+                "energy_above_hull",
+                "is_metal",
+                "deprecated",
+                "theoretical",
+                "origins",
+                "last_updated",
+            ],
+        ),
+        retrieval_policy_for_source(SourceDatabase.MATERIALS_PROJECT),
+    )
+    assert "exact_formula" in mp_plan.local_only_constraints
+    for source in (
+        SourceDatabase.C2DB,
+        SourceDatabase.NOMAD,
+        SourceDatabase.MC3D,
+        SourceDatabase.TOPOLOGICAL_QUANTUM_CHEMISTRY,
+    ):
+        metadata = _metadata()
+        if source is SourceDatabase.NOMAD:
+            metadata = SourceMetadata(
+                database_version="fixture-v1",
+                client_version="fixture-client",
+                available_fields=NOMAD_REQUIRED_FIELDS,
+            )
+        plan = build_query_plan(
+            changed,
+            "a" * 64,
+            metadata,
+            retrieval_policy_for_source(source),
+        )
+        assert "exact_formula" in plan.local_only_constraints
 
 
 def test_mc3d_optimade_adapter_maps_structure(requirement) -> None:
@@ -174,6 +221,7 @@ def test_mc3d_optimade_adapter_maps_structure(requirement) -> None:
     assert documents[0]["material_id"] == "mc3d-10"
     assert documents[0]["elements"] == ["O", "Si"]
     assert documents[0]["band_gap"] is None
+    assert documents[0]["source_response"]["id"] == "mc3d-10"
     params = session.calls[1][1]["params"]
     assert 'elements HAS ALL "O","Si"' in params["filter"]
 
@@ -226,6 +274,8 @@ def test_c2db_adapter_maps_table_properties_and_ase_json(
     assert documents[0]["energy_above_hull"] == 0.02
     assert documents[0]["is_metal"] is False
     assert documents[0]["nsites"] == 2
+    assert documents[0]["source_response"]["table_row"]["uid"] == "2SiO-1"
+    assert documents[0]["source_response"]["download_json"] == atoms
 
 
 def test_tqc_adapter_preserves_topology_as_provenance(
@@ -302,6 +352,8 @@ Te2- Te1 0.5 0.5 0.5
     )
     assert documents[0]["source_provenance"]["fermi_crossing_count"] == 3
     assert documents[0]["source_provenance"]["line_crossing_label"] == "True"
+    assert documents[0]["source_response"]["detail"]["id"] == 44
+    assert "data_test" in documents[0]["source_response"]["cif_content"]
 
 
 def test_tqc_adapter_never_resolves_more_than_frozen_scan_limit(requirement) -> None:

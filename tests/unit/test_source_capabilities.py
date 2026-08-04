@@ -9,6 +9,12 @@ def test_c2db_coverage_keeps_flat_band_evidence_out_of_agent01() -> None:
     assert "structural_dimensionality" in coverage["agent01_structure_derived_properties"]
 
 
+def test_mp_coverage_includes_simple_summary_constraints() -> None:
+    coverage = source_property_coverage(SourceDatabase.MATERIALS_PROJECT)
+    assert "density" in coverage["agent01_native_properties"]
+    assert "crystal_system" in coverage["agent01_native_properties"]
+
+
 def test_nims_does_not_claim_structure_derived_properties() -> None:
     coverage = source_property_coverage(SourceDatabase.NIMS_SUPERCON)
     assert coverage["agent01_structure_derived_properties"] == {}

@@ -69,6 +69,7 @@ from material_agent.retrieval.query import (
     select_retrieval_source,
 )
 from material_agent.retrieval.runner import RetrievalStageRunner
+from material_agent.retrieval.source_requirements import compile_source_requirement
 from material_agent.retrieval.storage import (
     LocalArtifactStore,
     canonical_json_bytes,
@@ -716,6 +717,14 @@ class OrchestratorGraph:
             state.get("retrieval_source", SourceDatabase.MATERIALS_PROJECT.value),
             requirement,
         )
+        source_requirement = compile_source_requirement(
+            requirement, retrieval_source
+        ).model_copy(update={"confirmed_by_user": requirement.confirmed_by_user})
+        source_requirement_ref = self.store.write_json(
+            f"requirements/{state['run_id']}/source-{retrieval_source.value}.v1.json",
+            source_requirement.model_dump(mode="json"),
+            immutable=True,
+        )
         requirement_pointer = ArtifactPointer(
             uri=state["requirement_artifact_uri"],
             sha256=state["requirement_artifact_sha256"],
@@ -735,12 +744,9 @@ class OrchestratorGraph:
             "requirement": requirement_pointer.model_dump(mode="json"),
             "policy_version": ROUTING_POLICY_VERSION,
             "retrieval_source": retrieval_source.value,
+            "source_requirement_uri": source_requirement_ref.uri,
+            "source_requirement_sha256": source_requirement_ref.sha256,
             "mp_report_heavy_limit": state.get("mp_report_heavy_limit"),
-            **(
-                {"mp_adaptive_screening": True}
-                if state.get("mp_adaptive_screening", False)
-                else {}
-            ),
             "routes": [
                 route.model_dump(mode="json")
                 for route in routes
@@ -781,6 +787,8 @@ class OrchestratorGraph:
             "pending_control_outcome": None,
             "current_stage": "routing",
             "retrieval_source": retrieval_source.value,
+            "source_requirement_uri": source_requirement_ref.uri,
+            "source_requirement_sha256": source_requirement_ref.sha256,
             "updated_at": self._now(),
         }
 
@@ -2367,7 +2375,6 @@ class OrchestratorGraph:
                     SourceDatabase.MATERIALS_PROJECT.value,
                 ),
                 mp_report_heavy_limit=state.get("mp_report_heavy_limit"),
-                adaptive_mp_screening=state.get("mp_adaptive_screening", False),
             )
             return Agent01RunnerAdapter(
                 native_runner=self._agent01_runner(state, policy),

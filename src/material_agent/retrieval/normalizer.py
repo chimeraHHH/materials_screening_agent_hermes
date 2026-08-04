@@ -107,7 +107,7 @@ def normalize_candidate(
             retrieved_at=retrieved_at,
         ),
     ]
-    if query_plan.policy_version == "retrieval-policy-mp-adaptive-v2":
+    if query_plan.source_database is SourceDatabase.MATERIALS_PROJECT:
         for field, (name, unit) in ADAPTIVE_SUMMARY_PROPERTIES.items():
             value = document.get(field)
             if value is not None:
@@ -121,6 +121,18 @@ def normalize_candidate(
                     name=name, value=value, unit=unit, origins=origins,
                     plan=query_plan, retrieved_at=retrieved_at,
                 ))
+        symmetry = document.get("symmetry")
+        if isinstance(symmetry, dict):
+            for field, name, unit in (
+                ("crystal_system", "crystal_system", "label"),
+                ("number", "spacegroup_number", "count"),
+            ):
+                value = symmetry.get(field)
+                if value is not None:
+                    properties.append(_property(
+                        name=name, value=value, unit=unit, origins=origins,
+                        plan=query_plan, retrieved_at=retrieved_at,
+                    ))
     if query_plan.source_database is SourceDatabase.C2DB:
         source_provenance = document.get("source_provenance")
         if isinstance(source_provenance, dict):
@@ -390,6 +402,45 @@ def _tqc_topology_properties(
         PropertyValue(
             name="tqc_topological_material_label",
             value=labeled_topological,
+            unit="dimensionless",
+            source=plan.source_database.value,
+            method="TQC classification provenance v1",
+            evidence_level=EvidenceLevel.L1_RETRIEVED,
+            origin=origin,
+            retrieved_at=retrieved_at,
+        ),
+        PropertyValue(
+            name="tqc_topological_subclassification",
+            value=(
+                str(subclass.get("shortDescription")).strip()
+                if isinstance(subclass := provenance.get("topological_subclassification"), dict)
+                and subclass.get("shortDescription") is not None
+                else None
+            ),
+            unit="database_label",
+            source=plan.source_database.value,
+            method="TQC classification provenance v1",
+            evidence_level=EvidenceLevel.L1_RETRIEVED,
+            origin=origin,
+            retrieved_at=retrieved_at,
+        ),
+        PropertyValue(
+            name="tqc_has_topological_indices",
+            value=(
+                bool(index_items)
+                if isinstance(index_items, list)
+                else None
+            ),
+            unit="dimensionless",
+            source=plan.source_database.value,
+            method="TQC classification provenance v1",
+            evidence_level=EvidenceLevel.L1_RETRIEVED,
+            origin=origin,
+            retrieved_at=retrieved_at,
+        ),
+        PropertyValue(
+            name="tqc_soc",
+            value=soc if isinstance(soc, bool) else None,
             unit="dimensionless",
             source=plan.source_database.value,
             method="TQC classification provenance v1",

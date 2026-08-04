@@ -150,11 +150,6 @@ class RetrievalStageRunner:
         ):
             errors.append("MP screening spec URI and hash must be provided together")
             error_category = "INPUT_INTEGRITY_ERROR"
-        if stage_input.mp_screening_spec_uri and not self.policy.adaptive_mp_screening:
-            errors.append(
-                "MP screening spec requires retrieval-policy-mp-adaptive-v2"
-            )
-            error_category = "INVALID_INPUT"
         try:
             validate_requirement_contract(requirement)
         except QueryPlanningError as exc:
@@ -730,47 +725,11 @@ class RetrievalStageRunner:
                 "duplicate material IDs were returned and normalized once: "
                 + ", ".join(duplicate_material_ids)
             )
-        documents, prefilter_count = _prefilter_adaptive_summary_documents(
-            documents, screening_spec
-        )
-        if prefilter_count:
-            stage_warnings.append(
-                "adaptive Summary prefilter skipped structure processing for "
-                f"{prefilter_count} records that do not contain a transition metal"
-            )
-        documents, layered_prefilter = _prefilter_adaptive_layered_documents(
-            documents,
-            screening_spec,
-            self.policy,
-            checkpoint_store=self.store,
-            checkpoint_prefix=f"{stage_prefix}/adaptive_layered_prefilter_batches",
-        )
-        if layered_prefilter:
-            output_artifacts.append(
-                self.store.write_jsonl(
-                    f"{stage_prefix}/adaptive_layered_prefilter.jsonl",
-                    layered_prefilter,
-                    immutable=True,
-                )
-            )
-            layered_count = sum(
-                item["structural_dimensionality"] == 2
-                for item in layered_prefilter
-            )
-            stage_warnings.append(
-                "adaptive structure prefilter evaluated "
-                f"{len(layered_prefilter)} transition-metal Summary records and retained "
-                f"{layered_count} two-dimensional records for deep-screen ranking"
-            )
-        documents, deep_budget_skipped = _limit_adaptive_deep_documents(
-            documents, screening_spec
-        )
-        if deep_budget_skipped:
-            stage_warnings.append(
-                "adaptive deep-screen budget selected the first "
-                f"{len(documents)} layered material IDs in deterministic order; "
-                f"{deep_budget_skipped} layered records were not deep screened"
-            )
+        # MP adaptive/deep screening was intentionally removed.  Agent01 now
+        # executes only the selected source-native query and deterministic
+        # local evaluation; unsupported conditions remain explicit evidence
+        # gaps in the SourceRequirement.
+        deep_budget_skipped = 0
 
         retrieved_at = plan.created_at
         candidates: list[CandidateRecord] = []
@@ -894,18 +853,6 @@ class RetrievalStageRunner:
                 stage_warnings.append(
                     f"{material_id}: structure processing failed ({type(exc).__name__})"
                 )
-
-        if screening_spec is not None and screening_spec.deep_endpoints:
-            candidates, deep_artifacts, deep_warnings = self._apply_mp_deep_screen(
-                candidates=candidates,
-                structures=structures,
-                screening_spec=screening_spec,
-                stage_prefix=stage_prefix,
-                database_version=plan.database_version,
-                retrieved_at=retrieved_at,
-            )
-            output_artifacts.extend(deep_artifacts)
-            stage_warnings.extend(deep_warnings)
 
         usable = [
             candidate
@@ -1410,7 +1357,13 @@ def _is_retryable(exc: Exception) -> bool:
     if status_code == 429 or (isinstance(status_code, int) and status_code >= 500):
         return True
     text = str(exc).lower()
-    return any(token in text for token in ("timeout", "rate limit", "429", "temporar"))
+    if any(token in text for token in ("timeout", "rate limit", "429", "temporar")):
+        return True
+    # mp-api wraps HTTP 429/5xx and occasional transport failures in
+    # MPRestError without consistently exposing status_code/response. Treat
+    # that provider-specific envelope as retryable; the bounded attempt loop
+    # still fails closed after the policy limit instead of relaxing a query.
+    return type(exc).__name__ == "MPRestError"
 
 
 def _error_category(exc: Exception, *, operation: str) -> str:

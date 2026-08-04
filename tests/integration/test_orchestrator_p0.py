@@ -96,37 +96,37 @@ def test_orchestrator_run_selects_nomad_as_the_only_retrieval_source(
         assert manifest["source_database"] == "nomad"
 
 
-def test_orchestrator_auto_source_is_resolved_after_requirement_confirmation(
+def test_orchestrator_requires_explicit_source_and_preserves_it(
     tmp_path, requirement, fixture_payload
 ) -> None:
-    OrchestratorRuntime.create_project(tmp_path, "project-auto-source")
+    OrchestratorRuntime.create_project(tmp_path, "project-explicit-source")
     topological_requirement = requirement.model_copy(
         update={"target_class": "topological_flat_band"}
     )
     with OrchestratorRuntime.from_workspace(
-        tmp_path, "project-auto-source"
+        tmp_path, "project-explicit-source"
     ) as runtime:
         waiting = runtime.start_run(
             raw_request="structured",
             initial_requirement=topological_requirement.model_dump(mode="json"),
             fixture_payload=fixture_payload,
-            run_id="run-auto-source",
-            retrieval_source="auto",
+            run_id="run-explicit-source",
+            retrieval_source="topological_quantum_chemistry",
         )
         approval_id = waiting.interrupts[0].value["approval_id"]
         completed = runtime.approve(
-            run_id="run-auto-source",
+            run_id="run-explicit-source",
             approval_id=approval_id,
             decision="approve",
         )
 
         assert completed.status is RunStatus.SUCCEEDED
         query_plan = runtime.store.read_json(
-            "artifact://stages/agent01/run-auto-source/query_plan.json"
+            "artifact://stages/agent01/run-explicit-source/query_plan.json"
         )
         assert query_plan["source_database"] == "topological_quantum_chemistry"
         assert "Topological Quantum Chemistry retrieval evidence at L1" in runtime.read_report(
-            "run-auto-source"
+            "run-explicit-source"
         )
 
 

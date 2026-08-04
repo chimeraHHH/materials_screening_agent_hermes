@@ -188,6 +188,10 @@ def test_nomad_adapter_paginates_and_maps_si_units_to_agent01_units(
     assert documents[0]["structure"]["lattice"]["matrix"][0][0] == pytest.approx(
         5.4
     )
+    assert documents[0]["source_response"]["entry_id"] == "nomad-entry-1"
+    assert documents[0]["source_response"]["archive"]["results"]["method"][
+        "simulation"
+    ]["program_name"] == "VASP"
     assert len(documents[0]["structure"]["sites"]) == 2
     assert session.post_calls[1]["json"]["pagination"]["page_after_value"] == (
         "cursor-1"

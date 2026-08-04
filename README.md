@@ -67,6 +67,7 @@ material-agent run \
   --workspace workspace \
   --project demo \
   --run-id run-demo \
+  --source materials_project \
   --request "从 Materials Project 中寻找同时包含 Si 和 O、带隙为 0.5–1.0 eV、energy above hull 不超过 0.05 eV/atom 的非金属材料。" \
   --fixture tests/fixtures/mp-summary.si-o.json
 ```
@@ -84,10 +85,50 @@ material-agent retrieval \
 ```
 
 Available choices are `materials_project`, `nomad`, `mc3d`, `c2db`,
-`topological_quantum_chemistry`, `nims_supercon`, and `auto`. `auto` chooses
-C2DB for `fm_2d_semiconductor`, TQC for `topological_flat_band`, and Materials
-Project otherwise. The run records the selected source, endpoint and version;
-it never combines databases or fills a missing property from another source.
+`topological_quantum_chemistry`, and `nims_supercon`. `--source` is required:
+the user must explicitly confirm one database before retrieval can proceed.
+The run records the selected source, endpoint and version; it never combines
+databases or fills a missing property from another source.
+
+After the source is selected, Agent01 compiles the confirmed Requirement into
+an immutable source-native Requirement artifact. Conditions that the selected
+database cannot express are retained as `UNMAPPED` constraints with a reason;
+they are never silently dropped or treated as satisfied. The query plan uses
+mapped conditions, while retained conditions keep affected candidates at
+`UNCERTAIN` until suitable downstream evidence exists.
+
+For every selected source, `raw_response_manifest.jsonl` points to immutable
+compressed raw-response batches. These batches retain the source payload used
+by the adapter in addition to the normalized Candidate manifest: MP requests
+all fields advertised by its current metadata; MC3D retains complete
+OPTIMADE entries; NOMAD retains archive entries; C2DB retains the search HTML,
+table row and download JSON; TQC retains the search item, detail JSON and CIF
+content. The normalized manifest intentionally remains smaller and only
+contains fields safe for deterministic Agent01 screening.
+
+“All returned data” therefore means all data actually returned by the selected
+public endpoint and preserved in the run Artifact Store. It does not mean that
+a database can provide properties it does not expose, that a bounded scan
+covers its entire database, or that missing properties are inferred from
+another source.
+
+After a confirmed Requirement has been received, an explicitly configured
+structured LLM can recommend one of the five primary databases (Materials
+Project, C2DB, NOMAD, TQC, or MC3D):
+
+```bash
+export MATERIAL_AGENT_LLM_PROVIDER=deepseek
+material-agent recommend-source \
+  --requirement /absolute/path/to/confirmed-requirement.json
+```
+
+The recommendation is advisory and schema-validated. It returns exactly one
+database plus rationale, confidence, Requirement hash, and provider audit
+metadata. It never merges databases, changes the Requirement, or silently
+falls back when the LLM is unavailable; pass the returned `source_database`
+to the normal retrieval command. The existing NIMS SuperCon adapter remains
+available for backward-compatible explicit retrieval, but is not part of the
+LLM recommendation catalog because it has no canonical structures.
 
 All sources use the same audited retrieval flow, but their scientific coverage
 differs. NOMAD, MC3D, C2DB and TQC can return canonical structures for
@@ -172,6 +213,7 @@ material-agent run \
   --workspace workspace \
   --project demo \
   --run-id run-deepseek \
+  --source materials_project \
   --request "寻找带隙和稳定性约束明确的 Si/O 非金属材料。" \
   --fixture tests/fixtures/mp-summary.si-o.json
 ```
@@ -632,9 +674,9 @@ Materials Project runs additionally produce a human-readable rich report for
 every published candidate. The public `candidate_manifest.jsonl` remains the
 frozen `agent01-contract-v1` interface; report-only data lives in
 `report_enrichment.jsonl`, `report_assets/`, and compressed `report_data/`.
-Structure views are rendered locally. Heavy endpoint retrieval (electronic,
-phonon, spectra, heterostructure and charge-density derivatives) is limited to
-the top 20 published candidates by default and can be changed without changing
+Structure views are rendered locally. Report enrichment (electronic, phonon,
+spectra, heterostructure and charge-density derivatives) is limited to the top
+20 published candidates by default and can be changed without changing
 screening using `--mp-report-heavy-limit 0..200` on either `material-agent
 retrieval` or `material-agent run`. Missing endpoint data is shown as
 `NOT_AVAILABLE`; optional fetch/render failures make the Stage `PARTIAL` but
@@ -642,21 +684,16 @@ never change a candidate decision or rank. Materials Project values remain
 database calculations, not experimental validation.
 
 
-Each run selects exactly one retrieval source. Materials Project remains the
-default. `--source auto` makes a deterministic choice after Requirement
-confirmation: `topological_flat_band` selects TQC,
-`fm_2d_semiconductor` selects C2DB, and all other supported targets select
-Materials Project. The resolved source is frozen in the run checkpoint and
-Agent01 native query plan, then shown in the report; automatic selection never merges databases or fills missing fields
-across sources. The available explicit `--source` values are:
+Each run selects exactly one retrieval source. The available explicit
+`--source` values are:
 
 | Source | Interface | Safely mapped properties | Important limit |
 |---|---|---|---|
-| `materials_project` | official `mp-api` | structure, band gap, hull energy, metal flag | requires `MP_API_KEY` |
+| `materials_project` | official `mp-api` | structure, band gap, hull energy, metal flag; density, volume, formation energy, stability, crystal system, space group, direct-gap flag, magnetic ordering | requires `MP_API_KEY` |
 | `nomad` | public Archive API | structure, reported band gap | no MP-equivalent hull field |
 | `mc3d` | Materials Cloud OPTIMADE 1.2, PBE-v1 | relaxed 3D structure | band gap/hull/metal remain missing |
-| `c2db` | official search plus per-material JSON | 2D structure, PBE gap, C2DB hull energy | CC BY-NC 4.0; live web snapshot is not immutable |
-| `topological_quantum_chemistry` | public v4 search and v1 detail API | ICSD structure and topology provenance | topology is not promoted above L1; historical invalid CIFs fail per record |
+| `c2db` | official search plus per-material JSON | 2D structure, PBE gap, C2DB hull energy, layer group, magnetic label | CC BY-NC 4.0; live web snapshot is not immutable |
+| `topological_quantum_chemistry` | public v4 search and v1 detail API | ICSD structure and topology provenance, classification/subclassification, SOC, index presence, crossing diagnostics | topology is not promoted above L1; historical invalid CIFs fail per record |
 | `nims_supercon` | MDR SuperCon Ver.240322 TSV | formula, elements, Tc metadata/provenance | no atomic coordinates; records fail the structure Gate and are not published |
 
 For example, choose the public, read-only NOMAD API explicitly:
@@ -686,6 +723,19 @@ MC3D, C2DB, TQC, and NIMS retrieval also require no secret. Unsupported
 properties are never filled from another source. The NIMS source is useful for
 auditing SuperCon metadata only: Agent01's structure-required downstream
 contract intentionally marks every structureless record `FAILED`.
+
+Database-specific hard constraints can be placed under
+`hard_constraints.source_constraints`. Materials Project accepts simple scalar
+or label checks such as `density_g_cm3`, `volume_a3`,
+`formation_energy_ev_atom`, `is_stable`, `crystal_system`, `spacegroup_number`,
+`is_gap_direct`, and `magnetic_ordering`; C2DB accepts `layer_group` and
+`magnetic_label`; TQC accepts its classification, SOC/index, and crossing
+labels/counts. These checks are local and deterministic after normalization.
+NOMAD and MC3D currently expose no additional stable normalized fields beyond
+the common constraints, so their source-specific maps remain unavailable.
+If a source-specific constraint targets a different selected database, query
+planning fails closed. If the selected record lacks the field, the candidate is
+`UNCERTAIN` rather than inferred.
 
 Atomly is not yet a selectable source. A credentialed 2026-07-30 read-only
 probe confirmed that `search_by_formula` and `get_struct_detail` accept the
@@ -818,6 +868,7 @@ Reproducible offline release checklist (run from the repository root):
 ```bash
 material-agent project create --workspace workspace --project-id demo
 material-agent run --workspace workspace --project demo --run-id run-demo \
+  --source materials_project \
   --request "从 Materials Project 中寻找同时包含 Si 和 O、带隙为 0.5–1.0 eV、energy above hull 不超过 0.05 eV/atom 的非金属材料。" \
   --fixture tests/fixtures/mp-summary.si-o.json
 # approve the printed approval_id, then run status/report as shown above

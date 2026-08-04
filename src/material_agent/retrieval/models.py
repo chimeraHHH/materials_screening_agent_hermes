@@ -120,6 +120,9 @@ class HardConstraints(StrictModel):
     is_metal: bool | None = None
     dimensionality: Literal[0, 1, 2, 3] | None = None
     max_num_sites: int | None = Field(default=None, ge=1)
+    source_constraints: "SourceSpecificConstraints" = Field(
+        default_factory=lambda: SourceSpecificConstraints()
+    )
 
     @model_validator(mode="after")
     def no_element_conflict(self) -> HardConstraints:
@@ -127,6 +130,56 @@ class HardConstraints(StrictModel):
         if overlap:
             raise ValueError(f"elements cannot be both included and excluded: {sorted(overlap)}")
         return self
+
+
+class MaterialsProjectConstraints(StrictModel):
+    """Simple scalar/label constraints available from MP summary records."""
+
+    density_g_cm3: NumericRange | None = None
+    volume_a3: NumericRange | None = None
+    formation_energy_ev_atom: NumericRange | None = None
+    is_stable: bool | None = None
+    crystal_system: str | None = None
+    spacegroup_number: int | None = Field(default=None, ge=1, le=230)
+    is_gap_direct: bool | None = None
+    magnetic_ordering: str | None = None
+
+
+class C2DBConstraints(StrictModel):
+    """C2DB table labels that require no scientific inference."""
+
+    layer_group: str | None = None
+    magnetic_label: str | None = None
+
+
+class TQCConstraints(StrictModel):
+    """TQC classification and diagnostics, kept as database labels."""
+
+    topological_material: bool | None = None
+    topological_classification: str | None = None
+    topological_subclassification: str | None = None
+    has_topological_indices: bool | None = None
+    soc: bool | None = None
+    fermi_crossing_count: int | None = Field(default=None, ge=0)
+    line_crossing_label: str | None = None
+
+
+class SourceSpecificConstraints(StrictModel):
+    """Constraints whose meaning is specific to one selectable database."""
+
+    materials_project: MaterialsProjectConstraints = Field(
+        default_factory=MaterialsProjectConstraints
+    )
+    c2db: C2DBConstraints = Field(default_factory=C2DBConstraints)
+    nomad: dict[str, Any] = Field(default_factory=dict)
+    mc3d: dict[str, Any] = Field(default_factory=dict)
+    topological_quantum_chemistry: TQCConstraints = Field(
+        default_factory=TQCConstraints
+    )
+
+    # NOMAD/MC3D fields are retained as unmapped constraints until their
+    # source-native catalogs expose executable fields; they are not rejected
+    # during parsing or silently discarded.
 
 
 class ScientificTarget(StrictModel):
@@ -181,7 +234,6 @@ class Requirement(StrictModel):
 
 class RetrievalPolicy(StrictModel):
     policy_version: str = "retrieval-policy-v1"
-    adaptive_mp_screening: bool = False
     source_database: SourceDatabase = SourceDatabase.MATERIALS_PROJECT
     endpoint: str = "/materials/summary"
     include_deprecated: bool = False

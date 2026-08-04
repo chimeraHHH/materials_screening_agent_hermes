@@ -45,7 +45,6 @@ from material_agent.orchestrator.runners import (
 from material_agent.orchestrator.storage import OrchestratorRepository
 from material_agent.retrieval.storage import LocalArtifactStore
 from material_agent.retrieval.models import SourceDatabase
-from material_agent.retrieval.query import AUTO_SOURCE
 
 
 _SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
@@ -199,11 +198,8 @@ class OrchestratorRuntime:
         run_id: str | None = None,
         retrieval_source: SourceDatabase | str = SourceDatabase.MATERIALS_PROJECT,
         mp_report_heavy_limit: int | None = None,
-        mp_adaptive_screening: bool = False,
     ) -> RuntimeView:
-        selected_source = str(retrieval_source)
-        if selected_source != AUTO_SOURCE:
-            selected_source = SourceDatabase(selected_source).value
+        selected_source = SourceDatabase(retrieval_source).value
         if mp_report_heavy_limit is not None and not 0 <= mp_report_heavy_limit <= 200:
             raise ValueError("mp_report_heavy_limit must be between 0 and 200")
         selected_run_id = _validate_id(
@@ -236,7 +232,6 @@ class OrchestratorRuntime:
                 fixture_uri=fixture_uri,
                 retrieval_source=selected_source,
                 mp_report_heavy_limit=mp_report_heavy_limit,
-                mp_adaptive_screening=mp_adaptive_screening,
             )
             self.graph.invoke(
                 initial_state,
@@ -310,7 +305,6 @@ class OrchestratorRuntime:
                 fixture_uri=None,
                 retrieval_source=SourceDatabase.MATERIALS_PROJECT.value,
                 mp_report_heavy_limit=None,
-                mp_adaptive_screening=False,
             )
             initial_state.update(
                 {
@@ -590,7 +584,6 @@ class OrchestratorRuntime:
         fixture_uri: str | None,
         retrieval_source: str,
         mp_report_heavy_limit: int | None,
-        mp_adaptive_screening: bool,
     ) -> dict[str, Any]:
         return {
             "schema_version": ORCHESTRATOR_CONTRACT_VERSION,
@@ -617,7 +610,6 @@ class OrchestratorRuntime:
             "retrieval_fixture_uri": fixture_uri,
             "retrieval_source": retrieval_source,
             "mp_report_heavy_limit": mp_report_heavy_limit,
-            "mp_adaptive_screening": mp_adaptive_screening,
             "retry_counters": {},
             "warnings": [],
             "errors": [],

@@ -5,7 +5,15 @@ import math
 import pytest
 from pydantic import ValidationError
 
-from material_agent.retrieval.models import NumericRange, Requirement
+from material_agent.retrieval.models import (
+    C2DBConstraints,
+    MaterialsProjectConstraints,
+    NumericRange,
+    Requirement,
+    SourceSpecificConstraints,
+    SourceDatabase,
+    SourceMetadata,
+)
 from material_agent.retrieval.normalizer import candidate_id_for
 from material_agent.retrieval.query import (
     QueryPlanningError,
@@ -38,6 +46,17 @@ def test_requirement_contract_rejects_invalid_element(requirement: Requirement) 
     )
     changed = requirement.model_copy(update={"hard_constraints": hard})
     with pytest.raises(QueryPlanningError, match="invalid element symbol"):
+        validate_requirement_contract(changed)
+
+
+def test_requirement_contract_rejects_invalid_exact_formula(
+    requirement: Requirement,
+) -> None:
+    hard = requirement.hard_constraints.model_copy(
+        update={"exact_formula": "not a chemical formula"}
+    )
+    changed = requirement.model_copy(update={"hard_constraints": hard})
+    with pytest.raises(QueryPlanningError, match="exact_formula is invalid"):
         validate_requirement_contract(changed)
 
 
@@ -74,6 +93,58 @@ def test_query_plan_maps_confirmed_constraints(
     assert plan.include_gnome is False
     assert plan.max_records_scanned == 5000
     assert plan.num_chunks == 10
+
+
+def test_exact_formula_is_recorded_as_local_constraint(
+    requirement, requirement_hash, adapter, policy
+) -> None:
+    hard = requirement.hard_constraints.model_copy(update={"exact_formula": "O Si"})
+    changed = requirement.model_copy(update={"hard_constraints": hard})
+    plan = build_query_plan(changed, requirement_hash, adapter.metadata(), policy)
+    assert "exact_formula" in plan.local_only_constraints
+    assert "exact_formula" not in plan.pushdown_filters
+
+
+def test_database_specific_constraints_are_local_and_source_scoped(
+    requirement, requirement_hash, adapter, policy
+) -> None:
+    source_constraints = requirement.hard_constraints.source_constraints.model_copy(
+        update={
+            "materials_project": MaterialsProjectConstraints(
+                density_g_cm3=NumericRange(min=2.0, max=3.0, unit="g/cm^3"),
+                is_stable=True,
+                crystal_system="cubic",
+            )
+        }
+    )
+    hard = requirement.hard_constraints.model_copy(
+        update={"source_constraints": source_constraints}
+    )
+    changed = requirement.model_copy(update={"hard_constraints": hard})
+    plan = build_query_plan(changed, requirement_hash, adapter.metadata(), policy)
+    assert {
+        "source.materials_project.density_g_cm3",
+        "source.materials_project.is_stable",
+        "source.materials_project.crystal_system",
+    } <= set(plan.local_only_constraints)
+
+    c2db_constraints = SourceSpecificConstraints(
+        c2db=C2DBConstraints(layer_group="p4mm")
+    )
+    c2db_requirement = changed.model_copy(
+        update={
+            "hard_constraints": hard.model_copy(
+                update={"source_constraints": c2db_constraints}
+            )
+        }
+    )
+    c2db_plan = build_query_plan(
+        c2db_requirement,
+        requirement_hash,
+        adapter.metadata(),
+        policy,
+    )
+    assert "unmapped:source.c2db.layer_group" in c2db_plan.local_only_constraints
 
 
 def test_query_plan_rejects_unconfirmed_requirement(

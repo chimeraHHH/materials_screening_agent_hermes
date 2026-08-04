@@ -5,6 +5,8 @@ from __future__ import annotations
 import math
 from typing import Any
 
+from pymatgen.core import Composition
+
 from material_agent.retrieval.models import (
     CandidateAuditRecord,
     ConstraintEvaluation,
@@ -57,6 +59,10 @@ def evaluate_candidate(
 ) -> CandidateAuditRecord:
     hard = requirement.hard_constraints
     evaluations: list[ConstraintEvaluation] = []
+
+    if hard.exact_formula is not None:
+        evaluations.append(_exact_formula_evaluation(candidate, hard.exact_formula))
+    evaluations.extend(_evaluate_source_constraints(candidate, requirement))
 
     if hard.include_elements:
         required = sorted(set(hard.include_elements))
@@ -413,6 +419,170 @@ def _range_evaluation(
         reason_code=reason,
         property_origin=prop.origin if prop else None,
     )
+
+
+def _exact_formula_evaluation(
+    candidate: CandidateAuditRecord, expected_formula: str
+) -> ConstraintEvaluation:
+    """Compare formulas by canonical reduced composition, not source text."""
+
+    expected = _canonical_reduced_formula(expected_formula)
+    observed_raw = candidate.reduced_formula or candidate.formula
+    observed = _canonical_reduced_formula(observed_raw) if observed_raw else None
+    if expected is None:
+        result = ConstraintResult.ERROR
+        reason = "EXACT_FORMULA_INVALID"
+    elif observed is None:
+        result = ConstraintResult.MISSING
+        reason = "EXACT_FORMULA_MISSING"
+    elif observed == expected:
+        result = ConstraintResult.MATCH
+        reason = "EXACT_FORMULA_MATCH"
+    else:
+        result = ConstraintResult.MISMATCH
+        reason = "EXACT_FORMULA_MISMATCH"
+    return ConstraintEvaluation(
+        constraint_id="exact_formula",
+        constraint_type="exact_formula",
+        expected=expected_formula,
+        observed=observed_raw,
+        unit=None,
+        result=result,
+        reason_code=reason,
+    )
+
+
+def _evaluate_source_constraints(
+    candidate: CandidateAuditRecord, requirement: Requirement
+) -> list[ConstraintEvaluation]:
+    configured = requirement.hard_constraints.source_constraints
+    source = candidate.source_database
+    if source == "materials_project":
+        source_model = configured.materials_project
+        values = source_model.model_dump(exclude_none=True)
+        mappings = {
+            "density_g_cm3": ("density", "range", "g/cm^3"),
+            "volume_a3": ("volume", "range", "A^3"),
+            "formation_energy_ev_atom": ("formation_energy_per_atom", "range", "eV/atom"),
+            "is_stable": ("is_stable", "bool", "dimensionless"),
+            "crystal_system": ("crystal_system", "label", "label"),
+            "spacegroup_number": ("spacegroup_number", "scalar", "count"),
+            "is_gap_direct": ("is_gap_direct", "bool", "dimensionless"),
+            "magnetic_ordering": ("ordering", "label", "label"),
+        }
+        prefix = "source.materials_project"
+    elif source == "c2db":
+        source_model = configured.c2db
+        values = source_model.model_dump(exclude_none=True)
+        mappings = {
+            "layer_group": ("c2db_layer_group", "label", "label"),
+            "magnetic_label": ("c2db_magnetic_label", "label", "label"),
+        }
+        prefix = "source.c2db"
+    elif source == "topological_quantum_chemistry":
+        source_model = configured.topological_quantum_chemistry
+        values = source_model.model_dump(exclude_none=True)
+        mappings = {
+            "topological_material": ("tqc_topological_material_label", "bool", "dimensionless"),
+            "topological_classification": ("tqc_topological_classification", "label", "label"),
+            "topological_subclassification": ("tqc_topological_subclassification", "label", "label"),
+            "has_topological_indices": ("tqc_has_topological_indices", "bool", "dimensionless"),
+            "soc": ("tqc_soc", "bool", "dimensionless"),
+            "fermi_crossing_count": ("tqc_fermi_crossing_count", "scalar", "count"),
+            "line_crossing_label": ("tqc_line_crossing_label", "label", "label"),
+        }
+        prefix = "source.topological_quantum_chemistry"
+    else:
+        source_model = None
+        values = {}
+        mappings = {}
+        prefix = f"source.{source}"
+
+    evaluations: list[ConstraintEvaluation] = []
+    for key, expected in values.items():
+        property_name, kind, unit = mappings[key]
+        if kind == "range":
+            expected = getattr(source_model, key)
+        prop = _property(candidate, property_name)
+        observed = prop.value if prop else None
+        if kind == "range":
+            evaluation = _range_evaluation(
+                f"{prefix}.{key}", property_name, expected, prop, 1e-8
+            )
+        elif observed is None:
+            evaluation = ConstraintEvaluation(
+                constraint_id=f"{prefix}.{key}", constraint_type=property_name,
+                expected=expected, observed=None, unit=unit,
+                result=ConstraintResult.MISSING,
+                reason_code="SOURCE_PROPERTY_MISSING",
+                property_origin=prop.origin if prop else None,
+            )
+        else:
+            try:
+                if kind == "bool":
+                    if not isinstance(observed, bool):
+                        raise TypeError("boolean property is not boolean")
+                    matched = observed == expected
+                elif kind == "scalar":
+                    matched = int(observed) == expected
+                else:
+                    matched = str(observed).casefold() == str(expected).casefold()
+            except (TypeError, ValueError):
+                evaluations.append(ConstraintEvaluation(
+                    constraint_id=f"{prefix}.{key}", constraint_type=property_name,
+                    expected=expected, observed=observed, unit=unit,
+                    result=ConstraintResult.ERROR,
+                    reason_code="SOURCE_PROPERTY_INVALID",
+                    property_origin=prop.origin if prop else None,
+                ))
+                continue
+            evaluation = ConstraintEvaluation(
+                constraint_id=f"{prefix}.{key}", constraint_type=property_name,
+                expected=expected, observed=observed, unit=unit,
+                result=ConstraintResult.MATCH if matched else ConstraintResult.MISMATCH,
+                reason_code="SOURCE_PROPERTY_MATCH" if matched else "SOURCE_PROPERTY_MISMATCH",
+                property_origin=prop.origin if prop else None,
+            )
+        evaluations.append(evaluation)
+    # A condition written for another database remains part of the audit.  It
+    # is not evaluated against the selected source and therefore contributes
+    # missing evidence instead of being silently discarded.
+    all_source_models = {
+        "materials_project": configured.materials_project,
+        "c2db": configured.c2db,
+        "nomad": configured.nomad,
+        "mc3d": configured.mc3d,
+        "topological_quantum_chemistry": configured.topological_quantum_chemistry,
+    }
+    for other_source, other_model in all_source_models.items():
+        if other_source == source:
+            continue
+        payload = (
+            other_model.model_dump(exclude_none=True)
+            if hasattr(other_model, "model_dump")
+            else dict(other_model)
+        )
+        for key, expected in payload.items():
+            evaluations.append(
+                ConstraintEvaluation(
+                    constraint_id=f"source.{other_source}.{key}",
+                    constraint_type="unmapped_source_constraint",
+                    expected=expected,
+                    observed=None,
+                    unit=None,
+                    result=ConstraintResult.MISSING,
+                    reason_code="SOURCE_CONSTRAINT_UNMAPPED_FOR_SELECTED_SOURCE",
+                )
+            )
+    return evaluations
+
+
+def _canonical_reduced_formula(formula: str) -> str | None:
+    try:
+        composition = Composition(formula.strip())
+    except (TypeError, ValueError, KeyError):
+        return None
+    return composition.reduced_formula if composition else None
 
 
 def _evaluate_scientific_target(

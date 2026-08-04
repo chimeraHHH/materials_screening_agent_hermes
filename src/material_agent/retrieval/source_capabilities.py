@@ -40,6 +40,14 @@ def source_property_coverage(source: SourceDatabase | str) -> dict[str, Any]:
             "band_gap": {"kind": "DATABASE", "method": "MP summary"},
             "energy_above_hull": {"kind": "DATABASE", "method": "MP summary"},
             "is_metal": {"kind": "DATABASE", "method": "MP summary"},
+            "density": {"kind": "DATABASE", "method": "MP summary"},
+            "volume": {"kind": "DATABASE", "method": "MP summary"},
+            "formation_energy_per_atom": {"kind": "DATABASE", "method": "MP summary"},
+            "is_stable": {"kind": "DATABASE", "method": "MP summary"},
+            "crystal_system": {"kind": "DATABASE", "method": "MP summary symmetry"},
+            "spacegroup_number": {"kind": "DATABASE", "method": "MP summary symmetry"},
+            "is_gap_direct": {"kind": "DATABASE", "method": "MP summary"},
+            "ordering": {"kind": "DATABASE", "method": "MP summary"},
         }
         unavailable = ["first_band_in_fermi_window", "projected_orbital_weight"]
     elif database is SourceDatabase.C2DB:
@@ -65,6 +73,13 @@ def source_property_coverage(source: SourceDatabase | str) -> dict[str, Any]:
                 "kind": "DATABASE_DIAGNOSTIC",
                 "method": "TQC smLineCrossing/smCrossingType; band attribution unavailable",
             },
+            "tqc_topological_subclassification": {
+                "kind": "DATABASE_LABEL", "method": "TQC classification/SOC/index"
+            },
+            "tqc_has_topological_indices": {
+                "kind": "DERIVED", "method": "presence of TQC indexCompounds.items"
+            },
+            "tqc_soc": {"kind": "DATABASE_LABEL", "method": "TQC compound type"},
         }
     elif database is SourceDatabase.MC3D:
         native = {}

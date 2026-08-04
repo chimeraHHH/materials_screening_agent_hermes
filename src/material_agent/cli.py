@@ -35,11 +35,12 @@ from material_agent.retrieval.models import (
     StageStatus,
 )
 from material_agent.retrieval.query import (
-    AUTO_SOURCE,
     USER_SELECTABLE_SOURCES,
     retrieval_policy_for_source,
     select_retrieval_source,
 )
+from material_agent.retrieval.source_recommendation import recommend_retrieval_source
+from material_agent.retrieval.source_requirements import compile_source_requirement
 from material_agent.retrieval.runner import RetrievalStageRunner
 from material_agent.retrieval.storage import (
     LocalArtifactStore,
@@ -83,17 +84,13 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("--fixture", type=Path)
     run.add_argument(
         "--source",
-        choices=(*RETRIEVAL_SOURCE_CHOICES, AUTO_SOURCE),
-        default=SourceDatabase.MATERIALS_PROJECT.value,
+        choices=RETRIEVAL_SOURCE_CHOICES,
+        required=True,
     )
     run.add_argument("--run-id")
     run.add_argument(
         "--mp-report-heavy-limit", type=int, default=None,
         help="Materials Project heavy report assets for top N published candidates (0-200)",
-    )
-    run.add_argument(
-        "--mp-adaptive-screening", action="store_true",
-        help="enable versioned LLM-mapped Materials Project adaptive screening",
     )
 
     run_stage = subparsers.add_parser(
@@ -171,10 +168,16 @@ def main(argv: list[str] | None = None) -> int:
     retrieval.add_argument("--fixture", type=Path)
     retrieval.add_argument(
         "--source",
-        choices=(*RETRIEVAL_SOURCE_CHOICES, AUTO_SOURCE),
-        default=SourceDatabase.MATERIALS_PROJECT.value,
+        choices=RETRIEVAL_SOURCE_CHOICES,
+        required=True,
     )
     retrieval.add_argument("--mp-report-heavy-limit", type=int, default=None)
+
+    recommend_source = subparsers.add_parser(
+        "recommend-source",
+        help="ask the configured LLM to recommend one Agent01 database",
+    )
+    recommend_source.add_argument("--requirement", required=True, type=Path)
 
     property_predict = subparsers.add_parser(
         "property-predict",
@@ -245,6 +248,8 @@ def main(argv: list[str] | None = None) -> int:
             return _research_advice_command(arguments)
         if arguments.command == "retrieval":
             return _run_retrieval(arguments)
+        if arguments.command == "recommend-source":
+            return _recommend_source(arguments)
         if arguments.command == "property-predict":
             return _property_predict_command(arguments)
         if arguments.command == "property-predict-chain":
@@ -325,6 +330,20 @@ def _requirement_command(arguments: argparse.Namespace) -> int:
     return 0
 
 
+def _recommend_source(arguments: argparse.Namespace) -> int:
+    requirement = Requirement.model_validate(_read_json_file(arguments.requirement))
+    parser = requirement_parser_from_environment()
+    provider = getattr(parser, "provider", None)
+    if provider is None:
+        raise ValueError(
+            "source recommendation requires an explicitly configured LLM; "
+            "set MATERIAL_AGENT_LLM_PROVIDER=deepseek"
+        )
+    recommendation = recommend_retrieval_source(requirement, provider)
+    print(json.dumps(recommendation.model_dump(mode="json"), ensure_ascii=False, indent=2))
+    return 0
+
+
 def _start_orchestrator_run(arguments: argparse.Namespace) -> int:
     requirement = (
         _read_json_file(arguments.requirement_file)
@@ -345,7 +364,6 @@ def _start_orchestrator_run(arguments: argparse.Namespace) -> int:
             run_id=arguments.run_id,
             retrieval_source=arguments.source,
             mp_report_heavy_limit=arguments.mp_report_heavy_limit,
-            mp_adaptive_screening=arguments.mp_adaptive_screening,
         )
     _print_model(view)
     return 0
@@ -609,6 +627,14 @@ def _run_retrieval(arguments: argparse.Namespace) -> int:
         immutable=True,
     )
     source = select_retrieval_source(arguments.source, requirement)
+    source_requirement = compile_source_requirement(requirement, source).model_copy(
+        update={"confirmed_by_user": requirement.confirmed_by_user}
+    )
+    store.write_json(
+        f"requirements/source-{source.value}.v1.json",
+        source_requirement.model_dump(mode="json"),
+        immutable=True,
+    )
     if arguments.fixture:
         fixture_payload = json.loads(arguments.fixture.read_text(encoding="utf-8"))
         adapter = InMemoryMaterialsAdapter(
@@ -633,9 +659,8 @@ def _run_retrieval(arguments: argparse.Namespace) -> int:
 
     policy = retrieval_policy_for_source(
         source,
-        mp_report_heavy_limit=arguments.mp_report_heavy_limit,
-        adaptive_mp_screening=getattr(arguments, "mp_adaptive_screening", False),
-    )
+            mp_report_heavy_limit=arguments.mp_report_heavy_limit,
+        )
     stage_input = RetrievalStageInput(
         project_id=arguments.project_id,
         run_id=arguments.run_id,

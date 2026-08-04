@@ -529,8 +529,9 @@ class OrchestratorState(TypedDict, total=False):
     retry_decision: str | None
     retrieval_fixture_uri: str | None
     retrieval_source: str
+    source_requirement_uri: str | None
+    source_requirement_sha256: str | None
     mp_report_heavy_limit: int | None
-    mp_adaptive_screening: bool
     retry_counters: dict[str, int]
     report_uri: str | None
     report_sha256: str | None

@@ -22,9 +22,7 @@ def test_adaptive_summary_properties_do_not_require_legacy_origin_aliases() -> N
         },
         "origins": [],
     }
-    policy = retrieval_policy_for_source(
-        SourceDatabase.MATERIALS_PROJECT, adaptive_mp_screening=True
-    )
+    policy = retrieval_policy_for_source(SourceDatabase.MATERIALS_PROJECT)
     processed = process_structure(
         document["structure"], summary_elements=document["elements"],
         summary_num_sites=1, summary_formula="Si", policy=policy,

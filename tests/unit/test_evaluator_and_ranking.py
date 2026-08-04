@@ -12,6 +12,8 @@ from material_agent.retrieval.models import (
     ProvenanceStatus,
     RankingMode,
     RankingPreference,
+    MaterialsProjectConstraints,
+    SourceSpecificConstraints,
 )
 from material_agent.retrieval.ranking import rank_and_publish
 
@@ -124,6 +126,71 @@ def test_include_all_of_and_exclude_none_of_are_enforced(
     assert matching.decision is Decision.PASS
     assert missing.decision is Decision.REJECT
     assert excluded.decision is Decision.REJECT
+
+
+def test_exact_formula_matches_canonical_composition_and_rejects_other_formula(
+    requirement, policy
+) -> None:
+    hard = requirement.hard_constraints.model_copy(update={"exact_formula": "O Si"})
+    changed = requirement.model_copy(update={"hard_constraints": hard})
+    matching = evaluate_candidate(make_candidate("formula-match", 0.7), changed, policy)
+    mismatching = evaluate_candidate(
+        make_candidate("formula-mismatch", 0.7).model_copy(
+            update={"formula": "SiO2", "reduced_formula": "SiO2"}
+        ),
+        changed,
+        policy,
+    )
+    assert matching.decision is Decision.PASS
+    assert mismatching.decision is Decision.REJECT
+    assert "exact_formula" in mismatching.unmatched_constraints
+
+
+def test_missing_exact_formula_is_uncertain(requirement, policy) -> None:
+    hard = requirement.hard_constraints.model_copy(update={"exact_formula": "SiO"})
+    changed = requirement.model_copy(update={"hard_constraints": hard})
+    candidate = make_candidate("formula-missing", 0.7).model_copy(
+        update={"formula": "", "reduced_formula": None}
+    )
+    evaluated = evaluate_candidate(candidate, changed, policy)
+    assert evaluated.decision is Decision.UNCERTAIN
+    assert "exact_formula" in evaluated.missing_evidence
+
+
+def test_materials_project_specific_constraints_are_deterministic(
+    requirement, policy
+) -> None:
+    hard = requirement.hard_constraints.model_copy(
+        update={
+            "source_constraints": SourceSpecificConstraints(
+                materials_project=MaterialsProjectConstraints(
+                    density_g_cm3={"min": 2.0, "max": 3.0, "unit": "g/cm^3"},
+                    is_stable=True,
+                    crystal_system="cubic",
+                )
+            )
+        }
+    )
+    changed = requirement.model_copy(update={"hard_constraints": hard})
+    base = make_candidate("mp-specific", 0.7)
+    origin = base.properties[0].origin
+    extra = [
+        PropertyValue(
+            name="density", value=2.5, unit="g/cm^3", source="materials_project",
+            method="fixture", origin=origin, retrieved_at=datetime.now(UTC),
+        ),
+        PropertyValue(
+            name="is_stable", value=True, unit="dimensionless", source="materials_project",
+            method="fixture", origin=origin, retrieved_at=datetime.now(UTC),
+        ),
+        PropertyValue(
+            name="crystal_system", value="CUBIC", unit="label", source="materials_project",
+            method="fixture", origin=origin, retrieved_at=datetime.now(UTC),
+        ),
+    ]
+    assert evaluate_candidate(base.model_copy(update={"properties": [*base.properties, *extra]}), changed, policy).decision is Decision.PASS
+    rejected = base.model_copy(update={"properties": [*base.properties, *extra[:1]]})
+    assert evaluate_candidate(rejected, changed, policy).decision is Decision.UNCERTAIN
 
 
 def test_numeric_boundaries_are_closed_with_fixed_tolerance(

@@ -88,6 +88,8 @@ def test_offline_cli_writes_run_scoped_manifest(
             "project-cli",
             "--run-id",
             "run-cli",
+            "--source",
+            "materials_project",
         ]
     )
     captured = capsys.readouterr()

@@ -354,22 +354,18 @@ schema、认证/secret-store 交付、查询/分页/限流语义、结构与单�
 再分发范围及授权测试样本。两者在满足各自依赖前保持不可选择，不能用浏览器 cookie、
 页面 HTML 或下载按钮替代正式 API。
 
-### 当前任务：P1 自动数据源选择（2026-07-30）
+### 当前任务：P1 数据源确认（2026-08-05）
 
-范围与验收：在不改变 Agent01 单来源原生 Envelope、原始数据隔离和 provenance
-边界的前提下，CLI/Orchestrator 接受 `--source auto`。Requirement 确认后按冻结字段
-确定性选择一个来源：`topological_flat_band`→TQC、`fm_2d_semiconductor`→C2DB、其余
-当前支持目标→Materials Project。最终 source 必须进入 checkpoint、Agent01 query plan 与报告；
-不能根据网络可达性、返回候选数或未记录的启发式回退，也不能跨库补齐缺失性质。
+范围与验收：移除 `auto` 数据源推断。CLI 的 `run` 与 standalone `retrieval`
+必须接收用户明确确认的具体 `--source`，并将其冻结进 checkpoint、Agent01 query
+plan 与报告；LLM 推荐仍是建议，必须由用户把推荐结果转成具体 source 后才能执行。
 
 实现结果：
 
-- [x] 增加 `auto` source selection；standalone Agent01 与 Orchestrator 使用同一纯函数；
-- [x] resolved source 在 Requirement Gate 后、ExecutionPlan 写入前被冻结，保留既有显式
-  单来源默认与契约；
-- [x] 增加 MP/C2DB/TQC 三个选择分支及 Orchestrator resolved query-plan/report 的离线
-  覆盖；完整离线 Gate 为 `425 passed, 9 skipped`，`pip check` 与 `git diff --check`
-  通过；联网来源探针未运行。
+- [x] 删除 `auto` CLI 选项和按 `target_class` 推断数据库的代码路径；
+- [x] 显式 source 选择继续保持单来源、不可跨库补全；
+- [x] `run` 与 `retrieval` 的 `--source` 改为必填，直接 API 仍保留 MP 默认以兼容
+  已冻结的程序化调用；待提交前运行完整离线 Gate。
 
 剩余限制：这不是多库联合检索。实现“同一 Run 返回多个数据库结果”需要新的聚合
 Envelope、每来源 Artifact namespace、候选去重/冲突政策和下游 manifest 版本，必须单独
@@ -1402,3 +1398,107 @@ Agent 02、Agent 03 和 Agent 04 可在公共契约冻结后使用 fixture 并�
   窗口截断（以及 NOMAD 的 6 个无效结构），不表示数据库访问失败。
 - 新增目标证据单元覆盖；相关 evaluator/source capability/NOMAD/C2DB 测试
   `29 passed`。本次最终完整离线 Gate、`pip check` 与 `git diff --check` 待提交前复跑。
+
+### 单数据库选择与 LLM 来源推荐（2026-08-04）
+
+范围：在既有单来源 Adapter/query plan 基础上，为已确认 Requirement 提供五个主要数据库
+（Materials Project、C2DB、NOMAD、TQC、MC3D）的结构化 LLM 推荐入口；每次推荐只能返回一个
+数据库，不能修改 Requirement、合并来源或补齐跨库性质。既有 NIMS SuperCon 显式适配器保留
+向后兼容，但不进入推荐目录，因为它没有 canonical structure。
+
+- [x] 新增 `retrieval.source_recommendation` 的严格 `SourceRecommendation` 契约、版本化 prompt、
+  五库 capability catalog、Requirement hash 和 provider audit 保存；LLM 输出在本地再次校验。
+- [x] 新增 CLI `material-agent recommend-source --requirement ...`；未配置显式 LLM 时 fail closed，
+  推荐结果需由用户再传给正常 `--source` 检索入口。
+- [x] 新增单元覆盖：五库允许集合、NIMS/Atomly/多源拒绝、未确认 Requirement 拒绝、hash 与
+  provider payload 绑定、extra field 拒绝；相关来源与 E2E 测试 `22 passed`。
+- [x] 完整离线 Gate `489 passed, 9 skipped`、`.venv/bin/python -m pip check` 和
+  `git diff --check` 通过；真实 LLM 仅在显式批准、密钥注入和新 run/artifact 范围下验证，
+  不作为默认测试。
+
+### 五来源完整响应保留与连通性核查（2026-08-04）
+
+- [x] 审计确认五个 Adapter 均已接入 `metadata → query plan → search → Runner`，但此前只把
+  统一字段写入 raw batch；现已保留来源响应：MP metadata advertised fields、NOMAD archive
+  entry、MC3D complete OPTIMADE entry、C2DB table HTML/row/download JSON、TQC search item/detail
+  JSON/CIF。Candidate manifest 仍只发布规范化字段。
+- [x] MP query plan 改为请求当前 metadata 宣布的全部字段；MC3D 移除 response_fields 限制；
+  各来源原始响应仍受既有扫描上限、分页、Artifact hash 和重试策略约束。
+- [x] 新增上述 raw payload 的 Adapter 单元断言；来源回归 `29 passed`，完整离线 Gate
+  `489 passed, 9 skipped`。
+- [x] 受控公开只读探针已验证 C2DB（无元素限制 1 条）、NOMAD（1 条）、MC3D（1 条）和
+  TQC（1 条）均可返回记录，且四者均有 `source_response`；C2DB 的 Si/O 条件零结果被确认
+  是查询结果而非 Adapter 失败。NOMAD 首次 archive 请求超时，第二次 60 秒单条请求成功，
+  说明外部服务仍需遵守既有重试/限流策略。
+- [x] 使用用户临时注入的 `MP_API_KEY` 完成真实 MP release Gate：固定 Si/O 查询 `1 passed`
+  （81 条返回、81 条通过并发布；可选重端点失败按 `PARTIAL` 明确记录），Orchestrator
+  restart/resume `1 passed`；均验证 Artifact 完整性、幂等性和凭据未写入产物。凭据未写入
+  仓库、配置或日志。
+- [x] 真实五来源闭环现已具备证据：C2DB、NOMAD、MC3D、TQC 各 1 条公开只读探针成功，MP
+  两项 release Gate 成功；来源原始响应均保留于 raw Artifact，无法提供的来源性质仍显式
+  标记为缺失/不确定。
+
+### 八类用户硬约束跨来源复核（2026-08-05）
+
+- [x] `exact_formula` 在 Requirement contract 阶段校验，并在候选评估阶段按 canonical
+  reduced composition 比较；公式缺失为 `UNCERTAIN`，配比不符为 `REJECT`。
+- [x] `include_elements`、`exclude_elements`、`band_gap_ev`、
+  `energy_above_hull_ev_atom`、`is_metal`、`dimensionality`、`max_num_sites` 和
+  `exact_formula` 均在最终本地 evaluator 逐条核验。数据源不提供的性质不被推测，保持
+  `MISSING/UNCERTAIN`；已有的来源级 pushdown 仅作为扫描优化。
+- [x] MP、C2DB、NOMAD、TQC、MC3D 的 query plan 均记录 `exact_formula` 为本地约束，
+  避免依赖未经来源 API 契约确认的公式过滤参数。
+- [x] 新增公式匹配/不匹配/缺失、非法公式及五来源 query-plan 覆盖；相关测试
+  `40 passed`。完整离线 Gate、`pip check` 和 `git diff --check` 待本轮结束复跑。
+
+### 数据库专属简单约束（2026-08-05）
+
+- [x] 新增严格的 `hard_constraints.source_constraints`：MP 支持 density、volume、
+  formation energy、stability、crystal system、space-group number、direct-gap flag
+  和 magnetic ordering；C2DB 支持 layer group、magnetic label；TQC 支持
+  topological classification/subclassification、topological-index presence、SOC、
+  Fermi-crossing count 和 line-crossing label。
+- [x] 这些字段均在 normalization 后由统一 evaluator 做标量/区间/标签比较；来源不匹配
+  时 query planning fail closed，字段缺失或类型错误时为 `UNCERTAIN`/`ERROR`，不跨库补值。
+- [x] NOMAD 与 MC3D 当前没有额外稳定且标准化的简单字段，因此不虚构专属约束；已有的
+  公共八类约束继续按其实际字段覆盖执行。
+- [x] 更新 source capability catalog、README 与冻结 Agent01 fixture；完整离线 Gate
+  `498 passed, 9 skipped`，`pip check` 和 `git diff --check` 待本轮结束复跑。
+
+### 真实 DeepSeek 与五来源端到端验收（2026-08-05）
+
+- [x] 冻结真实测试需求：必须包含 Si/O、排除 C、带隙 `0–10 eV`、凸包上方能量
+  `0–10 eV/atom`、非金属、指定维度、最多 100 个原子；并对每个来源使用实际可检索
+  的元素窗口。需求经 DeepSeek `deepseek-v4-pro` 真实调用后，返回单一推荐
+  `materials_project`，置信度 `0.9`，Requirement hash 和 provider audit 均通过本地校验。
+- [x] 真实 MP 小窗口：返回 10 条、归一化 10 条、8 条 `PASS`、2 条 `REJECT`；8 条
+  公共约束均进入审计，且 density、formation energy、crystal system、spacegroup 等
+  MP 扩展字段真实写入候选属性。可选重型报告端点关闭以避免非筛选 S3 端点长时间阻塞。
+- [x] 真实 C2DB：返回 5 条、归一化 5 条，结构/带隙/凸包能/金属性/layer group 等
+  真实字段进入审计；金属性冲突按 `REJECT` 处理。
+- [x] 真实 NOMAD：返回 10 条、归一化 10 条，8 条 `UNCERTAIN` 发布，凸包能和部分
+  金属性保持缺失；没有跨源补值。
+- [x] 真实 TQC：返回 5 条、归一化 5 条，4 条 `UNCERTAIN` 发布；TQC 分类、子分类、
+  SOC、拓扑指标存在性和费米面交叉诊断真实写入属性。
+- [x] 真实 MC3D：返回 5 条、归一化 5 条，4 条 `UNCERTAIN` 发布；结构、公式、原子数、
+  三维性真实可判定，缺失电子/热力学字段保持不确定。
+- [x] 五来源均完成 `exact_formula` 真实复核：MP、C2DB、NOMAD、TQC、MC3D 均生成
+  `EXACT_FORMULA_MATCH` 或明确 `EXACT_FORMULA_MISMATCH` 审计结果；实时窗口变化导致
+  的不匹配被正确拒绝，没有误放行。
+- [x] 真实凭据只通过进程环境注入，未写入源码、配置、日志或仓库 Artifact；完整离线
+  Gate `498 passed, 9 skipped`，`pip check` 和 `git diff --check` 通过。
+
+### 数据库原生 Requirement 编译与 MP adaptive 深筛退役（当前工作区）
+
+- [x] 新增 `SourceRequirement`：用户 Requirement 在选定数据库后按该数据库的
+  Agent01 capability catalog 编译；可映射条件进入 `mapped_constraints`，无法表达或
+  属于其他数据库的条件保留在 `unmapped_constraints`，不再在查询规划阶段直接拒绝或
+  静默丢弃。
+- [x] standalone CLI 与 Orchestrator 均写入 source-native Requirement Artifact；查询
+  fingerprint 纳入未映射条件，候选评估将跨库未映射条件保留为缺失证据。
+- [x] MP adaptive/deep-screen 执行入口从 CLI、Orchestrator 和 Runner 主路径移除；MP
+  仍保留普通 Summary 检索与报告 enrichment。历史 `mp_screening` 兼容模型暂不作为
+  生产执行路径。
+- [x] 当前工作区离线 Gate `500 passed, 9 skipped`，`pip check`、`git diff --check`
+  通过；公开 NOMAD release Gate `1 passed`。本机当前没有可用的 DeepSeek/MP API key，
+  因此本轮真实 LLM 与 MP Gate 未成功执行。

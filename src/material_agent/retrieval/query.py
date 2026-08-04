@@ -7,7 +7,7 @@ import inspect
 import json
 from typing import Any
 
-from pymatgen.core import Element
+from pymatgen.core import Composition, Element
 
 from material_agent.retrieval.models import (
     Requirement,
@@ -20,6 +20,7 @@ from material_agent.retrieval.mp_screening import (
     MPScreeningSpec,
     compile_mp_screening_spec,
 )
+from material_agent.retrieval.source_requirements import compile_source_requirement
 
 
 CORE_FIELDS = [
@@ -79,8 +80,6 @@ class QueryPlanningError(ValueError):
     """Raised when a requirement cannot be translated safely."""
 
 
-AUTO_SOURCE = "auto"
-
 USER_SELECTABLE_SOURCES = frozenset(
     {
         SourceDatabase.MATERIALS_PROJECT,
@@ -97,29 +96,19 @@ def select_retrieval_source(
     requested_source: SourceDatabase | str,
     requirement: Requirement,
 ) -> SourceDatabase:
-    """Resolve an explicit source or the conservative automatic choice.
+    """Validate and return the database explicitly confirmed by the user."""
 
-    The choice is based only on frozen Requirement fields.  It deliberately
-    does not combine records or use one source to fill another source's
-    missing properties.
-    """
-
-    if requested_source != AUTO_SOURCE:
+    try:
         source = SourceDatabase(requested_source)
-        if source not in USER_SELECTABLE_SOURCES:
-            raise QueryPlanningError(
-                f"retrieval source is not registered for user selection: {source.value}"
-            )
-        return source
-
-    if requirement.target_class == "topological_flat_band":
-        return SourceDatabase.TOPOLOGICAL_QUANTUM_CHEMISTRY
-    if requirement.target_class == "fm_2d_semiconductor":
-        return SourceDatabase.C2DB
-    # The remaining supported hard constraints have the most complete,
-    # normalized coverage in Materials Project.  In particular, it is the
-    # only default choice that supports the generic hull-energy constraint.
-    return SourceDatabase.MATERIALS_PROJECT
+    except (TypeError, ValueError) as exc:
+        raise QueryPlanningError(
+            "a concrete retrieval source must be explicitly confirmed"
+        ) from exc
+    if source not in USER_SELECTABLE_SOURCES:
+        raise QueryPlanningError(
+            f"retrieval source is not registered for user selection: {source.value}"
+        )
+    return source
 
 
 def validate_element_symbols(requirement: Requirement) -> None:
@@ -138,6 +127,15 @@ def validate_requirement_contract(requirement: Requirement) -> None:
 
     validate_element_symbols(requirement)
     hard = requirement.hard_constraints
+    if hard.exact_formula is not None:
+        try:
+            composition = Composition(hard.exact_formula.strip())
+            if not composition or not composition.reduced_formula:
+                raise ValueError("formula is empty")
+        except (TypeError, ValueError, KeyError) as exc:
+            raise QueryPlanningError(
+                f"exact_formula is invalid: {hard.exact_formula}"
+            ) from exc
     if hard.band_gap_ev is not None and hard.band_gap_ev.unit != "eV":
         raise QueryPlanningError("band_gap_ev unit must be exactly 'eV'")
     if (
@@ -147,6 +145,11 @@ def validate_requirement_contract(requirement: Requirement) -> None:
         raise QueryPlanningError(
             "energy_above_hull_ev_atom unit must be exactly 'eV/atom'"
         )
+
+
+def validate_source_constraints(requirement: Requirement, source: SourceDatabase) -> None:
+    """Keep all constraints for source-native compilation and audit."""
+    del requirement, source
 
 
 def build_query_plan(
@@ -173,6 +176,8 @@ def build_query_plan(
     if not requirement.confirmed_by_user:
         raise QueryPlanningError("requirement must be confirmed before retrieval")
     validate_requirement_contract(requirement)
+    validate_source_constraints(requirement, policy.source_database)
+    source_requirement = compile_source_requirement(requirement, policy.source_database)
 
     missing_fields = sorted(set(CORE_FIELDS) - set(metadata.available_fields))
     if missing_fields:
@@ -189,6 +194,18 @@ def build_query_plan(
         ),
     }
     local_only: list[str] = []
+    if hard.exact_formula is not None:
+        # The MP summary contract does not guarantee an exact-formula filter;
+        # compare the canonical candidate composition after structure parsing.
+        local_only.append("exact_formula")
+    local_only.extend(
+        f"source.materials_project.{name}"
+        for name in hard.source_constraints.materials_project.model_dump(exclude_none=True)
+    )
+    local_only.extend(
+        f"unmapped:{item.constraint_id}"
+        for item in source_requirement.unmapped_constraints
+    )
 
     compiled_spec = None
     if mp_screening_spec is not None:
@@ -233,9 +250,13 @@ def build_query_plan(
         local_only.append("dimensionality")
 
     num_chunks = policy.max_records_scanned // policy.chunk_size
+    # Keep the normalized candidate contract small, but ask the summary
+    # endpoint for every field advertised by the current MP metadata. The
+    # complete source document is preserved in immutable raw-response
+    # artifacts; screening still reads only deterministic normalized fields.
     requested_fields = sorted(
         set(CORE_FIELDS)
-        | (set(MP_REPORT_OPTIONAL_FIELDS) & set(metadata.available_fields))
+        | set(metadata.available_fields)
         | (requested_spec_fields & set(metadata.available_fields))
     )
     fingerprint_payload = {
@@ -285,18 +306,10 @@ def retrieval_policy_for_source(
     source_database: SourceDatabase | str,
     *,
     mp_report_heavy_limit: int | None = None,
-    adaptive_mp_screening: bool = False,
 ) -> RetrievalPolicy:
     source = SourceDatabase(source_database)
     if source is SourceDatabase.MATERIALS_PROJECT:
         policy = RetrievalPolicy()
-        if adaptive_mp_screening:
-            policy = policy.model_copy(
-                update={
-                    "policy_version": "retrieval-policy-mp-adaptive-v2",
-                    "adaptive_mp_screening": True,
-                }
-            )
         if mp_report_heavy_limit is not None:
             policy = policy.model_copy(
                 update={
@@ -362,6 +375,8 @@ def _build_multi_source_query_plan(
     if not requirement.confirmed_by_user:
         raise QueryPlanningError("requirement must be confirmed before retrieval")
     validate_requirement_contract(requirement)
+    validate_source_constraints(requirement, policy.source_database)
+    source_requirement = compile_source_requirement(requirement, policy.source_database)
     missing_fields = sorted(
         set(MULTI_SOURCE_REQUIRED_FIELDS) - set(metadata.available_fields)
     )
@@ -374,6 +389,23 @@ def _build_multi_source_query_plan(
     hard = requirement.hard_constraints
     filters: dict[str, Any] = {}
     local_only: list[str] = []
+    local_only.extend(
+        f"unmapped:{item.constraint_id}"
+        for item in source_requirement.unmapped_constraints
+    )
+    source = policy.source_database
+    if hard.exact_formula is not None:
+        local_only.append("exact_formula")
+    local_only.extend(
+        f"source.{source.value}.{name}"
+        for name in (
+            hard.source_constraints.c2db.model_dump(exclude_none=True)
+            if policy.source_database is SourceDatabase.C2DB
+            else hard.source_constraints.topological_quantum_chemistry.model_dump(exclude_none=True)
+            if policy.source_database is SourceDatabase.TOPOLOGICAL_QUANTUM_CHEMISTRY
+            else {}
+        )
+    )
     if hard.include_elements:
         filters["elements"] = sorted(set(hard.include_elements))
     if hard.exclude_elements:
@@ -381,7 +413,6 @@ def _build_multi_source_query_plan(
     if hard.max_num_sites is not None:
         filters["num_sites"] = [1, hard.max_num_sites]
 
-    source = policy.source_database
     if source is SourceDatabase.C2DB:
         _add_range_filter(
             filters, local_only, "band_gap", hard.band_gap_ev, nonnegative=True
@@ -462,6 +493,8 @@ def _build_nomad_query_plan(
     if not requirement.confirmed_by_user:
         raise QueryPlanningError("requirement must be confirmed before retrieval")
     validate_requirement_contract(requirement)
+    validate_source_constraints(requirement, policy.source_database)
+    source_requirement = compile_source_requirement(requirement, policy.source_database)
     if policy.endpoint != "/entries/archive/query":
         raise QueryPlanningError("NOMAD retrieval endpoint must be /entries/archive/query")
 
@@ -476,6 +509,16 @@ def _build_nomad_query_plan(
     hard = requirement.hard_constraints
     clauses: list[dict[str, Any]] = []
     local_only: list[str] = []
+    local_only.extend(
+        f"unmapped:{item.constraint_id}"
+        for item in source_requirement.unmapped_constraints
+    )
+    if hard.exact_formula is not None:
+        local_only.append("exact_formula")
+    local_only.extend(
+        f"source.nomad.{name}"
+        for name in hard.source_constraints.nomad
+    )
     if hard.include_elements:
         clauses.append(
             {

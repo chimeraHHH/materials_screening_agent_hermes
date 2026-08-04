@@ -15,6 +15,18 @@ from material_agent.retrieval.models import (
     StageResultEnvelopeV2,
 )
 from material_agent.retrieval.runner import RetrievalStageRunner
+from material_agent.retrieval.source_recommendation import (
+    RECOMMENDABLE_SOURCES,
+    SOURCE_RECOMMENDATION_PROMPT_VERSION,
+    SourceRecommendation,
+    recommend_retrieval_source,
+)
+from material_agent.retrieval.source_requirements import (
+    SourceConstraint,
+    SourceRequirement,
+    UnmappedSourceConstraint,
+    compile_source_requirement,
+)
 
 __all__ = [
     "AGENT01_CONTRACT_VERSION",
@@ -27,6 +39,14 @@ __all__ = [
     "RetrievalStageContext",
     "RetrievalStagePlan",
     "RetrievalStageRunner",
+    "RECOMMENDABLE_SOURCES",
+    "SOURCE_RECOMMENDATION_PROMPT_VERSION",
+    "SourceRecommendation",
+    "recommend_retrieval_source",
+    "SourceConstraint",
+    "SourceRequirement",
+    "UnmappedSourceConstraint",
+    "compile_source_requirement",
     "StageOutcome",
     "StageResultEnvelope",
     "StageResultEnvelopeV2",
