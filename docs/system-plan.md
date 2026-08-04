@@ -201,6 +201,11 @@ class LLMProvider(Protocol):
 - 必须记录 provider、model ID、参数、prompt version 和响应 hash；
 - 不允许在失败后静默切换 Provider 或改变科学含义。
 
+系统可提供独立的只读研究顾问 companion flow：它只能从校验过 hash 的报告提取已存在的
+证据缺口，并生成由本地 policy 固定的“审阅/配置前提条件/专家复核”提议。LLM 若启用，
+只能解释该冻结快照和既有提议，不能新增动作、修改 Requirement、路由、预算、审批、模型
+选择或证据等级，更不能直接启动 ML、DFT 或多体任务。该输出不是科学结论。
+
 当前联网 Provider 的接入状态见[主计划](../plans/master.md)。
 
 ## 6. Mac 到课题组服务器的迁移路线

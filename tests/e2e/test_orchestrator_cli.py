@@ -315,6 +315,25 @@ def test_orchestrator_cli_project_run_approve_and_report(
     )
     assert "# Material Screening Run Report" in capsys.readouterr().out
 
+    assert (
+        main(
+            [
+                "research-advice",
+                "--workspace",
+                str(tmp_path),
+                "--project",
+                "project-cli-p0",
+                "--run",
+                "run-cli-p0",
+            ]
+        )
+        == 0
+    )
+    advice = json.loads(capsys.readouterr().out)
+    assert advice["mode"] == "offline"
+    assert advice["scientific_conclusion"] is False
+    assert all(action["execution_allowed"] is False for action in advice["snapshot"]["actions"])
+
 
 def test_run_stage_cli_requires_explicit_input_and_reports_blocked(
     tmp_path: Path, capsys

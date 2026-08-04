@@ -9,7 +9,15 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from material_agent.orchestrator.parser import requirement_parser_from_environment
+from material_agent.orchestrator.parser import (
+    LLMRequirementParser,
+    requirement_parser_from_environment,
+)
+from material_agent.orchestrator.research_advisor import (
+    DeterministicResearchAdvisor,
+    LLMResearchAdvisor,
+    build_research_snapshot,
+)
 from material_agent.orchestrator.runtime import OrchestratorRuntime
 from material_agent.retrieval.adapters import (
     C2dbAdapter,
@@ -146,6 +154,13 @@ def main(argv: list[str] | None = None) -> int:
     _add_project_arguments(report)
     report.add_argument("--run", required=True, dest="run_id")
 
+    research_advice = subparsers.add_parser(
+        "research-advice",
+        help="read a frozen run report and propose evidence-bounded next steps",
+    )
+    _add_project_arguments(research_advice)
+    research_advice.add_argument("--run", required=True, dest="run_id")
+
     retrieval = subparsers.add_parser(
         "retrieval", help="run Agent 01 deterministic material retrieval"
     )
@@ -204,6 +219,8 @@ def main(argv: list[str] | None = None) -> int:
             return _runtime_view_command(arguments, "cancel")
         if arguments.command == "report":
             return _report_command(arguments)
+        if arguments.command == "research-advice":
+            return _research_advice_command(arguments)
         if arguments.command == "retrieval":
             return _run_retrieval(arguments)
         if arguments.command == "property-predict":
@@ -382,6 +399,35 @@ def _report_command(arguments: argparse.Namespace) -> int:
     ) as runtime:
         report = runtime.read_report(arguments.run_id)
     print(report, end="" if report.endswith("\n") else "\n")
+    return 0
+
+
+def _research_advice_command(arguments: argparse.Namespace) -> int:
+    """Generate read-only research advice from verified final report artifacts."""
+
+    with OrchestratorRuntime.from_workspace(
+        arguments.workspace, arguments.project_id
+    ) as runtime:
+        view = runtime.status(arguments.run_id)
+        if view.report_uri is None:
+            raise ValueError("run has no finalized report for research advice")
+        markdown_relative = view.report_uri.removeprefix("artifact://")
+        if not markdown_relative.endswith("/report.md"):
+            raise ValueError("run report has an unexpected artifact path")
+        json_uri = "artifact://" + markdown_relative.removesuffix(".md") + ".json"
+        report_ref = runtime.store.inspect(json_uri, media_type="application/json")
+        snapshot = build_research_snapshot(
+            runtime.store,
+            report_uri=report_ref.uri,
+            report_sha256=report_ref.sha256,
+        )
+    parser = requirement_parser_from_environment()
+    advisor = (
+        LLMResearchAdvisor(parser.provider)
+        if isinstance(parser, LLMRequirementParser)
+        else DeterministicResearchAdvisor()
+    )
+    _print_model(advisor.advise(snapshot))
     return 0
 
 

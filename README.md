@@ -181,6 +181,29 @@ configuration. Authentication errors, response bodies, and model reasoning
 content are not persisted. The audit event records only provider/model/prompt
 metadata, token counts, and request/response hashes.
 
+### Read-only research-advice companion flow
+
+After a run has produced its final report, `research-advice` builds a bounded
+evidence snapshot from hash-verified Orchestrator and Agent01 report artifacts.
+It identifies recorded candidate evidence gaps and unavailable-stage
+prerequisites, then emits policy-defined next-step *proposals*:
+
+```bash
+material-agent research-advice \
+  --workspace workspace \
+  --project demo \
+  --run run-demo
+```
+
+Without a configured LLM, the command provides a deterministic explanation.
+With the explicit DeepSeek configuration above, the LLM may explain the frozen
+evidence snapshot and its already-defined proposals. In either mode it is
+strictly read-only: it does not modify a Requirement, checkpoint, stage route,
+budget, approval, model selection, artifact, or evidence level; it cannot
+start Agent02, DFT, or many-body work. LLM output cannot add actions or make a
+scientific conclusion. Use the normal `run-stage`/approval workflow for any
+actual downstream execution.
+
 Offline tests use injected providers and never read Keychain. The real
 one-request release probe is separately opt-in and may incur API cost:
 

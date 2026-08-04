@@ -59,6 +59,7 @@ Atomly 因无公开授权 API 保持外部阻塞；这些新增检索控制流�
 | Agent 03 | v1 mock 控制链、审批、恢复、失败注入、报告、fixture 和结构化 VASPilot bridge PoC 已完成；真实 DFT backend 未实现或注册 | [`Agent 03 计划`](subagents/material-screening-agent-dft-plan.md) |
 | Agent 04 | MVP mock 控制链、模型校验/路由、审批、恢复、报告与 fixture 已完成；真实 ED/多体 backend 未实现或注册 | [`Agent 04 计划`](subagents/material-screening-agent04-plan.md) |
 | 联网 LLM | DeepSeek `deepseek-v4-pro` Provider 与 `LLMRequirementParser` 已实现并显式配置启用；离线 Gate 与真实单请求 `live_llm` 发布 Gate 均已通过 | [`README.md`](../README.md) |
+| 研究顾问 | `research-advice` 读取冻结报告并生成受限证据缺口/下一步提议；默认离线，LLM 只可解释固定提议且不能执行 | [`Orchestrator 计划`](subagents/material-screening-orchestrator-plan.md) |
 
 历史 P0/v1 收口验证基线为：
 

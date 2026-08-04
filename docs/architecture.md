@@ -258,6 +258,14 @@ Stage 0 是 Orchestrator 内的确定性模块加可选 LLM Provider。
 - 通过 Gate 后冻结不可变 revision；
 - 修改需求时创建新 revision，不覆盖历史。
 
+### 5.2.1 Read-only Research Advisor companion
+
+`research-advice` 不属于顶层状态图，也不拥有 checkpoint、审批或任务状态。它读取已完成
+Run 的 hash-verified Orchestrator report，并可追溯地读取其中引用的 Agent01 retrieval
+report，构造受限 evidence snapshot。snapshot 中的 action proposal 由本地 policy 产生，
+固定 `execution_allowed=false`；可选 LLM 仅生成针对这些 action ID 的说明。该模块不得
+调用 runner、写 Artifact、写业务 SQLite 或改变控制面状态。
+
 ### 5.3 Agent 01：公开数据库检索与确定性筛选
 
 内部职责：

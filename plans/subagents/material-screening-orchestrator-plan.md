@@ -78,6 +78,22 @@
 5. 增加默认跳过的 `live_llm` Gate；完整离线 Gate 不访问网络或 Keychain；
 6. README、主计划和本计划记录实际配置、运行方式、测试证据、限制与未完成项。
 
+### Read-only Research Advisor companion（2026-08-04）
+
+在不改动 `OrchestratorState`、checkpoint/SQLite schema、顶层图、runner 路由、审批和
+Agent 原生契约的前提下，新增显式 `material-agent research-advice`。它只读取完成 Run 的
+hash-verified Orchestrator report 与其中引用的 Agent01 retrieval report，生成版本化
+evidence snapshot、候选缺口卡和本地 policy 固定的 action proposals。
+
+- proposal 固定 `execution_allowed=false`，可包括“审阅证据缺口”“审阅阶段前提”“准备带分辨
+  电子结构验证方案”“专家复核”；后者也只能提示走既有 DFT 输入冻结与审批 Gate，不会选择
+  方法或提交任务，更不会写 artifact/checkpoint、修改需求或创建审批；
+- 默认 deterministic advisor；显式启用 DeepSeek 时仅允许 LLM 为 snapshot 中已存在的
+  action ID 生成解释。增加 action、科学数值/结论或未经证据支持的内容将被 Schema/本地
+  验证拒绝；
+- 测试覆盖 Artifact hash 复核、Agent01 缺口提取、动作不可执行、LLM 不能新增动作以及
+  已完成 run 的 CLI 回归；既有 `run`、`resume`、`report` 行为保持不变。
+
 ### Stage 0 自然语言需求文件收口（2026-07-29）
 
 本次任务只收口“用户自然语言 → 本地校验的 Requirement 草稿 → 现有人工确认
