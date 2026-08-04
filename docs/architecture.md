@@ -325,6 +325,12 @@ Geometric、e3nn 或 Julia。真实 executable 完成只证明控制流程和 Ar
 Agent02 契约并同步 Orchestrator、fixture、contract test 和消费者计划，不能把
 sidecar Artifact 隐式塞入现有 CHGNet plan。
 
+`agent02-post-relaxation-property-chain-v1` 是同样显式的 companion flow：它接收 MatterSim
+等上游弛豫产生的单一 CIF，校验 ct-UAE 与 ALIGNN 请求指向相同 URI/hash，然后分别调用两
+个已有的 property ledger。组合结果只汇总两个独立结果和失败状态，不改变 Agent02 主
+`StagePlan`，不执行弛豫，也不把任一带隙预测解释为平带、稳定性或 DFT 证据。只有在两个
+模型的权重、环境、source revision 和部署 Gate 都满足时，才可能得到双成功结果。
+
 完整契约见 [Agent 02 详细计划](../plans/subagents/material-screening-ml-agent-plan.md)。
 
 ### 5.5 Agent 03：DFT Controller

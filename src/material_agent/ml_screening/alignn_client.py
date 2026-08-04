@@ -28,7 +28,9 @@ class AlignnSubprocessClient:
 
     def run(self, request: AlignnWorkerRequest) -> AlignnWorkerResponse:
         root = self.artifact_root.resolve(strict=True)
-        python = self.worker_python.resolve(strict=True)
+        # Preserve a virtualenv's bin/python symlink. Resolving it would
+        # bypass pyvenv.cfg and launch the base interpreter without ALIGNN.
+        python = self.worker_python.absolute()
         script = (self.worker_script or Path(__file__).with_name("alignn_worker.py")).resolve(strict=True)
         if not python.is_file() or not os.access(python, os.X_OK) or not script.is_file():
             raise AlignnProcessError("configured ALIGNN worker is not executable")
@@ -38,7 +40,7 @@ class AlignnSubprocessClient:
             raise AlignnProcessError("ALIGNN output sandbox must be empty")
         before = capture_artifact_tree(root)
         command = [str(python), str(script), "--artifact-root", str(root)]
-        environment = {"PATH": os.environ.get("PATH", ""), "TMPDIR": os.environ.get("TMPDIR", "/tmp"), "PYTHONNOUSERSITE": "1", "LANG": "C.UTF-8"}
+        environment = _worker_environment()
         try:
             completed = subprocess.run(command, input=request.model_dump_json().encode(), stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=request.wall_time_seconds + 5, shell=False, env=environment, check=False)
         except subprocess.TimeoutExpired as exc:
@@ -72,6 +74,18 @@ class AlignnSubprocessClient:
         if changed != allowed or any(not path.startswith(sandbox_prefix) for path in changed):
             raise AlignnProcessError("ALIGNN worker wrote outside its declared output")
         return response
+
+
+def _worker_environment() -> dict[str, str]:
+    """Return a minimal worker environment with only the repository source."""
+
+    return {
+        "PATH": os.environ.get("PATH", ""),
+        "TMPDIR": os.environ.get("TMPDIR", "/tmp"),
+        "PYTHONNOUSERSITE": "1",
+        "PYTHONPATH": str(Path(__file__).resolve().parents[2]),
+        "LANG": "C.UTF-8",
+    }
 
 
 class AlignnFlowRunner:

@@ -454,6 +454,31 @@ test. The other families remain unavailable until their complete verified
 weights, worker locks and family-specific safe loaders have passed the same
 deployment Gate.
 
+### Automatic post-relaxation ct-UAE + ALIGNN chain
+
+Agent02 also provides an explicit chain for a relaxed structure. It verifies
+that the ct-UAE request and ALIGNN request reference the same CIF URI/hash,
+then invokes both existing model ledgers automatically. A failure in one model
+is recorded independently and does not fabricate or suppress the other result.
+
+```bash
+material-agent property-predict-chain \
+  --artifact-root /absolute/path/to/artifacts \
+  --request /absolute/path/to/post-relaxation-property-chain.json \
+  --ct-uae-worker-python /absolute/path/to/ct-uae-python \
+  --alignn-worker-python /absolute/path/to/alignn-python \
+  --ct-uae-source-root /absolute/path/to/verified/ct-uae
+```
+
+The request's `relaxed_structure` is the output of the preceding relaxation
+step (for example a MatterSim CIF); the command itself does not perform
+relaxation. Both model assets, environment locks, source revisions and hashes
+remain mandatory. The existing ALIGNN deployment Gate is still required: an
+official, hash-verified model ZIP and isolated environment must be supplied;
+the chain never downloads or invents ALIGNN weights. Both outputs remain
+unbenchmarked ML estimates and cannot establish flat-band width, orbital
+character, crossings, stability, DFT or experimental evidence.
+
 Run the Agent02 benchmark-v1 metadata-only dry-run against the existing Si
 fixture. This validates the manifest, structure hash/size and parsed metadata;
 it does not load CHGNet, evaluate reference values, or produce scientific

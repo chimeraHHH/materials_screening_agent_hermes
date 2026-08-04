@@ -1860,6 +1860,12 @@ checkpoint 契约的前提下，新增独立、版本化的性质预测流。它
   JSON 输出。结果仍是未对本候选集 benchmark 的 L1 标量估计，不可当作平带带宽、能带交叉、
   稳定性、DFT 或实验结论。相关 focused tests：`test_property_model_selection.py` 与
   `test_property_subprocess_environment.py`。
+- 2026-08-04 新增 `agent02-post-relaxation-property-chain-v1`：给定同一个已 hash 校验的
+  MatterSim（或其他已声明弛豫后）CIF，自动调用现有 ct-UAE 与 ALIGNN 独立 flow，并返回
+  `SUCCEEDED/PARTIAL/FAILED` 的组合结果。两个模型各自保留 plan/result/completion ledger；
+  任一失败不会伪造另一个结果。链路不执行弛豫、不下载 ALIGNN 权重、不改变 StagePlan 或
+  Orchestrator 路由；真实 ALIGNN 仍须提供官方 ZIP、环境 lock、source/model provenance
+  并通过部署 Gate。
 - 后续验收：每个家族必须具备独立 worker、模型卡、环境 lock、已验证 checkpoint、
   单候选预测 smoke test、Artifact/hash/路径/超时失败注入、benchmark 与适用域记录；
   在这些 Gate 之前输出只保留 `L1_RETRIEVED`/无科学结论，且不得注册为默认生产

@@ -194,6 +194,28 @@ def main(argv: list[str] | None = None) -> int:
         type=Path,
         help="trusted ct-UAE source checkout; used only for ct-UAE selections",
     )
+    property_chain = subparsers.add_parser(
+        "property-predict-chain",
+        help="run ct-UAE and ALIGNN automatically from one relaxed structure",
+    )
+    property_chain.add_argument("--artifact-root", required=True, type=Path)
+    property_chain.add_argument("--request", required=True, type=Path)
+    property_chain.add_argument(
+        "--ct-uae-worker-python", required=True, type=Path,
+        help="trusted ct-UAE isolated worker executable",
+    )
+    property_chain.add_argument(
+        "--alignn-worker-python", required=True, type=Path,
+        help="trusted ALIGNN isolated worker executable",
+    )
+    property_chain.add_argument(
+        "--ct-uae-source-root", required=True, type=Path,
+        help="trusted ct-UAE source checkout",
+    )
+    property_chain.add_argument(
+        "--alignn-worker-script", type=Path,
+        help="optional worker script override for controlled tests",
+    )
     arguments = parser.parse_args(argv)
 
     try:
@@ -225,6 +247,8 @@ def main(argv: list[str] | None = None) -> int:
             return _run_retrieval(arguments)
         if arguments.command == "property-predict":
             return _property_predict_command(arguments)
+        if arguments.command == "property-predict-chain":
+            return _property_predict_chain_command(arguments)
     except (FileNotFoundError, KeyError, RuntimeError, ValueError) as exc:
         print(
             json.dumps(
@@ -457,6 +481,74 @@ def _property_predict_command(arguments: argparse.Namespace) -> int:
     ).execute(request)
     _print_model(result)
     return 0
+
+
+def _property_predict_chain_command(arguments: argparse.Namespace) -> int:
+    """Run ct-UAE and ALIGNN from the same verified relaxed structure."""
+
+    from material_agent.ml_screening.alignn_client import AlignnFlowRunner, AlignnSubprocessClient
+    from material_agent.ml_screening.alignn_models import AlignnInferenceRequest
+    from material_agent.ml_screening.models import ArtifactPointer
+    from material_agent.ml_screening.property_client import (
+        PropertyPredictionFlowRunner,
+        PropertySubprocessClient,
+    )
+    from material_agent.ml_screening.property_models import PropertyModelRegistry, PropertyPredictionRequest
+    from material_agent.ml_screening.property_pipeline import (
+        PostRelaxationPropertyChain,
+        PropertyPredictionChainRequest,
+    )
+
+    payload = _read_json_file(arguments.request)
+    chain_request = PropertyPredictionChainRequest.model_validate(payload)
+    root = arguments.artifact_root.resolve()
+    store = LocalArtifactStore(root)
+    ct_request = PropertyPredictionRequest.model_validate(
+        chain_request.ct_uae_request.model_dump(mode="json")
+    )
+    ct_registry = PropertyModelRegistry.model_validate(
+        chain_request.ct_uae_registry.model_dump(mode="json")
+    )
+    alignn_request = AlignnInferenceRequest.model_validate(
+        chain_request.alignn_request.model_dump(mode="json")
+    )
+    ct_flow = PropertyPredictionFlowRunner(
+        artifact_store=store,
+        client=PropertySubprocessClient(
+            worker_python=arguments.ct_uae_worker_python,
+            artifact_root=root,
+            ct_uae_source_root=arguments.ct_uae_source_root,
+        ),
+        registry=ct_registry,
+    )
+    alignn_flow = AlignnFlowRunner(
+        artifact_store=store,
+        client=AlignnSubprocessClient(
+            worker_python=arguments.alignn_worker_python,
+            artifact_root=root,
+            worker_script=arguments.alignn_worker_script,
+        ),
+    )
+    # Revalidate through the exact native models before invoking either worker.
+    normalized = PropertyPredictionChainRequest(
+        project_id=chain_request.project_id,
+        run_id=chain_request.run_id,
+        candidate_id=chain_request.candidate_id,
+        relaxation_method=chain_request.relaxation_method,
+        relaxed_structure=ArtifactPointer.model_validate(
+            chain_request.relaxed_structure.model_dump(mode="json")
+        ),
+        ct_uae_request=ct_request,
+        ct_uae_registry=ct_registry,
+        alignn_request=alignn_request,
+    )
+    result = PostRelaxationPropertyChain(
+        artifact_store=store,
+        ct_uae_flow=ct_flow,
+        alignn_flow=alignn_flow,
+    ).execute(normalized)
+    _print_model(result)
+    return 0 if result.status != "FAILED" else 1
 
 
 def _read_json_file(path: Path) -> dict[str, Any]:
