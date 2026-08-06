@@ -1208,7 +1208,12 @@ def test_completed_p01_report_remains_readable_under_p02(tmp_path) -> None:
 def test_project_lock_rejects_concurrent_advancement(
     tmp_path, requirement
 ) -> None:
-    import fcntl
+    import os
+
+    if os.name == "nt":
+        import msvcrt
+    else:
+        import fcntl
 
     project_id = "project-lock"
     OrchestratorRuntime.create_project(tmp_path, project_id)
@@ -1218,14 +1223,24 @@ def test_project_lock_rejects_concurrent_advancement(
         lock_path = runtime.project_root / "state" / "locks" / "project.lock"
         lock_path.parent.mkdir(parents=True, exist_ok=True)
         with lock_path.open("a+b") as handle:
-            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            if os.name == "nt":
+                handle.write(b"\0")
+                handle.flush()
+                handle.seek(0)
+                msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+            else:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
             with pytest.raises(RuntimeError, match="project .* advanced"):
                 runtime.start_run(
                     raw_request="structured",
                     initial_requirement=requirement.model_dump(mode="json"),
                     run_id="run-locked",
                 )
-            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+            if os.name == "nt":
+                handle.seek(0)
+                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
         assert runtime.repository.get_run("run-locked") is None
 
 

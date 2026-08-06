@@ -26,6 +26,8 @@ python3.11 -m venv .venv
 .venv/bin/pip install --no-deps -e .
 ```
 
+For a new Windows 10 computer, see the [Windows 10 deployment guide](docs/windows-setup.md).
+
 The Materials Project API key is resolved lazily from an explicit Adapter value
 (test/integration injection only), then `MP_API_KEY`, then the macOS Keychain
 entry for account `$USER` and service `material-screening-agent-mp-api`. It
