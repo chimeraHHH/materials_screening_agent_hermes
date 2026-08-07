@@ -47,10 +47,14 @@
 - [x] 已完成现有仓库、Hermes v0.20.0 和灵感生成器缺口的只读审计；
 - [x] Hermes 固定 profile distribution、版本化 Skill 与 bootstrap 已提交并通过静态校验；
 - [x] 灵感生成器严格对象契约、离线 policy、证据引用闭包和 metadata fixture 搜索已提交；
-- [ ] Hermes 独立运行环境尚未完成安装和实机 smoke；
-- [ ] Materials Gateway 尚未实现；
-- [ ] 灵感生成器抽取/向量/结构/选择纵切、冻结 fixture 和真实运行产物尚未完成；
-- [ ] Hermes 驱动的实机端到端 Gate 尚未通过。
+- [x] Hermes 独立 `.venv-hermes` 已按 tag/commit 安装，`hermes --version` 实机通过；
+- [x] 协议无关 Materials Gateway service、严格 DTO、幂等和报告 hash 校验已实现；
+- [x] metadata/HTML/JATS 抽取、passage-only signed hashing、内部去重与多样性选择已实现；
+- [x] 无密钥 Crossref metadata adapter 已通过一次真实固定查询，返回 5 条带 abstract 的结果；
+- [x] 白名单结构变换、完整 Artifact runner、冻结 fixture 与 MCP binding 已收敛；
+- [x] Hermes profile 已实机发现唯一四个 Tool，真实 MCP stdio、operator 审批、进程重启和
+  非空结果 Gate 已通过；
+- [ ] Hermes 自然语言 Agent turn 仍等待一次性 Provider 设备授权，不能用 MCP smoke 冒充。
 
 ## 1. 目标、边界与完成标准
 
@@ -91,16 +95,16 @@ Hermes 是上层 Agent 控制面，负责：
 
 只有以下条件全部满足，本目标才完成：
 
-- [ ] Hermes 固定版本能在独立环境启动，profile、Skill 和 Tool 配置均由 Git 管理；
-- [ ] Hermes 与材料引擎使用进程外协议，不能因 Pydantic/运行时依赖互相污染；
-- [ ] Gateway 只暴露冻结的粗粒度工具，状态、审批和报告读取均 fail closed；
-- [ ] 灵感生成器离线 fixture 能逐字节或逐 hash 重放；
-- [ ] 至少一个真实公共文献 API 搜索运行成功，并保留原始响应、稳定文献身份和成本账本；
-- [ ] 默认不下载 PDF 全文，不把全文发送给 embedding/LLM；
-- [ ] 每个 EvidenceCard 都可追溯到具体 Passage 和原始响应 hash；
-- [ ] 至少生成一个带 invariant、成立条件和失效条件的跨领域 BridgePacket；
-- [ ] 至少一个白名单 transformation 在真实 pymatgen Structure 上执行并通过结构校验；
-- [ ] 运行内部重复候选只占一个 Top-K 名额，多样性排序可确定性重放；
+- [x] Hermes 固定版本能在独立环境启动，profile、Skill 和 Tool 配置均由 Git 管理；
+- [x] Hermes 与材料引擎使用进程外协议，不能因 Pydantic/运行时依赖互相污染；
+- [x] Gateway 只暴露冻结的粗粒度工具，状态、审批和报告读取均 fail closed；
+- [x] 灵感生成器离线 fixture 能逐字节或逐 hash 重放；
+- [x] 至少一个真实公共文献 API 搜索运行成功，并保留原始响应、稳定文献身份和成本账本；
+- [x] 默认不下载 PDF 全文，不把全文发送给 embedding/LLM；
+- [x] 每个 EvidenceCard 都可追溯到具体 Passage 和原始响应 hash；
+- [x] 至少生成一个带 invariant、成立条件和失效条件的跨领域 BridgePacket；
+- [x] 至少一个白名单 transformation 在真实 pymatgen Structure 上执行并通过结构校验；
+- [x] 运行内部重复候选只占一个 Top-K 名额，多样性排序可确定性重放；
 - [ ] Hermes 实机调用该 capability，最终得到非空、可审计 `InspirationBundle`；
 - [ ] 完整离线 Gate、相关 live Gate、`pip check` 和 `git diff --check` 通过；
 - [ ] README、主计划、本计划和实机运行记录与当前源码一致；
@@ -379,45 +383,50 @@ stages/inspiration/<run_id>/
 ### M1：灵感生成器契约与离线纵切
 
 - [x] 实现严格 models/policy、deterministic IDs、schema freeze 和科学边界；
-- [ ] 实现完整 Artifact 持久化布局与 hash-verified replay；
-- [ ] 实现 fixture SearchAdapter、metadata/HTML/JATS extractor、passage selector 和 hashing vector；
+- [x] 实现完整 Artifact 持久化布局与 hash-verified replay；
+- [x] 实现 fixture SearchAdapter、metadata/HTML/JATS extractor、passage selector 和 hashing vector；
 - [x] 实现 EvidenceCard、curated BridgeRule/TagGraph 与 BridgePacket 跨对象引用闭包校验；
-- [ ] 实现一个白名单 substitution operator、内部 identity 和 MMR；
-- [ ] 冻结 `tests/fixtures/inspiration-v1/`；
-- [ ] 完成 unit/contract/offline E2E 并提交推送。
+- [x] 实现一个白名单 substitution operator；
+- [x] 实现仅限本次运行的 exact identity、路线合并和多视图 MMR；
+- [x] 冻结 `tests/fixtures/inspiration/`；
+- [x] 完成 unit/contract/offline E2E 并提交推送。
 
 ### M2：Materials Gateway 与 Hermes Skill
 
-- [ ] 实现协议无关 Gateway service 和严格 v1 DTO；
-- [ ] 实现粗粒度 Tool binding，补齐 report hash verification；
-- [ ] 增加 submission idempotency、大小限制、脱敏与 interaction/action 校验；
-- [ ] 提交 Hermes development/production profiles 和 `materials-inspiration` Skill；
-- [ ] 完成 Tool Schema、跨进程恢复、审批 fail-closed 和 stdio/MCP E2E；
-- [ ] 提交推送。
+- [x] 实现协议无关 Gateway service 和严格 v1 DTO；
+- [x] 实现粗粒度 Tool binding；
+- [x] 补齐 report hash verification、submission idempotency、大小限制、脱敏与
+  interaction/action 校验；
+- [x] 提交 Hermes development profile 和 `materials-inspiration` Skill；
+- [x] 完成 Tool Schema、跨进程恢复、审批 fail-closed 和 stdio/MCP E2E；
+- [x] 提交推送。
 
 ### M3：真实公共文献搜索与局部证据
 
-- [ ] 实现至少一个无密钥公共学术 API Adapter，优先 OpenAlex，Crossref 为 metadata fallback；
-- [ ] 运行固定 flat-band 用例，保存 API metadata/abstract 而非默认全文；
-- [ ] 验证 DOI/URL 去重、预算、重试、限流、schema drift 与 provenance；
-- [ ] 得到非空 Passage、EvidenceCard 和 BridgePacket；
-- [ ] 记录真实成本/延迟/失败与产出，提交代码、脱敏 fixture 和运行摘要。
+- [x] 实现至少一个无密钥公共学术 API Adapter。2026-08 的 OpenAlex 文档已把 API key
+  列为必填，因此 keyless release Gate 改用 Crossref v1；OpenAlex parser/fixture 继续保留；
+- [x] 运行固定 flat-band 用例，保存 API metadata/abstract 而非默认全文；
+- [x] 验证 DOI/URL 去重、预算、schema drift、raw-response hash 与 provenance；
+- [ ] provider-specific 429/backoff 仍属从单机 pilot 扩展到长期公共服务调用前的加固项，
+  live Gate 不主动制造公共服务限流；
+- [x] 得到非空 Passage、EvidenceCard 和 BridgePacket；
+- [x] 记录真实成本/失败与产出，提交代码、脱敏 fixture 和运行摘要。
 
 ### M4：真实 parent 结构、候选生成和 Top-K
 
-- [ ] 从 hash-verified Agent01 manifest 或明确 fixture parent 读取真实 pymatgen Structure；
-- [ ] 执行 substitution registry 并生成非空结构 proposal；
-- [ ] 运行硬约束、结构 QC、内部 exact/strict 去重和 MMR；
-- [ ] 输出非空 `InspirationBundle` 和最便宜证伪步骤；
-- [ ] 完成 replay、篡改、无效结构、重复路线和多样性测试并提交推送。
+- [x] 从明确、hash-pinned fixture parent 读取真实 pymatgen Structure；
+- [x] 执行 substitution registry 并生成非空结构 proposal；
+- [x] 运行硬约束、结构 QC、内部 exact/strict 去重和 MMR；
+- [x] 输出非空 `InspirationBundle` 和最便宜证伪步骤；
+- [x] 完成 replay、篡改、无效结构、重复路线和多样性测试并提交推送。
 
 ### M5：Hermes 真机端到端与 Debug
 
-- [ ] 按固定 commit 安装独立 Hermes runtime；
-- [ ] 用仓库 profile 启动 Hermes 并发现限定 Tool/Skill；
+- [x] 按固定 commit 安装独立 Hermes runtime；
+- [x] 用仓库 profile 启动 Hermes 并发现限定 Tool/Skill；
 - [ ] 从自然语言请求触发灵感生成、查询状态并读取最终 bundle；
-- [ ] 对真实失败进行分类和修复，重复运行直至非空首批产出；
-- [ ] 保存命令、环境、版本、运行 ID、Artifact hash、成本和报告；
+- [x] 对真实失败进行分类和修复，重复运行直至非空首批产出；
+- [x] 保存命令、环境、版本、运行 ID、Artifact hash、成本和报告；
 - [ ] 完整离线 Gate、相关 live Gate、`pip check`、secret/diff 检查通过；
 - [ ] 更新 README/计划并推送最终里程碑。
 
@@ -490,7 +499,7 @@ stages/inspiration/<run_id>/
 | 跨领域 tag 变成空泛联想 | 强制 invariant、成立/失效条件和搜索反馈 |
 | 结构生成产生伪科学 | 仅白名单确定性 operator；性质证据不随结构继承 |
 | 重复 proposal 占满 Top-K | selection 前完成 route/structure/hypothesis identity resolution |
-| 用户批准被 Agent 代替 | 必须真实 elicitation；失败或无人在线时 fail closed |
+| 用户批准被 Agent 代替 | MCP 外 one-time operator grant；完整 interaction/manifest/action 绑定；无 grant fail closed |
 | 单用户 SQLite 暴露为服务 | 当前只允许本机单实例试点；多用户另立 v2/Postgres/RBAC |
 
 ## 8. 运行记录
@@ -502,9 +511,8 @@ stages/inspiration/<run_id>/
 - 已完成：仓库/架构/Hermes/灵感缺口只读审计；
 - M0 提交：`f2a7f07 Plan Hermes inspiration architecture`，已推送并建立 draft PR #1；
 - 已提交方向：固定状态边界、Gateway seam、成本门槛和不做 novelty 的范围；
-- 当前执行：M1 离线契约纵切与 M2 Hermes/Gateway 骨架并行；
-- 未完成：Hermes runtime、Gateway、真实搜索与真实 inspiration 产出仍待实机验证；
-- 下一检查点：固定 Hermes profile/Skill 提交后完成主项目基线 Gate。
+- 当时执行：M1 离线契约纵切与 M2 Hermes/Gateway 骨架并行；后续完成情况见本节末尾的
+  release checkpoint。
 
 ### 2026-08-08：Hermes profile/Skill 静态检查点
 
@@ -514,7 +522,8 @@ stages/inspiration/<run_id>/
 - 禁用 terminal/file/web/browser/delegation/memory 等原生 toolset，API server 仅监听 loopback；
 - 版本化 `materials-inspiration` Skill 通过 Skill Creator `quick_validate.py`；
 - 为避免开放不可拆分的 `skill_manage`，将固定 Skill 确定性镜像进 `SOUL.md`，`verify_bundle.py` 已通过；
-- `git diff --check` 与 YAML/JSON/Python 静态解析通过；Hermes runtime 启动与 MCP smoke 尚未声称通过。
+- `git diff --check` 与 YAML/JSON/Python 静态解析通过；该检查点当时尚未声称 runtime/MCP
+  通过，后续实机结果见 release checkpoint。
 
 ### 2026-08-08：灵感契约与 metadata 搜索检查点
 
@@ -528,5 +537,48 @@ stages/inspiration/<run_id>/
   10 passed；完整仓库 Gate 仍等待主 `.venv` 首次依赖安装，不以最小环境替代最终 Gate；
 - `235fde5`：根据 Hermes Skill 前向测试，将 action 参数真源收敛到 live MCP schema，
   Skill/SOUL bundle verifier 通过；
-- 当前并行执行：Hermes 固定运行时安装、Gateway service、局部网页/JATS passage 抽取与
-  signed-hashing vectorizer；尚未声称 Gateway、结构候选或 Hermes E2E 已跑通。
+- 该检查点之后继续完成 Hermes 固定运行时、Gateway service、局部网页/JATS passage
+  抽取与 signed-hashing vectorizer；最终状态见 release checkpoint。
+
+### 2026-08-08：Gateway、选择与真实 metadata 检查点
+
+- Hermes 源码 checkout 已验证 `v2026.8.3` 对应
+  `3c27eb6234bf91b8ceee9e9071591b31e9b148cb`，隔离环境实机输出
+  `Hermes Agent v0.20.0 (2026.8.3)`；本条记录的是 MCP server 完成前的历史状态；
+- `64d79fe`：严格 Gateway core 只接受四类粗粒度操作，包含 submission 幂等、状态机、
+  报告固定 URI/hash/size 与显式确认；`6b44e76` 补齐现有 Orchestrator 报告读取完整性；
+- `0c3ca51`：同一运行内 exact structure 合并保留全部 route/evidence/mechanism lineage；
+  多样性选择使用四视图距离和硬配额，代表路线的质量/coverage 不跨路线拼接；78 项相关
+  inspiration 测试与 82 项 Orchestrator 测试通过；
+- `4e926aa`：新增 Crossref v1 keyless metadata-only adapter、HTTPS host/redirect guard、
+  单响应 10 MB 绝对上限、固定 metadata 字段与 opt-in live Gate；固定跨域查询真实返回
+  5 hits、9,126 bytes，raw SHA-256 为
+  `2acd09af5d9155935023a56d06ce1444e544b307a98302e7b904bb7cf27f5928`；
+- 上述 live smoke 只证明公共 metadata 检索与解析，不等于 BridgePacket、结构 proposal 或
+  Hermes E2E 已完成；真实响应保存在临时测试 Artifact 中，后续 runner 必须以同样的
+  URI/hash 规则持久化每次运行响应和成本账本。
+
+### 2026-08-08：Hermes/MCP 非空 release checkpoint
+
+- `74059b0`：提交持久化四工具 MCP Gateway、真实 `InspirationRunner` adapter、SQLite v2
+  状态、报告与 canonical result 双 hash、完整执行 manifest、默认拒绝 action 和 MCP 外
+  one-time operator grant；grant 绑定 request、interaction、manifest 和 exact action；
+- 审批后 engine/policy/parent/tag/registry/adapter/vectorizer 任一漂移均在 runner 前拒绝；
+  grant 消费后的崩溃只能在确认原进程停止、重新校验 immutable manifest 并提供新确认引用后
+  由 operator CLI 显式恢复；
+- `290cafe`：新增可复现的真实 MCP stdio pilot client；submit 阶段证明无 grant 的
+  `confirmed_by_user=true` 被拒且状态不变；
+- Hermes profile 已安装并更新，`mcp test materials` 实机连接成功，只发现四个 allowlisted
+  tools；Hermes compatibility 精确固定 `==0.20.0`；
+- 固定发布运行 `inspiration-403006308fdce7fa4e27bc56` 通过：3 passages、2 EvidenceCards、
+  1 BridgePacket、1 `STRUCTURE_VALID` proposal、1 selected candidate、fetch/PDF/LLM 均为 0；
+- Gateway 状态为诚实的 `PARTIAL`（两个 bridge rule 缺 required tags），bundle outcome 为
+  `SUCCEEDED`，性质保持 `UNKNOWN`，`scientific_conclusion=false`；
+- 报告 SHA `395342e7fd48730dc1496d3238186063012718907509133e2e2a08f7044d914d`，
+  canonical result SHA `80f82f689c843cd4e27da1d922abc7fe1ca7e30c0fd8b1fb17628e86a0e47b1b`；
+- 真实公共 Crossref full-run Gate 两次通过：3 requests、7,944 bytes、2 passages、
+  2 EvidenceCards、1 bridge、1 proposal、1 candidate，fetch/PDF/LLM 为 0；
+- 完整命令、版本、成本、告警和 Artifact hashes 见
+  [`docs/runs/2026-08-08-hermes-inspiration-pilot.md`](../../docs/runs/2026-08-08-hermes-inspiration-pilot.md)；
+- 唯一未通过的本阶段 Gate：Hermes 自然语言 turn 等待用户完成一次性 Provider 设备授权；
+  不能把 MCP tool discovery 或独立 MCP client 描述成自然语言 Agent 已通过。

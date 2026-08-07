@@ -158,8 +158,12 @@ Gateway 必须满足：
   checkpoint 表或 Agent 私有文件；
 - 输入输出使用 `extra=forbid` 的版本化 DTO，限制字符串、列表、候选预览和报告大小；
 - 不暴露工作区绝对路径、任意 Artifact 读取、fixture 路径、shell 或底层 `run-stage` DAG；
-- tool call 不能代替人工审批；关键转换必须等待真实用户确认；
+- tool call 不能代替人工审批；关键转换必须等待独立 operator 进程签发的一次性 grant；
+- grant 绑定 canonical request、完整 interaction、冻结 execution manifest 和精确 action，
+  在 SQLite 事务中原子消费；Hermes 传入 `confirmed_by_user=true` 不产生授权；
 - 同一 submission ID + 同一 payload 幂等复用，不同 payload fail closed；
+- terminal state 分别绑定报告 Artifact SHA-256 与 canonical structured-result SHA-256，读取前
+  同时验证；这能检测单侧损坏，但不是抵御可一致重写全部本地状态者的真实性签名；
 - Hermes 与主项目使用独立 Python 环境，profile/Skill/Tool Schema hash 进入 provenance；
 - 当前 SQLite/单项目锁只允许本机单用户、单 Hermes 实例试点。
 
@@ -716,8 +720,7 @@ material-agent resume --project <id> --run <id>
 material-agent retry --project <id> --run <id>
 material-agent cancel --project <id> --run <id>
 material-agent report --project <id> --run <id>
-material-agent inspire --input <inspiration-input.json> --output <artifact-root>  # P3 计划
-material-agent-gateway                                                        # P3 计划
+material-agent inspire --input <inspiration-input.json> --output <artifact-root>  # P3 后续通用 CLI
 ```
 
 CLI 规则：
@@ -731,9 +734,9 @@ CLI 规则：
 
 当前可运行命令、参数和示例以[仓库 README](../README.md)为准；未来阶段的命令只有在相应 capability 实现后才可视为可用。
 
-### 10.1 Hermes Tool 计划
+### 10.1 Hermes Tool 与 pilot 入口
 
-Hermes production profile 首版只允许四个粗粒度工具：
+Hermes production profile 首版已实现且只允许四个粗粒度工具：
 
 ```text
 materials_inspiration_run
@@ -745,6 +748,20 @@ materials_result_get
 `materials_run_act` 使用严格 discriminated union，一次调用最多完成一次澄清、批准、拒绝、
 恢复、重试或取消转换。Tool list 中不得出现任意 Artifact read、shell、自由路径或直接
 DFT/ML/many-body submit。
+
+当前 Gateway 与审批入口保持显式、进程外调用，不冒充尚未实现的顶层 `material-agent`
+子命令：
+
+```bash
+.venv-gateway/bin/python -m material_agent.integration.mcp_server \
+  --workspace /absolute/path/to/a/bounded/workspace \
+  --project materials-inspiration \
+  --service-factory material_agent.integration.hermes_service:create_hermes_fixture_service
+.venv-gateway/bin/python -m material_agent.integration.operator_approval --help
+```
+
+固定 profile、启动参数和可复现实机 smoke 见[仓库 README](../README.md)；首个非空结果、
+hash 与成本见[pilot 运行记录](./runs/2026-08-08-hermes-inspiration-pilot.md)。
 
 ## 11. VASPilot 与未来后端集成
 

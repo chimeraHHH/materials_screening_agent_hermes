@@ -271,6 +271,11 @@ Global State 必须使用逻辑 Artifact URI，而不是依赖 Mac 绝对路径�
 - 以一个真实公共文献搜索和真实 parent structure 跑通 Hermes 驱动的端到端流程；
 - 首批结果只作为可审计 proposal，不进行 novelty 或性质背书。
 
+截至 2026-08-08，以上工程纵切已在单用户本机 pilot 中实现：固定 Hermes
+`v2026.8.3`（package `0.20.0`）、四工具 MCP Gateway、公共 Crossref metadata live run、
+真实 `pymatgen` 结构变换和持久化非空 bundle 均已通过。自然语言 Hermes Agent turn
+仍需 Provider 设备授权；当前验收证据与限制见[首个 pilot 运行记录](./runs/2026-08-08-hermes-inspiration-pilot.md)。
+
 ### P1：可靠 ML 筛选
 
 - 选择并冻结一个真实 MLIP；

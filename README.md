@@ -4,7 +4,10 @@ This repository implements the durable Orchestrator P0.2 control plane,
 the deterministic single-source public-database retrieval stage, and explicitly
 test-only mock control adapters for the downstream stages described in
 `plans/subagents/material-screening-orchestrator-plan.md` and
-`plans/subagents/material-screening-agent01-plan.md`.
+`plans/subagents/material-screening-agent01-plan.md`. It now also contains a
+pre-release, single-user Hermes inspiration companion: metadata-first evidence,
+cross-domain mechanism bridges, one deterministic structure operator, run-local
+deduplication/diversity, and a four-tool persistent MCP Gateway.
 
 The execution plan always contains the ordered
 `retrieval → ml → dft → many_body` routes. Agent 01 is the only default
@@ -14,6 +17,63 @@ only when a validated dedicated Worker executable is explicitly configured;
 otherwise it remains fail-closed and unavailable. Agent03 has a v1 mock
 controller, and Agent04 has an MVP mock controller. Only the real, configured
 Agent02 worker may produce L2 ML evidence; every test fixture remains mock.
+
+## Hermes inspiration pilot
+
+The current pilot is deliberately narrow. It accepts one source-controlled
+layered transition-metal dichalcogenide request and executes a pinned TiS2 →
+TiSe2-equivalent-site proposal. It is an auditable engineering vertical slice,
+not a general scientific planner. The output remains a hypothesis:
+`STRUCTURE_VALID` means structural QC only, the target property is `UNKNOWN`,
+and this repository performs no novelty, patent, or prior-art assessment.
+
+Three isolated Python 3.11 environments keep the scientific engine, MCP SDK,
+and Hermes runtime from contaminating one another:
+
+```bash
+.venv/bin/python integrations/hermes/scripts/bootstrap_gateway_runtime.py
+.venv/bin/python integrations/hermes/scripts/bootstrap_runtime.py
+.venv/bin/python integrations/hermes/scripts/verify_bundle.py
+```
+
+The pinned Hermes distribution is `v2026.8.3` / package `0.20.0` / commit
+`3c27eb6234bf91b8ceee9e9071591b31e9b148cb`. Its profile exposes exactly:
+
+```text
+materials_inspiration_run
+materials_run_get
+materials_run_act
+materials_result_get
+```
+
+An MCP caller cannot approve its own action. `materials_run_act` remains blocked
+until a trusted local operator records a one-time grant bound to the request,
+complete interaction, frozen execution manifest, and exact action. See
+[`integrations/hermes/README.md`](integrations/hermes/README.md) for installation,
+approval, crash recovery, and profile commands.
+
+The reproducible fixed-pilot smoke uses the actual MCP stdio subprocess:
+
+```bash
+.venv-gateway/bin/python integrations/hermes/scripts/run_gateway_pilot.py submit \
+  --workspace workspace/hermes-release-v2 \
+  --project materials-inspiration \
+  --submission-id hermes-release-20260808-v2
+
+.venv-gateway/bin/python -m material_agent.integration.operator_approval \
+  --workspace workspace/hermes-release-v2 \
+  --project materials-inspiration \
+  --run-id <run-id-from-submit> \
+  --confirmation-reference <trusted-user-decision-reference>
+
+.venv-gateway/bin/python integrations/hermes/scripts/run_gateway_pilot.py finish \
+  --workspace workspace/hermes-release-v2 \
+  --project materials-inspiration \
+  --submission-id hermes-release-20260808-v2
+```
+
+The first audited run and exact hashes are recorded in
+[`docs/runs/2026-08-08-hermes-inspiration-pilot.md`](docs/runs/2026-08-08-hermes-inspiration-pilot.md).
 
 ## Development environment
 

@@ -43,16 +43,18 @@ LangGraph 图、checkpoint schema、业务 SQLite migration、四阶段 `StageId
 
 范围与验收：
 
-- [ ] 冻结 `materials-gateway-v1` 安全 DTO 和四个粗粒度 Tool；
-- [ ] Gateway 不直接读取 graph/repository/checkpointer，不开放任意 Artifact/path 或底层
+- [x] 冻结 `materials-gateway-v1` 安全 DTO 和四个粗粒度 Tool；
+- [x] Gateway 不直接读取 graph/repository/checkpointer，不开放任意 Artifact/path 或底层
   `run-stage`；
-- [ ] submission ID 绑定 canonical payload，重复调用幂等、冲突 fail closed；
-- [ ] `status/get` 严格只读，`act` 每次最多一次类型化状态转换；
-- [ ] Requirement、昂贵任务、取消和受控 retry 的批准必须来自真实用户确认，Hermes tool
-  call 本身不构成审批；
-- [ ] 对外报告在返回前校验保存的 URI/hash，大小受限并脱敏；
-- [ ] Hermes 与主项目使用独立环境，当前只支持单用户、单实例本机试点；
-- [ ] unit/contract/integration/MCP E2E 和 Hermes 真机 smoke 通过后才描述为可用。
+- [x] submission ID 绑定 canonical payload，重复调用幂等、冲突 fail closed；
+- [x] `status/get` 严格只读，`act` 每次最多一次类型化状态转换；
+- [x] Requirement 批准必须由独立 operator 进程签发绑定 request/interaction/manifest/action
+  的一次性 grant；Hermes tool call 与 `confirmed_by_user=true` 本身不构成审批；
+- [x] 对外报告在返回前同时校验保存的 URI/hash 与 canonical structured-result hash，大小
+  受限并脱敏；
+- [x] Hermes 与主项目使用独立环境，当前只支持单用户、单实例本机试点；
+- [x] unit/contract/integration、真实 MCP stdio、重启恢复和非空 bundle smoke 已通过；
+- [ ] 完成 Provider 设备授权后的 Hermes 自然语言 Agent turn，并执行最终 release Gate。
 
 详细 Hermes 与 Inspiration 里程碑见
 [`material-screening-inspiration-plan.md`](material-screening-inspiration-plan.md)。
