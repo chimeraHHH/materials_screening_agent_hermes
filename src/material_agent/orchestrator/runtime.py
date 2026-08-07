@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import hashlib
+import hmac
+import os
 import re
 import sqlite3
-import os
 from contextlib import contextmanager
 from copy import deepcopy
 from pathlib import Path
@@ -570,10 +572,44 @@ class OrchestratorRuntime:
         return self.status(selected_run_id)
 
     def read_report(self, run_id: str) -> str:
-        view = self.status(run_id)
+        selected_run_id = _validate_id(run_id, "run_id")
+        view = self.status(selected_run_id)
         if view.report_uri is None:
             raise ValueError("run has no report yet")
-        return self.store.read_bytes(view.report_uri).decode("utf-8")
+        expected_uri = f"artifact://reports/{selected_run_id}/report.md"
+        if view.report_uri != expected_uri:
+            raise ValueError("run report has an unexpected artifact path")
+
+        row = self.repository.get_run(selected_run_id)
+        if row is None:  # pragma: no cover - status() already checks this
+            raise KeyError(f"unknown run: {selected_run_id}")
+        if row["checkpoint_schema_version"] == ORCHESTRATOR_CONTRACT_VERSION:
+            snapshot = self.graph.get_state(self._config(selected_run_id))
+            values = snapshot.values or {}
+            if values.get("report_uri") != expected_uri:
+                raise ValueError("run report checkpoint URI failed integrity validation")
+            expected_sha256 = values.get("report_sha256")
+            if not isinstance(expected_sha256, str) or re.fullmatch(
+                r"[0-9a-f]{64}", expected_sha256
+            ) is None:
+                raise ValueError("run report checkpoint SHA-256 is missing or invalid")
+
+            payload = self.store.read_bytes(expected_uri)
+            actual_sha256 = hashlib.sha256(payload).hexdigest()
+            if not hmac.compare_digest(actual_sha256, expected_sha256):
+                raise ValueError("run report failed integrity validation")
+            return payload.decode("utf-8")
+
+        if row["checkpoint_schema_version"] in {
+            LEGACY_ORCHESTRATOR_CONTRACT_VERSION,
+            P01_ORCHESTRATOR_CONTRACT_VERSION,
+        }:
+            # Completed known legacy reports intentionally remain readable even
+            # though their checkpoints predate the authoritative report hash.
+            return self.store.read_bytes(expected_uri).decode("utf-8")
+        raise CheckpointCompatibilityError(
+            "report checkpoint schema is unknown; refusing an unverified read"
+        )
 
     def _initial_state(
         self,
