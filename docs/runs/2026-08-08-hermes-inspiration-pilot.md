@@ -131,6 +131,24 @@ This separates two claims cleanly: Crossref proves the real public metadata
 boundary; the fixture-backed Hermes run proves the controlled Agent/MCP/
 approval/persistence/structure-output boundary.
 
+A final release rerun also passed (`2 passed in 5.76s`) with the same counts and
+budgets. Its bundle SHA-256 was
+`aadb76a46a224a38428b49ed6dc64409decabe58a22f8295c91125bfd1ee9023`
+and its stage-result SHA-256 was
+`2b6ba4a1ff99e6a739f4ffbb8bf459609dbac0688fd73243bd06ba7d55d9d575`.
+These differ from the earlier capture because a public metadata API is mutable;
+each run therefore persists and hashes the exact response it actually used
+instead of claiming byte stability across network calls.
+
+## Final non-provider validation
+
+- complete offline suite: `666 passed, 13 skipped, 362 warnings`;
+- main, Gateway, and Hermes environment dependency checks: passed;
+- Hermes source/profile/SOUL/tool-manifest bundle verifier: passed;
+- Hermes MCP connection: passed, with exactly the four allowlisted tools;
+- final public Crossref Gate: `2 passed`;
+- `git diff --check`: passed before the documentation milestone commit.
+
 ## Remaining release boundary
 
 Natural-language Hermes invocation requires a one-time provider device login.

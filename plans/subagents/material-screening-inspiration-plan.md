@@ -106,8 +106,8 @@ Hermes 是上层 Agent 控制面，负责：
 - [x] 至少一个白名单 transformation 在真实 pymatgen Structure 上执行并通过结构校验；
 - [x] 运行内部重复候选只占一个 Top-K 名额，多样性排序可确定性重放；
 - [ ] Hermes 实机调用该 capability，最终得到非空、可审计 `InspirationBundle`；
-- [ ] 完整离线 Gate、相关 live Gate、`pip check` 和 `git diff --check` 通过；
-- [ ] README、主计划、本计划和实机运行记录与当前源码一致；
+- [x] 完整离线 Gate、相关 live Gate、`pip check` 和 `git diff --check` 通过；
+- [x] README、主计划、本计划和实机运行记录与当前源码一致；
 - [ ] 所有里程碑提交已推送到 `hermes-origin/main`。
 
 ## 2. 分层架构与状态所有权
@@ -427,8 +427,9 @@ stages/inspiration/<run_id>/
 - [ ] 从自然语言请求触发灵感生成、查询状态并读取最终 bundle；
 - [x] 对真实失败进行分类和修复，重复运行直至非空首批产出；
 - [x] 保存命令、环境、版本、运行 ID、Artifact hash、成本和报告；
-- [ ] 完整离线 Gate、相关 live Gate、`pip check`、secret/diff 检查通过；
-- [ ] 更新 README/计划并推送最终里程碑。
+- [x] 完整离线 Gate、相关 live Gate、`pip check`、secret/diff 检查通过；
+- [x] 更新 README/计划并推送 MCP pilot 文档里程碑；
+- [ ] 自然语言 turn 通过后补充证据并推送最终里程碑。
 
 提交原则：每个 M 至少一个可回退提交；跨越多个 M 的大提交禁止。代码与契约、测试、
 文档可以分开提交，但任何提交不得把未实现 roadmap 写成当前能力。
@@ -578,6 +579,11 @@ stages/inspiration/<run_id>/
   canonical result SHA `80f82f689c843cd4e27da1d922abc7fe1ca7e30c0fd8b1fb17628e86a0e47b1b`；
 - 真实公共 Crossref full-run Gate 两次通过：3 requests、7,944 bytes、2 passages、
   2 EvidenceCards、1 bridge、1 proposal、1 candidate，fetch/PDF/LLM 为 0；
+- 最终非 Provider Gate：完整离线 suite `666 passed, 13 skipped, 362 warnings`，三个环境
+  dependency check、bundle verifier、四工具 MCP discovery 和 Crossref live `2 passed`
+  全部通过；最终 live capture 的 bundle/stage SHA 分别为
+  `aadb76a46a224a38428b49ed6dc64409decabe58a22f8295c91125bfd1ee9023` /
+  `2b6ba4a1ff99e6a739f4ffbb8bf459609dbac0688fd73243bd06ba7d55d9d575`；
 - 完整命令、版本、成本、告警和 Artifact hashes 见
   [`docs/runs/2026-08-08-hermes-inspiration-pilot.md`](../../docs/runs/2026-08-08-hermes-inspiration-pilot.md)；
 - 唯一未通过的本阶段 Gate：Hermes 自然语言 turn 等待用户完成一次性 Provider 设备授权；

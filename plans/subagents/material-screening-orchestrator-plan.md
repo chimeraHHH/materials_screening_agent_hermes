@@ -54,7 +54,8 @@ LangGraph 图、checkpoint schema、业务 SQLite migration、四阶段 `StageId
   受限并脱敏；
 - [x] Hermes 与主项目使用独立环境，当前只支持单用户、单实例本机试点；
 - [x] unit/contract/integration、真实 MCP stdio、重启恢复和非空 bundle smoke 已通过；
-- [ ] 完成 Provider 设备授权后的 Hermes 自然语言 Agent turn，并执行最终 release Gate。
+- [x] 完整离线、公共 Crossref live、依赖一致性、bundle verifier 和 MCP discovery Gate 通过；
+- [ ] 完成 Provider 设备授权后的 Hermes 自然语言 Agent turn。
 
 详细 Hermes 与 Inspiration 里程碑见
 [`material-screening-inspiration-plan.md`](material-screening-inspiration-plan.md)。

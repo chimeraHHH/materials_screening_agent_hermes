@@ -467,7 +467,7 @@ flowchart LR
 3. [x] 完成 M2：Materials Gateway、Hermes profile/Skill、Tool contract 和跨进程 E2E。
 4. [x] 完成 M3–M4 与 M5 MCP Gate：真实公共文献搜索、真实结构 proposal、Hermes profile
    Tool discovery 和首批非空 `InspirationBundle`。
-5. [ ] 完成 Hermes Provider 设备授权，执行自然语言 Agent turn；随后跑最终 Gate、合并 PR。
+5. [ ] 完成 Hermes Provider 设备授权，执行自然语言 Agent turn；随后补充运行证据并合并 PR。
 6. [x] 完成 Agent02 Step 2、Agent03 v1 mock、Agent04 MVP mock 和四阶段 P0
    安全回归。
 7. [x] 在独立 Python 3.11 环境实现冻结 JSON worker 协议和真实 CHGNet CPU Gate；
