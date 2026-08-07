@@ -46,9 +46,10 @@
 - [x] 已确认本阶段不实现 novelty/prior-art 判定；
 - [x] 已完成现有仓库、Hermes v0.20.0 和灵感生成器缺口的只读审计；
 - [x] Hermes 固定 profile distribution、版本化 Skill 与 bootstrap 已提交并通过静态校验；
+- [x] 灵感生成器严格对象契约、离线 policy、证据引用闭包和 metadata fixture 搜索已提交；
 - [ ] Hermes 独立运行环境尚未完成安装和实机 smoke；
 - [ ] Materials Gateway 尚未实现；
-- [ ] 灵感生成器源码、fixture 和真实运行产物尚未实现；
+- [ ] 灵感生成器抽取/向量/结构/选择纵切、冻结 fixture 和真实运行产物尚未完成；
 - [ ] Hermes 驱动的实机端到端 Gate 尚未通过。
 
 ## 1. 目标、边界与完成标准
@@ -377,9 +378,10 @@ stages/inspiration/<run_id>/
 
 ### M1：灵感生成器契约与离线纵切
 
-- [ ] 实现严格 models/policy、deterministic IDs 和 Artifact 布局；
+- [x] 实现严格 models/policy、deterministic IDs、schema freeze 和科学边界；
+- [ ] 实现完整 Artifact 持久化布局与 hash-verified replay；
 - [ ] 实现 fixture SearchAdapter、metadata/HTML/JATS extractor、passage selector 和 hashing vector；
-- [ ] 实现 EvidenceCard、curated TagGraph、BridgePacket validation；
+- [x] 实现 EvidenceCard、curated BridgeRule/TagGraph 与 BridgePacket 跨对象引用闭包校验；
 - [ ] 实现一个白名单 substitution operator、内部 identity 和 MMR；
 - [ ] 冻结 `tests/fixtures/inspiration-v1/`；
 - [ ] 完成 unit/contract/offline E2E 并提交推送。
@@ -513,3 +515,18 @@ stages/inspiration/<run_id>/
 - 版本化 `materials-inspiration` Skill 通过 Skill Creator `quick_validate.py`；
 - 为避免开放不可拆分的 `skill_manage`，将固定 Skill 确定性镜像进 `SOUL.md`，`verify_bundle.py` 已通过；
 - `git diff --check` 与 YAML/JSON/Python 静态解析通过；Hermes runtime 启动与 MCP smoke 尚未声称通过。
+
+### 2026-08-08：灵感契约与 metadata 搜索检查点
+
+- `f7c2595`：提交严格 `InspirationInput/Policy/SearchHit/Passage/Evidence/TagGraph/BridgeRule/`
+  `Transformation/Candidate/Bundle/CostLedger` 契约及 schema freeze；
+- `67111a6`：提交 runner 级证据引用闭包；rule/packet、tag 类型、query/hit/passage/card
+  任一篡改或孤立引用均 fail closed；
+- `c3f3935`：提交无网络 fixture adapter、OpenAlex metadata/abstract 解析、稳定 DOI/URL
+  文献身份与运行内分组；接口没有 PDF/全文入口；
+- 最小隔离环境验证：inspiration models/validation/contract 共 33 passed；metadata search
+  10 passed；完整仓库 Gate 仍等待主 `.venv` 首次依赖安装，不以最小环境替代最终 Gate；
+- `235fde5`：根据 Hermes Skill 前向测试，将 action 参数真源收敛到 live MCP schema，
+  Skill/SOUL bundle verifier 通过；
+- 当前并行执行：Hermes 固定运行时安装、Gateway service、局部网页/JATS passage 抽取与
+  signed-hashing vectorizer；尚未声称 Gateway、结构候选或 Hermes E2E 已跑通。
