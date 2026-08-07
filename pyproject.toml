@@ -36,6 +36,7 @@ testpaths = ["tests"]
 markers = [
   "live_mp: opt-in Materials Project release test requiring network and MP_API_KEY",
   "live_nomad: opt-in public NOMAD API release test requiring network",
+  "live_crossref: opt-in public Crossref metadata API release test requiring network",
   "live_llm: opt-in DeepSeek Stage0 release test requiring network and a secret-store API key",
   "real_ml: opt-in Agent02 CPU test using the independent CHGNet environment",
   "slow_real_ml: opt-in Agent02 standard 200-step relaxation test",

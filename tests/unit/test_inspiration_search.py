@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 
@@ -10,11 +11,13 @@ from material_agent.inspiration import (
     SearchQueryV1,
 )
 from material_agent.inspiration.search import (
+    CrossrefPublicAdapter,
     FixtureSearchAdapter,
     SearchAdapterError,
     document_id_for,
     group_document_hits,
     normalize_doi,
+    parse_crossref_page,
     parse_openalex_page,
 )
 
@@ -68,6 +71,58 @@ def response_bytes(*, doi: str = "https://doi.org/10.1000/ABC") -> bytes:
     ).encode()
 
 
+def crossref_response_bytes() -> bytes:
+    return json.dumps(
+        {
+            "status": "ok",
+            "message": {
+                "items": [
+                    {
+                        "DOI": "10.1000/CROSSREF",
+                        "title": ["Localized interference in a mechanical lattice"],
+                        "author": [
+                            {"given": "Ada", "family": "Example"},
+                            {"given": "Ada", "family": "Example"},
+                        ],
+                        "published": {"date-parts": [[2025, 2, 3]]},
+                        "URL": "https://doi.org/10.1000/CROSSREF",
+                        "abstract": (
+                            "<jats:p>Compact localized modes arise because destructive "
+                            "interference suppresses transport in the lattice.</jats:p>"
+                        ),
+                        "subject": ["Mechanical metamaterials", "Flat bands"],
+                    }
+                ]
+            },
+        },
+        sort_keys=True,
+    ).encode()
+
+
+class _RecordingTransport:
+    def __init__(self, payload: object) -> None:
+        self.payload = payload
+        self.calls: list[dict[str, object]] = []
+
+    def get(
+        self,
+        url: str,
+        *,
+        headers: dict[str, str],
+        timeout_seconds: int,
+        max_response_bytes: int,
+    ) -> bytes:
+        self.calls.append(
+            {
+                "url": url,
+                "headers": headers,
+                "timeout_seconds": timeout_seconds,
+                "max_response_bytes": max_response_bytes,
+            }
+        )
+        return self.payload  # type: ignore[return-value]
+
+
 def test_fixture_adapter_is_network_free_and_enforces_byte_budget() -> None:
     payload = response_bytes()
     adapter = FixtureSearchAdapter({"query-1": payload})
@@ -87,6 +142,50 @@ def test_fixture_adapter_is_network_free_and_enforces_byte_budget() -> None:
     assert raised.value.code == "FIXTURE_QUERY_NOT_FOUND"
 
 
+def test_crossref_adapter_requests_only_bounded_metadata_fields() -> None:
+    payload = crossref_response_bytes()
+    transport = _RecordingTransport(payload)
+    adapter = CrossrefPublicAdapter(
+        max_results=3,
+        timeout_seconds=7,
+        transport=transport,
+    )
+
+    page = adapter.search(query(), max_response_bytes=len(payload))
+
+    assert page.provider == "crossref"
+    assert page.payload == payload
+    assert adapter.network_access is True
+    call = transport.calls[0]
+    parameters = parse_qs(urlsplit(str(call["url"])).query)
+    assert parameters["rows"] == ["3"]
+    assert parameters["filter"] == ["has-abstract:true"]
+    assert parameters["query.bibliographic"] == [query().text]
+    assert parameters["select"] == [
+        "DOI,title,author,published,URL,abstract,subject"
+    ]
+    assert "link" not in parameters["select"][0].casefold()
+    assert call["max_response_bytes"] == len(payload)
+    assert call["headers"] == {
+        "Accept": "application/json",
+        "Accept-Encoding": "identity",
+        "User-Agent": "materials-screening-agent/0.1 (metadata-only)",
+    }
+
+
+@pytest.mark.parametrize("payload", ["not-bytes", b"x" * 10])
+def test_crossref_adapter_rechecks_an_injected_transport(payload: object) -> None:
+    adapter = CrossrefPublicAdapter(transport=_RecordingTransport(payload))
+
+    with pytest.raises(SearchAdapterError) as raised:
+        adapter.search(query(), max_response_bytes=5)
+
+    assert raised.value.code in {
+        "INVALID_NETWORK_PAYLOAD",
+        "RESPONSE_BUDGET_EXCEEDED",
+    }
+
+
 def test_openalex_parser_uses_only_metadata_and_rebuilds_abstract() -> None:
     parsed = parse_openalex_page(
         query=query(),
@@ -104,6 +203,29 @@ def test_openalex_parser_uses_only_metadata_and_rebuilds_abstract() -> None:
     assert hit.query_ids == ("query-1",)
     assert hit.raw_response_artifact.sha256 == "a" * 64
     assert parsed.warnings == ()
+
+
+def test_crossref_parser_normalizes_jats_metadata_without_fetching_full_text() -> None:
+    parsed = parse_crossref_page(
+        query=query(),
+        payload=crossref_response_bytes(),
+        raw_response_artifact=artifact(),
+        max_hits=5,
+    )
+
+    assert len(parsed.hits) == 1
+    hit = parsed.hits[0]
+    assert hit.provider == "crossref"
+    assert hit.provider_record_id == "10.1000/crossref"
+    assert hit.doi == "10.1000/crossref"
+    assert hit.authors == ("Ada Example",)
+    assert hit.published_year == 2025
+    assert hit.abstract == (
+        "Compact localized modes arise because destructive interference "
+        "suppresses transport in the lattice."
+    )
+    assert hit.keywords == ("Mechanical metamaterials", "Flat bands")
+    assert hit.raw_response_artifact == artifact()
 
 
 def test_document_identity_prefers_normalized_doi_across_queries() -> None:
