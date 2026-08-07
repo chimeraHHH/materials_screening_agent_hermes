@@ -7,7 +7,7 @@ from typing import Annotated, Literal
 
 from pydantic import Field, model_validator
 
-from material_agent.inspiration.models import Identifier, Score, StrictModel
+from material_agent.inspiration.models import Identifier, Score, ShortText, StrictModel
 
 
 INSPIRATION_POLICY_VERSION = "inspiration-policy-v1"
@@ -66,11 +66,31 @@ class PassageBudgetV1(StrictModel):
     max_tokens: Annotated[int, Field(ge=16, le=512)] = 220
     max_per_hit: Annotated[int, Field(ge=1, le=10)] = 3
     max_total: Annotated[int, Field(ge=1, le=2_000)] = 90
+    local_dedup_jaccard: Score = 0.85
+    claim_cues: Annotated[
+        tuple[ShortText, ...], Field(min_length=1, max_length=32)
+    ] = (
+        "because",
+        "demonstrate",
+        "find that",
+        "indicate",
+        "leads to",
+        "mechanism",
+        "requires",
+        "results show",
+        "suggest",
+        "suppresses",
+        "enhances",
+        "breaks",
+    )
 
     @model_validator(mode="after")
     def validate_passage_budget(self) -> PassageBudgetV1:
         if self.min_tokens > self.max_tokens:
             raise ValueError("minimum passage tokens exceed maximum passage tokens")
+        normalized_cues = tuple(cue.casefold() for cue in self.claim_cues)
+        if len(set(normalized_cues)) != len(normalized_cues):
+            raise ValueError("passage claim cues must be unique")
         return self
 
 
