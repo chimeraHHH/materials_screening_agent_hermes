@@ -9,7 +9,12 @@ from typing import Any
 
 from pydantic import ValidationError
 
+from material_agent.gateway.authorization import (
+    ActionAuthorizer,
+    DenyAllActionAuthorizer,
+)
 from material_agent.gateway.errors import (
+    ActionAuthorizationError,
     AdapterContractError,
     IllegalActionError,
     ResultIntegrityError,
@@ -35,6 +40,7 @@ from material_agent.gateway.models import (
     RunningStateV1,
     SucceededStateV1,
     canonical_json_bytes,
+    gateway_result_sha256,
     inspiration_request_sha256,
     inspiration_report_uri,
     inspiration_run_id,
@@ -61,6 +67,7 @@ class MaterialsGatewayService:
         repository: GatewayRepository,
         companion: InspirationCompanionAdapter,
         artifact_reader: ArtifactReader,
+        action_authorizer: ActionAuthorizer | None = None,
         max_report_bytes: int = 1_000_000,
     ) -> None:
         if max_report_bytes < 1:
@@ -68,6 +75,7 @@ class MaterialsGatewayService:
         self.repository = repository
         self.companion = companion
         self.artifact_reader = artifact_reader
+        self.action_authorizer = action_authorizer or DenyAllActionAuthorizer()
         self.max_report_bytes = max_report_bytes
 
     def materials_inspiration_run(
@@ -157,6 +165,20 @@ class MaterialsGatewayService:
             )
 
         try:
+            self.action_authorizer.authorize_and_consume(
+                run_id=record.run_id,
+                interaction=interaction,
+                request_sha256=record.request_sha256,
+                action=parsed_action,
+            )
+        except ActionAuthorizationError:
+            raise
+        except Exception:
+            raise ActionAuthorizationError(
+                "operator authorization could not be verified"
+            ) from None
+
+        try:
             raw_transition = self.companion.act(
                 run_id=record.run_id,
                 request=record.request,
@@ -199,8 +221,13 @@ class MaterialsGatewayService:
             raise ResultIntegrityError("result belongs to a different run")
         if result.report_uri != inspiration_report_uri(request.run_id):
             raise ResultIntegrityError("result report URI is not bound to this run")
-        if (result.report_uri, result.authoritative_sha256) != reference:
+        if (result.report_uri, result.authoritative_sha256) != reference[:2]:
             raise ResultIntegrityError("run and result URI/SHA reference differ")
+        observed_result_sha256 = gateway_result_sha256(result)
+        if not hmac.compare_digest(observed_result_sha256, reference[2]):
+            raise ResultIntegrityError(
+                "terminal result failed canonical SHA-256 validation"
+            )
 
         try:
             payload = self.artifact_reader.read_bytes(result.report_uri)
@@ -214,7 +241,15 @@ class MaterialsGatewayService:
             raise ResultIntegrityError(
                 "bound report artifact failed authoritative SHA-256 validation"
             )
-        return MaterialsResultViewV1.model_validate_json(canonical_json_bytes(result))
+        return MaterialsResultViewV1.model_validate_json(
+            canonical_json_bytes(
+                {
+                    **result.model_dump(mode="json"),
+                    "result_sha256": observed_result_sha256,
+                    "verified": True,
+                }
+            )
+        )
 
     def _require_run(self, run_id: str) -> GatewayRunRecordV1:
         record = self.repository.get_run(run_id)
@@ -246,6 +281,13 @@ class MaterialsGatewayService:
             if transition.result is None:
                 raise AdapterContractError(
                     "terminal inspiration transition is missing its result"
+                )
+            if not hmac.compare_digest(
+                gateway_result_sha256(transition.result),
+                transition.state.result_sha256,
+            ):
+                raise AdapterContractError(
+                    "terminal inspiration state does not bind its canonical result"
                 )
             if transition.result.run_id != run_id:
                 raise AdapterContractError(

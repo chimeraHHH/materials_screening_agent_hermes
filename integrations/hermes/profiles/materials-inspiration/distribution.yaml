@@ -1,7 +1,7 @@
 name: materials-inspiration
 version: 0.1.0
 description: "Bounded materials inspiration control plane"
-hermes_requires: ">=0.20.0,<0.21.0"
+hermes_requires: "==0.20.0"
 
 env_requires:
   - name: API_SERVER_KEY

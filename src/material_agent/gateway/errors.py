@@ -39,6 +39,12 @@ class IllegalActionError(MaterialsGatewayError):
     code = "ILLEGAL_ACTION"
 
 
+class ActionAuthorizationError(MaterialsGatewayError):
+    """No trusted operator grant authorizes the exact pending action."""
+
+    code = "ACTION_AUTHORIZATION_REQUIRED"
+
+
 class AdapterContractError(MaterialsGatewayError):
     """The inspiration companion returned an invalid state transition."""
 

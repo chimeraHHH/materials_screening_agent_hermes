@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import warnings
 from dataclasses import dataclass
+from importlib.metadata import version as package_version
 
 from pydantic import ValidationError
 from pymatgen.analysis.structure_matcher import SpeciesComparator, StructureMatcher
@@ -71,6 +72,10 @@ _ENGINE_SPEC = {
     "pilot_structure_quality": 0.5,
     "free_coordinates": False,
     "llm": False,
+    "runtime_dependencies": {
+        "pymatgen": package_version("pymatgen"),
+        "spglib": package_version("spglib"),
+    },
 }
 PYMATGEN_TRANSFORMATION_ENGINE_SNAPSHOT = ComponentSnapshotV1(
     component_id="pymatgen-substitution-engine",

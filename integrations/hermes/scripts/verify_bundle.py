@@ -23,6 +23,9 @@ EXPECTED_TOOLS = [
     "materials_run_act",
     "materials_result_get",
 ]
+EXPECTED_SERVICE_FACTORY = (
+    "material_agent.integration.hermes_service:create_hermes_fixture_service"
+)
 
 
 def expected_soul(skill_text: str) -> str:
@@ -51,6 +54,11 @@ def verify() -> None:
     config = yaml.safe_load(
         (PROFILE_ROOT / "config.yaml").read_text(encoding="utf-8")
     )
+    distribution = yaml.safe_load(
+        (PROFILE_ROOT / "distribution.yaml").read_text(encoding="utf-8")
+    )
+    if distribution.get("hermes_requires") != "==0.20.0":
+        raise ValueError("Hermes profile compatibility pin drifted")
     if config.get("_config_version") != 33:
         raise ValueError("Hermes config schema must remain at v33 for the pinned runtime")
     expected_platforms = {"cli": ["materials"], "api_server": ["materials"]}
@@ -59,6 +67,12 @@ def verify() -> None:
     if "skills" not in config.get("agent", {}).get("disabled_toolsets", []):
         raise ValueError("native skill management must remain disabled")
     server = config.get("mcp_servers", {}).get("materials", {})
+    args = server.get("args", [])
+    if "--service-factory" not in args:
+        raise ValueError("materials MCP server must pin its trusted service factory")
+    factory_index = args.index("--service-factory") + 1
+    if factory_index >= len(args) or args[factory_index] != EXPECTED_SERVICE_FACTORY:
+        raise ValueError("materials MCP service factory drifted")
     if server.get("tools", {}).get("include") != EXPECTED_TOOLS:
         raise ValueError("materials MCP tool allowlist drifted")
     if server.get("tools", {}).get("resources") is not False:

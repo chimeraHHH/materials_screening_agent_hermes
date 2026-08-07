@@ -7,6 +7,7 @@ import pytest
 from pydantic import ValidationError
 
 from material_agent.gateway import (
+    ActionAuthorizationError,
     ApprovalInteractionV1,
     ApproveActionV1,
     CandidateSummaryV1,
@@ -32,6 +33,7 @@ from material_agent.gateway import (
     StaleInteractionError,
     SubmissionConflictError,
     SucceededStateV1,
+    gateway_result_sha256,
     inspiration_report_uri,
     inspiration_run_id,
 )
@@ -43,6 +45,11 @@ ActionFactory = Callable[
     [str, InspirationRunRequestV1, RunStateV1, RunActionV1],
     CompanionTransitionV1 | dict,
 ]
+
+
+class _AllowAllTestAuthorizer:
+    def authorize_and_consume(self, **_arguments: object) -> None:
+        return None
 
 
 class _InMemoryCompanionAdapter:
@@ -108,6 +115,7 @@ def _service(
             repository=repository,
             companion=companion,
             artifact_reader=artifacts,
+            action_authorizer=_AllowAllTestAuthorizer(),
             max_report_bytes=max_report_bytes,
         ),
         repository,
@@ -367,6 +375,47 @@ def test_action_requires_current_interaction_and_explicit_user_confirmation() ->
     assert companion.action_calls == 1
 
 
+def test_service_without_injected_authorizer_denies_before_companion() -> None:
+    approval = ApprovalInteractionV1(
+        interaction_id="interaction-default-deny",
+        approval_kind="requirement_freeze",
+        prompt="Freeze this bounded requirement?",
+        input_sha256="a" * 64,
+    )
+    companion = _InMemoryCompanionAdapter(
+        start_factory=lambda _run_id, _request: CompanionTransitionV1(
+            state=InteractionRequiredStateV1(interaction=approval)
+        ),
+        action_factory=lambda *_arguments: (_ for _ in ()).throw(
+            AssertionError("companion action must not run")
+        ),
+    )
+    repository = InMemoryGatewayRepository()
+    service = MaterialsGatewayService(
+        repository=repository,
+        companion=companion,
+        artifact_reader=InMemoryArtifactStore(),
+    )
+    started = service.materials_inspiration_run(
+        submission_id="submission-default-deny",
+        goal="Find candidates",
+        constraints=_constraints(),
+    )
+
+    with pytest.raises(ActionAuthorizationError):
+        service.materials_run_act(
+            run_id=started.run_id,
+            action={
+                "kind": "approve",
+                "interaction_id": approval.interaction_id,
+                "confirmed_by_user": True,
+            },
+        )
+
+    assert service.materials_run_get(run_id=started.run_id) == started
+    assert companion.action_calls == 0
+
+
 def test_result_get_verifies_terminal_report_uri_and_authoritative_sha() -> None:
     report = b"# bounded inspiration report\n"
     report_uri = inspiration_report_uri(
@@ -386,6 +435,7 @@ def test_result_get_verifies_terminal_report_uri_and_authoritative_sha() -> None
             state=SucceededStateV1(
                 report_uri=report_uri,
                 authoritative_sha256=report_sha256,
+                result_sha256=gateway_result_sha256(result),
             ),
             result=result,
         )
@@ -403,6 +453,7 @@ def test_result_get_verifies_terminal_report_uri_and_authoritative_sha() -> None
     assert result.verified is True
     assert result.report_uri == report_uri
     assert result.authoritative_sha256 == report_sha256
+    assert result.result_sha256 == gateway_result_sha256(result)
     assert result.bundle.scientific_conclusion is False
     assert result.bundle.selected_candidates[0].target_property_status == "UNKNOWN"
 
@@ -426,6 +477,7 @@ def test_result_get_rejects_tampered_report_bytes() -> None:
             state=SucceededStateV1(
                 report_uri=report_uri,
                 authoritative_sha256=expected_sha256,
+                result_sha256=gateway_result_sha256(result),
             ),
             result=result,
         )
@@ -444,22 +496,106 @@ def test_result_get_rejects_tampered_report_bytes() -> None:
         service.materials_result_get(run_id=submitted.run_id)
 
 
+def test_result_get_rejects_schema_valid_structured_result_tampering() -> None:
+    report = b"# intact report\n"
+    submission_id = "submission-result-json-tampered"
+    report_uri = inspiration_report_uri(inspiration_run_id(submission_id))
+    report_sha256 = hashlib.sha256(report).hexdigest()
+    artifacts = InMemoryArtifactStore()
+    artifacts.put_bytes(report_uri, report)
+
+    def completed(run_id: str, _request: InspirationRunRequestV1):
+        result = _result(
+            run_id=run_id,
+            report_uri=report_uri,
+            authoritative_sha256=report_sha256,
+        )
+        return CompanionTransitionV1(
+            state=SucceededStateV1(
+                report_uri=report_uri,
+                authoritative_sha256=report_sha256,
+                result_sha256=gateway_result_sha256(result),
+            ),
+            result=result,
+        )
+
+    service, repository, _artifacts = _service(
+        _InMemoryCompanionAdapter(start_factory=completed),
+        artifacts=artifacts,
+    )
+    submitted = service.materials_inspiration_run(
+        submission_id=submission_id,
+        goal="Find candidates",
+        constraints=_constraints(),
+    )
+    committed = repository._results[submitted.run_id]
+    repository._results[submitted.run_id] = committed.model_copy(
+        update={
+            "validation_boundaries": (
+                "This remains valid DTO content but was changed after commit.",
+            )
+        }
+    )
+
+    with pytest.raises(ResultIntegrityError, match="run binding"):
+        service.materials_result_get(run_id=submitted.run_id)
+
+
+def test_adapter_transition_rejects_mismatched_canonical_result_hash() -> None:
+    report_sha256 = hashlib.sha256(b"report").hexdigest()
+
+    def mismatched_hash(run_id: str, _request: InspirationRunRequestV1):
+        report_uri = inspiration_report_uri(run_id)
+        result = _result(
+            run_id=run_id,
+            report_uri=report_uri,
+            authoritative_sha256=report_sha256,
+        )
+        return {
+            "state": {
+                "status": "SUCCEEDED",
+                "report_uri": report_uri,
+                "authoritative_sha256": report_sha256,
+                "result_sha256": "0" * 64,
+            },
+            "result": result.model_dump(mode="json"),
+        }
+
+    service, repository, _artifacts = _service(
+        _InMemoryCompanionAdapter(start_factory=mismatched_hash)
+    )
+    view = service.materials_inspiration_run(
+        submission_id="submission-result-hash-mismatch",
+        goal="Find candidates",
+        constraints=_constraints(),
+    )
+
+    assert isinstance(view.state, FailedStateV1)
+    assert view.state.public_error_code == "ADAPTER_CONTRACT_ERROR"
+    assert repository.get_result(view.run_id) is None
+
+
 def test_adapter_transition_records_uri_mismatch_and_incomplete_result_as_failed() -> None:
     report_sha256 = hashlib.sha256(b"report").hexdigest()
 
-    mismatched = _InMemoryCompanionAdapter(
-        start_factory=lambda run_id, _request: {
+    def mismatched_transition(run_id: str, _request: InspirationRunRequestV1):
+        result = _result(
+            run_id=run_id,
+            report_uri="artifact://inspiration/result/report.md",
+            authoritative_sha256=report_sha256,
+        )
+        return {
             "state": {
                 "status": "SUCCEEDED",
                 "report_uri": "artifact://inspiration/state/report.md",
                 "authoritative_sha256": report_sha256,
+                "result_sha256": gateway_result_sha256(result),
             },
-            "result": _result(
-                run_id=run_id,
-                report_uri="artifact://inspiration/result/report.md",
-                authoritative_sha256=report_sha256,
-            ).model_dump(mode="json"),
+            "result": result.model_dump(mode="json"),
         }
+
+    mismatched = _InMemoryCompanionAdapter(
+        start_factory=mismatched_transition
     )
     service, _repository, _artifacts = _service(mismatched)
     mismatched_view = service.materials_inspiration_run(
@@ -475,6 +611,7 @@ def test_adapter_transition_records_uri_mismatch_and_incomplete_result_as_failed
             state=SucceededStateV1(
                 report_uri="artifact://inspiration/incomplete/report.md",
                 authoritative_sha256=report_sha256,
+                result_sha256="0" * 64,
             )
         )
     )
@@ -527,6 +664,7 @@ def test_terminal_report_uri_must_be_bound_to_the_exact_run() -> None:
             state=SucceededStateV1(
                 report_uri=wrong_uri,
                 authoritative_sha256=report_sha256,
+                result_sha256=gateway_result_sha256(result),
             ),
             result=result,
         )
@@ -590,6 +728,7 @@ def test_terminal_result_cannot_exceed_requested_top_k() -> None:
             state=SucceededStateV1(
                 report_uri=report_uri,
                 authoritative_sha256=report_sha256,
+                result_sha256=gateway_result_sha256(result),
             ),
             result=result,
         )
@@ -641,6 +780,7 @@ def test_result_get_rejects_nonterminal_run_and_accepts_partial_result() -> None
             state=PartialStateV1(
                 report_uri=report_uri,
                 authoritative_sha256=report_sha256,
+                result_sha256=gateway_result_sha256(result),
                 warnings=("one planned output failed",),
             ),
             result=result,

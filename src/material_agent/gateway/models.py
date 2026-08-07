@@ -342,6 +342,7 @@ class SucceededStateV1(StrictGatewayModel):
     status: Literal["SUCCEEDED"] = "SUCCEEDED"
     report_uri: Annotated[str, Field(min_length=12, max_length=512)]
     authoritative_sha256: Sha256
+    result_sha256: Sha256
 
     @field_validator("report_uri")
     @classmethod
@@ -353,6 +354,7 @@ class PartialStateV1(StrictGatewayModel):
     status: Literal["PARTIAL"] = "PARTIAL"
     report_uri: Annotated[str, Field(min_length=12, max_length=512)]
     authoritative_sha256: Sha256
+    result_sha256: Sha256
     warnings: Annotated[tuple[ShortText, ...], Field(min_length=1, max_length=32)]
 
     @field_validator("report_uri")
@@ -535,10 +537,30 @@ class GatewayResultRecordV1(StrictGatewayModel):
         return self
 
 
+def gateway_result_sha256(result: GatewayResultRecordV1) -> str:
+    """Hash the exact canonical terminal result DTO persisted by the Gateway."""
+
+    if not isinstance(result, GatewayResultRecordV1):
+        raise TypeError("result must be GatewayResultRecordV1")
+    return canonical_sha256(
+        {
+            field_name: getattr(result, field_name)
+            for field_name in GatewayResultRecordV1.model_fields
+        }
+    )
+
+
 class MaterialsResultViewV1(GatewayResultRecordV1):
     """Hash-verified terminal projection returned by ``materials_result_get``."""
 
+    result_sha256: Sha256
     verified: Literal[True] = True
+
+    @model_validator(mode="after")
+    def validate_result_sha256(self) -> MaterialsResultViewV1:
+        if gateway_result_sha256(self) != self.result_sha256:
+            raise ValueError("canonical result SHA-256 does not match the result view")
+        return self
 
 
 class CompanionTransitionV1(StrictGatewayModel):
@@ -557,6 +579,8 @@ class CompanionTransitionV1(StrictGatewayModel):
                 raise ValueError("state and result report URIs differ")
             if self.result.authoritative_sha256 != self.state.authoritative_sha256:
                 raise ValueError("state and result authoritative SHA-256 differ")
+            if gateway_result_sha256(self.result) != self.state.result_sha256:
+                raise ValueError("state and canonical result SHA-256 differ")
         return self
 
 
@@ -599,9 +623,9 @@ def run_view(record: GatewayRunRecordV1) -> MaterialsRunViewV1:
     )
 
 
-def terminal_reference(state: RunStateV1) -> tuple[str, str] | None:
+def terminal_reference(state: RunStateV1) -> tuple[str, str, str] | None:
     if isinstance(state, (SucceededStateV1, PartialStateV1)):
-        return state.report_uri, state.authoritative_sha256
+        return state.report_uri, state.authoritative_sha256, state.result_sha256
     return None
 
 

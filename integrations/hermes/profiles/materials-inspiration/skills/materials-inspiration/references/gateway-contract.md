@@ -29,14 +29,18 @@ Apply exactly one schema-valid action to one pending interaction. Allowed action
 variants are answer, approve, reject, resume, retry, or cancel as advertised by
 the current interaction. Require a fresh user decision for approval, expensive
 work, cancellation, and sensitive retry. Fail closed if the interaction is stale
-or the action is not currently legal.
+or the action is not currently legal. The production Gateway also atomically
+consumes an out-of-band operator grant bound to the request, complete interaction
+(including the frozen execution-manifest hash), and exact action. A caller-set
+`confirmed_by_user` field is necessary schema data, never proof of approval.
 
 ## `materials_result_get`
 
 Read a bounded, hash-verified result projection for a terminal run. A successful
 response includes an `InspirationBundle` summary, evidence lineage, validation
-boundaries, cost ledger, and authoritative result SHA-256. A legacy or hashless
-artifact must never be presented as verified.
+boundaries, cost ledger, the authoritative report SHA-256, and the independently
+verified canonical structured-result SHA-256. A legacy or hashless artifact must
+never be presented as verified.
 
 ## State and evidence vocabulary
 

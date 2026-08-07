@@ -264,6 +264,12 @@ class InspirationRunner:
         self.transformation_engine = transformation_engine
         self.vectorizer = vectorizer
 
+    @property
+    def execution_components(self) -> tuple[ComponentSnapshotV1, ...]:
+        """Return the injected scientific implementation bound at approval."""
+
+        return (self.transformation_engine.component,)
+
     def run(
         self,
         *,

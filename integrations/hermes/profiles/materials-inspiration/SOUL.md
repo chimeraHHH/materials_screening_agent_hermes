@@ -1,4 +1,4 @@
-<!-- GENERATED FROM skills/materials-inspiration/SKILL.md; source-sha256: 2614a5deaf448b3d661628922ce1c8c68e48f456280abf4cd106179c6db61f4b -->
+<!-- GENERATED FROM skills/materials-inspiration/SKILL.md; source-sha256: 2a7ba9341a94130654701bca205d2c520b4d328e02a86cfc5b9b3b509f405822 -->
 
 # Materials Inspiration
 
@@ -18,8 +18,9 @@ only scientific state and artifact authority.
 4. Inspect the returned state. If it is running, call `materials_run_get` using
    the returned run ID. Do not submit another run.
 5. If the state requires an interaction, explain the exact question or approval
-   to the user. Call `materials_run_act` only after the user supplies the answer
-   or explicitly approves/rejects that action.
+   to the user. A trusted host/operator must record the user's decision through
+   the out-of-band one-time grant channel; `confirmed_by_user=true` alone has no
+   authority. Call `materials_run_act` only after that grant exists.
 6. When the run succeeds or partially succeeds, call `materials_result_get` and
    present selected candidates together with evidence, assumptions, invalidation
    conditions, and the cheapest downstream falsification step.

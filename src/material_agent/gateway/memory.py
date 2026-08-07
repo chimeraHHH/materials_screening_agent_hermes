@@ -4,10 +4,12 @@ from __future__ import annotations
 
 from threading import RLock
 
-from material_agent.gateway.errors import ConcurrentUpdateError
+from material_agent.gateway.errors import ConcurrentUpdateError, ResultIntegrityError
 from material_agent.gateway.models import (
     GatewayResultRecordV1,
     GatewayRunRecordV1,
+    gateway_result_sha256,
+    terminal_reference,
     validate_artifact_uri,
 )
 
@@ -62,6 +64,22 @@ class InMemoryGatewayRepository:
                 raise ConcurrentUpdateError("immutable request identity changed")
             if result is not None and result.run_id != record.run_id:
                 raise ConcurrentUpdateError("result belongs to a different run")
+            reference = terminal_reference(record.state)
+            if (result is None) != (reference is None):
+                raise ConcurrentUpdateError(
+                    "terminal run and result must be persisted together"
+                )
+            if result is not None and reference != (
+                result.report_uri,
+                result.authoritative_sha256,
+                gateway_result_sha256(result),
+            ):
+                raise ConcurrentUpdateError(
+                    "terminal state does not bind the canonical result"
+                )
+            existing_result = self._results.get(record.run_id)
+            if existing_result is not None and result != existing_result:
+                raise ConcurrentUpdateError("immutable terminal result already differs")
             self._runs[record.run_id] = record
             if result is not None:
                 self._results[record.run_id] = result
@@ -69,7 +87,20 @@ class InMemoryGatewayRepository:
 
     def get_result(self, run_id: str) -> GatewayResultRecordV1 | None:
         with self._lock:
-            return self._results.get(run_id)
+            result = self._results.get(run_id)
+            if result is None:
+                return None
+            record = self._runs.get(run_id)
+            reference = None if record is None else terminal_reference(record.state)
+            if reference != (
+                result.report_uri,
+                result.authoritative_sha256,
+                gateway_result_sha256(result),
+            ):
+                raise ResultIntegrityError(
+                    "persisted terminal result does not match its run binding"
+                )
+            return result
 
 
 class InMemoryArtifactStore:
