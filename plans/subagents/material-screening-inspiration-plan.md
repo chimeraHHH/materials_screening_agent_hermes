@@ -45,7 +45,8 @@
 - [x] 已确认现有 LangGraph/SQLite/Artifact Store 继续作为科学事务真源；
 - [x] 已确认本阶段不实现 novelty/prior-art 判定；
 - [x] 已完成现有仓库、Hermes v0.20.0 和灵感生成器缺口的只读审计；
-- [ ] Hermes 独立运行环境和固定 profile 尚未提交；
+- [x] Hermes 固定 profile distribution、版本化 Skill 与 bootstrap 已提交并通过静态校验；
+- [ ] Hermes 独立运行环境尚未完成安装和实机 smoke；
 - [ ] Materials Gateway 尚未实现；
 - [ ] 灵感生成器源码、fixture 和真实运行产物尚未实现；
 - [ ] Hermes 驱动的实机端到端 Gate 尚未通过。
@@ -154,15 +155,18 @@ Hermes 与本项目必须使用独立 Python 环境或容器。原因包括：�
 ```text
 integrations/hermes/
 ├── README.md
-├── VERSION
+├── hermes.lock.json
 ├── profiles/
-│   ├── development.yaml
-│   └── production.yaml
-├── skills/
-│   └── materials-inspiration/SKILL.md
-├── mcp/
-│   └── materials-screening.json
-└── evals/
+│   └── materials-inspiration/
+│       ├── distribution.yaml
+│       ├── config.yaml
+│       ├── SOUL.md
+│       └── skills/materials-inspiration/
+│           ├── SKILL.md
+│           └── references/gateway-contract.md
+└── scripts/
+    ├── bootstrap_runtime.py
+    └── verify_bundle.py
 ```
 
 `.external/hermes-agent/` 与 `.venv-hermes/` 仅为本机安装目录，必须进入 `.gitignore`。
@@ -369,7 +373,7 @@ stages/inspiration/<run_id>/
 - [x] 新增本计划和 Hermes ADR；
 - [x] 更新主计划、系统蓝图、技术架构和 AGENTS 导航；
 - [x] 记录基线 Git SHA、Hermes pin、状态真源与验收门槛；
-- [ ] 文档检查、链接检查、`git diff --check` 后提交并推送。
+- [x] 文档检查、链接检查、`git diff --check` 后提交并推送。
 
 ### M1：灵感生成器契约与离线纵切
 
@@ -494,6 +498,18 @@ stages/inspiration/<run_id>/
 - 基线：`909d07459fd1bc6b43f1acf64c55ba642b5b85d8`；
 - Hermes pin：`v2026.8.3` → `3c27eb6234bf91b8ceee9e9071591b31e9b148cb`；
 - 已完成：仓库/架构/Hermes/灵感缺口只读审计；
-- 当前执行：M0 计划与架构冻结；
-- 未完成：尚无新源码、测试结果、Hermes runtime 或真实 inspiration 产出；
-- 下一检查点：M0 文档提交推送后，进入 M1 最小离线纵切。
+- M0 提交：`f2a7f07 Plan Hermes inspiration architecture`，已推送并建立 draft PR #1；
+- 已提交方向：固定状态边界、Gateway seam、成本门槛和不做 novelty 的范围；
+- 当前执行：M1 离线契约纵切与 M2 Hermes/Gateway 骨架并行；
+- 未完成：Hermes runtime、Gateway、真实搜索与真实 inspiration 产出仍待实机验证；
+- 下一检查点：固定 Hermes profile/Skill 提交后完成主项目基线 Gate。
+
+### 2026-08-08：Hermes profile/Skill 静态检查点
+
+- 固定 `v2026.8.3`、resolved commit 与独立 `.venv-hermes` bootstrap；
+- 按 Hermes config schema v33 提交单 profile distribution；
+- `platform_toolsets` 使用源码要求的原始 server 名 `materials`，四个 MCP tools 使用非空白名单；
+- 禁用 terminal/file/web/browser/delegation/memory 等原生 toolset，API server 仅监听 loopback；
+- 版本化 `materials-inspiration` Skill 通过 Skill Creator `quick_validate.py`；
+- 为避免开放不可拆分的 `skill_manage`，将固定 Skill 确定性镜像进 `SOUL.md`，`verify_bundle.py` 已通过；
+- `git diff --check` 与 YAML/JSON/Python 静态解析通过；Hermes runtime 启动与 MCP smoke 尚未声称通过。

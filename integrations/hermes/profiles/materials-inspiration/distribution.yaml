@@ -1,0 +1,25 @@
+name: materials-inspiration
+version: 0.1.0
+description: "Bounded materials inspiration control plane"
+hermes_requires: ">=0.20.0,<0.21.0"
+
+env_requires:
+  - name: API_SERVER_KEY
+    description: "Bearer key for the loopback Hermes HTTP API"
+    required: true
+  - name: MATERIAL_AGENT_PYTHON
+    description: "Absolute path to the isolated Materials Gateway Python"
+    required: true
+  - name: MATERIAL_AGENT_WORKSPACE
+    description: "Absolute path to the bounded material-agent workspace"
+    required: true
+  - name: MATERIAL_AGENT_PROJECT_ID
+    description: "Fixed material-agent project ID owned by this profile"
+    required: true
+
+distribution_owned:
+  - distribution.yaml
+  - config.yaml
+  - SOUL.md
+  - .no-bundled-skills
+  - skills/materials-inspiration

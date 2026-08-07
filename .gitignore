@@ -3,8 +3,12 @@
 .env.*
 !.env.example
 .venv/
+.venv-gateway/
+.venv-hermes/
 .venv-agent02/
 .venv-alignn/
+.external/
+.hermes-runtime/
 __pycache__/
 *.py[cod]
 *.egg-info/
