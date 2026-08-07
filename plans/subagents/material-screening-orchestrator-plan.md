@@ -34,6 +34,29 @@
 
 完成每个控制面任务后，只更新本计划的实际状态、契约版本、测试证据、限制和依赖；公共契约变更须同步检查对应 agent plan、fixture、contract test 和 `docs/architecture.md`，不得在本计划复制科学实现细节。
 
+### 当前任务：Hermes Gateway companion（2026-08-08）
+
+用户已确认以 Hermes 统一后续 Agent/Skill/Tool 开发。首版 Gateway 只在
+`OrchestratorRuntime` 公共生命周期和独立 `InspirationRunner` 之上增加协议适配，不修改
+LangGraph 图、checkpoint schema、业务 SQLite migration、四阶段 `StageId`、Agent 原生契约
+或科学 policy。
+
+范围与验收：
+
+- [ ] 冻结 `materials-gateway-v1` 安全 DTO 和四个粗粒度 Tool；
+- [ ] Gateway 不直接读取 graph/repository/checkpointer，不开放任意 Artifact/path 或底层
+  `run-stage`；
+- [ ] submission ID 绑定 canonical payload，重复调用幂等、冲突 fail closed；
+- [ ] `status/get` 严格只读，`act` 每次最多一次类型化状态转换；
+- [ ] Requirement、昂贵任务、取消和受控 retry 的批准必须来自真实用户确认，Hermes tool
+  call 本身不构成审批；
+- [ ] 对外报告在返回前校验保存的 URI/hash，大小受限并脱敏；
+- [ ] Hermes 与主项目使用独立环境，当前只支持单用户、单实例本机试点；
+- [ ] unit/contract/integration/MCP E2E 和 Hermes 真机 smoke 通过后才描述为可用。
+
+详细 Hermes 与 Inspiration 里程碑见
+[`material-screening-inspiration-plan.md`](material-screening-inspiration-plan.md)。
+
 ### Agent01 NOMAD 单来源兼容（2026-07-29）
 
 - Orchestrator `run` 接受显式 `retrieval_source=materials_project|nomad`，默认仍为

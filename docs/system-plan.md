@@ -40,7 +40,8 @@
 | 初始运行环境 | macOS，本地 CLI/API，单用户、单项目串行推进 |
 | 后续环境 | Linux 服务器或课题组集群 |
 | 首个数据源 | Materials Project |
-| 首版结构生成 | 不生成新结构 |
+| 结构生成 | 已冻结的系统 v1 不生成新结构；P3 灵感生成器只允许白名单确定性 operator 产生 proposal，且不构成性质证据或 novelty 结论 |
+| Agent 平台 | P3 引入独立进程 Hermes，统一 Skill/Tool/Provider 入口；科学状态继续由本系统独占 |
 | 元数据与 Artifact | 小型状态持久化；科学大文件独立保存并通过 URI/hash 引用 |
 | DFT 后端 | `DFTBackend` Adapter；先验证控制链，未来评估 VASPilot 等真实后端 |
 | 多体后端 | `ManyBodyBackend` Adapter；先验证控制链，未来从窄范围真实 solver 开始 |
@@ -88,7 +89,8 @@ v1 聚焦于可审计的纵向能力，而不是全自动科研：
 
 ### 2.4 非目标
 
-- 不生成掺杂、元素替换、异质结、超晶胞或新晶体结构；
+- 已冻结的系统 v1 不生成掺杂、元素替换、异质结、超晶胞或新晶体结构；P3 只在独立
+  Inspiration companion 中开放经版本化 policy 允许的确定性 proposal operator；
 - 不保证所有强关联目标都在 v1 达到真实 DFT 或多体验证；
 - 不在初始 Mac 环境直接运行 VASPilot/VASP；
 - 不支持无人监管的高通量昂贵计算；
@@ -96,6 +98,24 @@ v1 聚焦于可审计的纵向能力，而不是全自动科研：
 - 不建设课题组多用户 Web 平台；
 - 不承诺“绝不答错”，而是显式表达不确定性、失败和证据等级；
 - 不允许通过更换方法、阈值、模型或求解器来静默掩盖失败。
+
+### 2.5 P3：Hermes 与灵感生成器范围
+
+P3 将系统从“只筛选数据库已有候选”扩展为“先形成可审计灵感，再进入已有筛选和验证链”。
+范围固定为：
+
+1. Hermes 作为进程外 Agent 平台，统一版本化 Skill、Tool、Provider、subagent 和用户交互；
+2. 材料引擎通过窄 Gateway 接受 Hermes 请求，继续独占 Requirement、审批、科学状态、
+   Artifact 和 backend；
+3. 灵感生成器执行 metadata-first 文献搜索、局部 Passage、EvidenceCard、TagGraph、
+   跨领域 BridgePacket、白名单结构变换、内部去重和多样性 Top-K；
+4. 默认不下载 PDF 全文，不把整页交给 embedding/LLM；每个证据和 proposal 都有来源、
+   locator、hash、版本、预算和限制；
+5. 本阶段明确不实现 novelty、prior-art 或专利判断，不输出“新材料”结论；
+6. proposal 固定 `scientific_conclusion=false`，必须经过后续 ML/DFT/实验或专家验证。
+
+详细实现和退出门槛见
+[Hermes 与灵感生成器计划](../plans/subagents/material-screening-inspiration-plan.md)。
 
 ## 3. 科学目标与证据成熟度
 
@@ -201,6 +221,11 @@ class LLMProvider(Protocol):
 - 必须记录 provider、model ID、参数、prompt version 和响应 hash；
 - 不允许在失败后静默切换 Provider 或改变科学含义。
 
+P3 Inspiration 是上述规则的受控扩展：LLM 可以在严格 Schema 下提出查询词、
+`BridgePacket` 和 registry 中的 transformation 选择，但不能直接修改 curated TagGraph、
+生成坐标、执行代码、决定结构有效性或产生科学结论。每个 Bridge 必须包含共享 invariant、
+成立条件和失效条件，并由真实检索反馈与本地 validator 约束。
+
 系统可提供独立的只读研究顾问 companion flow：它只能从校验过 hash 的报告提取已存在的
 证据缺口，并生成由本地 policy 固定的“审阅/配置前提条件/专家复核”提议。LLM 若启用，
 只能解释该冻结快照和既有提议，不能新增动作、修改 Requirement、路由、预算、审批、模型
@@ -237,6 +262,14 @@ class LLMProvider(Protocol):
 Global State 必须使用逻辑 Artifact URI，而不是依赖 Mac 绝对路径，以降低迁移成本。迁移不能改变已经冻结运行的输入、hash、证据或审批历史。
 
 ## 7. 长期路线图
+
+### P0.3：Hermes 平台与灵感生成器
+
+- 固定 Hermes release/commit，建立独立 profile、Skill 和进程外 Gateway；
+- 冻结 SearchHit、Passage、EvidenceCard、TagGraph、BridgePacket 和 proposal 契约；
+- 实现 metadata-first 搜索、局部向量化、白名单结构变换、内部去重和多样性 Top-K；
+- 以一个真实公共文献搜索和真实 parent structure 跑通 Hermes 驱动的端到端流程；
+- 首批结果只作为可审计 proposal，不进行 novelty 或性质背书。
 
 ### P1：可靠 ML 筛选
 
@@ -292,6 +325,10 @@ Global State 必须使用逻辑 Artifact URI，而不是依赖 Mac 绝对路径�
 | 多体模型不完整 | 求解结果无物理意义 | 强制 EffectiveModelPackage、linkage 与专家审批 |
 | mock 或 fixture 污染证据 | 伪科研结果 | `is_mock` 不变量、空科学数值、证据上限测试 |
 | 参数静默变化 | 结果不可复现、不可比 | 不可变快照、hash、diff、新审批 |
+| Hermes 与科学图双重编排 | 状态冲突、重复副作用 | Hermes 只调用粗粒度 Gateway；科学事务仍由现有 Runtime 独占 |
+| 开放网页 prompt injection | Agent 被页面文字诱导调用高风险工具 | 页面视为不可信数据、工具 allowlist、Passage 抽取、容器隔离和硬预算 |
+| 跨领域类比空泛 | tag 很新奇但无法转成可验证材料假设 | 强制 shared invariant、成立/失效条件、EvidenceCard 和最便宜证伪测试 |
+| 生成 proposal 被误称为新材料 | 科学和知识产权误导 | 不做 novelty；输出显式免责声明；proposal 与性质证据分离 |
 
 项目当前的阻塞项、负责人待定事项和下一步见[主计划](../plans/master.md)。
 
