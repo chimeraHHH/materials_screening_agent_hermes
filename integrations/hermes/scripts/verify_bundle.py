@@ -34,8 +34,8 @@ def expected_soul(skill_text: str) -> str:
     body = body.replace(
         "Read [the Gateway contract](references/gateway-contract.md) before the first tool\n"
         "call when tool arguments, states, or evidence boundaries are unclear.",
-        "Read the bundled Gateway contract before the first tool call when tool arguments,\n"
-        "states, or evidence boundaries are unclear.",
+        "Use the live MCP schemas as the only source for tool arguments and legal actions;\n"
+        "never invent an unavailable action field.",
     )
     return (
         "<!-- GENERATED FROM skills/materials-inspiration/SKILL.md; "

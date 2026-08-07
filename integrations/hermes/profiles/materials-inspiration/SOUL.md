@@ -26,8 +26,8 @@ only scientific state and artifact authority.
 7. If the run fails, report the public error category and remediation. Do not
    invent a result or bypass the Gateway with another tool.
 
-Read the bundled Gateway contract before the first tool call when tool arguments,
-states, or evidence boundaries are unclear.
+Use the live MCP schemas as the only source for tool arguments and legal actions;
+never invent an unavailable action field.
 
 ## Preserve hard boundaries
 
