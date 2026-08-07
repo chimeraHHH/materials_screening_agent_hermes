@@ -54,7 +54,8 @@
 - [x] 白名单结构变换、完整 Artifact runner、冻结 fixture 与 MCP binding 已收敛；
 - [x] Hermes profile 已实机发现唯一四个 Tool，真实 MCP stdio、operator 审批、进程重启和
   非空结果 Gate 已通过；
-- [ ] Hermes 自然语言 Agent turn 仍等待一次性 Provider 设备授权，不能用 MCP smoke 冒充。
+- [ ] Hermes 自然语言 Agent turn 仍等待一次性 Provider 设备授权；重复登录尝试均超时，
+  不能用 MCP smoke 冒充。
 
 ## 1. 目标、边界与完成标准
 
@@ -582,9 +583,10 @@ stages/inspiration/<run_id>/
 - 最终非 Provider Gate：完整离线 suite `666 passed, 13 skipped, 362 warnings`，三个环境
   dependency check、bundle verifier、四工具 MCP discovery 和 Crossref live `2 passed`
   全部通过；最终 live capture 的 bundle/stage SHA 分别为
-  `aadb76a46a224a38428b49ed6dc64409decabe58a22f8295c91125bfd1ee9023` /
-  `2b6ba4a1ff99e6a739f4ffbb8bf459609dbac0688fd73243bd06ba7d55d9d575`；
+  `61aa3fa520987ed8cacfccf51550acbc31c59f1a6cb9be2a6908c236a28dbbd5` /
+  `9b06a81557f17d9de5f998476a85d96e2d21f0425ec2d8a463f13263182f8338`；
 - 完整命令、版本、成本、告警和 Artifact hashes 见
   [`docs/runs/2026-08-08-hermes-inspiration-pilot.md`](../../docs/runs/2026-08-08-hermes-inspiration-pilot.md)；
 - 唯一未通过的本阶段 Gate：Hermes 自然语言 turn 等待用户完成一次性 Provider 设备授权；
-  不能把 MCP tool discovery 或独立 MCP client 描述成自然语言 Agent 已通过。
+  重复设备授权尝试均超时；不能把 MCP tool discovery 或独立 MCP client 描述成
+  自然语言 Agent 已通过，draft PR 因此不切 Ready、不合并。

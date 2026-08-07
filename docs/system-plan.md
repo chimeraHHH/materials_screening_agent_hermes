@@ -268,13 +268,15 @@ Global State 必须使用逻辑 Artifact URI，而不是依赖 Mac 绝对路径�
 - 固定 Hermes release/commit，建立独立 profile、Skill 和进程外 Gateway；
 - 冻结 SearchHit、Passage、EvidenceCard、TagGraph、BridgePacket 和 proposal 契约；
 - 实现 metadata-first 搜索、局部向量化、白名单结构变换、内部去重和多样性 Top-K；
-- 以一个真实公共文献搜索和真实 parent structure 跑通 Hermes 驱动的端到端流程；
+- 分别验证真实公共文献搜索/真实 parent structure 纵切，以及 Hermes/MCP/审批/持久化纵切；
+- 最终以一次自然语言 Hermes turn 驱动完整固定流程，并明确是否包含公共搜索；
 - 首批结果只作为可审计 proposal，不进行 novelty 或性质背书。
 
-截至 2026-08-08，以上工程纵切已在单用户本机 pilot 中实现：固定 Hermes
-`v2026.8.3`（package `0.20.0`）、四工具 MCP Gateway、公共 Crossref metadata live run、
-真实 `pymatgen` 结构变换和持久化非空 bundle 均已通过。自然语言 Hermes Agent turn
-仍需 Provider 设备授权；当前验收证据与限制见[首个 pilot 运行记录](./runs/2026-08-08-hermes-inspiration-pilot.md)。
+截至 2026-08-08，单用户本机 pilot 已通过两个分离 Gate：公共 Crossref metadata live
+runner 验证真实搜索/真实 `pymatgen` 结构路径；fixture-backed 四工具 MCP run 验证 Hermes
+profile、Gateway、operator 审批、持久化和非空 bundle。固定 Hermes 为 `v2026.8.3`
+（package `0.20.0`）。自然语言 Hermes Agent turn 仍需 Provider 设备授权，也尚未声称一个
+Hermes turn 同时使用公共搜索；当前证据与限制见[首个 pilot 运行记录](./runs/2026-08-08-hermes-inspiration-pilot.md)。
 
 ### P1：可靠 ML 筛选
 

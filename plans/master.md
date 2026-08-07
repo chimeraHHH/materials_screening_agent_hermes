@@ -37,12 +37,14 @@
 当前 P3 状态：M0–M4 与 M5 的 MCP 纵切已完成。Hermes/Gateway 使用独立环境和进程；
 真实 Crossref metadata Gate、真实 pymatgen structure proposal、MCP 外 operator 审批、
 SQLite 恢复和非空 bundle 已通过。唯一未通过的 release Gate 是需要用户设备登录的 Hermes
-自然语言 turn；不得用 Tool discovery 或独立 MCP client 冒充该项。
+自然语言 turn；重复设备授权尝试均在未完成登录时超时。不得用 Tool discovery
+或独立 MCP client 冒充该项，PR 在授权前保持 Draft。
 
 本次增加 Agent01 Materials Project 富媒体检索报告：发布候选的下游 manifest
 仍保持 `agent01-contract-v1`，附加报告证据使用独立的 enrichment、PNG 和 gzip
 Artifact；Top-N 重端点限额进入运行指纹。该增量新增 `mp-pyrho==0.5.1` 与显式
-Matplotlib 依赖，完整离线 Gate 待本次变更结束后重新记录。
+Matplotlib 依赖；包含后续 Hermes inspiration 纵切的当前完整离线 Gate 已记录为
+`666 passed, 13 skipped, 362 warnings`。
 
 ### 本次 P2：系统 v1 收尾范围
 
@@ -103,10 +105,12 @@ Atomly 因无公开授权 API 保持外部阻塞；这些新增检索控制流�
 - Agent 02 仅在显式 worker 配置通过校验后注册；Agent 03/04 未注册生产 capability，
   不得用测试 fixture 冒充科学结果。
 
-当前 `main` 在上述收口之后又合入多个增量；当前完整离线 Gate 为
-`413 passed, 9 skipped, 142 warnings`。9 个跳过项是显式 opt-in 的 live LLM、两项
-live MP、live NOMAD 和五项 real-ML/Metal Gate；warning 为已知 pymatgen 弃用提示。
-历史分计划中的较小测试数字只记录当时任务快照；当前状态以该结果、源码和测试为准。
+P2 收口后的历史 `main` 快照为 `413 passed, 9 skipped, 142 warnings`。加入后续来源与
+Hermes inspiration 纵切后，当前工作树的完整离线 Gate 为
+`666 passed, 13 skipped, 362 warnings`；跳过项是隔离 Gateway 环境中的两项 MCP/stdio、
+显式 opt-in 的 Crossref/LLM/MP/NOMAD live probes 和五项 real-ML Gate。warning 为已知
+pymatgen/spglib 提示。历史分计划中的较小测试数字只记录当时任务快照；当前状态以
+`666/13/362`、源码和测试为准。
 Agent03/04 mock 控制链及 bridge PoC 不等于真实科学后端。
 
 2026-08-04 的公开来源复检确认 NOMAD 与 C2DB 均可通过受控访问链路完成真实 Agent01
@@ -486,10 +490,10 @@ flowchart LR
 - [x] 冻结 v1 边界：Agent01 默认生产科学 runner；Agent02 仅在显式且校验通过的
   `MATERIAL_AGENT_ML_WORKER_PYTHON` 下注册，当前 L2 审计仅限 3D 单质 Si；Agent03/04
   仅 mock 控制链。
-- [x] 冻结离线演示、验收命令；历史 closeout 为 `337 passed, 7 skipped`，当前 main
-      Gate 为 `413 passed, 9 skipped, 142 warnings`，跳过项和环境边界已记录。
-- [x] 当前完整离线 Gate、`pip check`、`git diff --check` 通过；未运行 live MP、未联网、
-  未读取或生成 `MP_API_KEY`。
+- [x] 冻结离线演示、验收命令；历史 closeout 为 `337 passed, 7 skipped`，当前 P3
+      工作树 Gate 为 `666 passed, 13 skipped, 362 warnings`，跳过项和环境边界已记录。
+- [x] 当前完整离线 Gate、`pip check`、`git diff --check` 通过；P3 仅运行无密钥 Crossref
+  live Gate，未运行 live MP，未读取或生成 `MP_API_KEY`。
 - [x] 未修改 Agent01/02 原生公共契约、Orchestrator/checkpoint schema、数据库迁移、
   requirements.lock 或科学阈值；未新增模型、后端、依赖或公共 Schema。
 

@@ -164,7 +164,9 @@ Gateway 必须满足：
 - 同一 submission ID + 同一 payload 幂等复用，不同 payload fail closed；
 - terminal state 分别绑定报告 Artifact SHA-256 与 canonical structured-result SHA-256，读取前
   同时验证；这能检测单侧损坏，但不是抵御可一致重写全部本地状态者的真实性签名；
-- Hermes 与主项目使用独立 Python 环境，profile/Skill/Tool Schema hash 进入 provenance；
+- Hermes 与主项目使用独立 Python 环境；当前 release record 记录并由 bundle verifier
+  校验 profile/Skill/Tool Schema hash，自动绑定到每个 execution manifest 属于 production
+  加固项；
 - 当前 SQLite/单项目锁只允许本机单用户、单 Hermes 实例试点。
 
 Hermes Session、Memory 或自改 Skill 不能保存正式 EvidenceCard、阈值、已接受机制或科学
@@ -708,7 +710,7 @@ orchestrator / CLI
 
 ```bash
 material-agent project create
-material-agent run --project <id> --request "..."
+material-agent run --project <id> --source <source-id> --request "..."
 material-agent run-stage <retrieval|ml|dft|many_body> \
   --project <id> --input <stage-input.json> [--run-id <id>]
 material-agent status --project <id> --run <id>
@@ -736,7 +738,7 @@ CLI 规则：
 
 ### 10.1 Hermes Tool 与 pilot 入口
 
-Hermes production profile 首版已实现且只允许四个粗粒度工具：
+Hermes source-controlled pilot profile 首版已实现且只允许四个粗粒度工具：
 
 ```text
 materials_inspiration_run

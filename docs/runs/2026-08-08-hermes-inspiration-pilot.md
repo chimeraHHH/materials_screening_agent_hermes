@@ -31,6 +31,8 @@ or absence from prior art.
   `1a2b8ea088eb1719c11cac4884dfb03c5375dab097a66bdf7f10b22f5c158612`;
 - canonical four-tool manifest SHA-256:
   `f3787e3a16f82df410adbde789dc4418d9137e5c898aa2cda951fe405176d091`.
+  This is the SHA-256 of the exact `--manifest` stdout byte stream, including
+  its trailing newline.
 
 Hermes `mcp test materials` connected over stdio and discovered exactly:
 
@@ -105,7 +107,8 @@ Authoritative hashes:
 - output CIF SHA-256:
   `251370537e7fcbcd815d0be40512b8725732c5c2810403f6f48f3e1f13d36806`;
 - output CIF size: `962` bytes;
-- complete stage directory size at capture: `45,155` bytes.
+- recursive regular-file size of the complete stage directory at capture:
+  `55,957` bytes.
 
 Warnings that caused the `PARTIAL` Gateway state were preserved rather than
 discarded: two curated photonic/magnon bridge routes lacked their required
@@ -119,7 +122,9 @@ opt-in live Crossref Gate exercised the same metadata-first extraction and
 runner path against the public Crossref API twice:
 
 - search requests / raw bytes: `3 / 7,944`;
+- unique raw documents: `3`;
 - passages / evidence cards / bridges: `2 / 2 / 1`;
+- vectorized passages / embedding input tokens: `2 / 142`;
 - valid proposals / selected candidates: `1 / 1`;
 - body fetches / PDFs / LLM calls: `0 / 0 / 0`;
 - bundle SHA-256:
@@ -131,14 +136,92 @@ This separates two claims cleanly: Crossref proves the real public metadata
 boundary; the fixture-backed Hermes run proves the controlled Agent/MCP/
 approval/persistence/structure-output boundary.
 
-A final release rerun also passed (`2 passed in 5.76s`) with the same counts and
-budgets. Its bundle SHA-256 was
-`aadb76a46a224a38428b49ed6dc64409decabe58a22f8295c91125bfd1ee9023`
+A final durable release rerun also passed (`2 passed in 5.18s`) with the same
+counts and budgets. Its bundle SHA-256 was
+`61aa3fa520987ed8cacfccf51550acbc31c59f1a6cb9be2a6908c236a28dbbd5`
 and its stage-result SHA-256 was
-`2b6ba4a1ff99e6a739f4ffbb8bf459609dbac0688fd73243bd06ba7d55d9d575`.
-These differ from the earlier capture because a public metadata API is mutable;
-each run therefore persists and hashes the exact response it actually used
-instead of claiming byte stability across network calls.
+`9b06a81557f17d9de5f998476a85d96e2d21f0425ec2d8a463f13263182f8338`.
+
+The three exact query/response bindings for that durable rerun were:
+
+- DIRECT `electronic flat band` →
+  `artifact://stages/inspiration/run-live-crossref/raw_search/query-b39535bd67453f11af089c6d.json`,
+  `2,900` bytes, SHA-256
+  `5ac0c59b13ed4fc094e33543e2d44772261bb7453615e8381b5bd0f8caaa72ca`;
+- BRIDGE `acoustic metamaterial local resonance flat band weak dispersion` →
+  `artifact://stages/inspiration/run-live-crossref/raw_search/query-48ff5caf7ad2b176bbb68ec0.json`,
+  `2,360` bytes, SHA-256
+  `f9f2d04d0e9ea901e1484149ce6d51a0933223d3ab2febf7b097edd23381df46`;
+- COUNTER `acoustic metamaterial local resonance flat band weak dispersion
+  failure strong hybridization that delocalizes the local mode` →
+  `artifact://stages/inspiration/run-live-crossref/raw_search/query-43d84113f219ad76ebe62de6.json`,
+  `2,684` bytes, SHA-256
+  `5ff4db7737b4af5160f1c85bcfb4007cec0e6ea9d0c47f3046406a80c4a85f4e`.
+
+Each query made one bounded HTTPS request and succeeded on its first attempt;
+the current adapter performs no automatic retry or 429 backoff. Provider-specific
+backoff remains a post-pilot hardening item. Public metadata is mutable, so each
+run persists and hashes the exact response it used instead of claiming byte
+stability across network calls.
+
+The exact raw bytes from the durable rerun remain in the ignored local capture
+`workspace/live-crossref-release-v3/test_live_crossref_full_inspir0/`; treat
+that directory as read-only historical evidence because pytest deletes an
+existing `--basetemp` before a run. The logical Artifact URIs and hashes above
+are the repository-tracked audit record.
+
+## Reproduction commands
+
+All commands below run from the repository root. The fixed MCP release used:
+
+```bash
+.venv-gateway/bin/python integrations/hermes/scripts/run_gateway_pilot.py submit \
+  --workspace workspace/hermes-release-v2 \
+  --project materials-inspiration \
+  --submission-id hermes-release-20260808-v2
+.venv-gateway/bin/python -m material_agent.integration.operator_approval \
+  --workspace workspace/hermes-release-v2 \
+  --project materials-inspiration \
+  --run-id inspiration-403006308fdce7fa4e27bc56 \
+  --confirmation-reference codex-user-goal:2026-08-08-hermes-pilot
+.venv-gateway/bin/python integrations/hermes/scripts/run_gateway_pilot.py finish \
+  --workspace workspace/hermes-release-v2 \
+  --project materials-inspiration \
+  --submission-id hermes-release-20260808-v2
+```
+
+Those exact values now identify a terminal historical run. Use a fresh empty
+workspace and submission ID for a full replay; reuse the pair only to resume an
+interrupted phase. The historical confirmation reference is audit evidence, not
+authority for a new run. Before each replay approval, show that run's current
+interaction and frozen execution-manifest hash to the user, obtain a new
+explicit decision, and issue a new unique confirmation reference through the
+operator CLI.
+
+To reproduce the non-provider Gates safely, use a fresh live-capture directory:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 MPLCONFIGDIR=/tmp/material-agent-mpl \
+  .venv/bin/python -m pytest -q -p no:cacheprovider
+.venv/bin/python -m pip check
+uv pip check --python .venv-gateway/bin/python
+uv pip check --python .venv-hermes/bin/python
+
+PYTHONDONTWRITEBYTECODE=1 MPLCONFIGDIR=/tmp/material-agent-mpl \
+  .venv/bin/python -m pytest -q -s -p no:cacheprovider \
+  --basetemp workspace/<fresh-live-crossref-capture> \
+  tests/live/test_live_crossref_inspiration.py \
+  tests/live/test_live_crossref_inspiration_runner.py \
+  --run-live-crossref
+
+.venv/bin/python integrations/hermes/scripts/verify_bundle.py
+HERMES_HOME="$PWD/.hermes-runtime" \
+MATERIAL_AGENT_PYTHON="$PWD/.venv-gateway/bin/python" \
+MATERIAL_AGENT_WORKSPACE="$PWD/workspace/hermes-release-v2" \
+MATERIAL_AGENT_PROJECT_ID=materials-inspiration \
+  .venv-hermes/bin/hermes -p materials-inspiration mcp test materials
+git diff --check
+```
 
 ## Final non-provider validation
 
@@ -146,7 +229,7 @@ instead of claiming byte stability across network calls.
 - main, Gateway, and Hermes environment dependency checks: passed;
 - Hermes source/profile/SOUL/tool-manifest bundle verifier: passed;
 - Hermes MCP connection: passed, with exactly the four allowlisted tools;
-- final public Crossref Gate: `2 passed`;
+- final durable public Crossref Gate: `2 passed in 5.18s`;
 - `git diff --check`: passed before the documentation milestone commit.
 
 ## Remaining release boundary
@@ -156,3 +239,8 @@ Tool discovery, the real MCP subprocess, out-of-band user authorization,
 process restart, deterministic runner execution, and final result verification
 are already exercised without provider credentials. Until device login succeeds,
 do not describe the natural-language Hermes turn itself as passed.
+
+Repeated OpenAI Codex device-login attempts expired without a completed sign-in.
+No provider credential is present in the isolated Hermes profile, printed in
+this record, or committed. This is the sole remaining external blocker; the
+draft PR intentionally remains unmerged.
