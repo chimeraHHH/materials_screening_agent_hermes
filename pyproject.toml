@@ -23,6 +23,9 @@ dependencies = [
 dev = [
   "pytest==9.1.1",
 ]
+gateway = [
+  "mcp==1.28.1",
+]
 
 [project.scripts]
 material-agent = "material_agent.cli:main"
