@@ -123,6 +123,15 @@ class _RecordingTransport:
         return self.payload  # type: ignore[return-value]
 
 
+class _FailingTransport:
+    def get(self, *args, **kwargs) -> bytes:
+        del args, kwargs
+        raise SearchAdapterError(
+            "NETWORK_ERROR",
+            "injected bounded transport failure",
+        )
+
+
 def test_fixture_adapter_is_network_free_and_enforces_byte_budget() -> None:
     payload = response_bytes()
     adapter = FixtureSearchAdapter({"query-1": payload})
@@ -184,6 +193,15 @@ def test_crossref_adapter_rechecks_an_injected_transport(payload: object) -> Non
         "INVALID_NETWORK_PAYLOAD",
         "RESPONSE_BUDGET_EXCEEDED",
     }
+
+
+def test_crossref_adapter_preserves_structured_network_errors() -> None:
+    adapter = CrossrefPublicAdapter(transport=_FailingTransport())
+
+    with pytest.raises(SearchAdapterError) as raised:
+        adapter.search(query(), max_response_bytes=1_000)
+
+    assert raised.value.code == "NETWORK_ERROR"
 
 
 def test_openalex_parser_uses_only_metadata_and_rebuilds_abstract() -> None:

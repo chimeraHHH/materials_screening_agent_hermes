@@ -207,6 +207,103 @@ def extract_openalex_metadata(
     )
 
 
+def extract_crossref_metadata(
+    payload: bytes | str | Mapping[str, Any],
+    *,
+    target_terms: Iterable[str] = (),
+    limits: ExtractionLimits | None = None,
+    result_index: int = 0,
+) -> ExtractionResult:
+    """Extract one bounded Crossref abstract without following document links.
+
+    Crossref abstracts are commonly JATS fragments embedded in JSON.  This
+    function treats that fragment as untrusted text, strips markup locally,
+    and retains the exact ``message.items`` JSONPath used as evidence lineage.
+    It deliberately exposes no body-loader or full-text fetch path.
+    """
+
+    selected_limits = limits or ExtractionLimits()
+    if isinstance(payload, (bytes, str)) and _looks_like_pdf(payload):
+        return _pdf_disabled_result("application/pdf")
+    if type(result_index) is not int or result_index < 0:
+        raise ValueError("result_index must be a non-negative integer")
+    try:
+        value = _load_json_value(payload, limits=selected_limits)
+    except ExtractionLimitError:
+        raise
+    except (UnicodeDecodeError, json.JSONDecodeError, TypeError, ValueError):
+        return _unextractable("application/json", "INVALID_METADATA_JSON")
+
+    if not isinstance(value, Mapping) or value.get("status") != "ok":
+        return _unextractable("application/json", "INVALID_CROSSREF_METADATA")
+    message = value.get("message")
+    if not isinstance(message, Mapping):
+        return _unextractable("application/json", "INVALID_CROSSREF_METADATA")
+    items = message.get("items")
+    if not isinstance(items, list) or result_index >= len(items):
+        return _unextractable("application/json", "METADATA_WORK_NOT_FOUND")
+    work = items[result_index]
+    if not isinstance(work, Mapping):
+        return _unextractable("application/json", "INVALID_CROSSREF_METADATA")
+
+    raw_titles = work.get("title")
+    title = (
+        next(
+            (
+                cleaned
+                for item in raw_titles
+                if isinstance(item, str)
+                if (cleaned := _clean_extracted_text(item))
+            ),
+            None,
+        )
+        if isinstance(raw_titles, list)
+        else None
+    )
+    raw_subjects = work.get("subject")
+    keywords = (
+        _unique_texts(item for item in raw_subjects if isinstance(item, str))
+        if isinstance(raw_subjects, list)
+        else ()
+    )
+    raw_abstract = work.get("abstract")
+    abstract = (
+        _crossref_fragment_text(raw_abstract)
+        if isinstance(raw_abstract, str)
+        else None
+    )
+    drafts: tuple[ExtractedTextDraft, ...] = ()
+    if abstract:
+        drafts = (
+            ExtractedTextDraft(
+                text=abstract,
+                locator_kind=PassageLocatorKind.JSON_PATH,
+                selector=f"$.message.items[{result_index}].abstract",
+                section_heading="Abstract",
+                source_tier=ExtractionTier.METADATA_API,
+            ),
+        )
+
+    sufficient = abstract is not None and _is_sufficient_abstract(
+        abstract,
+        title=title,
+        keywords=keywords,
+        target_terms=target_terms,
+        min_tokens=selected_limits.min_abstract_tokens,
+    )
+    return ExtractionResult(
+        title=title,
+        keywords=keywords,
+        drafts=drafts,
+        decision=(
+            ExtractionDecision.SKIP_BODY_ABSTRACT_SUFFICIENT
+            if sufficient
+            else ExtractionDecision.FETCH_BODY_METADATA_INSUFFICIENT
+        ),
+        media_type="application/json",
+    )
+
+
 def extract_metadata_then_optional_body(
     metadata_payload: bytes | str | Mapping[str, Any],
     *,
@@ -817,6 +914,45 @@ def _extract_openalex_keywords(work: Mapping[str, Any]) -> tuple[str, ...]:
                 if text:
                     values.append(text)
     return _unique_texts(values)
+
+
+class _CrossrefFragmentParser(HTMLParser):
+    """Collect visible text from a bounded Crossref JATS/HTML fragment."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.fragments: list[str] = []
+        self._suppressed_depth = 0
+
+    def handle_starttag(
+        self,
+        tag: str,
+        attrs: list[tuple[str, str | None]],
+    ) -> None:
+        del attrs
+        if tag.casefold().split(":")[-1] in {"script", "style"}:
+            self._suppressed_depth += 1
+
+    def handle_endtag(self, tag: str) -> None:
+        if (
+            tag.casefold().split(":")[-1] in {"script", "style"}
+            and self._suppressed_depth
+        ):
+            self._suppressed_depth -= 1
+
+    def handle_data(self, data: str) -> None:
+        if not self._suppressed_depth and data.strip():
+            self.fragments.append(data)
+
+
+def _crossref_fragment_text(value: str) -> str | None:
+    parser = _CrossrefFragmentParser()
+    try:
+        parser.feed(value)
+        parser.close()
+    except (TypeError, ValueError):
+        return None
+    return _first_text(" ".join(parser.fragments))
 
 
 def _walk_article_jsonld(value: Any, path: str = "$") -> Iterable[tuple[str, Mapping[str, Any]]]:
