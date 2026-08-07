@@ -166,6 +166,12 @@ def validate_search_supported_bridge(
             tags_by_id=tags_by_id,
             reference_label=f"evidence card {card.evidence_card_id!r}",
         )
+        for tag_id in card.mechanism_tag_ids:
+            if tags_by_id[tag_id].kind is not TagKind.MECHANISM:
+                raise InspirationIntegrityError(
+                    "MECHANISM_TAG_KIND_INVALID",
+                    f"evidence card mechanism tag {tag_id!r} must have kind MECHANISM",
+                )
         if card.relation is EvidenceRelation.SUPPORT:
             support_cards.append(card)
 
@@ -293,4 +299,10 @@ def _validate_rule_tags(
             raise InspirationIntegrityError(
                 "SOURCE_TAG_KIND_INVALID",
                 f"bridge rule source tag {tag_id!r} must have kind ANALOGY_DOMAIN",
+            )
+    for tag_id in rule.required_evidence_tag_ids:
+        if tags_by_id[tag_id].kind is not TagKind.MECHANISM:
+            raise InspirationIntegrityError(
+                "REQUIRED_EVIDENCE_TAG_KIND_INVALID",
+                f"bridge rule required evidence tag {tag_id!r} must have kind MECHANISM",
             )

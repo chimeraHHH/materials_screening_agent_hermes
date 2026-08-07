@@ -404,6 +404,21 @@ def test_support_evidence_must_cover_every_required_evidence_tag() -> None:
     assert raised.value.code == "REQUIRED_EVIDENCE_TAGS_MISSING"
 
 
+def test_evidence_mechanism_fields_cannot_reference_non_mechanism_tags() -> None:
+    fixture = bridge_fixture()
+    cards = (
+        fixture.cards[0].model_copy(
+            update={"mechanism_tag_ids": ("electronic-flat-band",)}
+        ),
+        fixture.cards[1],
+    )
+
+    with pytest.raises(InspirationIntegrityError) as raised:
+        replace(fixture, cards=cards).validate()
+
+    assert raised.value.code == "MECHANISM_TAG_KIND_INVALID"
+
+
 def test_support_evidence_must_close_to_a_bridge_query() -> None:
     fixture = bridge_fixture()
     direct_query = fixture.queries[0].model_copy(
