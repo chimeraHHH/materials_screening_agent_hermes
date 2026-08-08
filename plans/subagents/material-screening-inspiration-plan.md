@@ -445,16 +445,16 @@ stages/inspiration/<run_id>/
 
 - [x] 区分 P0.3 fixed-request pilot 与 P3.x local beta；
 - [x] 新增 ADR-0002、`PLAN.md`、`CHECKLIST.md` 和不可变工作报告制度；
-- [ ] 提交并推送 scope/report checkpoint。
+- [x] 提交并推送 scope/report checkpoint。
 
 ### M7：P3.1 请求通用化与真实搜索可靠性
 
-- [ ] 实现受支持 flat/narrow-band 同义请求的确定性 compiler，其他输入 fail closed；
-- [ ] 保留 fixture replay，并把 production Hermes profile 切换到同一 Gateway run 的 Crossref；
-- [ ] 实现 typed transient error、`Retry-After`、有界 retry 和 attempt Artifact/ledger；
-- [ ] 文档/passage/vector 层运行内去重且保留全部 query/raw-hit lineage；
-- [ ] 扩充权威报告并通过 unit/contract/integration/live Gate；
-- [ ] 发布工作报告并提交、推送。
+- [x] 实现受支持 flat/narrow-band 同义请求的确定性 compiler，其他输入 fail closed；
+- [x] 保留 fixture replay，并把 production Hermes profile 切换到同一 Gateway run 的 Crossref；
+- [x] 实现 typed transient error、`Retry-After`、有界 retry 和 attempt Artifact/ledger；
+- [x] 文档/passage/vector 层运行内去重且保留全部 query/raw-hit lineage；
+- [x] 扩充权威报告并通过 unit/contract/integration/live Gate；
+- [x] 发布工作报告并提交、推送。
 
 ### M8：P3.2 多候选去重与多样性
 
@@ -476,7 +476,7 @@ stages/inspiration/<run_id>/
 ### M10：P3.x 真实 release closeout
 
 - [ ] 完整离线、故障注入、dependency、secret、diff、MCP/profile/Skill Gate 通过；
-- [ ] live Crossref runner 与 Gateway lifecycle 通过；
+- [x] live Crossref runner 与 Gateway lifecycle 通过；
 - [ ] 真实 Hermes 自然语言 session 在同一 run 中使用 Crossref，经真实用户授权后得到非空结果；
 - [ ] 最终 run record、工作报告、PR/check/merge/公开读取证据闭合；
 - [ ] P3.x 状态只在上述全部完成后改为已完成。

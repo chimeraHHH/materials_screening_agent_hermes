@@ -1,4 +1,4 @@
-<!-- GENERATED FROM skills/materials-inspiration/SKILL.md; source-sha256: 0b73690949fbcd67c3fa28d8bdf6f764bce35f0d962809766766621ee56dba75 -->
+<!-- GENERATED FROM skills/materials-inspiration/SKILL.md; source-sha256: efbaf01773b9dcb12e0839bb2f5c8224b695dbb02643cf537a0d591f5acada52 -->
 
 # Materials Inspiration
 
@@ -39,6 +39,12 @@ only scientific state and artifact authority.
    - the budget must allow at least six physical search attempts, three unique
      documents, three passages, zero model calls, and 180 seconds, with full-PDF
      access and expensive computation both disabled.
+
+   For an explicit low-cost request, use those minimum counts and `top_k=1`
+   unless the user asks for a broader supported result. Do not invent an
+   optional `material_classes` value that the user did not state. Do not submit
+   a request already known to be outside this published contract merely to
+   obtain an error code; explain the boundary without creating a run.
 
    If any structured field is outside this contract, preserve the user's intent
    and report the failure; never rewrite constraints merely to force acceptance.

@@ -11,20 +11,20 @@
 
 - [x] 审计 public main、现有计划、源码、测试和发布证据
 - [x] 区分可信完成的 fixed-request pilot 与新增 P3.x beta 范围
-- [ ] 提交并推送 P3.x scope、ADR、PLAN/CHECKLIST 和首份工作报告
+- [x] 提交并推送 P3.x scope、ADR、PLAN/CHECKLIST 和首份工作报告
 
 ## P3.1 — Generalization & Reliability
 
-- [ ] 实现严格、确定性的受支持 request compiler
-- [ ] 保留离线 fixture factory，新增同一 Gateway run 的 Crossref factory
-- [ ] 为 transient HTTP/network error 实现有界 retry 与 `Retry-After`
-- [ ] 持久化并计量每次 search attempt
-- [ ] 在文档/passage/vector 层去重并保留所有 raw-hit/query lineage
-- [ ] 外部故障与 scientific no-match 分层正确
-- [ ] 权威报告覆盖 query/attempt/raw/passage/bridge/route/dedup/MMR/ledger
-- [ ] 更新 Hermes profile、Skill、SOUL 与 bundle verifier
-- [ ] P3.1 unit/contract/integration/live Gate 通过
-- [ ] 发布 P3.1 工作报告并提交、推送 GitHub
+- [x] 实现严格、确定性的受支持 request compiler
+- [x] 保留离线 fixture factory，新增同一 Gateway run 的 Crossref factory
+- [x] 为 transient HTTP/network error 实现有界 retry 与 `Retry-After`
+- [x] 持久化并计量每次 search attempt
+- [x] 在文档/passage/vector 层去重并保留所有 raw-hit/query lineage
+- [x] 外部故障与 scientific no-match 分层正确
+- [x] 权威报告覆盖 query/attempt/raw/passage/bridge/route/dedup/MMR/ledger
+- [x] 更新 Hermes profile、Skill、SOUL 与 bundle verifier
+- [x] P3.1 unit/contract/integration/live Gate 通过
+- [x] 发布 P3.1 工作报告并提交、推送 GitHub
 
 ## P3.2 — Candidate Breadth & Diversity
 
@@ -53,7 +53,7 @@
 
 - [ ] 完整主环境测试通过
 - [ ] 隔离 Gateway/MCP 和三个环境 dependency checks 通过
-- [ ] live Crossref runner 与 Gateway lifecycle 通过
+- [x] live Crossref runner 与 Gateway lifecycle 通过
 - [ ] 真实 Hermes 自然语言 Crossref run 经用户授权完成
 - [ ] provenance、hash、成本、去重、多样性和科学边界指标闭合
 - [ ] Skill/profile/tool schema、secret、diff、GitHub checks 通过
@@ -64,8 +64,9 @@
 ## Next
 
 - [ ] 下一步始终与 [`PLAN.md`](PLAN.md) 的当前里程碑一致
-- [ ] 下一次报告检查点：P3.1 scope commit/push 后
-- [ ] 下一次路线判断：P3.1 静态 Gateway E2E 后
+- [x] P3.1 结论：GO；详见 `docs/reports/2026-08-08-1837-inspiration-progress.md`
+- [ ] 下一次报告检查点：P3.2 多候选/多样性 Gate 后
+- [ ] 下一次路线判断：P3.2 frozen Top-5 fixture 通过后
 
 ## Blocked
 

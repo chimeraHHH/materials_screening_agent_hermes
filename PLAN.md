@@ -150,3 +150,4 @@ branch/SHA、run/session ID、Artifact/hash、成本与失败；credential 只�
 | 时间（CST） | 变更 | 原因 | 可比性影响 |
 |---|---|---|---|
 | 2026-08-08 17:57 | 从 `hermes-origin/main@dcd076d` 建立 P3.x 计划 | 用户继续授权，fixed pilot 不能代表完整 beta | 保留 pilot 为只读 baseline；新 Gate 独立计量 |
+| 2026-08-08 18:37 | P3.1 Generalization & Reliability Gate 通过 | compiler、retry/attempt、同轮去重、生产 Crossref Gateway、报告、Skill 与 live lifecycle 均有闭合证据 | 仍只有 pinned parent/route 和单候选；不提前声称 P3.2/P3.3 或最终 Hermes release 完成 |

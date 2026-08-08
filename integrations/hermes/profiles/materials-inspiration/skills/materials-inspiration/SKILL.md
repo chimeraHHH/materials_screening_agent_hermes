@@ -43,6 +43,12 @@ only scientific state and artifact authority.
      documents, three passages, zero model calls, and 180 seconds, with full-PDF
      access and expensive computation both disabled.
 
+   For an explicit low-cost request, use those minimum counts and `top_k=1`
+   unless the user asks for a broader supported result. Do not invent an
+   optional `material_classes` value that the user did not state. Do not submit
+   a request already known to be outside this published contract merely to
+   obtain an error code; explain the boundary without creating a run.
+
    If any structured field is outside this contract, preserve the user's intent
    and report the failure; never rewrite constraints merely to force acceptance.
    Keep `budget` nested inside `constraints`; a top-level `budget` is invalid
