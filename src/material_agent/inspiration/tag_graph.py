@@ -286,10 +286,9 @@ def plan_tag_queries(
         key=lambda rule: rule.bridge_rule_id,
     )
     skipped: list[str] = []
-    bridge_count = 0
-    counter_count = 0
+    selected_rules: list[tuple[BridgeRuleV1, str]] = []
     for rule in matching_rules:
-        if bridge_count >= budget.max_bridge_queries:
+        if len(selected_rules) >= budget.max_bridge_queries:
             skipped.append(rule.bridge_rule_id)
             continue
         rendered = _render_rule_query(rule, tags)
@@ -301,18 +300,22 @@ def plan_tag_queries(
             tag_ids=tuple(sorted(rule.suggested_query_tag_ids)),
             bridge_rule_id=rule.bridge_rule_id,
         )
-        bridge_count += 1
-        if counter_count < budget.max_counter_queries:
-            counter_text = f"{rendered} failure {rule.breaking_conditions[0]}"
-            _append_query(
-                queries,
-                seen_payloads=seen_payloads,
-                kind=SearchQueryKind.COUNTER,
-                text=counter_text[:512],
-                tag_ids=tuple(sorted(rule.suggested_query_tag_ids)),
-                bridge_rule_id=rule.bridge_rule_id,
-            )
-            counter_count += 1
+        selected_rules.append((rule, rendered))
+
+    # Preserve the reviewed bridge breadth before spending any remaining
+    # class allocation on counter queries.  Query order is execution order,
+    # so interleaving a counter after each bridge could exhaust a total budget
+    # before a later reviewed bridge is reached.
+    for rule, rendered in selected_rules[: budget.max_counter_queries]:
+        counter_text = f"{rendered} failure {rule.breaking_conditions[0]}"
+        _append_query(
+            queries,
+            seen_payloads=seen_payloads,
+            kind=SearchQueryKind.COUNTER,
+            text=counter_text[:512],
+            tag_ids=tuple(sorted(rule.suggested_query_tag_ids)),
+            bridge_rule_id=rule.bridge_rule_id,
+        )
 
     if len(queries) > budget.max_queries:
         queries = queries[: budget.max_queries]

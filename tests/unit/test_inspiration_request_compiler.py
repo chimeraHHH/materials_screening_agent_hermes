@@ -9,6 +9,7 @@ from material_agent.gateway.models import (
 )
 from material_agent.inspiration.policy import SearchExecutionMode
 from material_agent.integration.request_compiler import (
+    CompiledDiversityMode,
     HermesInspirationRequestCompiler,
     HermesRequestCompilationError,
 )
@@ -42,8 +43,8 @@ def _request(
             budget=budget
             or InspirationBudgetV1(
                 max_search_requests=8,
-                max_unique_documents=3,
-                max_passages=3,
+                max_unique_documents=4,
+                max_passages=4,
                 max_model_calls=0,
                 max_walltime_seconds=300,
             ),
@@ -113,8 +114,12 @@ def test_every_budget_and_selection_field_has_compiled_execution_meaning() -> No
 
     assert policy.search_mode is SearchExecutionMode.PUBLIC_METADATA_API
     assert policy.network_access is True
-    assert policy.search.max_queries == 3
-    assert compiled.physical_search_attempt_limit == 6
+    assert policy.search.max_queries == 4
+    assert policy.search.max_direct_queries == 1
+    assert policy.search.max_bridge_queries == 3
+    assert policy.search.max_counter_queries == 0
+    assert policy.bridge.max_bridge_packets == 3
+    assert compiled.physical_search_attempt_limit == 8
     assert compiled.physical_search_attempt_limit <= budget.max_search_requests
     assert policy.search.max_unique_documents == budget.max_unique_documents
     assert policy.search.max_raw_hits == budget.max_unique_documents
@@ -127,6 +132,10 @@ def test_every_budget_and_selection_field_has_compiled_execution_meaning() -> No
     assert policy.fetch.allow_pdf_fulltext is False
     assert policy.selection.top_k == 4
     assert policy.selection.min_mechanisms_when_available == 2
+    assert (
+        compiled.diversity_mode
+        is CompiledDiversityMode.MECHANISM_COVERAGE_WHEN_AVAILABLE
+    )
     assert policy.transformation.max_plans >= policy.selection.top_k
     assert compiled.normalized_material_classes == (
         "layered transition metal compound",
@@ -140,6 +149,16 @@ def test_require_diverse_routes_false_disables_the_mechanism_quota() -> None:
 
     assert compiled.policy.selection.top_k == 5
     assert compiled.policy.selection.min_mechanisms_when_available == 1
+    assert compiled.diversity_mode is CompiledDiversityMode.MMR_ONLY
+
+
+def test_single_output_slot_records_effective_mmr_only_mode() -> None:
+    compiled = HermesInspirationRequestCompiler().compile(
+        _request(top_k=1, require_diverse_routes=True)
+    )
+
+    assert compiled.policy.selection.min_mechanisms_when_available == 1
+    assert compiled.diversity_mode is CompiledDiversityMode.MMR_ONLY
 
 
 @pytest.mark.parametrize(
@@ -177,9 +196,9 @@ def test_unsupported_scientific_constraints_fail_closed(
     (
         (
             InspirationBudgetV1(
-                max_search_requests=5,
-                max_unique_documents=3,
-                max_passages=3,
+                max_search_requests=7,
+                max_unique_documents=4,
+                max_passages=4,
                 max_model_calls=0,
                 max_walltime_seconds=300,
             ),
@@ -188,8 +207,8 @@ def test_unsupported_scientific_constraints_fail_closed(
         (
             InspirationBudgetV1(
                 max_search_requests=8,
-                max_unique_documents=2,
-                max_passages=3,
+                max_unique_documents=3,
+                max_passages=4,
                 max_model_calls=0,
                 max_walltime_seconds=300,
             ),
@@ -198,8 +217,8 @@ def test_unsupported_scientific_constraints_fail_closed(
         (
             InspirationBudgetV1(
                 max_search_requests=8,
-                max_unique_documents=3,
-                max_passages=2,
+                max_unique_documents=4,
+                max_passages=3,
                 max_model_calls=0,
                 max_walltime_seconds=300,
             ),
@@ -208,8 +227,8 @@ def test_unsupported_scientific_constraints_fail_closed(
         (
             InspirationBudgetV1(
                 max_search_requests=8,
-                max_unique_documents=3,
-                max_passages=3,
+                max_unique_documents=4,
+                max_passages=4,
                 max_model_calls=1,
                 max_walltime_seconds=300,
             ),
@@ -218,8 +237,8 @@ def test_unsupported_scientific_constraints_fail_closed(
         (
             InspirationBudgetV1(
                 max_search_requests=8,
-                max_unique_documents=3,
-                max_passages=3,
+                max_unique_documents=4,
+                max_passages=4,
                 max_model_calls=0,
                 max_walltime_seconds=179,
             ),

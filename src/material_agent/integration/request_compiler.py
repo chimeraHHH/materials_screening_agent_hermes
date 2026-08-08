@@ -10,6 +10,7 @@ that the route cannot satisfy fail before approval or network access.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import StrEnum
 
 from material_agent.gateway.models import (
     InspirationRunRequestV1,
@@ -32,9 +33,9 @@ from material_agent.inspiration.policy import (
 PUBLIC_TARGET_TAG_IDS = ("electronic-flat-band",)
 PUBLIC_PARENT_CATALOG_ENTRY_ID = "operator-parent-tis2-v1"
 PUBLIC_OUTPUT_ELEMENTS = frozenset({"Se", "Ti"})
-PUBLIC_LOGICAL_QUERY_COUNT = 3
-PUBLIC_MIN_UNIQUE_DOCUMENTS = 3
-PUBLIC_MIN_PASSAGES = 3
+PUBLIC_LOGICAL_QUERY_COUNT = 4
+PUBLIC_MIN_UNIQUE_DOCUMENTS = 4
+PUBLIC_MIN_PASSAGES = 4
 PUBLIC_MIN_WALLTIME_SECONDS = 180
 
 _TARGET_FEATURE_VOCABULARY = frozenset(
@@ -62,6 +63,13 @@ class HermesRequestCompilationError(ValueError):
         super().__init__(f"{code}: {message}")
 
 
+class CompiledDiversityMode(StrEnum):
+    """Reviewable execution meaning for the Gateway diversity preference."""
+
+    MECHANISM_COVERAGE_WHEN_AVAILABLE = "MECHANISM_COVERAGE_WHEN_AVAILABLE"
+    MMR_ONLY = "MMR_ONLY"
+
+
 @dataclass(frozen=True, slots=True)
 class CompiledHermesInspirationRequest:
     """Complete deterministic execution meaning derived from one Gateway DTO."""
@@ -75,6 +83,7 @@ class CompiledHermesInspirationRequest:
     goal_sha256: str
     max_retries_per_query: int
     physical_search_attempt_limit: int
+    diversity_mode: CompiledDiversityMode
 
 
 class HermesInspirationRequestCompiler:
@@ -167,10 +176,14 @@ class HermesInspirationRequestCompiler:
             )
 
         max_plans = max(2, constraints.top_k)
-        min_mechanisms = (
-            2
-            if constraints.require_diverse_routes and constraints.top_k >= 2
-            else 1
+        mechanism_coverage_enabled = (
+            constraints.require_diverse_routes and constraints.top_k >= 2
+        )
+        min_mechanisms = 2 if mechanism_coverage_enabled else 1
+        diversity_mode = (
+            CompiledDiversityMode.MECHANISM_COVERAGE_WHEN_AVAILABLE
+            if mechanism_coverage_enabled
+            else CompiledDiversityMode.MMR_ONLY
         )
         policy = InspirationPolicyV1(
             policy_id="hermes-public-flat-band-v1",
@@ -179,8 +192,8 @@ class HermesInspirationRequestCompiler:
             search=SearchBudgetV1(
                 max_queries=PUBLIC_LOGICAL_QUERY_COUNT,
                 max_direct_queries=1,
-                max_bridge_queries=1,
-                max_counter_queries=1,
+                max_bridge_queries=3,
+                max_counter_queries=0,
                 max_raw_hits=budget.max_unique_documents,
                 max_unique_documents=budget.max_unique_documents,
             ),
@@ -200,7 +213,7 @@ class HermesInspirationRequestCompiler:
                 max_passages=budget.max_passages,
                 max_input_tokens=min(1_000_000, budget.max_passages * 64),
             ),
-            bridge=BridgeSearchPolicyV1(max_bridge_packets=1),
+            bridge=BridgeSearchPolicyV1(max_bridge_packets=3),
             transformation=TransformationBudgetV1(
                 max_plans=max_plans,
                 max_plans_per_parent=max_plans,
@@ -223,6 +236,7 @@ class HermesInspirationRequestCompiler:
             goal_sha256=canonical_sha256({"goal": request.goal}),
             max_retries_per_query=self.max_retries_per_query,
             physical_search_attempt_limit=physical_attempt_limit,
+            diversity_mode=diversity_mode,
         )
 
     @staticmethod
