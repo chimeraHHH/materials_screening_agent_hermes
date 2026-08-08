@@ -2,7 +2,7 @@
 
 - 版本：v0.3
 - 日期：2026-08-08
-- 状态：P0.3 fixed-request pilot 已完成；P3.x local beta 实施中
+- 状态：P0.3 fixed-request pilot 已完成；P3.1/P3.2/P3.3 已通过，P3.x 最终 release 进行中
 - 依据：[`docs/system-plan.md`](../../docs/system-plan.md)、
   [`docs/architecture.md`](../../docs/architecture.md)、
   [`ADR-0001`](../../docs/adr/0001-hermes-platform-and-inspiration-boundary.md) 与
@@ -467,11 +467,11 @@ stages/inspiration/<run_id>/
 
 ### M9：P3.3 多格式 Passage 与 Tag feedback
 
-- [ ] 将 JSON metadata、JSON-LD/Highwire、JATS/XML、HTML extractor 接入受限 runner seam；
-- [ ] metadata 足够时不 fetch，默认 PDF 0，只向量化 selected passage package；
-- [ ] 持久化 query/tag/bridge yield、字节和成本 feedback；运行不能在线改 TagGraph；
-- [ ] 校准 fixture 覆盖现有 3 条 bridge rule，无专家结论时显式 `UNKNOWN`；
-- [ ] 发布工作报告并提交、推送。
+- [x] 将 JSON metadata、JSON-LD/Highwire、JATS/XML、HTML extractor 接入受限 runner seam；
+- [x] metadata 足够时不 fetch，默认 PDF 0，只向量化 selected passage package；
+- [x] 持久化 query/tag/bridge yield、字节和成本 feedback；运行不能在线改 TagGraph；
+- [x] 校准 fixture 覆盖现有 3 条 bridge rule，v1 专家状态固定为 `UNKNOWN`；
+- [x] 发布工作报告并提交、推送。
 
 ### M10：P3.x 真实 release closeout
 
@@ -696,5 +696,21 @@ stages/inspiration/<run_id>/
 - 两个独立 workspace 的 catalog、plans、duplicate groups、selection audit、report、bundle 与
   stage-result hashes 一致；完整记录见
   [`docs/runs/2026-08-08-p32-parent-catalog-top5.md`](../../docs/runs/2026-08-08-p32-parent-catalog-top5.md)；
-- 主环境回归为 `732 passed, 14 skipped`；P3.2 `PASSED`，P3.3 与最终 release Gate 仍为
-  `IN_PROGRESS`。
+- 该检查点的主环境回归为 `732 passed, 14 skipped`；当时 P3.2 `PASSED`，P3.3 与最终
+  release Gate 仍为 `IN_PROGRESS`。
+
+### 2026-08-08：P3.3 Passage 与 Tag feedback checkpoint
+
+- metadata-first runner 对一个充分 metadata 文档保持 0 body fetch，对三个不足文档以离线
+  fixture 恰好执行 3 次物理请求、5,014 bytes；JSON-LD/Highwire、JATS/XML、普通 HTML 均进入
+  hash-verified Passage/Evidence/Bridge/feedback 链路；
+- `tag_feedback.json` 固定为 `REVIEW_ONLY / UNKNOWN / applies=false /
+  scientific_conclusion=false / INCLUSIVE_NON_ADDITIVE`，不接受 expert input，不含 TagGraph
+  mutation；共享 DOI 只处理一次但保留 inclusive query attribution；
+- 主 Gate `4 passed`，广泛定向回归 `79 passed, 1 skipped`，完整非-live
+  `776 passed, 14 skipped`，live Crossref `3 passed`，三个环境依赖与 Hermes verifier 均通过；
+- public compiler 仍为 Crossref metadata/abstract-only、body budget 0。当前 DNS preflight 与实际
+  hostname connection 未地址绑定，因此 public body fetch 不发布；
+- 完整记录见
+  [`docs/runs/2026-08-08-p33-passage-tag-feedback.md`](../../docs/runs/2026-08-08-p33-passage-tag-feedback.md)；
+  P3.3 为 `PASSED`，只剩最终真实 Hermes natural-language Crossref release 与 GitHub closeout。

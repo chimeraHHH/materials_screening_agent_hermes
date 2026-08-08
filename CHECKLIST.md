@@ -41,18 +41,18 @@
 ## P3.3 — Passage & Tag Feedback
 
 - [x] 冻结 P3.3 主实验计划、baseline、失败分类和执行清单
-- [ ] 把 JSON metadata、JSON-LD/Highwire、JATS/XML、HTML 抽取接入统一 runner seam
-- [ ] 实现 host/redirect/content-type/bytes/request 约束和 metadata-first skip-fetch
-- [ ] 默认 PDF 全文 0，向量/内部 LLM 输入仅含选定 passage 包
-- [ ] 记录 query/tag/bridge yield、字节和成本 feedback artifact
-- [ ] feedback 不能在线修改 curated TagGraph
-- [ ] 离线校准覆盖现有 3 条 bridge rule，并显式记录 UNKNOWN 专家状态
-- [ ] P3.3 故障注入、预算、prompt-injection 和 replay Gate 通过
-- [ ] 发布 P3.3 工作报告并提交、推送 GitHub
+- [x] 把 JSON metadata、JSON-LD/Highwire、JATS/XML、HTML 抽取接入统一 runner seam
+- [x] 实现 host/redirect/content-type/bytes/request 约束和 metadata-first skip-fetch
+- [x] 默认 PDF 全文 0，向量/内部 LLM 输入仅含选定 passage 包
+- [x] 记录 query/tag/bridge yield、字节和成本 feedback artifact
+- [x] feedback 不能在线修改 curated TagGraph
+- [x] 离线校准覆盖现有 3 条 bridge rule，并显式记录 UNKNOWN 专家状态
+- [x] P3.3 故障注入、预算、prompt-injection 和 replay Gate 通过
+- [x] 发布 P3.3 工作报告并提交、推送 GitHub
 
 ## Final release
 
-- [ ] 完整主环境测试通过
+- [x] 完整主环境测试通过
 - [ ] 隔离 Gateway/MCP 和三个环境 dependency checks 通过
 - [x] live Crossref runner 与 Gateway lifecycle 通过
 - [ ] 真实 Hermes 自然语言 Crossref run 经用户授权完成
@@ -64,15 +64,16 @@
 
 ## Next
 
-- [ ] 下一步始终与 [`PLAN.md`](PLAN.md) 的当前里程碑一致
+- [x] 下一步始终与 [`PLAN.md`](PLAN.md) 的当前里程碑一致
 - [x] P3.1 结论：GO；详见 `docs/reports/2026-08-08-1837-inspiration-progress.md`
 - [x] P3.2 结论：GO；详见 `docs/reports/2026-08-08-1924-inspiration-progress.md`
-- [ ] 下一次报告检查点：P3.3 多格式 Passage/Tag feedback Gate 后
-- [ ] 下一次路线判断：P3.3 离线校准与 replay Gate 通过后
+- [x] P3.3 结论：GO；详见 `docs/reports/2026-08-08-2023-inspiration-progress.md`
+- [ ] 下一次报告检查点：最终 Hermes pending interaction 创建后或 release 完成后
+- [x] 下一次路线判断：进入真实 Hermes + Crossref natural-language release Gate
 
 ## Blocked
 
-- [ ] 当前无已确认 blocker；live provider 波动按 PLAN 的外部依赖路径处理
+- [x] 当前无执行 blocker；exact interaction 创建后必须获得绑定该 manifest 的新用户授权
 
 ## Closeout
 

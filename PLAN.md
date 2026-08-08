@@ -155,3 +155,4 @@ branch/SHA、run/session ID、Artifact/hash、成本与失败；credential 只�
 | 2026-08-08 18:37 | P3.1 Generalization & Reliability Gate 通过 | compiler、retry/attempt、同轮去重、生产 Crossref Gateway、报告、Skill 与 live lifecycle 均有闭合证据 | 仍只有 pinned parent/route 和单候选；不提前声称 P3.2/P3.3 或最终 Hermes release 完成 |
 | 2026-08-08 19:24 | P3.2 Candidate Breadth & Diversity Gate 通过 | SHA-pinned catalog、6→5 exact merge、Top-5、机制/路线审计和双工作区 replay 均通过 | 工程校准结构不构成性质证据；P3.3 fetch/feedback 与最终真实 Hermes release 仍未完成 |
 | 2026-08-08 19:41 | 冻结 P3.3 主实验契约 | 三路只读审计确认 pure extractors 可复用，缺口集中在受限 fetch seam、runner lineage 与 immutable feedback | 保持 public schema、P3.2 catalog、默认 public fetch=0 和科学边界不变 |
+| 2026-08-08 20:23 | P3.3 Passage & Tag Feedback Gate 通过 | metadata-first skip-fetch、三格式离线 body seam、selected-passage-only vector、immutable feedback、共享 DOI/预算/瞬时故障和 replay 均闭合 | public body fetch 因 DNS preflight/connection 未绑定而继续为 0；P3.x 只剩 exact-user-approved 真实 Hermes release 与 GitHub closeout |

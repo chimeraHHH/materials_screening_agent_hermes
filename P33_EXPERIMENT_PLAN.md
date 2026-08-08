@@ -138,3 +138,4 @@
 | Time (CST) | Change | Reason | Comparability impact |
 |---|---|---|---|
 | 2026-08-08 | 冻结 P3.3 主实验契约 | 三路只读审计完成，开始 substantial edits 前建立 run contract | 保持 P3.2 baseline、公共 schema 与默认 public fetch=0 |
+| 2026-08-08 20:23 | 主实验与 release-width 回归通过 | 4 个离线主 Gate、776 项非-live、3 项 live Crossref、三环境依赖与 Hermes verifier 均通过 | 支持离线工程闭环；public body fetch 因 DNS rebinding/TOCTOU 未关闭而保持禁用，最终 Hermes release 独立执行 |
