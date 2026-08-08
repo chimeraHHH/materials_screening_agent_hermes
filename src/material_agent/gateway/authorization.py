@@ -12,11 +12,12 @@ import hashlib
 import os
 import re
 import sqlite3
+from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from threading import RLock
-from typing import Iterator, Protocol
+from typing import Protocol
 
 from material_agent.gateway.errors import ActionAuthorizationError
 from material_agent.gateway.models import (
@@ -30,10 +31,18 @@ from material_agent.gateway.models import (
 )
 from material_agent.gateway.protocols import GatewayRepository
 
-
 ACTION_GRANT_SCHEMA_VERSION = 2
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _CONFIRMATION_REFERENCE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{2,255}$")
+
+
+def is_valid_confirmation_reference(value: object) -> bool:
+    """Return whether an operator reference satisfies the public grant contract."""
+
+    return (
+        isinstance(value, str)
+        and _CONFIRMATION_REFERENCE_RE.fullmatch(value) is not None
+    )
 
 
 class ActionAuthorizer(Protocol):
@@ -119,17 +128,11 @@ class SqliteOneTimeActionGrantStore:
         if create_parent:
             parent.mkdir(parents=True, exist_ok=True)
         if not parent.is_dir():
-            raise ActionGrantStoreError(
-                "approval database directory is unavailable"
-            )
+            raise ActionGrantStoreError("approval database directory is unavailable")
         if self.database_path.is_symlink():
-            raise ActionGrantStoreError(
-                "approval database path cannot be a symlink"
-            )
+            raise ActionGrantStoreError("approval database path cannot be a symlink")
         if self.database_path.exists() and not self.database_path.is_file():
-            raise ActionGrantStoreError(
-                "approval database path is not a regular file"
-            )
+            raise ActionGrantStoreError("approval database path is not a regular file")
 
     @contextmanager
     def _connection(self) -> Iterator[sqlite3.Connection]:
@@ -146,18 +149,14 @@ class SqliteOneTimeActionGrantStore:
             ) from None
         try:
             if self.database_path.is_symlink():
-                raise ActionGrantStoreError(
-                    "approval database path became a symlink"
-                )
+                raise ActionGrantStoreError("approval database path became a symlink")
             os.chmod(self.database_path, 0o600)
             connection.row_factory = sqlite3.Row
             connection.execute("PRAGMA foreign_keys = ON")
             connection.execute("PRAGMA busy_timeout = 30000")
             yield connection
         except sqlite3.Error:
-            raise ActionGrantStoreError(
-                "approval database operation failed"
-            ) from None
+            raise ActionGrantStoreError("approval database operation failed") from None
         finally:
             connection.close()
 
@@ -191,10 +190,7 @@ class SqliteOneTimeActionGrantStore:
                     "SELECT value FROM approval_schema_metadata "
                     "WHERE key = 'schema_version'"
                 ).fetchone()
-                if (
-                    row is None
-                    or row["value"] != str(ACTION_GRANT_SCHEMA_VERSION)
-                ):
+                if row is None or row["value"] != str(ACTION_GRANT_SCHEMA_VERSION):
                     raise ActionGrantStoreError(
                         "unsupported approval database schema version"
                     )
@@ -204,9 +200,7 @@ class SqliteOneTimeActionGrantStore:
                     )
                 return
             if existing_tables:
-                raise ActionGrantStoreError(
-                    "approval database has unversioned tables"
-                )
+                raise ActionGrantStoreError("approval database has unversioned tables")
             connection.execute("PRAGMA journal_mode = WAL")
             connection.executescript(
                 """
@@ -298,27 +292,27 @@ class SqliteOneTimeActionGrantStore:
             interaction_id=interaction.interaction_id,
             request_sha256=request_sha256,
         )
-        if (
-            not isinstance(confirmation_reference, str)
-            or _CONFIRMATION_REFERENCE_RE.fullmatch(confirmation_reference) is None
-        ):
+        if not is_valid_confirmation_reference(confirmation_reference):
             raise OperatorApprovalError(
                 "confirmation reference must be a bounded opaque identifier"
             )
         action_json, action_sha256 = self._canonical_action(action)
         interaction_sha256 = self._interaction_sha256(interaction)
-        grant_id = "grant-" + hashlib.sha256(
-            canonical_json_bytes(
-                {
-                    "action_sha256": action_sha256,
-                    "confirmation_reference": confirmation_reference,
-                    "interaction_id": interaction.interaction_id,
-                    "interaction_sha256": interaction_sha256,
-                    "request_sha256": request_sha256,
-                    "run_id": run_id,
-                }
-            )
-        ).hexdigest()[:24]
+        grant_id = (
+            "grant-"
+            + hashlib.sha256(
+                canonical_json_bytes(
+                    {
+                        "action_sha256": action_sha256,
+                        "confirmation_reference": confirmation_reference,
+                        "interaction_id": interaction.interaction_id,
+                        "interaction_sha256": interaction_sha256,
+                        "request_sha256": request_sha256,
+                        "run_id": run_id,
+                    }
+                )
+            ).hexdigest()[:24]
+        )
         receipt = ActionGrantReceipt(
             grant_id=grant_id,
             run_id=run_id,
@@ -399,10 +393,7 @@ class SqliteOneTimeActionGrantStore:
             interaction_id=interaction.interaction_id,
             request_sha256=request_sha256,
         )
-        if (
-            not isinstance(confirmation_reference, str)
-            or _CONFIRMATION_REFERENCE_RE.fullmatch(confirmation_reference) is None
-        ):
+        if not is_valid_confirmation_reference(confirmation_reference):
             raise OperatorApprovalError(
                 "confirmation reference must be a bounded opaque identifier"
             )
@@ -437,15 +428,18 @@ class SqliteOneTimeActionGrantStore:
                 raise OperatorApprovalError(
                     "grant recovery requires a fresh confirmation reference"
                 )
-            recovery_id = "recovery-" + hashlib.sha256(
-                canonical_json_bytes(
-                    {
-                        "confirmation_reference": confirmation_reference,
-                        "grant_id": existing["grant_id"],
-                        "previous_confirmation_reference": previous_reference,
-                    }
-                )
-            ).hexdigest()[:24]
+            recovery_id = (
+                "recovery-"
+                + hashlib.sha256(
+                    canonical_json_bytes(
+                        {
+                            "confirmation_reference": confirmation_reference,
+                            "grant_id": existing["grant_id"],
+                            "previous_confirmation_reference": previous_reference,
+                        }
+                    )
+                ).hexdigest()[:24]
+            )
             try:
                 connection.execute(
                     """
@@ -463,7 +457,7 @@ class SqliteOneTimeActionGrantStore:
                 )
             except ActionGrantStoreError:
                 raise
-            except Exception:
+            except Exception:  # noqa: BLE001 - map backend uniqueness failures
                 raise OperatorApprovalError(
                     "the recovery confirmation reference was already used"
                 ) from None
@@ -540,7 +534,7 @@ class SqliteOneTimeActionGrantStore:
                     )
         except ActionAuthorizationError:
             raise
-        except Exception:
+        except Exception:  # noqa: BLE001 - expose only the authorization boundary
             raise ActionAuthorizationError(
                 "operator authorization could not be verified"
             ) from None
@@ -572,9 +566,7 @@ class RequirementFreezeGrantIssuer:
         return self.grant_record(
             record=record,
             confirmation_reference=confirmation_reference,
-            expected_execution_manifest_sha256=(
-                expected_execution_manifest_sha256
-            ),
+            expected_execution_manifest_sha256=(expected_execution_manifest_sha256),
             recover_consumed=recover_consumed,
         )
 

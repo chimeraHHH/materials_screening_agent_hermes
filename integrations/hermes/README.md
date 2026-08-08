@@ -59,6 +59,14 @@ idempotency, pending approval, terminal state, and the bounded result. Scientifi
 completion still depends on the canonical structured-result hash plus immutable
 `stage_result.json` and report artifacts passing URI/SHA/size verification.
 
+Create or refresh that environment only through
+`bootstrap_gateway_runtime.py`. It performs an exact `uv pip sync` against
+`gateway-requirements.lock` before reinstalling this repository in editable,
+no-dependency mode. The sync is intentional: a shared development or Agent02
+environment can contain newer split Pymatgen distributions that change
+structure-parser diagnostics and must not be used for execution or release
+replay.
+
 `MATERIALS_CROSSREF_CONTACT_EMAIL` is optional operator-owned environment state.
 It selects Crossref's polite pool but must never enter an Artifact, manifest,
 report, component digest, or model-visible result. The adapter reads bounded
@@ -133,6 +141,49 @@ for a verified process crash between grant consumption and state commit. Never
 use it to replay a terminal provider failure or bypass a new user decision. The
 fixture service remains available only through explicit `--service-mode fixture`
 for deterministic source-controlled replay; any byte drift fails closed.
+
+## Verify a completed release run
+
+After the same run reaches a result-bearing terminal state and every writer has
+stopped, run the standalone verifier with the values witnessed before approval:
+
+```bash
+.venv-gateway/bin/python \
+  integrations/hermes/scripts/verify_completed_inspiration_run.py \
+  --workspace /absolute/path/to/a/bounded/workspace \
+  --project materials-inspiration \
+  --run-id inspiration-... \
+  --expected-request-sha256 <64-lowercase-hex> \
+  --expected-execution-manifest-sha256 <64-lowercase-hex> \
+  --expected-interaction-id interaction-... \
+  --expected-interaction-sha256 <64-lowercase-hex> \
+  --expected-action-sha256 <64-lowercase-hex> \
+  --expected-confirmation-reference <exact-operator-reference>
+```
+
+This command is fail-closed and read-only. It rejects an uncheckpointed WAL,
+symlink/hard-link traversal, a pending or unbound grant, noncanonical database
+records, undeclared stage entries, declared fetched-body/PDF Artifacts,
+forbidden or out-of-allowlist Crossref fields, raw PDF signatures, PDF
+data/signature markers or document-level HTML markers in bounded allowed
+strings, and any pointer or lineage drift. It also binds the production
+`rows=1` response to exactly one item and caps the raw abstract at 20,000
+characters. It then deterministically replays the current approval-bound
+components from query planning and Crossref parsing through passages, vectors,
+evidence, bridges, structure transformation, internal dedup/MMR, ledger,
+feedback, report, and Gateway projection. These are structural and marker
+checks, not semantic recognition of arbitrary plain prose mislabeled by a
+provider as an abstract. The project tree is byte/metadata snapshotted before
+and after verification; any write fails the Gate. A historical run whose frozen
+components no longer match the current release must be verified with its
+source-pinned release checkout, never by weakening the manifest check. The
+executable is part of the contract: use the lock-synchronized
+`.venv-gateway/bin/python`, not the general development or Agent02 environment.
+Raw Crossref items are restricted to the exact metadata fields requested by the
+adapter (`DOI,title,author,published,URL,abstract,subject`) with bounded nested
+shapes and lengths. Replayed selection/fetch/duplicate audits are compared as
+canonical bytes, not permissive Python values, and the grant must match the
+exact operator confirmation reference supplied on the command line.
 
 OAuth provider credentials belong only in Hermes's ignored runtime credential
 store; environment-based provider secrets and `API_SERVER_KEY` belong only in
