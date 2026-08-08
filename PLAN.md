@@ -5,6 +5,8 @@
 - 当前分支：`agent/inspiration-generalization`
 - 只读基线：`hermes-origin/main@dcd076d01061f36a2f9826deecefc274c9c3211d`
 - 控制清单：[`CHECKLIST.md`](CHECKLIST.md)
+- P3.3 主实验计划：[`P33_EXPERIMENT_PLAN.md`](P33_EXPERIMENT_PLAN.md)
+- P3.3 执行清单：[`P33_EXPERIMENT_CHECKLIST.md`](P33_EXPERIMENT_CHECKLIST.md)
 - 详细产品计划：
   [`plans/subagents/material-screening-inspiration-plan.md`](plans/subagents/material-screening-inspiration-plan.md)
 
@@ -152,3 +154,4 @@ branch/SHA、run/session ID、Artifact/hash、成本与失败；credential 只�
 | 2026-08-08 17:57 | 从 `hermes-origin/main@dcd076d` 建立 P3.x 计划 | 用户继续授权，fixed pilot 不能代表完整 beta | 保留 pilot 为只读 baseline；新 Gate 独立计量 |
 | 2026-08-08 18:37 | P3.1 Generalization & Reliability Gate 通过 | compiler、retry/attempt、同轮去重、生产 Crossref Gateway、报告、Skill 与 live lifecycle 均有闭合证据 | 仍只有 pinned parent/route 和单候选；不提前声称 P3.2/P3.3 或最终 Hermes release 完成 |
 | 2026-08-08 19:24 | P3.2 Candidate Breadth & Diversity Gate 通过 | SHA-pinned catalog、6→5 exact merge、Top-5、机制/路线审计和双工作区 replay 均通过 | 工程校准结构不构成性质证据；P3.3 fetch/feedback 与最终真实 Hermes release 仍未完成 |
+| 2026-08-08 19:41 | 冻结 P3.3 主实验契约 | 三路只读审计确认 pure extractors 可复用，缺口集中在受限 fetch seam、runner lineage 与 immutable feedback | 保持 public schema、P3.2 catalog、默认 public fetch=0 和科学边界不变 |

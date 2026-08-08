@@ -40,6 +40,7 @@
 
 ## P3.3 — Passage & Tag Feedback
 
+- [x] 冻结 P3.3 主实验计划、baseline、失败分类和执行清单
 - [ ] 把 JSON metadata、JSON-LD/Highwire、JATS/XML、HTML 抽取接入统一 runner seam
 - [ ] 实现 host/redirect/content-type/bytes/request 约束和 metadata-first skip-fetch
 - [ ] 默认 PDF 全文 0，向量/内部 LLM 输入仅含选定 passage 包
