@@ -5,6 +5,8 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
+import pytest
+
 from material_agent.inspiration.engine import PymatgenTransformationEngine
 from material_agent.inspiration.fetch import (
     FixtureDocumentFetcher,
@@ -31,7 +33,11 @@ from material_agent.inspiration.policy import (
     SelectionPolicyV1,
     TransformationBudgetV1,
 )
-from material_agent.inspiration.runner import STRUCTURE_MEDIA_TYPE, InspirationRunner
+from material_agent.inspiration.runner import (
+    STRUCTURE_MEDIA_TYPE,
+    InspirationRunner,
+    InspirationRunnerError,
+)
 from material_agent.inspiration.search import FixtureSearchAdapter
 from material_agent.inspiration.tag_graph import (
     curated_flat_band_tag_graph,
@@ -95,7 +101,11 @@ def _abstract_inverted_index(text: str) -> dict[str, list[int]]:
     return inverted
 
 
-def _openalex_response(query: SearchQueryV1) -> bytes:
+def _openalex_response(
+    query: SearchQueryV1,
+    *,
+    share_acoustic_magnon_document: bool = False,
+) -> bytes:
     if query.kind is SearchQueryKind.DIRECT:
         title = "Electronic flat-band metadata control"
         abstract = (
@@ -135,12 +145,19 @@ def _openalex_response(query: SearchQueryV1) -> bytes:
         abstract = None
         canonical_url = ARTICLE_URLS[query.bridge_rule_id]
 
+    identity_suffix = suffix
+    if share_acoustic_magnon_document and suffix == "magnon":
+        identity_suffix = "acoustic"
+        canonical_url = ARTICLE_URLS[
+            "acoustic-resonance-to-electronic-flat-band"
+        ]
+
     record: dict[str, object] = {
         "authorships": [
             {"author": {"display_name": "P3.3 Offline Fixture Author"}}
         ],
         "display_name": title,
-        "doi": f"https://doi.org/10.5555/p33.multiformat.{suffix}",
+        "doi": f"https://doi.org/10.5555/p33.multiformat.{identity_suffix}",
         "id": f"https://openalex.org/WP33{suffix.upper()}",
         "keywords": [{"display_name": keyword} for keyword in keywords],
         "primary_location": {"landing_page_url": canonical_url},
@@ -156,7 +173,7 @@ def _openalex_response(query: SearchQueryV1) -> bytes:
     ).encode("utf-8")
 
 
-def _policy() -> InspirationPolicyV1:
+def _policy(*, fetch_request_budget: int = 3) -> InspirationPolicyV1:
     return InspirationPolicyV1(
         policy_id="inspiration-p33-multiformat-fixture-v1",
         search=SearchBudgetV1(
@@ -168,7 +185,7 @@ def _policy() -> InspirationPolicyV1:
             max_unique_documents=4,
         ),
         fetch=FetchBudgetV1(
-            max_requests=3,
+            max_requests=fetch_request_budget,
             max_total_bytes=16_000,
             max_bytes_per_response=4_000,
             timeout_seconds=5,
@@ -213,9 +230,15 @@ class _CompletedRun:
         return self.store.root / "stages" / "inspiration" / "run-p33-multiformat"
 
 
-def _run(workspace: Path) -> _CompletedRun:
+def _run(
+    workspace: Path,
+    *,
+    share_acoustic_magnon_document: bool = False,
+    transient_body_failures: bool = False,
+    fetch_request_budget: int = 3,
+) -> _CompletedRun:
     store = LocalArtifactStore(workspace)
-    policy = _policy()
+    policy = _policy(fetch_request_budget=fetch_request_budget)
     graph = curated_flat_band_tag_graph()
     queries = plan_tag_queries(
         graph,
@@ -226,7 +249,13 @@ def _run(workspace: Path) -> _CompletedRun:
     assert sum(query.kind is SearchQueryKind.DIRECT for query in queries) == 1
     assert sum(query.kind is SearchQueryKind.BRIDGE for query in queries) == 3
 
-    responses = {query.query_id: _openalex_response(query) for query in queries}
+    responses = {
+        query.query_id: _openalex_response(
+            query,
+            share_acoustic_magnon_document=share_acoustic_magnon_document,
+        )
+        for query in queries
+    }
     response_bindings: list[dict[str, object]] = []
     for query in queries:
         pointer = _pointer(
@@ -300,8 +329,13 @@ def _run(workspace: Path) -> _CompletedRun:
     fetcher = FixtureDocumentFetcher(
         fixtures={
             url: FixtureFetchResponse(
-                payload=(FIXTURE_DIR / filename).read_bytes(),
+                payload=(
+                    b""
+                    if transient_body_failures
+                    else (FIXTURE_DIR / filename).read_bytes()
+                ),
                 media_type=media_type,
+                status_code=503 if transient_body_failures else 200,
             )
             for url, (filename, media_type) in BODY_FIXTURES.items()
         },
@@ -544,3 +578,94 @@ def test_offline_runner_fetches_only_three_insufficient_metadata_bodies_and_repl
     )
     assert _policy().fetch.allow_pdf_fulltext is False
     assert all("pdf" not in str(row["media_type"]).casefold() for row in fetched)
+
+
+def test_duplicate_document_across_bridge_queries_is_fetched_once_with_inclusive_cost(
+    tmp_path: Path,
+) -> None:
+    completed = _run(
+        tmp_path / "shared-document",
+        share_acoustic_magnon_document=True,
+    )
+
+    ledger = completed.result.bundle.cost_ledger
+    assert ledger.raw_documents == 4
+    assert ledger.unique_documents == 3
+    assert ledger.fetch_requests == 2
+    assert ledger.fetch_response_bytes == (
+        (FIXTURE_DIR / "p33-structured.html").stat().st_size
+        + (FIXTURE_DIR / "p33-plain.html").stat().st_size
+    )
+
+    manifest = _read_jsonl(completed.stage_root / "fetch_manifest.jsonl")
+    shared = tuple(row for row in manifest if len(row["member_hit_ids"]) == 2)
+    assert len(shared) == 1
+    assert shared[0]["physical_request_count"] == 1
+    assert len(shared[0]["query_ids"]) == 2
+    assert shared[0]["fetched"] is True
+
+    feedback = TagFeedbackReviewV1.model_validate_json(
+        (completed.stage_root / "tag_feedback.json").read_bytes()
+    )
+    bridge_queries = {
+        row.bridge_rule_id: row
+        for row in feedback.query_rows
+        if row.kind is SearchQueryKind.BRIDGE
+    }
+    assert bridge_queries[
+        "acoustic-resonance-to-electronic-flat-band"
+    ].fetch_request_count == 1
+    assert bridge_queries[
+        "magnon-line-graph-to-electronic-flat-band"
+    ].fetch_request_count == 1
+    assert bridge_queries[
+        "acoustic-resonance-to-electronic-flat-band"
+    ].fetch_response_bytes == (FIXTURE_DIR / "p33-structured.html").stat().st_size
+    assert bridge_queries[
+        "magnon-line-graph-to-electronic-flat-band"
+    ].fetch_response_bytes == (FIXTURE_DIR / "p33-structured.html").stat().st_size
+
+    bridge_rows = {row.bridge_rule_id: row for row in feedback.bridge_rows}
+    assert bridge_rows[
+        "acoustic-resonance-to-electronic-flat-band"
+    ].status == "SEARCH_SUPPORTED"
+    assert bridge_rows[
+        "magnon-line-graph-to-electronic-flat-band"
+    ].status == "EVIDENCE_INSUFFICIENT"
+
+
+def test_transient_body_failures_are_not_reported_as_scientific_no_match(
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "transient-fetch-failure"
+    with pytest.raises(InspirationRunnerError) as raised:
+        _run(workspace, transient_body_failures=True)
+
+    assert raised.value.code == "EXTERNAL_FETCH_UNAVAILABLE"
+    stage_root = workspace / "stages" / "inspiration" / "run-p33-multiformat"
+    attempts = _read_jsonl(stage_root / "fetch_attempts.jsonl")
+    manifest = _read_jsonl(stage_root / "fetch_manifest.jsonl")
+    assert len(attempts) == 3
+    assert {attempt["error_code"] for attempt in attempts} == {
+        "TRANSIENT_HTTP_ERROR"
+    }
+    assert sum(row["fetch_status"] == "FAILED_TRANSIENT" for row in manifest) == 3
+    assert not (stage_root / "stage_result.json").exists()
+    assert not (stage_root / "tag_feedback.json").exists()
+
+
+def test_runner_stops_body_requests_at_the_shared_physical_budget(
+    tmp_path: Path,
+) -> None:
+    completed = _run(tmp_path / "request-budget", fetch_request_budget=1)
+
+    assert completed.result.bundle.cost_ledger.fetch_requests == 1
+    attempts = _read_jsonl(completed.stage_root / "fetch_attempts.jsonl")
+    manifest = _read_jsonl(completed.stage_root / "fetch_manifest.jsonl")
+    assert len(attempts) == 1
+    assert sum(row["fetch_status"] == "FETCHED" for row in manifest) == 1
+    assert sum(
+        row["fetch_status"] == "REQUEST_BUDGET_EXHAUSTED"
+        for row in manifest
+    ) == 2
+    assert sum(int(row["physical_request_count"]) for row in manifest) == 1
