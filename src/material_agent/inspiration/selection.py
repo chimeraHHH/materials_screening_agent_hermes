@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import math
 from collections import Counter
-from collections.abc import Iterable, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
+from enum import StrEnum
 
 from material_agent.inspiration.identity import (
     InternalCandidateIdentity,
@@ -21,6 +22,120 @@ class InspirationSelectionError(ValueError):
     def __init__(self, code: str, message: str) -> None:
         self.code = code
         super().__init__(f"{code}: {message}")
+
+
+class MechanismQuotaStatus(StrEnum):
+    """Internal outcome of the bounded mechanism-coverage requirement."""
+
+    MET = "MET"
+    POOL_INSUFFICIENT = "POOL_INSUFFICIENT"
+    HARD_QUOTA_INFEASIBLE = "HARD_QUOTA_INFEASIBLE"
+
+
+@dataclass(frozen=True, slots=True)
+class SelectionAudit:
+    """Immutable, run-internal metrics for one deterministic selection.
+
+    ``feasible_mechanism_ids`` is one deterministic jointly selectable witness
+    for the largest attainable mechanism target no greater than the requested
+    target.  It is intentionally not a scientific assessment of a mechanism.
+    """
+
+    requested_top_k: int
+    pool_candidate_count: int
+    selected_candidate_count: int
+    requested_mechanism_count: int
+    available_mechanism_count: int
+    available_mechanism_ids: tuple[str, ...]
+    feasible_mechanism_count: int
+    feasible_mechanism_ids: tuple[str, ...]
+    achieved_mechanism_count: int
+    achieved_mechanism_ids: tuple[str, ...]
+    pool_multi_route_group_count: int
+    selected_multi_route_group_count: int
+    pool_distinct_physical_route_count: int
+    selected_distinct_physical_route_count: int
+    pool_parent_family_count: int
+    selected_parent_family_count: int
+    pool_exact_duplicate_count: int
+    pool_strict_duplicate_count: int
+    selected_exact_duplicate_count: int
+    selected_strict_duplicate_count: int
+    quota_status: MechanismQuotaStatus
+    underfill_reasons: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        for field_name, value in (
+            ("requested_top_k", self.requested_top_k),
+            ("pool_candidate_count", self.pool_candidate_count),
+            ("selected_candidate_count", self.selected_candidate_count),
+            ("requested_mechanism_count", self.requested_mechanism_count),
+            ("available_mechanism_count", self.available_mechanism_count),
+            ("feasible_mechanism_count", self.feasible_mechanism_count),
+            ("achieved_mechanism_count", self.achieved_mechanism_count),
+            ("pool_multi_route_group_count", self.pool_multi_route_group_count),
+            (
+                "selected_multi_route_group_count",
+                self.selected_multi_route_group_count,
+            ),
+            (
+                "pool_distinct_physical_route_count",
+                self.pool_distinct_physical_route_count,
+            ),
+            (
+                "selected_distinct_physical_route_count",
+                self.selected_distinct_physical_route_count,
+            ),
+            ("pool_parent_family_count", self.pool_parent_family_count),
+            ("selected_parent_family_count", self.selected_parent_family_count),
+            ("pool_exact_duplicate_count", self.pool_exact_duplicate_count),
+            ("pool_strict_duplicate_count", self.pool_strict_duplicate_count),
+            ("selected_exact_duplicate_count", self.selected_exact_duplicate_count),
+            (
+                "selected_strict_duplicate_count",
+                self.selected_strict_duplicate_count,
+            ),
+        ):
+            if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+                raise InspirationSelectionError(
+                    "INVALID_SELECTION_AUDIT",
+                    f"{field_name} must be a non-negative integer",
+                )
+        for count, values, label in (
+            (
+                self.available_mechanism_count,
+                self.available_mechanism_ids,
+                "available mechanisms",
+            ),
+            (
+                self.feasible_mechanism_count,
+                self.feasible_mechanism_ids,
+                "feasible mechanisms",
+            ),
+            (
+                self.achieved_mechanism_count,
+                self.achieved_mechanism_ids,
+                "achieved mechanisms",
+            ),
+        ):
+            if count != len(values) or values != tuple(sorted(set(values))):
+                raise InspirationSelectionError(
+                    "INVALID_SELECTION_AUDIT",
+                    f"{label} must be sorted, unique, and match their count",
+                )
+        if len(set(self.underfill_reasons)) != len(self.underfill_reasons):
+            raise InspirationSelectionError(
+                "INVALID_SELECTION_AUDIT",
+                "underfill reasons must be unique",
+            )
+
+
+@dataclass(frozen=True, slots=True)
+class DiverseSelectionResult:
+    """Internal selection payload that leaves the public candidate DTO frozen."""
+
+    candidates: tuple[InspirationCandidateV1, ...]
+    audit: SelectionAudit
 
 
 @dataclass(frozen=True, slots=True)
@@ -242,18 +357,127 @@ def _redundancy_penalty(
     return min(1.0, max(0.0, 1.0 - closest_distance))
 
 
-def _mechanism_group_availability(
-    identities: Iterable[InternalCandidateIdentity],
-) -> dict[str, int]:
-    groups_by_mechanism: dict[str, set[str]] = {}
-    for identity in identities:
-        strict_group = identity.structure_identity.strict_structure_group_id
-        for mechanism in identity.candidate.mechanism_tag_ids:
-            groups_by_mechanism.setdefault(mechanism, set()).add(strict_group)
-    return {
-        mechanism: len(strict_groups)
-        for mechanism, strict_groups in groups_by_mechanism.items()
-    }
+def _base_score_key(identity: InternalCandidateIdentity) -> tuple[float, str]:
+    return (
+        -identity.candidate.scores.selection_score,
+        identity.candidate.candidate_id,
+    )
+
+
+def _coverage_witness(
+    identities: tuple[InternalCandidateIdentity, ...],
+    *,
+    target: int,
+    policy: SelectionPolicyV1,
+) -> tuple[InternalCandidateIdentity, ...] | None:
+    """Find a deterministic hard-quota-compatible coverage witness.
+
+    A minimal coverage witness never needs a candidate that adds no mechanism,
+    so search depth is bounded by ``target`` (at most eight in policy v1).  The
+    P3.2 two-mechanism path uses an exact bounded single/pair scan.  Higher
+    targets use fail-closed depth-first lookahead with a deterministic node
+    ceiling rather than silently degrading a required quota.
+    """
+
+    if target <= 0:
+        return ()
+    ordered = tuple(sorted(identities, key=_base_score_key))
+    if not ordered:
+        return None
+
+    for identity in ordered:
+        if len(identity.candidate.mechanism_tag_ids) >= target:
+            return (identity,)
+    if target == 1:
+        return (ordered[0],)
+    if target == 2:
+        for left_index, left in enumerate(ordered):
+            left_group = left.structure_identity.strict_structure_group_id
+            left_families = Counter(left.parent_family_ids)
+            for right in ordered[left_index + 1 :]:
+                if (
+                    right.structure_identity.strict_structure_group_id
+                    == left_group
+                ):
+                    continue
+                if any(
+                    left_families[parent_family_id]
+                    >= policy.max_per_parent_family
+                    for parent_family_id in right.parent_family_ids
+                ):
+                    continue
+                mechanisms = set(left.candidate.mechanism_tag_ids) | set(
+                    right.candidate.mechanism_tag_ids
+                )
+                if len(mechanisms) >= target:
+                    return (left, right)
+        return None
+
+    # TransformationPolicyV1 caps the upstream proposal pool at 1,000 and the
+    # mechanism target at eight.  This ceiling keeps the generic lookahead
+    # deterministic under adversarial overlap while small reviewed catalogs
+    # normally finish after only a few nodes.
+    max_nodes = 250_000
+    visited_nodes = 0
+
+    def visit(
+        start: int,
+        chosen: tuple[InternalCandidateIdentity, ...],
+        strict_groups: frozenset[str],
+        family_counts: Counter[str],
+        covered: frozenset[str],
+    ) -> tuple[InternalCandidateIdentity, ...] | None:
+        nonlocal visited_nodes
+        visited_nodes += 1
+        if visited_nodes > max_nodes:
+            raise InspirationSelectionError(
+                "FEASIBILITY_BUDGET_EXCEEDED",
+                "mechanism-coverage lookahead exceeded its deterministic node budget",
+            )
+        if len(covered) >= target:
+            return chosen
+        if len(chosen) >= policy.top_k:
+            return None
+
+        potential = set(covered)
+        for identity in ordered[start:]:
+            if _eligible(
+                identity,
+                selected_strict_groups=set(strict_groups),
+                parent_family_counts=family_counts,
+                policy=policy,
+            ):
+                potential.update(identity.candidate.mechanism_tag_ids)
+        if len(potential) < target:
+            return None
+
+        for index in range(start, len(ordered)):
+            identity = ordered[index]
+            mechanisms = frozenset(identity.candidate.mechanism_tag_ids)
+            if not mechanisms - covered:
+                continue
+            if not _eligible(
+                identity,
+                selected_strict_groups=set(strict_groups),
+                parent_family_counts=family_counts,
+                policy=policy,
+            ):
+                continue
+            next_counts = family_counts.copy()
+            next_counts.update(identity.parent_family_ids)
+            witness = visit(
+                index + 1,
+                (*chosen, identity),
+                strict_groups
+                | {identity.structure_identity.strict_structure_group_id},
+                next_counts,
+                covered | mechanisms,
+            )
+            if witness is not None:
+                return witness
+        return None
+
+    return visit(0, (), frozenset(), Counter(), frozenset())
 
 
 def _rank_candidate(
@@ -278,19 +502,20 @@ def _rank_candidate(
     return InspirationCandidateV1.model_validate(payload)
 
 
-def select_diverse_candidates(
+def select_diverse_candidates_with_audit(
     identities: Sequence[InternalCandidateIdentity],
     *,
     policy: SelectionPolicyV1,
-) -> tuple[InspirationCandidateV1, ...]:
-    """Greedily select a deterministic, quota-respecting diverse Top-K.
+) -> DiverseSelectionResult:
+    """Select a deterministic diverse Top-K and return internal audit metrics.
 
     Candidate quality and evidence coverage form the positive score.  From the
     second selection onward, maximum similarity to the selected set is the
-    redundancy penalty.  Until the bounded pool-level mechanism target is
-    covered, eligible candidates adding mechanisms are prioritized; rarer
-    mechanisms break coverage ties before the MMR score.  Hard quotas are
-    never relaxed, so the result may contain fewer than ``top_k`` candidates.
+    redundancy penalty.  A bounded feasibility lookahead first reserves a
+    jointly selectable mechanism-coverage witness.  This prevents a high-score
+    anchor from consuming a parent-family quota needed by a feasible mechanism
+    pair.  Hard quotas are never relaxed, so the result may contain fewer than
+    ``top_k`` candidates and the audit explains why.
     """
 
     if not isinstance(policy, SelectionPolicyV1):
@@ -300,18 +525,69 @@ def select_diverse_candidates(
         )
     materialized = tuple(identities)
     policy_id = _validate_selection_pool(materialized, policy=policy)
-    if policy_id is None:
-        return ()
+    all_mechanisms = tuple(
+        sorted(
+            {
+                mechanism
+                for identity in materialized
+                for mechanism in identity.candidate.mechanism_tag_ids
+            }
+        )
+    )
+    requested_mechanisms = policy.min_mechanisms_when_available
 
-    all_mechanisms = {
-        mechanism
-        for identity in materialized
-        for mechanism in identity.candidate.mechanism_tag_ids
-    }
-    mechanism_target = min(
-        policy.min_mechanisms_when_available,
-        len(all_mechanisms),
-        policy.top_k,
+    if policy_id is None:
+        audit = SelectionAudit(
+            requested_top_k=policy.top_k,
+            pool_candidate_count=0,
+            selected_candidate_count=0,
+            requested_mechanism_count=requested_mechanisms,
+            available_mechanism_count=0,
+            available_mechanism_ids=(),
+            feasible_mechanism_count=0,
+            feasible_mechanism_ids=(),
+            achieved_mechanism_count=0,
+            achieved_mechanism_ids=(),
+            pool_multi_route_group_count=0,
+            selected_multi_route_group_count=0,
+            pool_distinct_physical_route_count=0,
+            selected_distinct_physical_route_count=0,
+            pool_parent_family_count=0,
+            selected_parent_family_count=0,
+            pool_exact_duplicate_count=0,
+            pool_strict_duplicate_count=0,
+            selected_exact_duplicate_count=0,
+            selected_strict_duplicate_count=0,
+            quota_status=MechanismQuotaStatus.POOL_INSUFFICIENT,
+            underfill_reasons=(
+                "CANDIDATE_POOL_BELOW_TOP_K",
+                "MECHANISM_POOL_BELOW_REQUESTED",
+            ),
+        )
+        return DiverseSelectionResult(candidates=(), audit=audit)
+
+    desired_target = min(requested_mechanisms, len(all_mechanisms))
+    feasible_target = desired_target
+    coverage_seed: tuple[InternalCandidateIdentity, ...] = ()
+    while feasible_target > 0:
+        witness = _coverage_witness(
+            materialized,
+            target=feasible_target,
+            policy=policy,
+        )
+        if witness is not None:
+            coverage_seed = witness
+            break
+        feasible_target -= 1
+
+    feasible_mechanisms = tuple(
+        sorted(
+            {
+                mechanism
+                for identity in coverage_seed
+                for mechanism in identity.candidate.mechanism_tag_ids
+            }
+        )[:feasible_target]
     )
 
     remaining = {
@@ -321,7 +597,34 @@ def select_diverse_candidates(
     selected_candidates: list[InspirationCandidateV1] = []
     selected_strict_groups: set[str] = set()
     parent_family_counts: Counter[str] = Counter()
-    covered_mechanisms: set[str] = set()
+
+    def select_identity(identity: InternalCandidateIdentity) -> None:
+        redundancy = _redundancy_penalty(
+            identity,
+            selected_identities,
+            policy=policy,
+        )
+        selected_candidates.append(
+            _rank_candidate(
+                identity,
+                policy_id=policy_id,
+                policy=policy,
+                redundancy_penalty=redundancy,
+                rank=len(selected_candidates) + 1,
+            )
+        )
+        selected_identities.append(identity)
+        selected_strict_groups.add(
+            identity.structure_identity.strict_structure_group_id
+        )
+        parent_family_counts.update(identity.parent_family_ids)
+        del remaining[identity.candidate.candidate_id]
+
+    # Every member belongs to one jointly feasible witness.  Their stable base
+    # order is part of the feasibility search, and ranking them first preserves
+    # the mechanism floor before ordinary MMR can consume a hard quota.
+    for identity in coverage_seed:
+        select_identity(identity)
 
     while remaining and len(selected_candidates) < policy.top_k:
         eligible = tuple(
@@ -353,72 +656,148 @@ def select_diverse_candidates(
             ).selection_score
             scored.append((identity, redundancy, score))
 
-        # The first MMR choice has no redundancy term and therefore remains
-        # the highest-scoring candidate.  Coverage is enforced on subsequent
-        # choices, which preserves the usual greedy-MMR anchor semantics.
-        coverage_needed = (
-            bool(selected_candidates)
-            and len(covered_mechanisms) < mechanism_target
+        chosen_identity, _, _ = min(
+            scored,
+            key=lambda item: (
+                -item[2],
+                item[0].candidate.candidate_id,
+            ),
         )
-        coverage_contenders = [
-            item
-            for item in scored
-            if set(item[0].candidate.mechanism_tag_ids) - covered_mechanisms
-        ]
-        if coverage_needed and coverage_contenders:
-            availability = _mechanism_group_availability(
-                item[0] for item in coverage_contenders
-            )
+        select_identity(chosen_identity)
 
-            def coverage_key(
-                item: tuple[InternalCandidateIdentity, float, float],
-            ) -> tuple[float, float, float, str]:
-                identity, _, score = item
-                new_mechanisms = (
-                    set(identity.candidate.mechanism_tag_ids)
-                    - covered_mechanisms
-                )
-                rarity = math.fsum(
-                    1.0 / availability[mechanism]
-                    for mechanism in new_mechanisms
-                )
-                return (
-                    -float(len(new_mechanisms)),
-                    -rarity,
-                    -score,
-                    identity.candidate.candidate_id,
-                )
-
-            chosen_identity, chosen_redundancy, _ = min(
-                coverage_contenders,
-                key=coverage_key,
-            )
-        else:
-            chosen_identity, chosen_redundancy, _ = min(
-                scored,
-                key=lambda item: (
-                    -item[2],
-                    item[0].candidate.candidate_id,
-                ),
-            )
-
-        rank = len(selected_candidates) + 1
-        selected_candidates.append(
-            _rank_candidate(
-                chosen_identity,
-                policy_id=policy_id,
-                policy=policy,
-                redundancy_penalty=chosen_redundancy,
-                rank=rank,
-            )
+    achieved_mechanisms = tuple(
+        sorted(
+            {
+                mechanism
+                for candidate in selected_candidates
+                for mechanism in candidate.mechanism_tag_ids
+            }
         )
-        selected_identities.append(chosen_identity)
-        selected_strict_groups.add(
-            chosen_identity.structure_identity.strict_structure_group_id
-        )
-        for parent_family_id in chosen_identity.parent_family_ids:
-            parent_family_counts[parent_family_id] += 1
-        covered_mechanisms.update(chosen_identity.candidate.mechanism_tag_ids)
-        del remaining[chosen_identity.candidate.candidate_id]
+    )
+    if len(all_mechanisms) < requested_mechanisms:
+        quota_status = MechanismQuotaStatus.POOL_INSUFFICIENT
+    elif feasible_target < requested_mechanisms:
+        quota_status = MechanismQuotaStatus.HARD_QUOTA_INFEASIBLE
+    else:
+        quota_status = MechanismQuotaStatus.MET
+        if len(achieved_mechanisms) < requested_mechanisms:
+            raise InspirationSelectionError(
+                "MECHANISM_QUOTA_NOT_MET",
+                "selection lost a mechanism-coverage witness after feasibility",
+            )
 
-    return tuple(selected_candidates)
+    selected_ids = {identity.candidate.candidate_id for identity in selected_identities}
+    unselected = tuple(
+        identity
+        for identity in materialized
+        if identity.candidate.candidate_id not in selected_ids
+    )
+    underfill_reasons: list[str] = []
+    if len(selected_candidates) < policy.top_k:
+        if len(materialized) < policy.top_k:
+            underfill_reasons.append("CANDIDATE_POOL_BELOW_TOP_K")
+        if any(
+            identity.structure_identity.strict_structure_group_id
+            in selected_strict_groups
+            for identity in unselected
+        ):
+            underfill_reasons.append("STRICT_STRUCTURE_GROUP_LIMIT")
+        if any(
+            any(
+                parent_family_counts[parent_family_id]
+                >= policy.max_per_parent_family
+                for parent_family_id in identity.parent_family_ids
+            )
+            for identity in unselected
+        ):
+            underfill_reasons.append("PARENT_FAMILY_LIMIT")
+    if quota_status is MechanismQuotaStatus.POOL_INSUFFICIENT:
+        underfill_reasons.append("MECHANISM_POOL_BELOW_REQUESTED")
+    elif quota_status is MechanismQuotaStatus.HARD_QUOTA_INFEASIBLE:
+        underfill_reasons.append("MECHANISM_TARGET_INFEASIBLE_UNDER_HARD_QUOTAS")
+
+    selected_canonical_ids = tuple(
+        candidate.canonical_structure_id for candidate in selected_candidates
+    )
+    pool_canonical_ids = tuple(
+        identity.candidate.canonical_structure_id for identity in materialized
+    )
+    pool_strict_ids = tuple(
+        identity.structure_identity.strict_structure_group_id
+        for identity in materialized
+    )
+    selected_strict_ids = tuple(
+        identity.structure_identity.strict_structure_group_id
+        for identity in selected_identities
+    )
+    audit = SelectionAudit(
+        requested_top_k=policy.top_k,
+        pool_candidate_count=len(materialized),
+        selected_candidate_count=len(selected_candidates),
+        requested_mechanism_count=requested_mechanisms,
+        available_mechanism_count=len(all_mechanisms),
+        available_mechanism_ids=all_mechanisms,
+        feasible_mechanism_count=len(feasible_mechanisms),
+        feasible_mechanism_ids=feasible_mechanisms,
+        achieved_mechanism_count=len(achieved_mechanisms),
+        achieved_mechanism_ids=achieved_mechanisms,
+        pool_multi_route_group_count=sum(
+            len(identity.candidate.merged_routes) > 1 for identity in materialized
+        ),
+        selected_multi_route_group_count=sum(
+            len(candidate.merged_routes) > 1 for candidate in selected_candidates
+        ),
+        pool_distinct_physical_route_count=len(
+            {
+                route.route_sha256
+                for identity in materialized
+                for route in identity.candidate.merged_routes
+            }
+        ),
+        selected_distinct_physical_route_count=len(
+            {
+                route.route_sha256
+                for candidate in selected_candidates
+                for route in candidate.merged_routes
+            }
+        ),
+        pool_parent_family_count=len(
+            {
+                parent_family_id
+                for identity in materialized
+                for parent_family_id in identity.parent_family_ids
+            }
+        ),
+        selected_parent_family_count=len(
+            {
+                parent_family_id
+                for identity in selected_identities
+                for parent_family_id in identity.parent_family_ids
+            }
+        ),
+        pool_exact_duplicate_count=(
+            len(pool_canonical_ids) - len(set(pool_canonical_ids))
+        ),
+        pool_strict_duplicate_count=(
+            len(pool_strict_ids) - len(set(pool_strict_ids))
+        ),
+        selected_exact_duplicate_count=(
+            len(selected_canonical_ids) - len(set(selected_canonical_ids))
+        ),
+        selected_strict_duplicate_count=(
+            len(selected_strict_ids) - len(set(selected_strict_ids))
+        ),
+        quota_status=quota_status,
+        underfill_reasons=tuple(underfill_reasons),
+    )
+    return DiverseSelectionResult(candidates=tuple(selected_candidates), audit=audit)
+
+
+def select_diverse_candidates(
+    identities: Sequence[InternalCandidateIdentity],
+    *,
+    policy: SelectionPolicyV1,
+) -> tuple[InspirationCandidateV1, ...]:
+    """Backward-compatible candidate-only wrapper for audited selection."""
+
+    return select_diverse_candidates_with_audit(identities, policy=policy).candidates

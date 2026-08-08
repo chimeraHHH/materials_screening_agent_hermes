@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import hashlib
-from dataclasses import fields
+from dataclasses import FrozenInstanceError, fields
 
 import pytest
 
@@ -19,8 +19,12 @@ from material_agent.inspiration.identity import (
 )
 from material_agent.inspiration.selection import (
     CandidateDistanceBreakdown,
+    DiverseSelectionResult,
+    MechanismQuotaStatus,
+    SelectionAudit,
     candidate_distance,
     select_diverse_candidates,
+    select_diverse_candidates_with_audit,
 )
 
 
@@ -405,12 +409,343 @@ def test_mechanism_quota_and_mmr_choose_a_diverse_second_candidate() -> None:
     assert selected[1].scores.redundancy_penalty == pytest.approx(0.0)
 
 
+def test_top5_pool_merges_routes_and_has_zero_exact_or_strict_duplicates() -> None:
+    policy = SelectionPolicyV1(
+        top_k=5,
+        max_per_parent_family=2,
+        min_mechanisms_when_available=2,
+    )
+    route_a1 = _proposal(
+        "structure-a",
+        strict_group="strict-a",
+        route_name="route-a1",
+        plan_id="plan-a1",
+        parent_id="parent-a1",
+        parent_family="family-a",
+        mechanisms=("mechanism-a",),
+        quality=0.99,
+        coverage=0.9,
+    )
+    route_a2 = _proposal(
+        "structure-a",
+        strict_group="strict-a",
+        route_name="route-a2",
+        plan_id="plan-a2",
+        parent_id="parent-a2",
+        parent_family="family-b",
+        mechanisms=("mechanism-a",),
+        quality=0.80,
+        coverage=0.8,
+    )
+    proposals = (
+        route_a1,
+        route_a2,
+        route_a1,
+        _proposal(
+            "structure-b",
+            strict_group="strict-b",
+            route_name="route-b",
+            parent_family="family-a",
+            mechanisms=("mechanism-a",),
+            quality=0.98,
+        ),
+        _proposal(
+            "structure-c",
+            strict_group="strict-shared",
+            route_name="route-c",
+            parent_family="family-c",
+            mechanisms=("mechanism-a",),
+            quality=0.97,
+        ),
+        _proposal(
+            "structure-d",
+            strict_group="strict-shared",
+            route_name="route-d",
+            parent_family="family-d",
+            mechanisms=("mechanism-b",),
+            quality=0.96,
+        ),
+        _proposal(
+            "structure-e",
+            strict_group="strict-e",
+            route_name="route-e",
+            parent_family="family-e",
+            mechanisms=("mechanism-b",),
+            quality=0.95,
+        ),
+        _proposal(
+            "structure-f",
+            strict_group="strict-f",
+            route_name="route-f",
+            parent_family="family-f",
+            mechanisms=("mechanism-a",),
+            quality=0.94,
+        ),
+    )
+    identities = _merge(*proposals, policy=policy)
+
+    forward = select_diverse_candidates_with_audit(identities, policy=policy)
+    reverse = select_diverse_candidates_with_audit(
+        tuple(reversed(identities)),
+        policy=policy,
+    )
+
+    assert len(proposals) == 8
+    assert len(identities) == 6
+    merged = next(
+        identity
+        for identity in identities
+        if identity.candidate.canonical_structure_id == "structure-a"
+    )
+    assert tuple(route.plan_id for route in merged.candidate.merged_routes) == tuple(
+        route.plan_id
+        for route in sorted(
+            (route_a1.route, route_a2.route),
+            key=lambda route: route.route_sha256,
+        )
+    )
+    assert merged.parent_family_ids == ("family-a", "family-b")
+    assert forward == reverse
+    assert len(forward.candidates) == 5
+    assert forward.audit.quota_status is MechanismQuotaStatus.MET
+    assert forward.audit.available_mechanism_ids == (
+        "mechanism-a",
+        "mechanism-b",
+    )
+    assert forward.audit.feasible_mechanism_count == 2
+    assert forward.audit.achieved_mechanism_count == 2
+    assert forward.audit.pool_multi_route_group_count == 1
+    assert forward.audit.selected_multi_route_group_count == 1
+    assert forward.audit.pool_distinct_physical_route_count == 7
+    assert forward.audit.selected_distinct_physical_route_count == 6
+    assert forward.audit.pool_parent_family_count == 6
+    assert forward.audit.selected_parent_family_count == 5
+    assert forward.audit.pool_exact_duplicate_count == 0
+    assert forward.audit.pool_strict_duplicate_count == 1
+    assert forward.audit.selected_exact_duplicate_count == 0
+    assert forward.audit.selected_strict_duplicate_count == 0
+    assert forward.audit.underfill_reasons == ()
+    with pytest.raises(FrozenInstanceError):
+        forward.audit.selected_candidate_count = 4  # type: ignore[misc]
+
+
+def test_mechanism_floor_true_and_false_have_explicit_selection_semantics() -> None:
+    diverse_policy = SelectionPolicyV1(
+        top_k=2,
+        max_per_parent_family=2,
+        min_mechanisms_when_available=2,
+    )
+    mmr_only_policy = SelectionPolicyV1(
+        top_k=2,
+        max_per_parent_family=2,
+        min_mechanisms_when_available=1,
+    )
+    anchor_route = _proposal(
+        "semantic-anchor",
+        route_name="semantic-route-1",
+        plan_id="semantic-plan-1",
+        parent_id="shared-parent",
+        parent_family="family-a",
+        bridges=("shared-bridge",),
+        mechanisms=("mechanism-a",),
+        quality=1.0,
+        coverage=1.0,
+    )
+    proposals = (
+        anchor_route,
+        _proposal(
+            "semantic-anchor",
+            route_name="semantic-route-2",
+            plan_id="semantic-plan-2",
+            parent_id="shared-parent",
+            parent_family="family-a",
+            bridges=("shared-bridge",),
+            mechanisms=("mechanism-a",),
+            quality=0.9,
+            coverage=1.0,
+        ),
+        anchor_route,
+        _proposal(
+            "semantic-near",
+            route_name="semantic-near-route",
+            parent_id="shared-parent",
+            parent_family="family-b",
+            bridges=("shared-bridge",),
+            mechanisms=("mechanism-a",),
+            quality=0.99,
+            coverage=1.0,
+        ),
+        _proposal(
+            "semantic-a3",
+            route_name="semantic-a3-route",
+            parent_id="shared-parent",
+            parent_family="family-c",
+            bridges=("shared-bridge",),
+            mechanisms=("mechanism-a",),
+            quality=0.98,
+            coverage=1.0,
+        ),
+        _proposal(
+            "semantic-b",
+            route_name="semantic-b-route",
+            parent_id="b-parent",
+            parent_family="family-d",
+            bridges=("b-bridge",),
+            mechanisms=("mechanism-b",),
+            quality=0.1,
+            coverage=1.0,
+        ),
+    )
+    diverse = select_diverse_candidates_with_audit(
+        _merge(*proposals, policy=diverse_policy),
+        policy=diverse_policy,
+    )
+    mmr_only = select_diverse_candidates_with_audit(
+        _merge(*proposals, policy=mmr_only_policy),
+        policy=mmr_only_policy,
+    )
+
+    assert diverse.audit.requested_mechanism_count == 2
+    assert diverse.audit.achieved_mechanism_ids == (
+        "mechanism-a",
+        "mechanism-b",
+    )
+    assert tuple(
+        candidate.canonical_structure_id for candidate in diverse.candidates
+    ) == ("semantic-anchor", "semantic-b")
+    assert mmr_only.audit.requested_mechanism_count == 1
+    assert mmr_only.audit.achieved_mechanism_ids == ("mechanism-a",)
+    assert tuple(
+        candidate.canonical_structure_id for candidate in mmr_only.candidates
+    ) == ("semantic-anchor", "semantic-near")
+    assert mmr_only.candidates[1].scores.redundancy_penalty > 0.0
+
+
+def test_feasibility_lookahead_preserves_a_reachable_mechanism_pair() -> None:
+    policy = SelectionPolicyV1(
+        top_k=2,
+        max_per_parent_family=1,
+        min_mechanisms_when_available=2,
+    )
+    identities = _merge(
+        _proposal(
+            "structure-anchor-a",
+            route_name="route-anchor-a",
+            parent_family="family-x",
+            mechanisms=("mechanism-a",),
+            quality=1.0,
+            coverage=1.0,
+        ),
+        _proposal(
+            "structure-option-b",
+            route_name="route-option-b",
+            parent_family="family-x",
+            mechanisms=("mechanism-b",),
+            quality=0.9,
+            coverage=1.0,
+        ),
+        _proposal(
+            "structure-backup-a",
+            route_name="route-backup-a",
+            parent_family="family-y",
+            mechanisms=("mechanism-a",),
+            quality=0.8,
+            coverage=1.0,
+        ),
+        policy=policy,
+    )
+
+    result = select_diverse_candidates_with_audit(identities, policy=policy)
+
+    assert tuple(
+        candidate.canonical_structure_id for candidate in result.candidates
+    ) == ("structure-option-b", "structure-backup-a")
+    assert result.audit.feasible_mechanism_ids == (
+        "mechanism-a",
+        "mechanism-b",
+    )
+    assert result.audit.achieved_mechanism_ids == result.audit.feasible_mechanism_ids
+    assert result.audit.quota_status is MechanismQuotaStatus.MET
+
+
+def test_single_mechanism_pool_reports_pool_insufficient() -> None:
+    policy = SelectionPolicyV1(
+        top_k=5,
+        max_per_parent_family=2,
+        min_mechanisms_when_available=2,
+    )
+    identities = _merge(
+        *(
+            _proposal(
+                f"single-mechanism-{index}",
+                route_name=f"single-route-{index}",
+                parent_family=f"single-family-{index}",
+                mechanisms=("mechanism-a",),
+                quality=1.0 - index / 10.0,
+            )
+            for index in range(3)
+        ),
+        policy=policy,
+    )
+
+    result = select_diverse_candidates_with_audit(identities, policy=policy)
+
+    assert len(result.candidates) == 3
+    assert result.audit.available_mechanism_ids == ("mechanism-a",)
+    assert result.audit.feasible_mechanism_ids == ("mechanism-a",)
+    assert result.audit.achieved_mechanism_ids == ("mechanism-a",)
+    assert result.audit.quota_status is MechanismQuotaStatus.POOL_INSUFFICIENT
+    assert result.audit.underfill_reasons == (
+        "CANDIDATE_POOL_BELOW_TOP_K",
+        "MECHANISM_POOL_BELOW_REQUESTED",
+    )
+
+
+def test_jointly_infeasible_mechanisms_report_the_hard_quota() -> None:
+    policy = SelectionPolicyV1(
+        top_k=2,
+        max_per_parent_family=1,
+        min_mechanisms_when_available=2,
+    )
+    identities = _merge(
+        _proposal(
+            "infeasible-a",
+            route_name="infeasible-route-a",
+            parent_family="family-only",
+            mechanisms=("mechanism-a",),
+            quality=0.9,
+        ),
+        _proposal(
+            "infeasible-b",
+            route_name="infeasible-route-b",
+            parent_family="family-only",
+            mechanisms=("mechanism-b",),
+            quality=0.8,
+        ),
+        policy=policy,
+    )
+
+    result = select_diverse_candidates_with_audit(identities, policy=policy)
+
+    assert len(result.candidates) == 1
+    assert result.audit.available_mechanism_count == 2
+    assert result.audit.feasible_mechanism_count == 1
+    assert result.audit.achieved_mechanism_count == 1
+    assert result.audit.quota_status is MechanismQuotaStatus.HARD_QUOTA_INFEASIBLE
+    assert result.audit.underfill_reasons == (
+        "PARENT_FAMILY_LIMIT",
+        "MECHANISM_TARGET_INFEASIBLE_UNDER_HARD_QUOTAS",
+    )
+
+
 def test_internal_identity_and_selection_models_have_no_prohibited_claim_field() -> None:
     record_types = (
         StrictStructureGroupInput,
         CandidateProposalInput,
         InternalCandidateIdentity,
         CandidateDistanceBreakdown,
+        SelectionAudit,
+        DiverseSelectionResult,
     )
     field_names = {
         field.name.casefold()
