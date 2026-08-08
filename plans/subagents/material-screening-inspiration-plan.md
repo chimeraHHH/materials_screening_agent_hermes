@@ -458,12 +458,12 @@ stages/inspiration/<run_id>/
 
 ### M8：P3.2 多候选去重与多样性
 
-- [ ] 引入 SHA-pinned operator-owned parent catalog，不开放任意路径；
-- [ ] 多 parent/multi-route runner 生成至少 5 个结构有效 proposal；
-- [ ] 同结构多路线合并，Top-5 exact/strict duplicate 为 0；
-- [ ] 机制可用时 Top-5 至少覆盖 2 个 mechanism；候选不足时诚实少输出；
-- [ ] `require_diverse_routes` 进入 policy、报告和回归语义；
-- [ ] 发布工作报告并提交、推送。
+- [x] 引入 SHA-pinned operator-owned parent catalog，不开放任意路径；
+- [x] 多 parent/multi-route runner 生成至少 5 个结构有效 proposal；
+- [x] 同结构多路线合并，Top-5 exact/strict duplicate 为 0；
+- [x] 机制可用时 Top-5 至少覆盖 2 个 mechanism；候选不足时诚实少输出；
+- [x] `require_diverse_routes` 进入 policy、报告和回归语义；
+- [x] 发布工作报告并提交、推送。
 
 ### M9：P3.3 多格式 Passage 与 Tag feedback
 
@@ -681,3 +681,20 @@ stages/inspiration/<run_id>/
   `e044df1605b8f3711f6ab9af4e6c7d37f2967d35` 合入；
 - 合并内容包含所有 M0–M5 实现、`d95579c` Skill 回归和 `1184d56` 授权运行证据；
 - 本 closeout 只更新发布事实，不扩大单用户 fixed-request pilot 的能力或科学 claim。
+
+### 2026-08-08：P3.2 parent-catalog Top-5 checkpoint
+
+- Catalog manifest SHA-256 为
+  `09d563732717e05ccf216d3b8572b1bcd1d855dd3f5d0106a4cdbc15b9197b99`；
+  loader 不接受外部 path/payload，并冻结 6 个工程校准 parent、route、bridge assignment 与
+  operator 输出；
+- approval-bound Gateway calibration run
+  `inspiration-0c0f19ecf5984e6c8e0da92e` 产生 6 个 `STRUCTURE_VALID` route，exact merge
+  后为 5 个 identity，Top-5 满额；
+- selection audit 记录 4 个 achieved mechanism、6 个 selected physical route、0 exact/strict
+  duplicate，mechanism/route quota 均为 `MET`，无 underfill；
+- 两个独立 workspace 的 catalog、plans、duplicate groups、selection audit、report、bundle 与
+  stage-result hashes 一致；完整记录见
+  [`docs/runs/2026-08-08-p32-parent-catalog-top5.md`](../../docs/runs/2026-08-08-p32-parent-catalog-top5.md)；
+- 主环境回归为 `732 passed, 14 skipped`；P3.2 `PASSED`，P3.3 与最终 release Gate 仍为
+  `IN_PROGRESS`。

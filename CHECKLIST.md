@@ -28,15 +28,15 @@
 
 ## P3.2 — Candidate Breadth & Diversity
 
-- [ ] 冻结 operator-owned、SHA-pinned parent catalog 和 provenance
-- [ ] 多 parent/multi-route engine 仍只使用白名单 operator
-- [ ] 构造至少 5 个结构有效 proposal 的可复现 Gate
-- [ ] 验证同结构多路线合并与完整 lineage
-- [ ] 验证 Top-5 exact/strict duplicate 为 0
-- [ ] 验证候选可用时至少覆盖 2 个 mechanism
-- [ ] 映射并报告 `require_diverse_routes` 的真实语义
-- [ ] 排序与关键 Artifact hash 可重放
-- [ ] 发布 P3.2 工作报告并提交、推送 GitHub
+- [x] 冻结 operator-owned、SHA-pinned parent catalog 和 provenance
+- [x] 多 parent/multi-route engine 仍只使用白名单 operator
+- [x] 构造至少 5 个结构有效 proposal 的可复现 Gate
+- [x] 验证同结构多路线合并与完整 lineage
+- [x] 验证 Top-5 exact/strict duplicate 为 0
+- [x] 验证候选可用时至少覆盖 2 个 mechanism
+- [x] 映射并报告 `require_diverse_routes` 的真实语义
+- [x] 排序与关键 Artifact hash 可重放
+- [x] 发布 P3.2 工作报告并提交、推送 GitHub
 
 ## P3.3 — Passage & Tag Feedback
 
@@ -65,8 +65,9 @@
 
 - [ ] 下一步始终与 [`PLAN.md`](PLAN.md) 的当前里程碑一致
 - [x] P3.1 结论：GO；详见 `docs/reports/2026-08-08-1837-inspiration-progress.md`
-- [ ] 下一次报告检查点：P3.2 多候选/多样性 Gate 后
-- [ ] 下一次路线判断：P3.2 frozen Top-5 fixture 通过后
+- [x] P3.2 结论：GO；详见 `docs/reports/2026-08-08-1924-inspiration-progress.md`
+- [ ] 下一次报告检查点：P3.3 多格式 Passage/Tag feedback Gate 后
+- [ ] 下一次路线判断：P3.3 离线校准与 replay Gate 通过后
 
 ## Blocked
 
