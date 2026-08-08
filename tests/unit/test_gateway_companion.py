@@ -13,6 +13,7 @@ from material_agent.gateway.companion import (
     PreparedInspirationRun,
     ProjectedInspirationResult,
     prepared_execution_manifest_sha256,
+    requirement_freeze_prompt,
 )
 from material_agent.gateway.models import (
     AnswerActionV1,
@@ -267,6 +268,18 @@ def test_start_is_deterministic_and_does_not_execute_the_runner() -> None:
     assert isinstance(first.state, InteractionRequiredStateV1)
     assert isinstance(first.state.interaction, ApprovalInteractionV1)
     assert first.state.interaction.approval_kind == "requirement_freeze"
+    assert first.state.interaction.prompt == requirement_freeze_prompt(
+        request=request,
+        prepared=preparer.prepared,
+    )
+    assert "offline fixture execution with no public-network access" in (
+        first.state.interaction.prompt
+    )
+    assert "offline body-fixture request budget=20" in (
+        first.state.interaction.prompt
+    )
+    assert "full-PDF reads=0" in first.state.interaction.prompt
+    assert "internal model calls=0" in first.state.interaction.prompt
     assert first.state.interaction.input_sha256 == prepared_execution_manifest_sha256(
         request=request,
         prepared=preparer.prepared,
@@ -278,6 +291,16 @@ def test_start_is_deterministic_and_does_not_execute_the_runner() -> None:
 
     with pytest.raises(CompanionAdapterError, match="submission identity"):
         adapter.start(run_id="inspiration-wrong", request=request)
+
+
+def test_requirement_freeze_prompt_rejects_wrong_input_types() -> None:
+    request = _request()
+    prepared = _prepared(inspiration_run_id(request.submission_id))
+
+    with pytest.raises(TypeError, match="request must"):
+        requirement_freeze_prompt(request=object(), prepared=prepared)  # type: ignore[arg-type]
+    with pytest.raises(TypeError, match="prepared must"):
+        requirement_freeze_prompt(request=request, prepared=object())  # type: ignore[arg-type]
 
 
 def test_only_exact_confirmed_approval_executes_once() -> None:

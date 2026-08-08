@@ -15,6 +15,7 @@ from material_agent.inspiration.extractors import (
     extract_crossref_metadata,
     extract_html_document,
     extract_jats_document,
+    extract_jsonld_document,
     extract_metadata_then_optional_body,
     extract_openalex_metadata,
 )
@@ -236,6 +237,47 @@ def test_html_structured_metadata_precedes_body_and_supports_common_vocabularies
     assert "footer must disappear" not in extracted
 
 
+def test_standalone_jsonld_is_bounded_locatable_and_untrusted() -> None:
+    abstract = (
+        "Flat band modes arise from compact localized interference paths under "
+        "measurable coherent coupling conditions."
+    )
+    payload = json.dumps(
+        {
+            "@context": "https://schema.org",
+            "@type": "https://schema.org/ScholarlyArticle",
+            "headline": "Standalone structured article",
+            "abstract": abstract,
+            "keywords": ["flat band", "photonics"],
+        }
+    )
+
+    result = extract_document(
+        payload,
+        media_type="application/ld+json; charset=utf-8",
+        target_terms=("flat band",),
+        limits=ExtractionLimits(min_abstract_tokens=8),
+    )
+
+    assert result.decision is ExtractionDecision.BODY_EXTRACTED
+    assert result.media_type == "application/ld+json"
+    assert result.title == "Standalone structured article"
+    assert result.keywords == ("flat band", "photonics")
+    assert result.warnings == ("STRUCTURED_METADATA_SUFFICIENT",)
+    assert len(result.drafts) == 1
+    assert result.drafts[0].text == abstract
+    assert result.drafts[0].locator_kind is PassageLocatorKind.JSON_LD
+    assert result.drafts[0].selector == "$.abstract"
+    assert result.drafts[0].source_tier is ExtractionTier.STRUCTURED_WEB
+    assert result.drafts[0].untrusted_text is True
+
+    with pytest.raises(ExtractionLimitError):
+        extract_jsonld_document(
+            payload,
+            limits=ExtractionLimits(max_input_bytes=10),
+        )
+
+
 def test_jats_extracts_abstract_keywords_and_only_matching_non_reference_section() -> None:
     jats = """
     <article xmlns="http://jats.nlm.nih.gov">
@@ -279,6 +321,25 @@ def test_jats_extracts_abstract_keywords_and_only_matching_non_reference_section
     assert "REFERENCE_SENTINEL" not in text
     assert "BACK_REFERENCE_SENTINEL" not in text
     assert "generic preparation" not in text
+
+
+@pytest.mark.parametrize(
+    "declaration",
+    (
+        "<!DOCTYPE article>",
+        '<!DOCTYPE article [<!ENTITY injected "flat band entity expansion">]>',
+        '<!ENTITY injected "standalone entity declaration">',
+    ),
+)
+def test_jats_rejects_doctype_and_entity_declarations(declaration: str) -> None:
+    result = extract_jats_document(
+        f"{declaration}<article><front><abstract>Safe text.</abstract></front></article>"
+    )
+
+    assert result.decision is ExtractionDecision.UNEXTRACTABLE
+    assert result.drafts == ()
+    assert result.warnings == ("JATS_DTD_OR_ENTITY_FORBIDDEN",)
+    assert result.untrusted_source is True
 
 
 def test_plain_html_section_becomes_a_bounded_sentence_window() -> None:
@@ -340,6 +401,21 @@ def test_pdf_and_unextractable_content_return_no_text() -> None:
     assert unknown.drafts == ()
     assert extract_html_document(b"%PDF-1.7\nnot html").drafts == ()
     assert extract_jats_document(b"%PDF-1.7\nnot xml").drafts == ()
+
+
+def test_pdf_magic_contradicting_declared_html_fails_closed() -> None:
+    disguised = extract_document(
+        b"\xef\xbb\xbf  %PDF-1.7\n<html>not actually html</html>",
+        media_type="text/html; charset=utf-8",
+    )
+
+    assert disguised.decision is ExtractionDecision.SKIP_BODY_UNSUPPORTED
+    assert disguised.media_type == "text/html"
+    assert disguised.drafts == ()
+    assert disguised.warnings == (
+        "CONTENT_TYPE_PDF_MAGIC_MISMATCH",
+        "PDF_EXTRACTION_DISABLED",
+    )
 
 
 def test_page_prompt_injection_stays_untrusted_text_and_cannot_set_decision() -> None:

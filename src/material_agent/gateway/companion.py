@@ -46,7 +46,7 @@ from material_agent.inspiration.models import (
     InspirationStageResultV1,
     TagGraphV1,
 )
-from material_agent.inspiration.policy import InspirationPolicyV1
+from material_agent.inspiration.policy import InspirationPolicyV1, SearchExecutionMode
 
 
 class CompanionAdapterError(AdapterContractError):
@@ -111,6 +111,46 @@ def prepared_execution_manifest_sha256(
             "tag_graph": prepared.tag_graph,
             "target_tag_ids": prepared.target_tag_ids,
         }
+    )
+
+
+def requirement_freeze_prompt(
+    *,
+    request: InspirationRunRequestV1,
+    prepared: PreparedInspirationRun,
+) -> str:
+    """Describe the frozen execution's real access and cost boundary to a user."""
+
+    if not isinstance(request, InspirationRunRequestV1):
+        raise TypeError("request must be an InspirationRunRequestV1")
+    if not isinstance(prepared, PreparedInspirationRun):
+        raise TypeError("prepared must be a PreparedInspirationRun")
+
+    policy = prepared.policy
+    adapter_id = prepared.inspiration_input.search_adapter.component_id
+    if policy.search_mode is SearchExecutionMode.PUBLIC_METADATA_API:
+        provider = (
+            "Crossref"
+            if adapter_id == "crossref-public-adapter"
+            else f"the approved {adapter_id} adapter"
+        )
+        execution_scope = (
+            f"bounded public {provider} metadata/abstract network access"
+        )
+        body_scope = f"article-body fetch requests={policy.fetch.max_requests}"
+    else:
+        execution_scope = "offline fixture execution with no public-network access"
+        body_scope = (
+            "offline body-fixture request budget="
+            f"{policy.fetch.max_requests}"
+        )
+
+    return (
+        "Freeze this bounded inspiration request before execution? Approval "
+        f"permits {execution_scope} with at most "
+        f"{request.constraints.budget.max_search_requests} physical search "
+        f"attempts; {body_scope}, full-PDF reads=0, and internal model "
+        f"calls={policy.llm.max_calls}."
     )
 
 
@@ -232,9 +272,9 @@ class OfflineInspirationCompanionAdapter:
                 interaction=ApprovalInteractionV1(
                     interaction_id=interaction_id,
                     approval_kind="requirement_freeze",
-                    prompt=(
-                        "Freeze this bounded inspiration request before the "
-                        "offline companion runner executes?"
+                    prompt=requirement_freeze_prompt(
+                        request=request,
+                        prepared=prepared,
                     ),
                     input_sha256=execution_manifest_sha256,
                 )

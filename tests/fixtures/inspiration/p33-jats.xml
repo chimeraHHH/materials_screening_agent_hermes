@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<article xmlns="http://jats.nlm.nih.gov" article-type="research-article">
+  <front>
+    <article-meta>
+      <title-group>
+        <article-title>Magnon line-graph-localization engineering calibration</article-title>
+      </title-group>
+      <abstract>
+        <p>We map bounded spin-wave bands in one synthetic lattice.</p>
+      </abstract>
+      <kwd-group>
+        <kwd>frustrated magnetism flat magnon band</kwd>
+        <kwd>line graph flat band localization</kwd>
+        <kwd>magnon</kwd>
+      </kwd-group>
+    </article-meta>
+  </front>
+  <body>
+    <sec sec-type="results">
+      <title>Results</title>
+      <p>In the frustrated magnetism flat magnon band model, line graph flat band localization confines a magnon eigenvector to one loop because alternating spin-wave amplitudes cancel every escape path across the bounded coupling sweep.</p>
+      <p>Removing one line-graph bond releases the localized magnon mode, while restoring the closed connectivity recovers the same narrow branch and its loop-confined amplitude pattern.</p>
+    </sec>
+    <sec sec-type="navigation">
+      <title>Navigation</title>
+      <p>NAV_SENTINEL This table-of-contents sentence is unrelated boilerplate and must not become a selected passage.</p>
+    </sec>
+    <sec sec-type="references">
+      <title>References</title>
+      <p>REFERENCE_SENTINEL frustrated magnetism flat magnon band and line graph flat band localization citation text must be excluded.</p>
+    </sec>
+  </body>
+  <back>
+    <ref-list>
+      <ref id="ref-1">
+        <mixed-citation>BACK_SENTINEL magnon line graph localization reference text must be excluded.</mixed-citation>
+      </ref>
+    </ref-list>
+  </back>
+</article>

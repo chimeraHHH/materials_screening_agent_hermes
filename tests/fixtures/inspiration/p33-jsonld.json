@@ -1,0 +1,11 @@
+{
+  "@context": "https://schema.org",
+  "@type": "ScholarlyArticle",
+  "headline": "Standalone compact-localized-state engineering fixture",
+  "abstract": "This operator-owned engineering fixture describes a compact localized state in a finite electronic motif, where destructive interference flat band cancellation suppresses every outgoing hopping path and keeps the recorded amplitude inside the reviewed local connectivity.",
+  "keywords": [
+    "electronic flat band",
+    "compact localized state",
+    "destructive interference flat band"
+  ]
+}

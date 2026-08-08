@@ -18,12 +18,16 @@ otherwise it remains fail-closed and unavailable. Agent03 has a v1 mock
 controller, and Agent04 has an MVP mock controller. Only the real, configured
 Agent02 worker may produce L2 ML evidence; every test fixture remains mock.
 
-## Hermes inspiration pilot
+## Hermes inspiration beta
 
-The current pilot is deliberately narrow. It accepts one source-controlled
-layered transition-metal dichalcogenide request and executes a pinned TiS2 →
-TiSe2-equivalent-site proposal. It is an auditable engineering vertical slice,
-not a general scientific planner. The output remains a hypothesis:
+The production profile is deliberately narrow. It accepts reviewed structured
+flat/narrow electronic-band constraints, preserves natural-language goals only
+as approval-bound rationale, and executes bounded Crossref metadata search in
+the same persistent Gateway run. Unsupported targets, conflicting Ti/Se route
+constraints, and insufficient budgets fail before approval or network access.
+The original exact-request fixture factory remains available only for explicit
+offline replay. Neither path is a general scientific planner. Every output
+remains a hypothesis:
 `STRUCTURE_VALID` means structural QC only, the target property is `UNKNOWN`,
 and this repository performs no novelty, patent, or prior-art assessment.
 
@@ -46,19 +50,20 @@ materials_run_act
 materials_result_get
 ```
 
-The natural-language Gate has run through the authorized Hermes provider path.
-Hermes created and resumed one persistent run, stopped for the real user
-decision, consumed an out-of-band one-time operator grant, and returned one
-hash-verified TiSe2 proposal. The Gateway state was honestly `PARTIAL` while the
-contained bundle was `SUCCEEDED`; the target property remains `UNKNOWN`. The
-fixed Hermes run is offline/fixture-backed, while a separate Crossref live Gate
-proves the public metadata boundary. Exact sessions, hashes, warnings, cost
-ledgers, and debug history are in the
-[pilot run record](docs/runs/2026-08-08-hermes-inspiration-pilot.md).
-For that run, the Gateway materials service used zero internal LLM calls; the
-separate Hermes host audit recorded 11 provider calls, 36,240 non-cached input,
-80,384 cache-read, 2,584 output, and 213 reasoning tokens. A recorded provider
-cost of `0.0` means billing was unavailable, not that execution was free.
+The fixed offline pilot first proved the approval lifecycle. P3.x then completed
+a user-approved production Crossref run in the same persistent Gateway run. It
+made four bounded public metadata requests, fetched zero article bodies and
+PDFs, used zero internal materials-service model calls, persisted two selected
+passages/vectors and two structure-valid proposals, and returned one
+hash-verified TiSe2 proposal after internal deduplication/MMR. Gateway state is
+honestly `PARTIAL` because two bodies were not fetched and two proposed bridge
+rules lacked required SUPPORT tags; the contained bundle is `SUCCEEDED` and the
+target property remains `UNKNOWN`. Exact authorization bindings, sessions,
+hashes, warnings, ledgers, CLI caveats, and full-closure verification are in the
+[final Crossref run record](docs/runs/2026-08-08-hermes-final-crossref-v2.md).
+The earlier [fixed pilot record](docs/runs/2026-08-08-hermes-inspiration-pilot.md)
+remains historical baseline evidence. A provider-reported cost of `0.0` or
+`included` is not interpreted as free execution.
 
 An MCP caller cannot approve its own action. `materials_run_act` remains blocked
 until a trusted local operator records a one-time grant bound to the request,
@@ -82,7 +87,8 @@ an input for another `submit` call:
   --workspace workspace/<fresh-pilot-workspace> \
   --project materials-inspiration \
   --run-id <run-id-from-submit> \
-  --confirmation-reference <trusted-user-decision-reference>
+  --confirmation-reference <trusted-user-decision-reference> \
+  --service-mode fixture
 
 .venv-gateway/bin/python integrations/hermes/scripts/run_gateway_pilot.py finish \
   --workspace workspace/<fresh-pilot-workspace> \
@@ -865,16 +871,17 @@ MPLCONFIGDIR=/tmp/material-agent-mpl \
 ```
 
 The historical P0.1/P0.2 and v1-closeout commits are retained for traceability.
-After the closeout, the current development branch added the DeepSeek Stage 0
-provider, additional Agent01 retrieval sources, Agent02 benchmark/DeepH control
-flows, the Agent03 structured VASPilot bridge PoC, and the Hermes inspiration
-pilot. The current offline Gate reports `668 passed, 13 skipped, 362 warnings`.
-The skips are two MCP/stdio checks assigned to the isolated Gateway environment,
-opt-in Crossref/LLM/Materials Project/NOMAD live probes, and five real-ML tests.
-The warnings are known pymatgen/spglib warnings and do not indicate test
-failures. Real-ML tests are never part of the offline Gate. On a non-sandboxed
-target Mac, the historical optional real-ML Gate reported `5 passed`; sandbox
-MPS unavailability is an environmental limitation, not a hardware failure.
+After the closeout, the development branch added the DeepSeek Stage 0 provider,
+additional Agent01 retrieval sources, Agent02 benchmark/DeepH control flows,
+the Agent03 structured VASPilot bridge PoC, and the Hermes inspiration beta.
+The final P3.x release Gate in the lock-synchronized Gateway environment reports
+`825 passed, 12 skipped, 710 warnings`; that environment includes the optional
+MCP SDK/stdio dependencies, so those tests run instead of skipping. The remaining
+skips are explicit live-service or real-ML opt-ins. The warnings are known
+pymatgen/spglib warnings and do not indicate test failures. Real-ML tests are
+never part of the default Gate. On a non-sandboxed target Mac, the historical
+optional real-ML Gate reported `5 passed`; sandbox MPS unavailability is an
+environmental limitation, not a hardware failure.
 
 The standalone Agent01 and Orchestrator-restart Materials Project release
 Gates are opt-in and require network access plus a credential available from
@@ -959,8 +966,8 @@ PYTHONDONTWRITEBYTECODE=1 MPLCONFIGDIR=/tmp/material-agent-mpl \
 git diff --check
 ```
 
-The historical closeout result was `337 passed, 7 skipped`. The current
-Hermes inspiration release result is `668 passed, 13 skipped`; the skip reasons
+The historical closeout result was `337 passed, 7 skipped`. The P3.1
+generalization checkpoint result is `715 passed, 14 skipped`; the skip reasons
 are the isolated MCP/stdio checks, opt-in Crossref/LLM/Materials Project/NOMAD
 live probes, and real-ML tests. Do not run the live MP Gate in this offline
 audit: it requires network access and a secret `MP_API_KEY`, neither of which is

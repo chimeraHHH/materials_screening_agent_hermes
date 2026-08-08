@@ -91,7 +91,7 @@ mcp_servers:
       - "--project"
       - "${MATERIAL_AGENT_PROJECT_ID}"
       - "--service-factory"
-      - "material_agent.integration.hermes_service:create_hermes_fixture_service"
+      - "material_agent.integration.hermes_service:create_hermes_inspiration_service"
     enabled: true
     timeout: 300
     connect_timeout: 30

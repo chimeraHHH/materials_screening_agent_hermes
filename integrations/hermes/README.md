@@ -24,7 +24,7 @@ Its platform configuration names the raw `materials` server; Hermes v0.20.0 then
 registers the dynamic `mcp-materials` toolset and `mcp__materials__*` tools. The
 MCP server exposes four coarse tools and disables server resources and prompts.
 The profile pins the repository-owned
-`material_agent.integration.hermes_service:create_hermes_fixture_service`
+`material_agent.integration.hermes_service:create_hermes_inspiration_service`
 factory; neither the model nor a tool caller can replace it or supply paths.
 
 The versioned `SKILL.md` is mirrored into `SOUL.md` so its policy is loaded on
@@ -37,18 +37,63 @@ At runtime, set these non-secret variables in the profile environment:
 MATERIAL_AGENT_PYTHON=/absolute/path/to/materials_screening_agent/.venv-gateway/bin/python
 MATERIAL_AGENT_WORKSPACE=/absolute/path/to/a/bounded/workspace
 MATERIAL_AGENT_PROJECT_ID=materials-inspiration
+# Optional Crossref polite-pool identity; never persisted in artifacts:
+MATERIALS_CROSSREF_CONTACT_EMAIL=operator@example.org
 ```
 
 `MATERIAL_AGENT_PYTHON` must name a separate Gateway environment containing the
-material project dependencies plus the pinned MCP SDK. The trusted local pilot
-accepts only its source-controlled flat-band fixture request, stores artifacts
-beneath `<workspace>/<project>/`, and persists Gateway state in
+material project dependencies plus the pinned MCP SDK. The production service
+compiles a narrow, source-controlled flat/narrow electronic-band request family
+from strict structured constraints and performs bounded Crossref metadata search.
+The free-form goal is approval-bound and hashed but never parsed to infer scope.
+Unsupported requests fail before approval or network access. The current
+operator-owned, SHA-pinned engineering catalog exposes only reviewed TiS2/TiSSe
+to TiSe2 substitution routes and accepts no caller-supplied CIF or path; see the
+versioned Skill for the exact vocabularies and minimum budgets. The service
+stores artifacts beneath
+`<workspace>/<project>/` and persists Gateway state in
 `<workspace>/<project>/.gateway/materials-gateway.sqlite3`. A separate mode-0600
 `operator-approval-grants.sqlite3` stores one-time action grants and is never
 exposed through MCP. Restarting the MCP process therefore preserves submission
 idempotency, pending approval, terminal state, and the bounded result. Scientific
 completion still depends on the canonical structured-result hash plus immutable
 `stage_result.json` and report artifacts passing URI/SHA/size verification.
+
+Create or refresh that environment only through
+`bootstrap_gateway_runtime.py`. It performs an exact `uv pip sync` against
+`gateway-requirements.lock` before reinstalling this repository in editable,
+no-dependency mode. The sync is intentional: a shared development or Agent02
+environment can contain newer split Pymatgen distributions that change
+structure-parser diagnostics and must not be used for execution or release
+replay.
+
+`MATERIALS_CROSSREF_CONTACT_EMAIL` is optional operator-owned environment state.
+It selects Crossref's polite pool but must never enter an Artifact, manifest,
+report, component digest, or model-visible result. The adapter reads bounded
+metadata and abstracts only; the production policy has a zero body-fetch request
+budget and does not follow article, full-text, or PDF links. The repository's
+JSON-LD/Highwire, JATS/XML, and HTML passage Gate is offline and fixture-backed.
+It proves bounded runner/extractor behavior, not public-network body-fetch
+capability. Public body fetching remains disabled until DNS validation is bound
+to the actual connection address and all redirect, host, content-type, request,
+and byte-budget release checks pass. The current preflight DNS resolution and
+later hostname connection are separate operations; they do not close DNS
+rebinding/TOCTOU. Exhausted
+transient retries terminate with `EXTERNAL_SEARCH_UNAVAILABLE` and
+`retryable=true`; retry only after a new user decision, with a new submission ID,
+new run, and fresh approval. Schema drift is nonretryable.
+
+Runtime `tag_feedback.json` is immutable and review-only. It cannot mutate the
+curated TagGraph or current-run query plan. Its v1 wire values are
+`review_disposition=REVIEW_ONLY`, `applies_to_tag_graph=false`,
+`scientific_conclusion=false`, and
+`aggregation_semantics=INCLUSIVE_NON_ADDITIVE`. The top level and every bridge
+row use `expert_status=UNKNOWN`; v1 accepts no expert-review input. Any change
+requires a separately versioned, verified review workflow. Query/tag/bridge cost
+allocations are inclusive and non-additive; the Gateway `CostLedger` is the sole
+additive run total. The v1 `materials_result_get` projection exposes only the
+feedback Artifact URI/hash, not its rows, so Hermes must not claim to have read
+or quote those rows.
 
 ## Record a real user approval out of band
 
@@ -57,6 +102,13 @@ a matching operator grant fails while the run remains `INTERACTION_REQUIRED`.
 After showing the exact interaction and frozen execution-manifest hash to the
 user, a trusted local operator records the decision with the Gateway runtime:
 
+For the production profile, that interaction must explicitly say that approval
+permits bounded public Crossref metadata/abstract network access, state the
+physical search-attempt ceiling, and state zero article-body fetch, full-PDF, and
+internal-model budgets. An interaction that incorrectly says the production run
+is offline is not informed approval: do not issue a grant, and replace the run
+only after correcting and validating the Gateway contract.
+
 ```bash
 .venv-gateway/bin/python -m material_agent.integration.operator_approval \
   --workspace /absolute/path/to/a/bounded/workspace \
@@ -64,6 +116,9 @@ user, a trusted local operator records the decision with the Gateway runtime:
   --run-id inspiration-... \
   --confirmation-reference user-confirmation:ticket-001
 ```
+
+The CLI defaults to the production public service. Source-controlled fixture
+replay is test-only and must be selected explicitly with `--service-mode fixture`.
 
 The grant binds the canonical request, complete interaction, execution manifest,
 and exact action, and is consumed atomically before runner execution. If the MCP
@@ -81,9 +136,54 @@ frozen inputs and explicitly re-arm the stranded grant with a fresh reference:
   --confirm-original-process-stopped
 ```
 
-This recovery command is deliberately absent from Hermes's tool list. Replaying
-the fixed local pilot is safe only because its runner inputs and outputs are
-immutable and deterministic; any byte drift fails closed.
+This recovery command is deliberately absent from Hermes's tool list and is only
+for a verified process crash between grant consumption and state commit. Never
+use it to replay a terminal provider failure or bypass a new user decision. The
+fixture service remains available only through explicit `--service-mode fixture`
+for deterministic source-controlled replay; any byte drift fails closed.
+
+## Verify a completed release run
+
+After the same run reaches a result-bearing terminal state and every writer has
+stopped, run the standalone verifier with the values witnessed before approval:
+
+```bash
+.venv-gateway/bin/python \
+  integrations/hermes/scripts/verify_completed_inspiration_run.py \
+  --workspace /absolute/path/to/a/bounded/workspace \
+  --project materials-inspiration \
+  --run-id inspiration-... \
+  --expected-request-sha256 <64-lowercase-hex> \
+  --expected-execution-manifest-sha256 <64-lowercase-hex> \
+  --expected-interaction-id interaction-... \
+  --expected-interaction-sha256 <64-lowercase-hex> \
+  --expected-action-sha256 <64-lowercase-hex> \
+  --expected-confirmation-reference <exact-operator-reference>
+```
+
+This command is fail-closed and read-only. It rejects an uncheckpointed WAL,
+symlink/hard-link traversal, a pending or unbound grant, noncanonical database
+records, undeclared stage entries, declared fetched-body/PDF Artifacts,
+forbidden or out-of-allowlist Crossref fields, raw PDF signatures, PDF
+data/signature markers or document-level HTML markers in bounded allowed
+strings, and any pointer or lineage drift. It also binds the production
+`rows=1` response to exactly one item and caps the raw abstract at 20,000
+characters. It then deterministically replays the current approval-bound
+components from query planning and Crossref parsing through passages, vectors,
+evidence, bridges, structure transformation, internal dedup/MMR, ledger,
+feedback, report, and Gateway projection. These are structural and marker
+checks, not semantic recognition of arbitrary plain prose mislabeled by a
+provider as an abstract. The project tree is byte/metadata snapshotted before
+and after verification; any write fails the Gate. A historical run whose frozen
+components no longer match the current release must be verified with its
+source-pinned release checkout, never by weakening the manifest check. The
+executable is part of the contract: use the lock-synchronized
+`.venv-gateway/bin/python`, not the general development or Agent02 environment.
+Raw Crossref items are restricted to the exact metadata fields requested by the
+adapter (`DOI,title,author,published,URL,abstract,subject`) with bounded nested
+shapes and lengths. Replayed selection/fetch/duplicate audits are compared as
+canonical bytes, not permissive Python values, and the grant must match the
+exact operator confirmation reference supplied on the command line.
 
 OAuth provider credentials belong only in Hermes's ignored runtime credential
 store; environment-based provider secrets and `API_SERVER_KEY` belong only in

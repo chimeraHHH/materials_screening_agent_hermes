@@ -1,17 +1,19 @@
-"""Trusted, fixture-backed Hermes service factory for the real offline runner.
+"""Trusted Hermes factories for the bounded inspiration runner.
 
-This is a deliberately narrow local pilot, not a general request-to-science
-planner.  The operator fixes the workspace and project on the MCP command line;
-tool inputs contain no paths.  Only one source-controlled flat-band fixture
-request is accepted, and it executes the real pinned pymatgen substitution
-engine through :class:`InspirationRunner`.
+The offline factory preserves the fixed P0.3 replay.  The public factory adds a
+deterministic request compiler and Crossref metadata I/O, but remains a narrow
+local beta rather than a general request-to-science planner.  The operator fixes
+the workspace and project on the MCP command line; tool inputs contain no paths,
+free structures, provider endpoints, or code.
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
+import os
 from collections import defaultdict
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -57,6 +59,11 @@ from material_agent.inspiration.models import (
     TagGraphV1,
     TransformationPlanV1,
 )
+from material_agent.inspiration.parent_catalog import (
+    LoadedParentCatalog,
+    ParentCatalogIntegrityError,
+    load_flat_band_parent_catalog_v1,
+)
 from material_agent.inspiration.policy import (
     BridgeSearchPolicyV1,
     EmbeddingBudgetV1,
@@ -73,7 +80,12 @@ from material_agent.inspiration.runner import (
     InspirationRunner,
     verify_artifact_pointer,
 )
-from material_agent.inspiration.search import FixtureSearchAdapter
+from material_agent.inspiration.search import (
+    BoundedHttpTransport,
+    CrossrefPublicAdapter,
+    FixtureSearchAdapter,
+    SearchAdapterError,
+)
 from material_agent.inspiration.tag_graph import (
     curated_flat_band_tag_graph,
     plan_tag_queries,
@@ -83,6 +95,11 @@ from material_agent.inspiration.transformations import (
     substitution_registry_bytes,
 )
 from material_agent.inspiration.vectorizer import SIGNED_HASHING_SNAPSHOT
+from material_agent.integration.request_compiler import (
+    CompiledHermesInspirationRequest,
+    HermesInspirationRequestCompiler,
+    HermesRequestCompilationError,
+)
 from material_agent.retrieval.storage import LocalArtifactStore
 
 
@@ -131,6 +148,12 @@ _FIXTURE_FILE_SHA256 = {
     ),
 }
 _IDENTIFIER_ADAPTER = TypeAdapter(Identifier)
+_CROSSREF_CONTACT_EMAIL_ENV = "MATERIALS_CROSSREF_CONTACT_EMAIL"
+_PUBLIC_CROSSREF_MAX_RETRIES = 1
+_PUBLIC_CROSSREF_TIMEOUT_SECONDS = 20
+_PUBLIC_CROSSREF_MAX_RETRY_DELAY_SECONDS = 10.0
+_PUBLIC_CROSSREF_MAX_TOTAL_WAIT_SECONDS = 10.0
+_RETRYABLE_CROSSREF_HTTP_STATUSES = frozenset({408, 429, 500, 502, 503, 504})
 
 
 class HermesFixtureConfigurationError(RuntimeError):
@@ -392,6 +415,166 @@ class HermesFixturePreparer:
         )
 
 
+class HermesInspirationPreparer:
+    """Compile a request and seed only operator-owned, SHA-pinned inputs."""
+
+    def __init__(
+        self,
+        *,
+        store: LocalArtifactStore,
+        project_id: str,
+        parent_catalog: LoadedParentCatalog,
+        tag_graph: TagGraphV1,
+        search_adapter: CrossrefPublicAdapter,
+        compiler: HermesInspirationRequestCompiler,
+    ) -> None:
+        if search_adapter.max_retries != compiler.max_retries_per_query:
+            raise HermesFixtureConfigurationError(
+                "request compiler and Crossref retry budgets differ"
+            )
+        self.store = store
+        self.project_id = project_id
+        self.parent_catalog = parent_catalog
+        self.tag_graph = tag_graph
+        self.search_adapter = search_adapter
+        self.compiler = compiler
+
+    def compile(
+        self,
+        request: InspirationRunRequestV1,
+    ) -> CompiledHermesInspirationRequest:
+        return self.compiler.compile(request)
+
+    def prepare(
+        self,
+        *,
+        run_id: str,
+        request: InspirationRunRequestV1,
+    ) -> PreparedInspirationRun:
+        compiled = self.compile(request)
+        catalog = self.parent_catalog
+        if compiled.parent_catalog_id != catalog.manifest.catalog_id:
+            raise HermesFixtureConfigurationError(
+                "compiled parent catalog differs from the loaded catalog"
+            )
+        catalog_prefix = f"inputs/catalogs/{catalog.manifest.catalog_id}"
+        catalog_pointer = _pointer(
+            self.store.write_bytes(
+                f"{catalog_prefix}/manifest.json",
+                catalog.manifest_bytes,
+                media_type="application/json",
+                immutable=True,
+            )
+        )
+        parent_candidates: list[ParentCandidateRefV1] = []
+        catalog_entry_scope: list[dict[str, object]] = []
+        for loaded_entry in catalog.entries:
+            entry = loaded_entry.record
+            parent_pointer = _pointer(
+                self.store.write_bytes(
+                    f"{catalog_prefix}/{entry.artifact.asset_name}",
+                    loaded_entry.artifact_bytes,
+                    media_type=STRUCTURE_MEDIA_TYPE,
+                    immutable=True,
+                )
+            )
+            parent_candidates.append(
+                ParentCandidateRefV1(
+                    candidate_id=entry.candidate_id,
+                    structure_id=entry.structure_id,
+                    structure_artifact=parent_pointer,
+                )
+            )
+            catalog_entry_scope.append(
+                {
+                    "candidate_id": entry.candidate_id,
+                    "entry_id": entry.entry_id,
+                    "family_id": entry.family_id,
+                    "parent_structure_artifact": parent_pointer,
+                    "reviewed_bridge_rule_id": entry.reviewed_bridge_rule_id,
+                    "route_sha256": entry.route_sha256,
+                    "structure_id": entry.structure_id,
+                }
+            )
+        requirement_pointer = _pointer(
+            self.store.write_json(
+                f"inputs/requirements/{run_id}.json",
+                {
+                    "compiled_scope": {
+                        "catalog_entries": catalog_entry_scope,
+                        "diversity_mode": compiled.diversity_mode.value,
+                        "expected_output_elements": (
+                            compiled.expected_output_elements
+                        ),
+                        "goal_role": "approval-bound-user-rationale-not-parsed",
+                        "goal_sha256": compiled.goal_sha256,
+                        "normalized_material_classes": (
+                            compiled.normalized_material_classes
+                        ),
+                        "normalized_target_features": (
+                            compiled.normalized_target_features
+                        ),
+                        "parent_catalog_artifact": catalog_pointer,
+                        "parent_catalog_id": compiled.parent_catalog_id,
+                        "parent_catalog_sha256": catalog.manifest_sha256,
+                        "parent_catalog_version": catalog.manifest.catalog_version,
+                        "physical_search_attempt_limit": (
+                            compiled.physical_search_attempt_limit
+                        ),
+                        "target_tag_ids": compiled.target_tag_ids,
+                    },
+                    "gateway_request": request.model_dump(mode="json"),
+                    "gateway_request_sha256": inspiration_request_sha256(request),
+                    "requirement_revision": 1,
+                    "schema_version": "materials-hermes-inspiration-requirement-v1",
+                },
+                immutable=True,
+            )
+        )
+        policy_pointer = _pointer(
+            self.store.write_json(
+                f"inputs/policies/{run_id}.json",
+                compiled.policy.model_dump(mode="json"),
+                immutable=True,
+            )
+        )
+        graph_pointer = _pointer(
+            self.store.write_json(
+                "inputs/tag_graph.json",
+                self.tag_graph.model_dump(mode="json"),
+                immutable=True,
+            )
+        )
+        registry_pointer = _pointer(
+            self.store.write_bytes(
+                "inputs/substitution_registry.json",
+                substitution_registry_bytes(DEFAULT_SUBSTITUTION_REGISTRY_V1),
+                media_type="application/json",
+                immutable=True,
+            )
+        )
+        inspiration_input = InspirationInputV1(
+            project_id=self.project_id,
+            request_id=request.submission_id,
+            run_id=run_id,
+            requirement_revision=1,
+            requirement_artifact=requirement_pointer,
+            parent_candidates=tuple(parent_candidates),
+            policy_artifact=policy_pointer,
+            tag_graph_artifact=graph_pointer,
+            transformation_registry_artifact=registry_pointer,
+            search_fixture_artifact=None,
+            search_adapter=self.search_adapter.component,
+            vectorizer=SIGNED_HASHING_SNAPSHOT,
+        )
+        return PreparedInspirationRun(
+            inspiration_input=inspiration_input,
+            policy=compiled.policy,
+            tag_graph=self.tag_graph,
+            target_tag_ids=compiled.target_tag_ids,
+        )
+
+
 class HermesFixtureProjector:
     """Re-read authoritative runner artifacts and build the bounded Gateway DTO."""
 
@@ -450,6 +633,10 @@ class HermesFixtureProjector:
             bridges=bridges,
             plans=plans,
         )
+        fetched_document_count = self._count_fetched_documents(
+            stage,
+            run_id=run_id,
+        )
         ledger = bundle.cost_ledger
         result = GatewayResultRecordV1(
             run_id=run_id,
@@ -470,7 +657,7 @@ class HermesFixtureProjector:
             cost_ledger=CostLedgerProjectionV1(
                 search_requests=ledger.search_requests,
                 search_response_bytes=ledger.search_response_bytes,
-                fetched_documents=ledger.fetch_requests,
+                fetched_documents=fetched_document_count,
                 extracted_passages=ledger.extracted_passages,
                 vectorized_passages=ledger.vectorized_passages,
                 model_calls=ledger.llm_calls,
@@ -567,6 +754,64 @@ class HermesFixtureProjector:
                 f"authoritative {filename} artifact is invalid"
             ) from exc
 
+    def _count_fetched_documents(
+        self,
+        stage: InspirationStageResultV1,
+        *,
+        run_id: str,
+    ) -> int:
+        """Count successful documents without confusing them with HTTP attempts."""
+
+        expected_uri = (
+            f"artifact://stages/inspiration/{run_id}/fetch_manifest.jsonl"
+        )
+        matches = tuple(
+            pointer
+            for pointer in stage.intermediate_artifacts
+            if pointer.uri == expected_uri
+        )
+        if len(matches) != 1:
+            raise CompanionAdapterError(
+                "stage result does not identify exactly one fetch manifest"
+            )
+        self._verify_pointer(matches[0])
+        fetched_document_ids: set[str] = set()
+        seen_document_ids: set[str] = set()
+        try:
+            lines = (
+                line
+                for line in self.store.read_bytes(matches[0].uri).splitlines()
+                if line.strip()
+            )
+            for line in lines:
+                record = json.loads(line)
+                if not isinstance(record, dict):
+                    raise ValueError("fetch manifest row must be an object")
+                if record.get("schema_version") != "inspiration-fetch-manifest-v1":
+                    raise ValueError("unsupported fetch manifest schema")
+                document_id = record.get("document_id")
+                fetched = record.get("fetched")
+                body_value = record.get("fetched_body_artifact")
+                if not isinstance(document_id, str) or type(fetched) is not bool:
+                    raise ValueError("fetch manifest identity fields are invalid")
+                if document_id in seen_document_ids:
+                    raise ValueError("fetch manifest repeats a canonical document")
+                seen_document_ids.add(document_id)
+                if not fetched:
+                    if body_value is not None:
+                        raise ValueError("unfetched document names a body Artifact")
+                    continue
+                body_pointer = ArtifactPointerV1.model_validate(body_value)
+                if body_pointer not in stage.intermediate_artifacts:
+                    raise ValueError("fetched body is absent from stage lineage")
+                self._verify_pointer(body_pointer)
+                fetched_document_ids.add(document_id)
+        except (TypeError, ValueError, OSError, json.JSONDecodeError) as exc:
+            raise CompanionAdapterError(
+                "authoritative fetch_manifest.jsonl artifact is invalid"
+            ) from exc
+        return len(fetched_document_ids)
+
     def _verify_pointer(self, pointer: ArtifactPointerV1) -> None:
         try:
             verify_artifact_pointer(self.store, pointer)
@@ -629,21 +874,38 @@ class HermesFixtureProjector:
                 raise CompanionAdapterError(
                     "candidate projection has an orphaned lineage reference"
                 ) from exc
-            if len(candidate_bridges) != 1:
+            if not candidate_bridges:
                 raise CompanionAdapterError(
-                    "trusted fixture candidate must resolve to one bridge"
+                    "candidate projection must resolve to at least one bridge"
                 )
-            bridge = candidate_bridges[0]
             try:
-                bridge_domain = ", ".join(
-                    tag_index[tag_id].label for tag_id in bridge.source_domain_tag_ids
+                bridge_domains = tuple(
+                    sorted(
+                        {
+                            tag_index[tag_id].label
+                            for bridge in candidate_bridges
+                            for tag_id in bridge.source_domain_tag_ids
+                        }
+                    )
                 )
             except KeyError as exc:
                 raise CompanionAdapterError(
                     "bridge projection references an unknown tag"
                 ) from exc
-            if not bridge_domain:
+            if not bridge_domains:
                 raise CompanionAdapterError("bridge projection has no source domain")
+            shared_invariants = tuple(
+                dict.fromkeys(bridge.shared_invariant for bridge in candidate_bridges)
+            )
+            failure_conditions = tuple(
+                sorted(
+                    {
+                        condition
+                        for bridge in candidate_bridges
+                        for condition in bridge.breaking_conditions
+                    }
+                )
+            )
             used_passages.update(candidate_passage_ids)
             parameters = plan.parameters
             sites = ", ".join(str(index) for index in parameters.equivalent_site_indices)
@@ -654,15 +916,17 @@ class HermesFixtureProjector:
                     deterministic_transformation=(
                         f"{plan.operator_id} replaces {parameters.source_species} "
                         f"with {parameters.target_species} at the complete "
-                        f"equivalence class [{sites}]."
+                        f"equivalence class [{sites}]. The selected structure "
+                        f"retains {len(candidate.merged_routes)} hash-distinct "
+                        "physical transformation route(s)."
                     ),
-                    shared_invariant=bridge.shared_invariant,
-                    bridge_domain=bridge_domain,
+                    shared_invariant=" | ".join(shared_invariants),
+                    bridge_domain=", ".join(bridge_domains),
                     evidence_document_ids=tuple(
                         sorted({item.document_id for item in candidate_passages})
                     ),
                     evidence_passage_ids=candidate_passage_ids,
-                    failure_conditions=bridge.breaking_conditions,
+                    failure_conditions=failure_conditions,
                     cheapest_falsification_step=candidate.next_falsification_step,
                 )
             )
@@ -709,6 +973,78 @@ class _TrustedFixtureCompanion(OfflineInspirationCompanionAdapter):
                 )
             )
         return super().start(run_id=run_id, request=request)
+
+
+class _TrustedInspirationCompanion(OfflineInspirationCompanionAdapter):
+    """Expose bounded compiler and transient-search failures at the public edge."""
+
+    def __init__(self, *, preparer: HermesInspirationPreparer, **kwargs: Any) -> None:
+        super().__init__(preparer=preparer, **kwargs)
+        self.inspiration_preparer = preparer
+
+    def start(
+        self,
+        *,
+        run_id: str,
+        request: InspirationRunRequestV1,
+    ) -> CompanionTransitionV1:
+        try:
+            self.inspiration_preparer.compile(request)
+        except HermesRequestCompilationError:
+            return CompanionTransitionV1(
+                state=FailedStateV1(
+                    public_error_code="UNSUPPORTED_INSPIRATION_REQUEST",
+                    public_message=(
+                        "the request is outside the bounded inspiration beta contract"
+                    ),
+                    retryable=False,
+                )
+            )
+        return super().start(run_id=run_id, request=request)
+
+    def _execute(
+        self,
+        *,
+        run_id: str,
+        request: InspirationRunRequestV1,
+        expected_execution_manifest_sha256: str | None = None,
+    ) -> CompanionTransitionV1:
+        try:
+            return super()._execute(
+                run_id=run_id,
+                request=request,
+                expected_execution_manifest_sha256=(
+                    expected_execution_manifest_sha256
+                ),
+            )
+        except SearchAdapterError as error:
+            if not (
+                error.code in {"NETWORK_ERROR", "WAIT_BUDGET_EXCEEDED"}
+                or error.http_status in _RETRYABLE_CROSSREF_HTTP_STATUSES
+            ):
+                raise
+            return CompanionTransitionV1(
+                state=FailedStateV1(
+                    public_error_code="EXTERNAL_SEARCH_UNAVAILABLE",
+                    public_message=(
+                        "public metadata search is temporarily unavailable; "
+                        "submit a new run later"
+                    ),
+                    retryable=True,
+                )
+            )
+
+
+class _ApprovalBoundInspirationRunner(InspirationRunner):
+    """Expose every injected execution component to the approval manifest."""
+
+    @property
+    def execution_components(self):
+        return (
+            *super().execution_components,
+            self.search_adapter.component,
+            self.vectorizer,
+        )
 
 
 def resolve_hermes_project_root(
@@ -843,4 +1179,100 @@ def create_hermes_fixture_service(
         companion=companion,
         artifact_reader=store,
         action_authorizer=action_authorizer,
+    )
+
+
+def create_hermes_inspiration_service(
+    settings: GatewayServerSettings,
+    *,
+    transport: BoundedHttpTransport | None = None,
+    sleeper: Callable[[float], None] | None = None,
+    wall_clock: Callable[[], float] | None = None,
+    monotonic_clock: Callable[[], float] | None = None,
+) -> MaterialsGatewayService:
+    """Build the approval-gated Crossref service for the bounded local beta.
+
+    The optional transport and clock seams exist for deterministic offline tests;
+    the Hermes/MCP factory loader supplies only ``settings``.  Crossref contact
+    identity is operator-owned environment state and is never copied into an
+    Artifact or component digest.
+    """
+
+    project_root = resolve_hermes_project_root(settings, create=True)
+    store = LocalArtifactStore(project_root)
+    try:
+        parent_catalog = load_flat_band_parent_catalog_v1()
+    except ParentCatalogIntegrityError as exc:
+        raise HermesFixtureConfigurationError(
+            "operator-owned parent catalog failed frozen validation"
+        ) from exc
+    contact_email = os.environ.get(_CROSSREF_CONTACT_EMAIL_ENV)
+    if contact_email == "":
+        raise HermesFixtureConfigurationError(
+            "Crossref contact email environment value is invalid"
+        )
+    adapter_kwargs: dict[str, Any] = {
+        "contact_email": contact_email,
+        "max_results": 1,
+        "max_retries": _PUBLIC_CROSSREF_MAX_RETRIES,
+        "max_retry_delay_seconds": (
+            _PUBLIC_CROSSREF_MAX_RETRY_DELAY_SECONDS
+        ),
+        "max_total_wait_seconds": _PUBLIC_CROSSREF_MAX_TOTAL_WAIT_SECONDS,
+        "retry_backoff_seconds": 1.0,
+        "timeout_seconds": _PUBLIC_CROSSREF_TIMEOUT_SECONDS,
+        "transport": transport,
+    }
+    if sleeper is not None:
+        adapter_kwargs["sleeper"] = sleeper
+    if wall_clock is not None:
+        adapter_kwargs["wall_clock"] = wall_clock
+    if monotonic_clock is not None:
+        adapter_kwargs["monotonic_clock"] = monotonic_clock
+    try:
+        search_adapter = CrossrefPublicAdapter(**adapter_kwargs)
+    except (TypeError, ValueError) as exc:
+        raise HermesFixtureConfigurationError(
+            "Crossref public adapter configuration is invalid"
+        ) from exc
+
+    compiler = HermesInspirationRequestCompiler(
+        max_retries_per_query=_PUBLIC_CROSSREF_MAX_RETRIES
+    )
+    tag_graph = curated_flat_band_tag_graph()
+    preparer = HermesInspirationPreparer(
+        store=store,
+        project_id=settings.project_id,
+        parent_catalog=parent_catalog,
+        tag_graph=tag_graph,
+        search_adapter=search_adapter,
+        compiler=compiler,
+    )
+    runner = _ApprovalBoundInspirationRunner(
+        store=store,
+        search_adapter=search_adapter,
+        transformation_engine=PymatgenTransformationEngine(
+            parent_catalog=parent_catalog
+        ),
+    )
+    companion = _TrustedInspirationCompanion(
+        runner=runner,
+        preparer=preparer,
+        projector=HermesFixtureProjector(store),
+    )
+    gateway_database = trusted_state_database_path(
+        project_root,
+        GATEWAY_STATE_DATABASE_NAME,
+        must_exist=False,
+    )
+    approval_database = trusted_state_database_path(
+        project_root,
+        OPERATOR_APPROVAL_DATABASE_NAME,
+        must_exist=False,
+    )
+    return MaterialsGatewayService(
+        repository=SqliteGatewayRepository(gateway_database),
+        companion=companion,
+        artifact_reader=store,
+        action_authorizer=SqliteOneTimeActionGrantStore(approval_database),
     )

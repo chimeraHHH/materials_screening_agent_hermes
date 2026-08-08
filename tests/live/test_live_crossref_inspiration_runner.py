@@ -162,6 +162,8 @@ def test_live_crossref_full_inspiration_runner_gate(tmp_path: Path) -> None:
 
     prefix = "stages/inspiration/run-live-crossref"
     raw_paths = sorted((store.root / prefix / "raw_search").glob("*.json"))
+    query_plans = store.read_jsonl(f"{prefix}/query_plans.jsonl")
+    attempts = store.read_jsonl(f"{prefix}/search_attempts.jsonl")
     passages = store.read_jsonl(f"{prefix}/passages.jsonl")
     evidence = store.read_jsonl(f"{prefix}/evidence_cards.jsonl")
     bridges = store.read_jsonl(f"{prefix}/bridge_packets.jsonl")
@@ -169,7 +171,10 @@ def test_live_crossref_full_inspiration_runner_gate(tmp_path: Path) -> None:
     ledger = result.bundle.cost_ledger
 
     assert result.stage_result.outcome is InspirationOutcome.SUCCEEDED
-    assert len(raw_paths) == ledger.search_requests == 3
+    assert len(query_plans) == len(raw_paths) == 3
+    assert len(attempts) == ledger.search_requests
+    assert ledger.search_requests >= len(raw_paths)
+    assert sum(row["outcome"] == "success" for row in attempts) == len(raw_paths)
     assert all(path.stat().st_size > 0 for path in raw_paths)
     assert sum(path.stat().st_size for path in raw_paths) == (
         ledger.search_response_bytes
@@ -202,6 +207,7 @@ def test_live_crossref_full_inspiration_runner_gate(tmp_path: Path) -> None:
                 "proposal_count": len(proposals),
                 "raw_response_bytes": ledger.search_response_bytes,
                 "search_requests": ledger.search_requests,
+                "search_retries": ledger.search_requests - len(query_plans),
                 "stage_result_sha256": result.stage_result_artifact.sha256,
             },
             sort_keys=True,

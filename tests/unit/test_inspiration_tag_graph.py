@@ -64,6 +64,14 @@ def test_query_plan_is_deterministic_bounded_and_rule_attributed() -> None:
     assert sum(q.kind is SearchQueryKind.DIRECT for q in first.queries) == 1
     assert sum(q.kind is SearchQueryKind.BRIDGE for q in first.queries) == 3
     assert sum(q.kind is SearchQueryKind.COUNTER for q in first.queries) == 2
+    assert tuple(query.kind for query in first.queries) == (
+        SearchQueryKind.DIRECT,
+        SearchQueryKind.BRIDGE,
+        SearchQueryKind.BRIDGE,
+        SearchQueryKind.BRIDGE,
+        SearchQueryKind.COUNTER,
+        SearchQueryKind.COUNTER,
+    )
     assert all(
         query.bridge_rule_id is not None
         for query in first.queries
@@ -91,6 +99,51 @@ def test_bridge_budget_records_skipped_routes_instead_of_hiding_them() -> None:
 
     assert len(plan.queries) == 2
     assert len(plan.skipped_rule_ids) == 2
+
+
+def test_all_reviewed_bridges_precede_counter_queries() -> None:
+    graph = curated_flat_band_tag_graph()
+    plan = plan_tag_queries(
+        graph,
+        target_tag_ids=("electronic-flat-band",),
+        budget=SearchBudgetV1(
+            max_queries=3,
+            max_direct_queries=0,
+            max_bridge_queries=2,
+            max_counter_queries=1,
+            max_raw_hits=10,
+            max_unique_documents=5,
+        ),
+    )
+
+    assert tuple(query.kind for query in plan.queries) == (
+        SearchQueryKind.BRIDGE,
+        SearchQueryKind.BRIDGE,
+        SearchQueryKind.COUNTER,
+    )
+    assert plan.queries[2].bridge_rule_id == plan.queries[0].bridge_rule_id
+
+
+def test_fixture_class_allocation_remains_direct_bridge_counter() -> None:
+    graph = curated_flat_band_tag_graph()
+    plan = plan_tag_queries(
+        graph,
+        target_tag_ids=("electronic-flat-band",),
+        budget=SearchBudgetV1(
+            max_queries=3,
+            max_direct_queries=1,
+            max_bridge_queries=1,
+            max_counter_queries=1,
+            max_raw_hits=3,
+            max_unique_documents=1,
+        ),
+    )
+
+    assert tuple(query.kind for query in plan.queries) == (
+        SearchQueryKind.DIRECT,
+        SearchQueryKind.BRIDGE,
+        SearchQueryKind.COUNTER,
+    )
 
 
 def test_unknown_target_and_unknown_template_placeholder_fail_closed() -> None:

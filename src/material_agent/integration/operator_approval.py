@@ -30,6 +30,7 @@ from material_agent.integration.hermes_service import (
     GATEWAY_STATE_DATABASE_NAME,
     HermesFixtureConfigurationError,
     create_hermes_fixture_service,
+    create_hermes_inspiration_service,
     resolve_hermes_project_root,
     trusted_state_database_path,
 )
@@ -48,6 +49,15 @@ def _argument_parser() -> argparse.ArgumentParser:
     parser.add_argument("--run-id", required=True)
     parser.add_argument("--confirmation-reference", required=True)
     parser.add_argument(
+        "--service-mode",
+        choices=("public", "fixture"),
+        default="public",
+        help=(
+            "service contract that created the run; fixture is reserved for "
+            "source-controlled replay tests"
+        ),
+    )
+    parser.add_argument(
         "--recover-consumed-grant",
         action="store_true",
         help="re-arm a stranded consumed grant after a verified process crash",
@@ -65,6 +75,7 @@ def issue_requirement_freeze_grant(
     settings: GatewayServerSettings,
     run_id: str,
     confirmation_reference: str,
+    service_mode: str = "public",
     recover_consumed_grant: bool = False,
     confirm_original_process_stopped: bool = False,
 ) -> dict[str, str]:
@@ -80,7 +91,12 @@ def issue_requirement_freeze_grant(
         GATEWAY_STATE_DATABASE_NAME,
         must_exist=True,
     )
-    service = create_hermes_fixture_service(settings)
+    if service_mode == "public":
+        service = create_hermes_inspiration_service(settings)
+    elif service_mode == "fixture":
+        service = create_hermes_fixture_service(settings)
+    else:
+        raise OperatorApprovalError("unsupported Hermes service mode")
     repository = service.repository
     if not isinstance(repository, SqliteGatewayRepository):
         raise OperatorApprovalError("trusted project repository is unavailable")
@@ -131,6 +147,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             settings=settings,
             run_id=args.run_id,
             confirmation_reference=args.confirmation_reference,
+            service_mode=args.service_mode,
             recover_consumed_grant=args.recover_consumed_grant,
             confirm_original_process_stopped=(
                 args.confirm_original_process_stopped

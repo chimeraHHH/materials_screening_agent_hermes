@@ -1,8 +1,8 @@
 # Hermes 与灵感生成器实施计划
 
-- 版本：v0.2
+- 版本：v0.3
 - 日期：2026-08-08
-- 状态：已完成（单用户本机 pilot）
+- 状态：P0.3 fixed-request pilot 已完成；P3.1/P3.2/P3.3 已通过，P3.x 最终 release 进行中
 - 依据：[`docs/system-plan.md`](../../docs/system-plan.md)、
   [`docs/architecture.md`](../../docs/architecture.md)、
   [`ADR-0001`](../../docs/adr/0001-hermes-platform-and-inspiration-boundary.md) 与
@@ -110,6 +110,11 @@ Hermes 是上层 Agent 控制面，负责：
 - [x] 完整离线 Gate、相关 live Gate、`pip check` 和 `git diff --check` 通过；
 - [x] README、主计划、本计划和实机运行记录与当前源码一致；
 - [x] 所有里程碑提交已推送到 `hermes-origin/main`。
+
+以上 checkbox 是 P0.3 的历史完成标准。2026-08-08 用户继续授权后，新增的 P3.x 完成标准
+见 [ADR-0002](../../docs/adr/0002-inspiration-generalization-completion-scope.md)、仓库根目录
+[`PLAN.md`](../../PLAN.md) 与 [`CHECKLIST.md`](../../CHECKLIST.md)。P0.3 保持可信 baseline，
+不得把其单一 fixed-request 结果写成 P3.x 已完成证据。
 
 ## 2. 分层架构与状态所有权
 
@@ -412,7 +417,8 @@ stages/inspiration/<run_id>/
   列为必填，因此 keyless release Gate 改用 Crossref v1；OpenAlex parser/fixture 继续保留；
 - [x] 运行固定 flat-band 用例，保存 API metadata/abstract 而非默认全文；
 - [x] 验证 DOI/URL 去重、预算、schema drift、raw-response hash 与 provenance；
-- [ ] provider-specific 429/backoff 仍属从单机 pilot 扩展到长期公共服务调用前的加固项，
+- [x] provider-specific 429/backoff 明确延期为从单机 beta 扩展到长期公共服务前的
+  non-blocking 加固项；当前 typed transient/`Retry-After`/有界 retry 由受控故障注入覆盖，
   live Gate 不主动制造公共服务限流；
 - [x] 得到非空 Passage、EvidenceCard 和 BridgePacket；
 - [x] 记录真实成本/失败与产出，提交代码、脱敏 fixture 和运行摘要。
@@ -435,6 +441,54 @@ stages/inspiration/<run_id>/
 - [x] 完整离线 Gate、相关 live Gate、`pip check`、secret/diff 检查通过；
 - [x] 更新 README/计划并推送 MCP pilot 文档里程碑；
 - [x] 自然语言 turn 通过后补充证据并合并到公开 `hermes-origin/main`。
+
+### M6：P3.x 范围与报告制度冻结
+
+- [x] 区分 P0.3 fixed-request pilot 与 P3.x local beta；
+- [x] 新增 ADR-0002、`PLAN.md`、`CHECKLIST.md` 和不可变工作报告制度；
+- [x] 提交并推送 scope/report checkpoint。
+
+### M7：P3.1 请求通用化与真实搜索可靠性
+
+- [x] 实现受支持 flat/narrow-band 同义请求的确定性 compiler，其他输入 fail closed；
+- [x] 保留 fixture replay，并把 production Hermes profile 切换到同一 Gateway run 的 Crossref；
+- [x] 实现 typed transient error、`Retry-After`、有界 retry 和 attempt Artifact/ledger；
+- [x] 文档/passage/vector 层运行内去重且保留全部 query/raw-hit lineage；
+- [x] 扩充权威报告并通过 unit/contract/integration/live Gate；
+- [x] 发布工作报告并提交、推送。
+
+### M8：P3.2 多候选去重与多样性
+
+- [x] 引入 SHA-pinned operator-owned parent catalog，不开放任意路径；
+- [x] 多 parent/multi-route runner 生成至少 5 个结构有效 proposal；
+- [x] 同结构多路线合并，Top-5 exact/strict duplicate 为 0；
+- [x] 机制可用时 Top-5 至少覆盖 2 个 mechanism；候选不足时诚实少输出；
+- [x] `require_diverse_routes` 进入 policy、报告和回归语义；
+- [x] 发布工作报告并提交、推送。
+
+### M9：P3.3 多格式 Passage 与 Tag feedback
+
+- [x] 将 JSON metadata、JSON-LD/Highwire、JATS/XML、HTML extractor 接入受限 runner seam；
+- [x] metadata 足够时不 fetch，默认 PDF 0，只向量化 selected passage package；
+- [x] 持久化 query/tag/bridge yield、字节和成本 feedback；运行不能在线改 TagGraph；
+- [x] 校准 fixture 覆盖现有 3 条 bridge rule，v1 专家状态固定为 `UNKNOWN`；
+- [x] 发布工作报告并提交、推送。
+
+### M10：P3.x 真实 release closeout
+
+- [x] 完整离线、故障注入、dependency、secret、diff、MCP/profile/Skill Gate 通过；
+- [x] live Crossref runner 与 Gateway lifecycle 通过；
+- [x] standalone completed-run verifier 在静态 transport 的生产组件路径通过 review-fixed 46-case
+  representative Gate；确定性重放 manifest、raw→candidate、ledger、feedback、report 与 Gateway DTO；
+- [x] exact v2 terminal workspace 通过 pinned Gateway verifier，并把稳定 JSON summary、Artifact/hash 与
+  no-write 证据写入 final run record；
+- [x] 冻结发布治理：PR 在 final result 前保持 Draft，最终使用 merge commit；当前单用户 beta
+  以独立审计、本地完整 Gate 与 GitGuardian 为门禁，并把无 branch protection/required CI/review
+  记录为后续共享部署前必须修复的限制；
+- [x] 真实 Hermes 自然语言流程在同一 Gateway run 中使用 Crossref，经真实用户授权后得到非空结果；
+  Hermes `-z` 绕过 host `--resume` 的偏差与后续原 session 只读恢复已记录；
+- [ ] 最终 run record、工作报告、PR/check/merge/公开读取证据闭合；
+- [ ] P3.x 状态只在上述全部完成后改为已完成。
 
 提交原则：每个 M 至少一个可回退提交；跨越多个 M 的大提交禁止。代码与契约、测试、
 文档可以分开提交，但任何提交不得把未实现 roadmap 写成当前能力。
@@ -636,3 +690,55 @@ stages/inspiration/<run_id>/
   `e044df1605b8f3711f6ab9af4e6c7d37f2967d35` 合入；
 - 合并内容包含所有 M0–M5 实现、`d95579c` Skill 回归和 `1184d56` 授权运行证据；
 - 本 closeout 只更新发布事实，不扩大单用户 fixed-request pilot 的能力或科学 claim。
+
+### 2026-08-08：P3.2 parent-catalog Top-5 checkpoint
+
+- Catalog manifest SHA-256 为
+  `09d563732717e05ccf216d3b8572b1bcd1d855dd3f5d0106a4cdbc15b9197b99`；
+  loader 不接受外部 path/payload，并冻结 6 个工程校准 parent、route、bridge assignment 与
+  operator 输出；
+- approval-bound Gateway calibration run
+  `inspiration-0c0f19ecf5984e6c8e0da92e` 产生 6 个 `STRUCTURE_VALID` route，exact merge
+  后为 5 个 identity，Top-5 满额；
+- selection audit 记录 4 个 achieved mechanism、6 个 selected physical route、0 exact/strict
+  duplicate，mechanism/route quota 均为 `MET`，无 underfill；
+- 两个独立 workspace 的 catalog、plans、duplicate groups、selection audit、report、bundle 与
+  stage-result hashes 一致；完整记录见
+  [`docs/runs/2026-08-08-p32-parent-catalog-top5.md`](../../docs/runs/2026-08-08-p32-parent-catalog-top5.md)；
+- 该检查点的主环境回归为 `732 passed, 14 skipped`；当时 P3.2 `PASSED`，P3.3 与最终
+  release Gate 仍为 `IN_PROGRESS`。
+
+### 2026-08-08：P3.3 Passage 与 Tag feedback checkpoint
+
+- metadata-first runner 对一个充分 metadata 文档保持 0 body fetch，对三个不足文档以离线
+  fixture 恰好执行 3 次物理请求、5,014 bytes；JSON-LD/Highwire、JATS/XML、普通 HTML 均进入
+  hash-verified Passage/Evidence/Bridge/feedback 链路；
+- `tag_feedback.json` 固定为 `REVIEW_ONLY / UNKNOWN / applies=false /
+  scientific_conclusion=false / INCLUSIVE_NON_ADDITIVE`，不接受 expert input，不含 TagGraph
+  mutation；共享 DOI 只处理一次但保留 inclusive query attribution；
+- 主 Gate `4 passed`，广泛定向回归 `79 passed, 1 skipped`，完整非-live
+  `776 passed, 14 skipped`，live Crossref `3 passed`，三个环境依赖与 Hermes verifier 均通过；
+- public compiler 仍为 Crossref metadata/abstract-only、body budget 0。当前 DNS preflight 与实际
+  hostname connection 未地址绑定，因此 public body fetch 不发布；
+- 完整记录见
+  [`docs/runs/2026-08-08-p33-passage-tag-feedback.md`](../../docs/runs/2026-08-08-p33-passage-tag-feedback.md)；
+  P3.3 为 `PASSED`，只剩最终真实 Hermes natural-language Crossref release 与 GitHub closeout。
+
+### 2026-08-08：真实 Hermes Crossref approval checkpoint（历史、已解除）
+
+- 首个 production pending interaction 使用历史通用文案 `offline companion runner`，与冻结的
+  public Crossref policy 不一致；该 run 保持 `0 grant / 0 result`，未执行网络或 runner；
+- `ec1d415` 将 approval prompt 绑定 frozen request/prepared policy，明确 Crossref metadata/abstract
+  公网访问、8 次物理搜索上限以及 body/PDF/internal model 均为 0；Skill/SOUL/contract/verifier 与
+  35 项定向测试固定该知情审批边界；
+- 完整回归为 `777 passed, 14 skipped`，三个环境 dependency、四工具 MCP 与 GitGuardian 均通过；
+- 在该 checkpoint，真实 Hermes v2 session `20260808_204029_977de9` 单次调用 run 后停在
+  `interaction-f2d2ab3eaa402a5ed4481e69`，manifest 为
+  `e6b0d901fa0a8ef60a2797e35ff4b6cc21c78f175c04258940a3e9f40324beda`，当时为
+  `1 run / 0 grant / 0 result`；
+- 当时的下一步是取得用户对 exact interaction/manifest 的新批准。该批准后来已取得，唯一
+  grant 消费一次、0 recovery，exact v2 达到 `PARTIAL` terminal / `SUCCEEDED` bundle，并通过
+  pinned-runtime no-write verifier；Hermes one-shot host-session 偏差也已记录。完整历史 pending 记录见
+  [`docs/runs/2026-08-08-hermes-final-crossref-approval-pending.md`](../../docs/runs/2026-08-08-hermes-final-crossref-approval-pending.md)。
+  最终证据见
+  [`docs/runs/2026-08-08-hermes-final-crossref-v2.md`](../../docs/runs/2026-08-08-hermes-final-crossref-v2.md)。

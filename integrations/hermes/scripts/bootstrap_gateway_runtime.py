@@ -3,10 +3,9 @@
 
 from __future__ import annotations
 
-import subprocess
 import json
+import subprocess
 from pathlib import Path
-
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 ENV_ROOT = REPO_ROOT / ".venv-gateway"
@@ -24,7 +23,11 @@ def main() -> int:
     if not python.is_file():
         run("uv", "venv", "--python", "3.11", str(ENV_ROOT))
     version = subprocess.run(
-        (str(python), "-c", "import sys; print(f'{sys.version_info[0]}.{sys.version_info[1]}')"),
+        (
+            str(python),
+            "-c",
+            "import sys; print(f'{sys.version_info[0]}.{sys.version_info[1]}')",
+        ),
         cwd=REPO_ROOT,
         check=True,
         capture_output=True,
@@ -35,10 +38,9 @@ def main() -> int:
     run(
         "uv",
         "pip",
-        "install",
+        "sync",
         "--python",
         str(python),
-        "--requirement",
         str(LOCK_PATH),
     )
     run(

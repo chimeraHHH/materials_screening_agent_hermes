@@ -3,10 +3,10 @@
 The runner is intentionally a thin composition layer.  Search, extraction,
 passage selection, vectorization, evidence closure, bridge construction,
 run-internal identity, and diverse selection remain in their pure modules.
-Structure generation is injected behind :class:`TransformationEngine` so the
-same artifact contract can be exercised by byte-stable offline fixtures and by
-explicitly enabled public metadata APIs.  Neither mode exposes a PDF or
-full-document fetch path.
+Structure generation and optional bounded document retrieval are injected so
+the same artifact contract can be exercised by byte-stable offline fixtures and
+by explicitly enabled public metadata APIs. PDF full text remains disabled, and
+the default public profile remains metadata-only.
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ import json
 import time
 from collections import Counter
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from typing import Protocol
 
 from material_agent.inspiration.bridge import build_search_supported_bridges
@@ -24,8 +24,26 @@ from material_agent.inspiration.evidence import build_evidence_cards
 from material_agent.inspiration.extractors import (
     ExtractionDecision,
     ExtractionLimits,
+    ExtractionTier,
+    extract_document,
     extract_crossref_metadata,
     extract_openalex_metadata,
+)
+from material_agent.inspiration.feedback import (
+    FEEDBACK_COMPILER_SNAPSHOT,
+    FeedbackFetchAllocationV1,
+    FeedbackInputArtifactV1,
+    FeedbackVectorAllocationV1,
+    compile_tag_feedback_review,
+)
+from material_agent.inspiration.fetch import (
+    DisabledDocumentFetcher,
+    DocumentFetchError,
+    DocumentFetchErrorCategory,
+    DocumentFetcher,
+    DocumentFetchRequest,
+    FetchAllowance,
+    FetchAttemptRecord,
 )
 from material_agent.inspiration.identity import (
     CandidateProposalInput,
@@ -47,6 +65,7 @@ from material_agent.inspiration.models import (
     PassageV1,
     PassageVectorV1,
     SearchHitV1,
+    SearchQueryKind,
     SearchQueryV1,
     TagGraphV1,
     TransformationPlanV1,
@@ -64,14 +83,20 @@ from material_agent.inspiration.policy import (
 )
 from material_agent.inspiration.reporting import render_inspiration_report
 from material_agent.inspiration.search import (
+    DocumentHitGroup,
     ParsedSearchPage,
     RawSearchPage,
     SearchAdapter,
+    SearchAdapterError,
+    SearchAttemptRecord,
     group_document_hits,
     parse_crossref_page,
     parse_openalex_page,
 )
-from material_agent.inspiration.selection import select_diverse_candidates
+from material_agent.inspiration.selection import (
+    MechanismQuotaStatus,
+    select_diverse_candidates_with_audit,
+)
 from material_agent.inspiration.tag_graph import plan_tag_queries
 from material_agent.inspiration.vectorizer import (
     SIGNED_HASHING_SNAPSHOT,
@@ -105,6 +130,25 @@ class _FixtureResponseBinding:
     query_id: str
     provider: str
     payload_artifact: ArtifactPointerV1
+
+
+@dataclass(frozen=True, slots=True)
+class _PassageExtractionResult:
+    passages: tuple[PassageV1, ...]
+    fetch_manifest: tuple[dict[str, object], ...]
+    fetch_attempts: tuple[FetchAttemptRecord, ...]
+    fetched_artifacts: tuple[ArtifactPointerV1, ...]
+    fetch_allocations: tuple[FeedbackFetchAllocationV1, ...]
+    warnings: tuple[str, ...]
+    transient_failure_count: int = 0
+
+
+@dataclass(frozen=True, slots=True)
+class _VectorizationResult:
+    vectors: tuple[PassageVectorV1, ...]
+    artifacts: tuple[ArtifactPointerV1, ...]
+    input_tokens: int
+    feedback_allocations: tuple[FeedbackVectorAllocationV1, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -258,17 +302,23 @@ class InspirationRunner:
         search_adapter: SearchAdapter,
         transformation_engine: TransformationEngine,
         vectorizer: ComponentSnapshotV1 = SIGNED_HASHING_SNAPSHOT,
+        document_fetcher: DocumentFetcher | None = None,
     ) -> None:
         self.store = store
         self.search_adapter = search_adapter
         self.transformation_engine = transformation_engine
         self.vectorizer = vectorizer
+        self.document_fetcher = document_fetcher or DisabledDocumentFetcher()
 
     @property
     def execution_components(self) -> tuple[ComponentSnapshotV1, ...]:
         """Return the injected scientific implementation bound at approval."""
 
-        return (self.transformation_engine.component,)
+        return (
+            self.transformation_engine.component,
+            self.document_fetcher.component,
+            FEEDBACK_COMPILER_SNAPSHOT,
+        )
 
     def run(
         self,
@@ -318,6 +368,7 @@ class InspirationRunner:
         hits: list[SearchHitV1] = []
         raw_pages: dict[str, RawSearchPage] = {}
         raw_pointers: list[ArtifactPointerV1] = []
+        search_attempts: list[SearchAttemptRecord] = []
         warnings: list[str] = [
             f"QUERY_RULE_SKIPPED:{rule_id}" for rule_id in query_plan.skipped_rule_ids
         ]
@@ -327,38 +378,74 @@ class InspirationRunner:
             if remaining_hits <= 0:
                 warnings.append("RAW_HIT_BUDGET_EXHAUSTED")
                 break
-            page = self.search_adapter.search(
-                query,
-                max_response_bytes=MAX_SEARCH_RESPONSE_BYTES,
-            )
-            self._validate_raw_page(
-                query,
-                page,
-                policy=policy,
-                binding=(
-                    fixture_bindings[query.query_id]
-                    if fixture_bindings is not None
-                    else None
+            try:
+                page = self.search_adapter.search(
+                    query,
+                    max_response_bytes=MAX_SEARCH_RESPONSE_BYTES,
+                )
+            except SearchAdapterError as error:
+                search_attempts.extend(error.attempts)
+                # Failure records remain discoverable at the deterministic run
+                # path even though no scientific bundle can be produced.
+                self._write_jsonl(
+                    f"{prefix}/search_attempts.jsonl",
+                    tuple(attempt.to_dict() for attempt in search_attempts),
+                )
+                raise
+            page_attempts = page.attempts or (
+                SearchAttemptRecord(
+                    query_id=query.query_id,
+                    attempt_number=1,
+                    outcome="success",
+                    error_code=None,
+                    http_status=None,
+                    retry_delay_seconds=0.0,
+                    pacing_delay_seconds=0.0,
+                    response_bytes=len(page.payload),
                 ),
             )
-            raw_pointer = self._write_bytes(
-                f"{prefix}/raw_search/{query.query_id}.json",
-                page.payload,
-                media_type=page.media_type,
-            )
-            raw_pages[query.query_id] = page
-            raw_pointers.append(raw_pointer)
-            search_response_bytes += len(page.payload)
-            parsed = self._parse_search_page(
-                query=query,
-                page=page,
-                raw_response_artifact=raw_pointer,
-                max_hits=remaining_hits,
-            )
+            search_attempts.extend(page_attempts)
+            try:
+                self._validate_raw_page(
+                    query,
+                    page,
+                    policy=policy,
+                    binding=(
+                        fixture_bindings[query.query_id]
+                        if fixture_bindings is not None
+                        else None
+                    ),
+                )
+                raw_pointer = self._write_bytes(
+                    f"{prefix}/raw_search/{query.query_id}.json",
+                    page.payload,
+                    media_type=page.media_type,
+                )
+                raw_pages[query.query_id] = page
+                raw_pointers.append(raw_pointer)
+                search_response_bytes += len(page.payload)
+                parsed = self._parse_search_page(
+                    query=query,
+                    page=page,
+                    raw_response_artifact=raw_pointer,
+                    max_hits=remaining_hits,
+                )
+            except (InspirationRunnerError, SearchAdapterError):
+                # A provider response that later fails contract/schema checks is
+                # still a real, billable attempt and must remain auditable.
+                self._write_jsonl(
+                    f"{prefix}/search_attempts.jsonl",
+                    tuple(attempt.to_dict() for attempt in search_attempts),
+                )
+                raise
             executed_queries.append(query)
             hits.extend(parsed.hits)
             warnings.extend(parsed.warnings)
 
+        attempt_pointer = self._write_jsonl(
+            f"{prefix}/search_attempts.jsonl",
+            tuple(attempt.to_dict() for attempt in search_attempts),
+        )
         hit_tuple = tuple(hits)
         groups = group_document_hits(hit_tuple)
         if len(groups) > policy.search.max_unique_documents:
@@ -372,29 +459,44 @@ class InspirationRunner:
             hit_tuple,
         )
 
-        passages, fetch_manifest, extraction_warnings = self._extract_passages(
+        extraction_result = self._extract_passages(
+            prefix=prefix,
             policy=policy,
             graph=tag_graph,
             queries=tuple(executed_queries),
             hits=hit_tuple,
+            groups=groups,
             raw_pages=raw_pages,
         )
-        warnings.extend(extraction_warnings)
+        passages = extraction_result.passages
+        warnings.extend(extraction_result.warnings)
+        fetch_attempt_pointer = self._write_jsonl(
+            f"{prefix}/fetch_attempts.jsonl",
+            tuple(
+                attempt.to_dict() for attempt in extraction_result.fetch_attempts
+            ),
+        )
         fetch_pointer = self._write_jsonl(
             f"{prefix}/fetch_manifest.jsonl",
-            fetch_manifest,
+            extraction_result.fetch_manifest,
         )
         passage_pointer = self._write_jsonl(
             f"{prefix}/passages.jsonl",
             passages,
         )
+        if extraction_result.transient_failure_count and not passages:
+            raise InspirationRunnerError(
+                "EXTERNAL_FETCH_UNAVAILABLE",
+                "all body-dependent evidence paths failed transiently",
+            )
 
-        vectors, vector_artifacts, embedding_tokens = self._vectorize_passages(
+        vectorization = self._vectorize_passages(
             prefix=prefix,
             policy=policy,
             hits=hit_tuple,
             passages=passages,
         )
+        vectors = vectorization.vectors
         vector_manifest_pointer = self._write_jsonl(
             f"{prefix}/passage_vectors.jsonl",
             vectors,
@@ -411,6 +513,14 @@ class InspirationRunner:
             f"{prefix}/evidence_cards.jsonl",
             evidence_result.cards,
         )
+        if (
+            extraction_result.transient_failure_count
+            and not evidence_result.cards
+        ):
+            raise InspirationRunnerError(
+                "EXTERNAL_FETCH_UNAVAILABLE",
+                "transient body-fetch failures prevented all mechanism evidence",
+            )
         bridge_result = build_search_supported_bridges(
             graph=tag_graph,
             queries=tuple(executed_queries),
@@ -463,9 +573,44 @@ class InspirationRunner:
             policy_id=policy.policy_id,
             selection_policy=policy.selection,
         )
-        selected_candidates = select_diverse_candidates(
+        selection_result = select_diverse_candidates_with_audit(
             identities,
             policy=policy.selection,
+        )
+        selected_candidates = selection_result.candidates
+        selection_audit = selection_result.audit
+        requested_route_count = (
+            2 if policy.selection.min_mechanisms_when_available >= 2 else 1
+        )
+        if (
+            selection_audit.selected_distinct_physical_route_count
+            >= requested_route_count
+        ):
+            route_quota_status = "MET"
+        elif (
+            selection_audit.pool_distinct_physical_route_count
+            < requested_route_count
+        ):
+            route_quota_status = "POOL_INSUFFICIENT"
+        else:
+            route_quota_status = "HARD_QUOTA_INFEASIBLE"
+        selection_audit_record = {
+            "schema_version": "inspiration-selection-audit-v1",
+            "diversity_mode": (
+                "MECHANISM_COVERAGE_WHEN_FEASIBLE"
+                if policy.selection.min_mechanisms_when_available >= 2
+                else "MMR_ONLY"
+            ),
+            "structure_valid_proposal_count": len(proposals),
+            "post_exact_merge_candidate_count": len(identities),
+            "exact_merge_reduction_count": len(proposals) - len(identities),
+            "requested_distinct_physical_route_count": requested_route_count,
+            "route_quota_status": route_quota_status,
+            **asdict(selection_audit),
+        }
+        selection_audit_pointer = self._write_json(
+            f"{prefix}/selection_audit.json",
+            selection_audit_record,
         )
         duplicate_pointer = self._write_jsonl(
             f"{prefix}/internal_duplicate_groups.jsonl",
@@ -484,6 +629,17 @@ class InspirationRunner:
                 "structure-qualified candidate entered selection.",
             )
             warnings.append("REVIEW_REQUIRED:NO_ELIGIBLE_CANDIDATE")
+        warnings.extend(
+            f"SELECTION_UNDERFILL:{reason}"
+            for reason in selection_audit.underfill_reasons
+        )
+        if selection_audit.quota_status is not MechanismQuotaStatus.MET:
+            warnings.append(
+                "SELECTION_MECHANISM_QUOTA:"
+                f"{selection_audit.quota_status.value}"
+            )
+        if route_quota_status != "MET":
+            warnings.append(f"SELECTION_ROUTE_QUOTA:{route_quota_status}")
 
         elapsed_ms = (time.monotonic_ns() - started_ns) // 1_000_000
         if elapsed_ms > policy.runtime.max_walltime_seconds * 1_000:
@@ -495,15 +651,18 @@ class InspirationRunner:
         # share the same deterministic ledger representation. Wall-clock
         # duration is enforced above but intentionally not serialized.
         ledger = CostLedgerV1(
-            search_requests=len(executed_queries),
+            search_requests=len(search_attempts),
             search_response_bytes=search_response_bytes,
-            fetch_requests=0,
-            fetch_response_bytes=0,
+            fetch_requests=len(extraction_result.fetch_attempts),
+            fetch_response_bytes=sum(
+                attempt.response_bytes
+                for attempt in extraction_result.fetch_attempts
+            ),
             raw_documents=len(hit_tuple),
             unique_documents=len(groups),
             extracted_passages=len(passages),
             vectorized_passages=len(vectors),
-            embedding_input_tokens=embedding_tokens,
+            embedding_input_tokens=vectorization.input_tokens,
             llm_calls=0,
             llm_input_tokens=0,
             llm_output_tokens=0,
@@ -516,14 +675,80 @@ class InspirationRunner:
         )
         cost_pointer = self._write_json(f"{prefix}/cost_ledger.json", ledger)
 
+        feedback_input_artifacts = (
+            FeedbackInputArtifactV1(
+                role="query-plan",
+                artifact=query_plan_pointer,
+            ),
+            FeedbackInputArtifactV1(
+                role="search-attempts",
+                artifact=attempt_pointer,
+            ),
+            FeedbackInputArtifactV1(role="search-hits", artifact=hit_pointer),
+            FeedbackInputArtifactV1(
+                role="fetch-attempts",
+                artifact=fetch_attempt_pointer,
+            ),
+            FeedbackInputArtifactV1(
+                role="fetch-manifest",
+                artifact=fetch_pointer,
+            ),
+            FeedbackInputArtifactV1(role="passages", artifact=passage_pointer),
+            FeedbackInputArtifactV1(
+                role="passage-vectors",
+                artifact=vector_manifest_pointer,
+            ),
+            FeedbackInputArtifactV1(
+                role="evidence-cards",
+                artifact=evidence_pointer,
+            ),
+            FeedbackInputArtifactV1(
+                role="bridge-packets",
+                artifact=bridge_pointer,
+            ),
+            FeedbackInputArtifactV1(role="cost-ledger", artifact=cost_pointer),
+            *tuple(
+                FeedbackInputArtifactV1(
+                    role=f"fetched-body-{index:03d}",
+                    artifact=pointer,
+                )
+                for index, pointer in enumerate(
+                    extraction_result.fetched_artifacts,
+                    start=1,
+                )
+            ),
+        )
+        feedback = compile_tag_feedback_review(
+            run_id=inspiration_input.run_id,
+            graph=tag_graph,
+            graph_artifact=tag_graph_pointer,
+            input_artifacts=feedback_input_artifacts,
+            planned_queries=query_plan.queries,
+            executed_queries=tuple(executed_queries),
+            search_attempts=tuple(search_attempts),
+            hits=hit_tuple,
+            passages=passages,
+            evidence_cards=evidence_result.cards,
+            bridge_packets=bridge_result.packets,
+            fetch_allocations=extraction_result.fetch_allocations,
+            vector_allocations=vectorization.feedback_allocations,
+        )
+        feedback_pointer = self._write_json(
+            f"{prefix}/tag_feedback.json",
+            feedback,
+        )
+
         intermediate = _unique_pointers(
             (
                 query_plan_pointer,
+                attempt_pointer,
                 *raw_pointers,
                 hit_pointer,
+                fetch_attempt_pointer,
                 fetch_pointer,
+                *extraction_result.fetched_artifacts,
                 passage_pointer,
-                *vector_artifacts,
+                *vectorization.artifacts,
                 vector_manifest_pointer,
                 evidence_pointer,
                 tag_graph_pointer,
@@ -531,6 +756,8 @@ class InspirationRunner:
                 *structure_artifacts,
                 transformation_pointer,
                 duplicate_pointer,
+                selection_audit_pointer,
+                feedback_pointer,
             )
         )
         outcome = (
@@ -538,10 +765,29 @@ class InspirationRunner:
             if selected_candidates
             else InspirationOutcome.SCIENTIFIC_NO_MATCH
         )
+        selection_limitations = (
+            (
+                "Selection returned "
+                f"{len(selected_candidates)} of requested "
+                f"{policy.selection.top_k} candidates; audit reasons: "
+                + ", ".join(selection_audit.underfill_reasons)
+                + ".",
+            )
+            if selection_audit.underfill_reasons
+            else ()
+        )
+        evidence_scope_limitation = (
+            "Search evidence is limited to bounded metadata and selected body "
+            "passages; it may omit relevant context."
+            if ledger.fetch_requests
+            else "Search evidence is limited to bounded metadata passages and may "
+            "omit relevant context."
+        )
         limitations = (
-            "Search evidence is limited to bounded metadata passages and may omit relevant context.",
+            evidence_scope_limitation,
             "Generated structures have no downstream property validation; target property status is UNKNOWN.",
             "Artifacts record walltime_ms as zero while enforcing the configured walltime ceiling.",
+            *selection_limitations,
         )
         next_steps = tuple(
             dict.fromkeys(
@@ -592,6 +838,10 @@ class InspirationRunner:
             transformation_plans=plans,
             review_items=review_items,
             warnings=bounded_warnings,
+            search_attempts=tuple(search_attempts),
+            fetch_attempts=extraction_result.fetch_attempts,
+            tag_feedback=feedback,
+            selection_audit=selection_audit_record,
         )
         report_pointer = self._write_text(f"{prefix}/report.md", report)
         stage_result = InspirationStageResultV1(
@@ -676,6 +926,36 @@ class InspirationRunner:
             raise InspirationRunnerError(
                 "UNSUPPORTED_SEARCH_MODE",
                 f"unsupported search mode: {policy.search_mode}",
+            )
+        fetch_component = getattr(self.document_fetcher, "component", None)
+        fetch_network_access = getattr(
+            self.document_fetcher,
+            "network_access",
+            None,
+        )
+        if not isinstance(fetch_component, ComponentSnapshotV1) or type(
+            fetch_network_access
+        ) is not bool:
+            raise InspirationRunnerError(
+                "INVALID_DOCUMENT_FETCHER",
+                "document fetcher must expose a frozen component and bool network flag",
+            )
+        if (
+            policy.search_mode is SearchExecutionMode.OFFLINE_FIXTURE
+            and fetch_network_access
+        ):
+            raise InspirationRunnerError(
+                "FETCH_NETWORK_ACCESS_FORBIDDEN",
+                "offline inspiration runs cannot use a networked document fetcher",
+            )
+        if (
+            policy.search_mode is SearchExecutionMode.PUBLIC_METADATA_API
+            and policy.fetch.max_requests > 0
+            and not fetch_network_access
+        ):
+            raise InspirationRunnerError(
+                "FETCH_NETWORK_ACCESS_REQUIRED",
+                "public body fetching requires an explicitly networked fetcher",
             )
         if self.search_adapter.component != inspiration_input.search_adapter:
             raise InspirationRunnerError(
@@ -908,38 +1188,76 @@ class InspirationRunner:
     def _extract_passages(
         self,
         *,
+        prefix: str,
         policy: InspirationPolicyV1,
         graph: TagGraphV1,
         queries: tuple[SearchQueryV1, ...],
         hits: tuple[SearchHitV1, ...],
+        groups: tuple[DocumentHitGroup, ...],
         raw_pages: dict[str, RawSearchPage],
-    ) -> tuple[tuple[PassageV1, ...], tuple[dict[str, object], ...], tuple[str, ...]]:
+    ) -> _PassageExtractionResult:
         query_index = {query.query_id: query for query in queries}
+        hit_index = {hit.hit_id: hit for hit in hits}
         tag_index = {tag.tag_id: tag for tag in graph.tags}
         selected: list[PassageV1] = []
+        selected_keys: set[tuple[str, str]] = set()
         manifest: list[dict[str, object]] = []
         warnings: list[str] = []
+        fetch_attempts: list[FetchAttemptRecord] = []
+        fetched_artifacts: list[ArtifactPointerV1] = []
+        fetch_allocations: list[FeedbackFetchAllocationV1] = []
+        transient_failure_count = 0
         config = selection_config_from_policy(policy.passages)
-        limits = ExtractionLimits(
+        metadata_limits = ExtractionLimits(
             max_input_bytes=MAX_SEARCH_RESPONSE_BYTES,
             max_drafts=64,
             min_abstract_tokens=policy.passages.min_tokens,
         )
-        for hit in hits:
-            query_id = hit.query_ids[0]
-            query = query_index[query_id]
-            page = raw_pages[query_id]
+        body_limits = ExtractionLimits(
+            max_input_bytes=max(1, policy.fetch.max_bytes_per_response),
+            max_drafts=64,
+            min_abstract_tokens=policy.passages.min_tokens,
+        )
+        for group in groups:
+            member_hits = tuple(hit_index[hit_id] for hit_id in group.member_hit_ids)
+            hit = _select_document_processing_hit(
+                member_hits,
+                query_index=query_index,
+            )
+            source_query_id = hit.query_ids[0]
+            page = raw_pages[source_query_id]
+            member_query_ids = tuple(
+                sorted(
+                    {
+                        query_id
+                        for member in member_hits
+                        for query_id in member.query_ids
+                    }
+                )
+            )
+            member_queries = tuple(
+                query_index[query_id] for query_id in member_query_ids
+            )
+            member_tag_ids = tuple(
+                sorted(
+                    {
+                        tag_id
+                        for query in member_queries
+                        for tag_id in query.tag_ids
+                    }
+                )
+            )
             tag_terms = {
                 tag_id: (
                     *tag_index[tag_id].query_terms,
                     *tag_index[tag_id].synonyms,
                     tag_index[tag_id].label,
                 )
-                for tag_id in query.tag_ids
+                for tag_id in member_tag_ids
             }
             target_terms = tuple(
                 dict.fromkeys(
-                    (query.text,)
+                    tuple(query.text for query in member_queries)
                     + tuple(term for terms in tag_terms.values() for term in terms)
                 )
             )
@@ -947,7 +1265,7 @@ class InspirationRunner:
                 extraction = extract_crossref_metadata(
                     page.payload,
                     target_terms=target_terms,
-                    limits=limits,
+                    limits=metadata_limits,
                     result_index=hit.provider_rank - 1,
                 )
             elif (
@@ -957,7 +1275,7 @@ class InspirationRunner:
                 extraction = extract_openalex_metadata(
                     page.payload,
                     target_terms=target_terms,
-                    limits=limits,
+                    limits=metadata_limits,
                     result_index=hit.provider_rank - 1,
                 )
             else:
@@ -965,62 +1283,299 @@ class InspirationRunner:
                     "SEARCH_EXTRACTION_PROVIDER_MISMATCH",
                     "search hit and raw page do not share a bounded extractor",
                 )
+            metadata_decision = extraction.decision
+            metadata_warnings = extraction.warnings
+            selected_extraction = extraction
+            body_pointer: ArtifactPointerV1 | None = None
+            fetch_request_id: str | None = None
+            fetch_status = (
+                "SKIPPED_METADATA_SUFFICIENT"
+                if metadata_decision
+                is ExtractionDecision.SKIP_BODY_ABSTRACT_SUFFICIENT
+                else "METADATA_UNEXTRACTABLE"
+            )
+            fetch_error_code: str | None = None
+            fetch_error_category: str | None = None
+            fetched_document = None
+            document_attempts: tuple[FetchAttemptRecord, ...] = ()
+
+            if metadata_decision is ExtractionDecision.FETCH_BODY_METADATA_INSUFFICIENT:
+                fetch_status = "NOT_FETCHED"
+                remaining_requests = (
+                    policy.fetch.max_requests - len(fetch_attempts)
+                )
+                consumed_bytes = sum(
+                    attempt.response_bytes for attempt in fetch_attempts
+                )
+                remaining_bytes = policy.fetch.max_total_bytes - consumed_bytes
+                if policy.fetch.max_requests == 0:
+                    fetch_status = "DISABLED_BY_POLICY"
+                    fetch_error_code = "DOCUMENT_FETCH_DISABLED_BY_POLICY"
+                elif hit.canonical_url is None:
+                    fetch_status = "NO_CANONICAL_URL"
+                    fetch_error_code = "DOCUMENT_URL_UNAVAILABLE"
+                elif remaining_requests <= 0:
+                    fetch_status = "REQUEST_BUDGET_EXHAUSTED"
+                    fetch_error_code = "FETCH_REQUEST_BUDGET_EXHAUSTED"
+                elif remaining_bytes <= 0:
+                    fetch_status = "BYTE_BUDGET_EXHAUSTED"
+                    fetch_error_code = "FETCH_BYTE_BUDGET_EXHAUSTED"
+                else:
+                    fetch_request_id = deterministic_id(
+                        "fetch",
+                        {
+                            "artifact_prefix": prefix,
+                            "document_id": group.document_id,
+                            "url": hit.canonical_url,
+                        },
+                    )
+                    try:
+                        fetched_document = self.document_fetcher.fetch(
+                            DocumentFetchRequest(
+                                request_id=fetch_request_id,
+                                document_id=group.document_id,
+                                url=hit.canonical_url,
+                            ),
+                            allowance=FetchAllowance(
+                                remaining_requests=remaining_requests,
+                                remaining_total_bytes=remaining_bytes,
+                                max_bytes_per_response=min(
+                                    policy.fetch.max_bytes_per_response,
+                                    remaining_bytes,
+                                ),
+                                timeout_seconds=policy.fetch.timeout_seconds,
+                                max_retries_per_request=(
+                                    policy.fetch.max_retries_per_request
+                                ),
+                                allow_html=policy.fetch.allow_html,
+                                allow_jats_xml=policy.fetch.allow_jats_xml,
+                            ),
+                        )
+                    except DocumentFetchError as error:
+                        document_attempts = error.attempts
+                        fetch_attempts.extend(document_attempts)
+                        fetch_error_code = error.code
+                        fetch_error_category = error.category.value
+                        fetch_status = f"FAILED_{error.category.value}"
+                        if document_attempts:
+                            fetch_allocations.append(
+                                FeedbackFetchAllocationV1(
+                                    document_id=group.document_id,
+                                    query_ids=member_query_ids,
+                                    request_count=len(document_attempts),
+                                    response_bytes=sum(
+                                        attempt.response_bytes
+                                        for attempt in document_attempts
+                                    ),
+                                )
+                            )
+                        if error.category is DocumentFetchErrorCategory.CONTRACT:
+                            raise InspirationRunnerError(
+                                "DOCUMENT_FETCH_CONTRACT_VIOLATION",
+                                f"fetcher contract failed for {group.document_id}: "
+                                f"{error.code}",
+                            ) from error
+                        if error.category is DocumentFetchErrorCategory.TRANSIENT:
+                            transient_failure_count += 1
+                        warnings.append(
+                            f"BODY_FETCH_FAILED:{group.document_id}:{error.code}"
+                        )
+                    else:
+                        if (
+                            fetched_document.request_id != fetch_request_id
+                            or fetched_document.document_id != group.document_id
+                        ):
+                            raise InspirationRunnerError(
+                                "DOCUMENT_FETCH_IDENTITY_MISMATCH",
+                                "fetcher returned a document for a different request",
+                            )
+                        document_attempts = fetched_document.attempts
+                        fetch_attempts.extend(document_attempts)
+                        fetch_allocations.append(
+                            FeedbackFetchAllocationV1(
+                                document_id=group.document_id,
+                                query_ids=member_query_ids,
+                                request_count=len(document_attempts),
+                                response_bytes=sum(
+                                    attempt.response_bytes
+                                    for attempt in document_attempts
+                                ),
+                            )
+                        )
+                        body_pointer = self._write_bytes(
+                            f"{prefix}/fetched_documents/{group.document_id}"
+                            f"{_fetched_document_extension(fetched_document.media_type)}",
+                            fetched_document.payload,
+                            media_type=fetched_document.media_type,
+                        )
+                        if body_pointer.sha256 != fetched_document.payload_sha256:
+                            raise InspirationRunnerError(
+                                "FETCHED_DOCUMENT_HASH_MISMATCH",
+                                "persisted body differs from the fetcher payload",
+                            )
+                        fetched_artifacts.append(body_pointer)
+                        body_extraction = extract_document(
+                            fetched_document.payload,
+                            media_type=fetched_document.media_type,
+                            target_terms=target_terms,
+                            limits=body_limits,
+                        )
+                        selected_extraction = body_extraction
+                        fetch_status = "FETCHED"
+                        if (
+                            body_extraction.decision
+                            is not ExtractionDecision.BODY_EXTRACTED
+                        ):
+                            fetch_status = "FETCHED_UNEXTRACTABLE"
+                        warnings.extend(body_extraction.warnings)
+
+            body_drafts = (
+                selected_extraction.drafts
+                if selected_extraction is not extraction
+                else ()
+            )
             passage_drafts = select_passage_drafts(
-                extraction.drafts,
+                (*extraction.drafts, *body_drafts),
                 hit_id=hit.hit_id,
-                document_id=hit.document_id,
+                document_id=group.document_id,
                 query_terms=target_terms,
                 tag_terms=tag_terms,
                 config=config,
-                document_title=extraction.title or hit.title,
+                document_title=(
+                    selected_extraction.title or extraction.title or hit.title
+                ),
             )
             accepted_for_hit = 0
+            deduplicated_for_hit = 0
+            accepted_passage_ids: list[str] = []
+            selected_locator_kinds: set[str] = set()
             for draft in passage_drafts:
+                passage_key = (group.document_id, draft.normalized_text_sha256)
+                if passage_key in selected_keys:
+                    deduplicated_for_hit += 1
+                    continue
                 if len(selected) >= policy.passages.max_total:
                     warnings.append("PASSAGE_BUDGET_EXHAUSTED")
                     break
-                selected.append(
-                    PassageV1(
-                        passage_id=deterministic_id(
-                            "passage",
-                            {
-                                "hit_id": hit.hit_id,
-                                "locator": draft.locator,
-                                "normalized_text_sha256": (
-                                    draft.normalized_text_sha256
-                                ),
-                            },
-                        ),
-                        hit_id=hit.hit_id,
-                        document_id=hit.document_id,
-                        source_artifact=hit.raw_response_artifact,
-                        normalizer=draft.normalizer,
-                        locator=draft.locator,
-                        text=draft.text,
-                        char_count=len(draft.text),
-                        estimated_token_count=draft.estimated_token_count,
-                        normalized_text_sha256=draft.normalized_text_sha256,
-                        matched_tag_ids=draft.matched_tag_ids,
-                        lexical_score=draft.lexical_score,
+                selected_keys.add(passage_key)
+                if (
+                    draft.source_tier is not ExtractionTier.METADATA_API
+                    and body_pointer is None
+                ):
+                    raise InspirationRunnerError(
+                        "PASSAGE_SOURCE_ARTIFACT_MISSING",
+                        "body-derived passage has no fetched source Artifact",
                     )
+                source_artifact = (
+                    hit.raw_response_artifact
+                    if draft.source_tier is ExtractionTier.METADATA_API
+                    else body_pointer
                 )
+                if source_artifact is None:
+                    raise InspirationRunnerError(
+                        "PASSAGE_SOURCE_ARTIFACT_MISSING",
+                        "selected passage has no source Artifact",
+                    )
+                passage = PassageV1(
+                    passage_id=deterministic_id(
+                        "passage",
+                        {
+                            "document_id": group.document_id,
+                            "locator": draft.locator,
+                            "normalized_text_sha256": (
+                                draft.normalized_text_sha256
+                            ),
+                        },
+                    ),
+                    hit_id=hit.hit_id,
+                    document_id=group.document_id,
+                    source_artifact=source_artifact,
+                    normalizer=draft.normalizer,
+                    locator=draft.locator,
+                    text=draft.text,
+                    char_count=len(draft.text),
+                    estimated_token_count=draft.estimated_token_count,
+                    normalized_text_sha256=draft.normalized_text_sha256,
+                    matched_tag_ids=draft.matched_tag_ids,
+                    lexical_score=draft.lexical_score,
+                )
+                selected.append(passage)
+                accepted_passage_ids.append(passage.passage_id)
+                selected_locator_kinds.add(passage.locator.kind.value)
                 accepted_for_hit += 1
-            fetched = False
             manifest.append(
                 {
-                    "decision": extraction.decision.value,
-                    "fetched": fetched,
+                    "schema_version": "inspiration-fetch-manifest-v1",
+                    "decision": selected_extraction.decision.value,
+                    "metadata_decision": metadata_decision.value,
+                    "deduplicated_passage_count": deduplicated_for_hit,
+                    "document_id": group.document_id,
+                    "fetch_error_category": fetch_error_category,
+                    "fetch_error_code": fetch_error_code,
+                    "fetch_request_id": fetch_request_id,
+                    "fetch_response_bytes": sum(
+                        attempt.response_bytes for attempt in document_attempts
+                    ),
+                    "fetch_status": fetch_status,
+                    "fetched": body_pointer is not None,
+                    "fetched_body_artifact": body_pointer,
                     "hit_id": hit.hit_id,
-                    "media_type": extraction.media_type,
+                    "member_hit_ids": group.member_hit_ids,
+                    "media_type": selected_extraction.media_type,
+                    "metadata_media_type": extraction.media_type,
+                    "available_locator_kinds": tuple(
+                        sorted(
+                            {
+                                draft.locator_kind.value
+                                for draft in (
+                                    *extraction.drafts,
+                                    *(
+                                        selected_extraction.drafts
+                                        if selected_extraction is not extraction
+                                        else ()
+                                    ),
+                                )
+                            }
+                        )
+                    ),
+                    "physical_request_count": len(document_attempts),
+                    "query_ids": member_query_ids,
                     "raw_response_uri": hit.raw_response_artifact.uri,
+                    "representative_hit_id": hit.hit_id,
+                    "selected_locator_kinds": tuple(
+                        sorted(selected_locator_kinds)
+                    ),
+                    "selected_passage_ids": tuple(accepted_passage_ids),
                     "selected_passage_count": accepted_for_hit,
-                    "warnings": extraction.warnings,
+                    "warnings": tuple(
+                        sorted(
+                            set(metadata_warnings)
+                            | set(selected_extraction.warnings)
+                        )
+                    ),
                 }
             )
-            warnings.extend(extraction.warnings)
-            if extraction.decision is ExtractionDecision.FETCH_BODY_METADATA_INSUFFICIENT:
+            warnings.extend(metadata_warnings)
+            if (
+                metadata_decision
+                is ExtractionDecision.FETCH_BODY_METADATA_INSUFFICIENT
+                and body_pointer is None
+            ):
                 warnings.append(f"BODY_NOT_FETCHED:{hit.hit_id}")
-        return tuple(selected), tuple(manifest), tuple(warnings)
+        if len(fetch_attempts) > policy.fetch.max_requests:
+            raise InspirationRunnerError(
+                "FETCH_REQUEST_BUDGET_EXCEEDED",
+                "fetcher exceeded the frozen physical request budget",
+            )
+        return _PassageExtractionResult(
+            passages=tuple(selected),
+            fetch_manifest=tuple(manifest),
+            fetch_attempts=tuple(fetch_attempts),
+            fetched_artifacts=tuple(fetched_artifacts),
+            fetch_allocations=tuple(fetch_allocations),
+            warnings=tuple(warnings),
+            transient_failure_count=transient_failure_count,
+        )
 
     def _vectorize_passages(
         self,
@@ -1029,9 +1584,17 @@ class InspirationRunner:
         policy: InspirationPolicyV1,
         hits: tuple[SearchHitV1, ...],
         passages: tuple[PassageV1, ...],
-    ) -> tuple[tuple[PassageVectorV1, ...], tuple[ArtifactPointerV1, ...], int]:
+    ) -> _VectorizationResult:
         hit_index = {hit.hit_id: hit for hit in hits}
-        vectorized_passages = passages[: policy.embedding.max_passages]
+        unique_passages: list[PassageV1] = []
+        seen_passages: set[tuple[str, str]] = set()
+        for passage in passages:
+            passage_key = (passage.document_id, passage.normalized_text_sha256)
+            if passage_key in seen_passages:
+                continue
+            seen_passages.add(passage_key)
+            unique_passages.append(passage)
+        vectorized_passages = tuple(unique_passages[: policy.embedding.max_passages])
         requests = tuple(
             PassageVectorizationRequest(
                 passage=passage,
@@ -1067,10 +1630,17 @@ class InspirationRunner:
             payload["vector_artifact"] = pointer
             records.append(PassageVectorV1.model_validate(payload))
             pointers.append(pointer)
-        return (
-            tuple(records),
-            tuple(pointers),
-            sum(item.input_token_count for item in generated),
+        return _VectorizationResult(
+            vectors=tuple(records),
+            artifacts=tuple(pointers),
+            input_tokens=sum(item.input_token_count for item in generated),
+            feedback_allocations=tuple(
+                FeedbackVectorAllocationV1(
+                    passage_id=item.passage_vector.passage_id,
+                    input_token_count=item.input_token_count,
+                )
+                for item in generated
+            ),
         )
 
     def _generate_transformations(
@@ -1357,6 +1927,100 @@ class InspirationRunner:
         pointer = _artifact_pointer(reference)
         verify_artifact_pointer(self.store, pointer)
         return pointer
+
+
+def _select_document_processing_hit(
+    hits: tuple[SearchHitV1, ...],
+    *,
+    query_index: dict[str, SearchQueryV1],
+) -> SearchHitV1:
+    """Choose one real hit without losing the bridge needed for evidence closure.
+
+    ``PassageV1`` can reference only one hit and ``EvidenceCardV1`` can express
+    only one relation.  P3.1 therefore prefers a SUPPORT-capable BRIDGE hit over
+    DIRECT and COUNTER duplicates.  All raw hits remain in ``search_hits.jsonl``
+    and their document/query membership is repeated in ``fetch_manifest.jsonl``.
+    Reusing one passage as evidence for multiple bridge rules would require an
+    explicit lineage schema v2; silently merging those rule/relations here would
+    make the existing closure validator reject the result.
+    """
+
+    if not hits:
+        raise InspirationRunnerError(
+            "EMPTY_DOCUMENT_GROUP",
+            "document processing requires at least one search hit",
+        )
+
+    ranked: list[tuple[tuple[object, ...], SearchHitV1]] = []
+    for hit in hits:
+        try:
+            queries = tuple(query_index[query_id] for query_id in hit.query_ids)
+        except KeyError as error:
+            raise InspirationRunnerError(
+                "SEARCH_HIT_QUERY_NOT_FOUND",
+                f"search hit {hit.hit_id!r} references an unknown query",
+            ) from error
+        kinds = {query.kind for query in queries}
+        bridge_rule_ids = {
+            query.bridge_rule_id
+            for query in queries
+            if query.bridge_rule_id is not None
+        }
+        if (
+            SearchQueryKind.BRIDGE in kinds
+            and SearchQueryKind.COUNTER in kinds
+        ) or len(bridge_rule_ids) > 1:
+            raise InspirationRunnerError(
+                "AMBIGUOUS_HIT_QUERY_LINEAGE",
+                f"search hit {hit.hit_id!r} cannot close through one evidence relation",
+            )
+        if SearchQueryKind.BRIDGE in kinds:
+            kind_priority = 0
+        elif SearchQueryKind.DIRECT in kinds:
+            kind_priority = 1
+        else:
+            kind_priority = 2
+        lineage_key = tuple(
+            sorted(
+                (
+                    query.bridge_rule_id or "",
+                    query.kind.value,
+                    query.query_id,
+                )
+                for query in queries
+            )
+        )
+        ranked.append(
+            (
+                (
+                    kind_priority,
+                    lineage_key,
+                    hit.provider_rank,
+                    hit.provider,
+                    hit.hit_id,
+                ),
+                hit,
+            )
+        )
+    return min(ranked, key=lambda item: item[0])[1]
+
+
+def _fetched_document_extension(media_type: str) -> str:
+    normalized = media_type.partition(";")[0].strip().casefold()
+    if normalized in {"text/html", "application/xhtml+xml"}:
+        return ".html"
+    if normalized in {
+        "application/xml",
+        "text/xml",
+        "application/jats+xml",
+        "application/vnd.jats+xml",
+    }:
+        return ".xml"
+    if normalized == "application/ld+json":
+        return ".jsonld"
+    if normalized == "application/json" or normalized.endswith("+json"):
+        return ".json"
+    return ".body"
 
 
 def _json_value(value: object) -> object:

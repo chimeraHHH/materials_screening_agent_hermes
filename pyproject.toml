@@ -33,6 +33,12 @@ material-agent = "material_agent.cli:main"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+"material_agent.inspiration" = [
+  "catalogs/flat_band_parent_catalog_v1/*.cif",
+  "catalogs/flat_band_parent_catalog_v1/*.json",
+]
+
 [tool.pytest.ini_options]
 addopts = "-ra"
 testpaths = ["tests"]
