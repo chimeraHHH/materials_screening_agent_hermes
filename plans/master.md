@@ -40,7 +40,8 @@ metadata Gate、真实 pymatgen structure proposal、MCP 外 operator 审批、S
 完成 `run → get → act → result`：先在 `INTERACTION_REQUIRED` 停止，再基于用户明确决定
 消费一次性 grant，最终得到 hash-verified `PARTIAL` Gateway 状态与 `SUCCEEDED` bundle。
 固定 Hermes run 使用离线 fixture，公共搜索能力由分离的 Crossref live Gate 证明；两项
-证据不得合并描述成一次联网 Agent turn。
+证据不得合并描述成一次联网 Agent turn。公开 PR `#1` 已在 GitGuardian 成功后合并到
+`hermes-origin/main`，merge commit 为 `e044df1`。
 
 本次增加 Agent01 Materials Project 富媒体检索报告：发布候选的下游 manifest
 仍保持 `agent01-contract-v1`，附加报告证据使用独立的 enrichment、PNG 和 gzip
@@ -475,7 +476,7 @@ flowchart LR
 4. [x] 完成 M3–M4 与 M5 MCP Gate：真实公共文献搜索、真实结构 proposal、Hermes profile
    Tool discovery 和首批非空 `InspirationBundle`。
 5. [x] 完成 Hermes Provider 设备授权和自然语言 Agent turn；补充运行证据、提示契约回归与
-   成本分账。公开 PR 合并状态由本轮发布步骤单独记录。
+   成本分账，并通过公开 PR `#1` 合并到 `hermes-origin/main`。
 6. [x] 完成 Agent02 Step 2、Agent03 v1 mock、Agent04 MVP mock 和四阶段 P0
    安全回归。
 7. [x] 在独立 Python 3.11 环境实现冻结 JSON worker 协议和真实 CHGNet CPU Gate；

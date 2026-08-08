@@ -960,7 +960,7 @@ git diff --check
 ```
 
 The historical closeout result was `337 passed, 7 skipped`. The current
-Hermes-inspiration branch result is `668 passed, 13 skipped`; the skip reasons
+Hermes inspiration release result is `668 passed, 13 skipped`; the skip reasons
 are the isolated MCP/stdio checks, opt-in Crossref/LLM/Materials Project/NOMAD
 live probes, and real-ML tests. Do not run the live MP Gate in this offline
 audit: it requires network access and a secret `MP_API_KEY`, neither of which is
