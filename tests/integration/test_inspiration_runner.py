@@ -228,6 +228,7 @@ def test_offline_runner_persists_auditable_candidate_and_strict_layout(
     assert "Property status: `UNKNOWN`" in result.report
     assert "novelty" not in result.report.casefold()
     assert "PDF full-text reads: `0`" in result.report
+    assert "## Candidate identity and diversity audit" in result.report
 
     ledger = result.bundle.cost_ledger
     assert ledger.search_requests == 3
@@ -256,6 +257,7 @@ def test_offline_runner_persists_auditable_candidate_and_strict_layout(
         "bridge_packets.jsonl",
         "transformation_proposals.jsonl",
         "internal_duplicate_groups.jsonl",
+        "selection_audit.json",
         "inspiration_bundle.json",
         "cost_ledger.json",
         "report.md",
@@ -288,6 +290,13 @@ def test_offline_runner_persists_auditable_candidate_and_strict_layout(
     assert real_checks["equivalent_sites_complete"] == "PASS"
     assert real_checks["retrieval_structure_processing"] == "PASS"
     assert len(store.read_jsonl(f"{prefix}/internal_duplicate_groups.jsonl")) == 1
+    selection_audit = store.read_json(f"{prefix}/selection_audit.json")
+    assert selection_audit["schema_version"] == "inspiration-selection-audit-v1"
+    assert selection_audit["diversity_mode"] == "MMR_ONLY"
+    assert selection_audit["selected_candidate_count"] == 1
+    assert selection_audit["selected_exact_duplicate_count"] == 0
+    assert selection_audit["selected_strict_duplicate_count"] == 0
+    assert selection_audit["route_quota_status"] == "MET"
     assert len(list((store.root / prefix / "raw_search").glob("*.json"))) == 3
     assert len(list((store.root / prefix / "vectors").glob("*.f32le"))) == 1
     assert len(list((store.root / prefix / "structures").glob("*.cif"))) == 1

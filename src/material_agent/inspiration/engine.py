@@ -53,7 +53,10 @@ from material_agent.inspiration.transformations import (
 
 _ENGINE_SPEC = {
     "adapter": "pymatgen-equivalent-site-substitution-engine-v2",
-    "bridge_choice": "lowest bridge_packet_id",
+    "bridge_assignment": {
+        "catalog": "entry.reviewed_bridge_rule_id when search-supported",
+        "legacy_fixture": "lowest bridge_packet_id",
+    },
     "operator": "SUBSTITUTE_EQUIVALENT_SITE_V1",
     "route": "one complete sulfur equivalence class to selenium per parent",
     "registry_sha256": canonical_sha256(DEFAULT_SUBSTITUTION_REGISTRY_V1),

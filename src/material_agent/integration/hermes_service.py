@@ -59,6 +59,11 @@ from material_agent.inspiration.models import (
     TagGraphV1,
     TransformationPlanV1,
 )
+from material_agent.inspiration.parent_catalog import (
+    LoadedParentCatalog,
+    ParentCatalogIntegrityError,
+    load_flat_band_parent_catalog_v1,
+)
 from material_agent.inspiration.policy import (
     BridgeSearchPolicyV1,
     EmbeddingBudgetV1,
@@ -418,7 +423,7 @@ class HermesInspirationPreparer:
         *,
         store: LocalArtifactStore,
         project_id: str,
-        parent_structure: bytes,
+        parent_catalog: LoadedParentCatalog,
         tag_graph: TagGraphV1,
         search_adapter: CrossrefPublicAdapter,
         compiler: HermesInspirationRequestCompiler,
@@ -429,7 +434,7 @@ class HermesInspirationPreparer:
             )
         self.store = store
         self.project_id = project_id
-        self.parent_structure = parent_structure
+        self.parent_catalog = parent_catalog
         self.tag_graph = tag_graph
         self.search_adapter = search_adapter
         self.compiler = compiler
@@ -447,11 +452,57 @@ class HermesInspirationPreparer:
         request: InspirationRunRequestV1,
     ) -> PreparedInspirationRun:
         compiled = self.compile(request)
+        catalog = self.parent_catalog
+        if compiled.parent_catalog_id != catalog.manifest.catalog_id:
+            raise HermesFixtureConfigurationError(
+                "compiled parent catalog differs from the loaded catalog"
+            )
+        catalog_prefix = f"inputs/catalogs/{catalog.manifest.catalog_id}"
+        catalog_pointer = _pointer(
+            self.store.write_bytes(
+                f"{catalog_prefix}/manifest.json",
+                catalog.manifest_bytes,
+                media_type="application/json",
+                immutable=True,
+            )
+        )
+        parent_candidates: list[ParentCandidateRefV1] = []
+        catalog_entry_scope: list[dict[str, object]] = []
+        for loaded_entry in catalog.entries:
+            entry = loaded_entry.record
+            parent_pointer = _pointer(
+                self.store.write_bytes(
+                    f"{catalog_prefix}/{entry.artifact.asset_name}",
+                    loaded_entry.artifact_bytes,
+                    media_type=STRUCTURE_MEDIA_TYPE,
+                    immutable=True,
+                )
+            )
+            parent_candidates.append(
+                ParentCandidateRefV1(
+                    candidate_id=entry.candidate_id,
+                    structure_id=entry.structure_id,
+                    structure_artifact=parent_pointer,
+                )
+            )
+            catalog_entry_scope.append(
+                {
+                    "candidate_id": entry.candidate_id,
+                    "entry_id": entry.entry_id,
+                    "family_id": entry.family_id,
+                    "parent_structure_artifact": parent_pointer,
+                    "reviewed_bridge_rule_id": entry.reviewed_bridge_rule_id,
+                    "route_sha256": entry.route_sha256,
+                    "structure_id": entry.structure_id,
+                }
+            )
         requirement_pointer = _pointer(
             self.store.write_json(
                 f"inputs/requirements/{run_id}.json",
                 {
                     "compiled_scope": {
+                        "catalog_entries": catalog_entry_scope,
+                        "diversity_mode": compiled.diversity_mode.value,
                         "expected_output_elements": (
                             compiled.expected_output_elements
                         ),
@@ -463,9 +514,10 @@ class HermesInspirationPreparer:
                         "normalized_target_features": (
                             compiled.normalized_target_features
                         ),
-                        "parent_catalog_entry_id": (
-                            compiled.parent_catalog_entry_id
-                        ),
+                        "parent_catalog_artifact": catalog_pointer,
+                        "parent_catalog_id": compiled.parent_catalog_id,
+                        "parent_catalog_sha256": catalog.manifest_sha256,
+                        "parent_catalog_version": catalog.manifest.catalog_version,
                         "physical_search_attempt_limit": (
                             compiled.physical_search_attempt_limit
                         ),
@@ -501,27 +553,13 @@ class HermesInspirationPreparer:
                 immutable=True,
             )
         )
-        parent_pointer = _pointer(
-            self.store.write_bytes(
-                "inputs/parent-tis2.cif",
-                self.parent_structure,
-                media_type=STRUCTURE_MEDIA_TYPE,
-                immutable=True,
-            )
-        )
         inspiration_input = InspirationInputV1(
             project_id=self.project_id,
             request_id=request.submission_id,
             run_id=run_id,
             requirement_revision=1,
             requirement_artifact=requirement_pointer,
-            parent_candidates=(
-                ParentCandidateRefV1(
-                    candidate_id="parent-candidate-tis2",
-                    structure_id="parent-structure-tis2",
-                    structure_artifact=parent_pointer,
-                ),
-            ),
+            parent_candidates=tuple(parent_candidates),
             policy_artifact=policy_pointer,
             tag_graph_artifact=graph_pointer,
             transformation_registry_artifact=registry_pointer,
@@ -774,21 +812,38 @@ class HermesFixtureProjector:
                 raise CompanionAdapterError(
                     "candidate projection has an orphaned lineage reference"
                 ) from exc
-            if len(candidate_bridges) != 1:
+            if not candidate_bridges:
                 raise CompanionAdapterError(
-                    "trusted fixture candidate must resolve to one bridge"
+                    "candidate projection must resolve to at least one bridge"
                 )
-            bridge = candidate_bridges[0]
             try:
-                bridge_domain = ", ".join(
-                    tag_index[tag_id].label for tag_id in bridge.source_domain_tag_ids
+                bridge_domains = tuple(
+                    sorted(
+                        {
+                            tag_index[tag_id].label
+                            for bridge in candidate_bridges
+                            for tag_id in bridge.source_domain_tag_ids
+                        }
+                    )
                 )
             except KeyError as exc:
                 raise CompanionAdapterError(
                     "bridge projection references an unknown tag"
                 ) from exc
-            if not bridge_domain:
+            if not bridge_domains:
                 raise CompanionAdapterError("bridge projection has no source domain")
+            shared_invariants = tuple(
+                dict.fromkeys(bridge.shared_invariant for bridge in candidate_bridges)
+            )
+            failure_conditions = tuple(
+                sorted(
+                    {
+                        condition
+                        for bridge in candidate_bridges
+                        for condition in bridge.breaking_conditions
+                    }
+                )
+            )
             used_passages.update(candidate_passage_ids)
             parameters = plan.parameters
             sites = ", ".join(str(index) for index in parameters.equivalent_site_indices)
@@ -799,15 +854,17 @@ class HermesFixtureProjector:
                     deterministic_transformation=(
                         f"{plan.operator_id} replaces {parameters.source_species} "
                         f"with {parameters.target_species} at the complete "
-                        f"equivalence class [{sites}]."
+                        f"equivalence class [{sites}]. The selected structure "
+                        f"retains {len(candidate.merged_routes)} hash-distinct "
+                        "physical transformation route(s)."
                     ),
-                    shared_invariant=bridge.shared_invariant,
-                    bridge_domain=bridge_domain,
+                    shared_invariant=" | ".join(shared_invariants),
+                    bridge_domain=", ".join(bridge_domains),
                     evidence_document_ids=tuple(
                         sorted({item.document_id for item in candidate_passages})
                     ),
                     evidence_passage_ids=candidate_passage_ids,
-                    failure_conditions=bridge.breaking_conditions,
+                    failure_conditions=failure_conditions,
                     cheapest_falsification_step=candidate.next_falsification_step,
                 )
             )
@@ -1080,8 +1137,13 @@ def create_hermes_inspiration_service(
     """
 
     project_root = resolve_hermes_project_root(settings, create=True)
-    assets = _load_fixture_assets()
     store = LocalArtifactStore(project_root)
+    try:
+        parent_catalog = load_flat_band_parent_catalog_v1()
+    except ParentCatalogIntegrityError as exc:
+        raise HermesFixtureConfigurationError(
+            "operator-owned parent catalog failed frozen validation"
+        ) from exc
     contact_email = os.environ.get(_CROSSREF_CONTACT_EMAIL_ENV)
     if contact_email == "":
         raise HermesFixtureConfigurationError(
@@ -1119,7 +1181,7 @@ def create_hermes_inspiration_service(
     preparer = HermesInspirationPreparer(
         store=store,
         project_id=settings.project_id,
-        parent_structure=assets.parent_structure,
+        parent_catalog=parent_catalog,
         tag_graph=tag_graph,
         search_adapter=search_adapter,
         compiler=compiler,
@@ -1127,7 +1189,9 @@ def create_hermes_inspiration_service(
     runner = _ApprovalBoundInspirationRunner(
         store=store,
         search_adapter=search_adapter,
-        transformation_engine=PymatgenTransformationEngine(),
+        transformation_engine=PymatgenTransformationEngine(
+            parent_catalog=parent_catalog
+        ),
     )
     companion = _TrustedInspirationCompanion(
         runner=runner,

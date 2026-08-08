@@ -3,8 +3,9 @@
 Free-form ``goal`` text is retained as approval-bound user rationale, but it is
 never parsed to infer scientific scope.  Executable scope comes only from the
 strict Gateway constraint fields and the operator-owned vocabulary below.  The
-current compiler intentionally targets one pinned TiS2 -> TiSe2 route; requests
-that the route cannot satisfy fail before approval or network access.
+current compiler intentionally targets one operator-owned six-route parent
+catalog; requests that the catalog cannot satisfy fail before approval or
+network access.
 """
 
 from __future__ import annotations
@@ -28,10 +29,11 @@ from material_agent.inspiration.policy import (
     SelectionPolicyV1,
     TransformationBudgetV1,
 )
+from material_agent.inspiration.parent_catalog import FLAT_BAND_PARENT_CATALOG_ID
 
 
 PUBLIC_TARGET_TAG_IDS = ("electronic-flat-band",)
-PUBLIC_PARENT_CATALOG_ENTRY_ID = "operator-parent-tis2-v1"
+PUBLIC_PARENT_CATALOG_ID = FLAT_BAND_PARENT_CATALOG_ID
 PUBLIC_OUTPUT_ELEMENTS = frozenset({"Se", "Ti"})
 PUBLIC_LOGICAL_QUERY_COUNT = 4
 PUBLIC_MIN_UNIQUE_DOCUMENTS = 4
@@ -66,7 +68,7 @@ class HermesRequestCompilationError(ValueError):
 class CompiledDiversityMode(StrEnum):
     """Reviewable execution meaning for the Gateway diversity preference."""
 
-    MECHANISM_COVERAGE_WHEN_AVAILABLE = "MECHANISM_COVERAGE_WHEN_AVAILABLE"
+    MECHANISM_COVERAGE_WHEN_FEASIBLE = "MECHANISM_COVERAGE_WHEN_FEASIBLE"
     MMR_ONLY = "MMR_ONLY"
 
 
@@ -76,7 +78,7 @@ class CompiledHermesInspirationRequest:
 
     policy: InspirationPolicyV1
     target_tag_ids: tuple[str, ...]
-    parent_catalog_entry_id: str
+    parent_catalog_id: str
     expected_output_elements: tuple[str, ...]
     normalized_material_classes: tuple[str, ...]
     normalized_target_features: tuple[str, ...]
@@ -175,13 +177,13 @@ class HermesInspirationRequestCompiler:
                 "full PDF and expensive-computation permissions are unsupported",
             )
 
-        max_plans = max(2, constraints.top_k)
+        max_plans = max(6, constraints.top_k)
         mechanism_coverage_enabled = (
             constraints.require_diverse_routes and constraints.top_k >= 2
         )
         min_mechanisms = 2 if mechanism_coverage_enabled else 1
         diversity_mode = (
-            CompiledDiversityMode.MECHANISM_COVERAGE_WHEN_AVAILABLE
+            CompiledDiversityMode.MECHANISM_COVERAGE_WHEN_FEASIBLE
             if mechanism_coverage_enabled
             else CompiledDiversityMode.MMR_ONLY
         )
@@ -216,10 +218,11 @@ class HermesInspirationRequestCompiler:
             bridge=BridgeSearchPolicyV1(max_bridge_packets=3),
             transformation=TransformationBudgetV1(
                 max_plans=max_plans,
-                max_plans_per_parent=max_plans,
+                max_plans_per_parent=1,
             ),
             selection=SelectionPolicyV1(
                 top_k=constraints.top_k,
+                max_per_parent_family=1,
                 min_mechanisms_when_available=min_mechanisms,
             ),
             runtime=RuntimeBudgetV1(
@@ -229,7 +232,7 @@ class HermesInspirationRequestCompiler:
         return CompiledHermesInspirationRequest(
             policy=policy,
             target_tag_ids=PUBLIC_TARGET_TAG_IDS,
-            parent_catalog_entry_id=PUBLIC_PARENT_CATALOG_ENTRY_ID,
+            parent_catalog_id=PUBLIC_PARENT_CATALOG_ID,
             expected_output_elements=tuple(sorted(PUBLIC_OUTPUT_ELEMENTS)),
             normalized_material_classes=normalized_classes,
             normalized_target_features=normalized_targets,

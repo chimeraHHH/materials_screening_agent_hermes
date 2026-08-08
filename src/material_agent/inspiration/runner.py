@@ -16,7 +16,7 @@ import json
 import time
 from collections import Counter
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from typing import Protocol
 
 from material_agent.inspiration.bridge import build_search_supported_bridges
@@ -75,7 +75,10 @@ from material_agent.inspiration.search import (
     parse_crossref_page,
     parse_openalex_page,
 )
-from material_agent.inspiration.selection import select_diverse_candidates
+from material_agent.inspiration.selection import (
+    MechanismQuotaStatus,
+    select_diverse_candidates_with_audit,
+)
 from material_agent.inspiration.tag_graph import plan_tag_queries
 from material_agent.inspiration.vectorizer import (
     SIGNED_HASHING_SNAPSHOT,
@@ -505,9 +508,44 @@ class InspirationRunner:
             policy_id=policy.policy_id,
             selection_policy=policy.selection,
         )
-        selected_candidates = select_diverse_candidates(
+        selection_result = select_diverse_candidates_with_audit(
             identities,
             policy=policy.selection,
+        )
+        selected_candidates = selection_result.candidates
+        selection_audit = selection_result.audit
+        requested_route_count = (
+            2 if policy.selection.min_mechanisms_when_available >= 2 else 1
+        )
+        if (
+            selection_audit.selected_distinct_physical_route_count
+            >= requested_route_count
+        ):
+            route_quota_status = "MET"
+        elif (
+            selection_audit.pool_distinct_physical_route_count
+            < requested_route_count
+        ):
+            route_quota_status = "POOL_INSUFFICIENT"
+        else:
+            route_quota_status = "HARD_QUOTA_INFEASIBLE"
+        selection_audit_record = {
+            "schema_version": "inspiration-selection-audit-v1",
+            "diversity_mode": (
+                "MECHANISM_COVERAGE_WHEN_FEASIBLE"
+                if policy.selection.min_mechanisms_when_available >= 2
+                else "MMR_ONLY"
+            ),
+            "structure_valid_proposal_count": len(proposals),
+            "post_exact_merge_candidate_count": len(identities),
+            "exact_merge_reduction_count": len(proposals) - len(identities),
+            "requested_distinct_physical_route_count": requested_route_count,
+            "route_quota_status": route_quota_status,
+            **asdict(selection_audit),
+        }
+        selection_audit_pointer = self._write_json(
+            f"{prefix}/selection_audit.json",
+            selection_audit_record,
         )
         duplicate_pointer = self._write_jsonl(
             f"{prefix}/internal_duplicate_groups.jsonl",
@@ -526,6 +564,17 @@ class InspirationRunner:
                 "structure-qualified candidate entered selection.",
             )
             warnings.append("REVIEW_REQUIRED:NO_ELIGIBLE_CANDIDATE")
+        warnings.extend(
+            f"SELECTION_UNDERFILL:{reason}"
+            for reason in selection_audit.underfill_reasons
+        )
+        if selection_audit.quota_status is not MechanismQuotaStatus.MET:
+            warnings.append(
+                "SELECTION_MECHANISM_QUOTA:"
+                f"{selection_audit.quota_status.value}"
+            )
+        if route_quota_status != "MET":
+            warnings.append(f"SELECTION_ROUTE_QUOTA:{route_quota_status}")
 
         elapsed_ms = (time.monotonic_ns() - started_ns) // 1_000_000
         if elapsed_ms > policy.runtime.max_walltime_seconds * 1_000:
@@ -574,6 +623,7 @@ class InspirationRunner:
                 *structure_artifacts,
                 transformation_pointer,
                 duplicate_pointer,
+                selection_audit_pointer,
             )
         )
         outcome = (
@@ -581,10 +631,22 @@ class InspirationRunner:
             if selected_candidates
             else InspirationOutcome.SCIENTIFIC_NO_MATCH
         )
+        selection_limitations = (
+            (
+                "Selection returned "
+                f"{len(selected_candidates)} of requested "
+                f"{policy.selection.top_k} candidates; audit reasons: "
+                + ", ".join(selection_audit.underfill_reasons)
+                + ".",
+            )
+            if selection_audit.underfill_reasons
+            else ()
+        )
         limitations = (
             "Search evidence is limited to bounded metadata passages and may omit relevant context.",
             "Generated structures have no downstream property validation; target property status is UNKNOWN.",
             "Artifacts record walltime_ms as zero while enforcing the configured walltime ceiling.",
+            *selection_limitations,
         )
         next_steps = tuple(
             dict.fromkeys(
@@ -636,6 +698,7 @@ class InspirationRunner:
             review_items=review_items,
             warnings=bounded_warnings,
             search_attempts=tuple(search_attempts),
+            selection_audit=selection_audit_record,
         )
         report_pointer = self._write_text(f"{prefix}/report.md", report)
         stage_result = InspirationStageResultV1(

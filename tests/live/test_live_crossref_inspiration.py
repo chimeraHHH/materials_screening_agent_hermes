@@ -86,8 +86,8 @@ def test_live_crossref_runs_inside_the_approval_bound_gateway_lifecycle(
         require_diverse_routes=True,
         budget=InspirationBudgetV1(
             max_search_requests=8,
-            max_unique_documents=3,
-            max_passages=3,
+            max_unique_documents=4,
+            max_passages=4,
             max_model_calls=0,
             max_walltime_seconds=300,
         ),

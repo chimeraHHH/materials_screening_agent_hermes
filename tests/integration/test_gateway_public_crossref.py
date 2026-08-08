@@ -101,8 +101,8 @@ def _arguments() -> dict[str, object]:
         require_diverse_routes=True,
         budget=InspirationBudgetV1(
             max_search_requests=8,
-            max_unique_documents=3,
-            max_passages=3,
+            max_unique_documents=4,
+            max_passages=4,
             max_model_calls=0,
             max_walltime_seconds=300,
         ),
@@ -186,6 +186,16 @@ def test_public_factory_runs_static_crossref_through_approval_lifecycle(
     assert started["state"]["interaction"]["input_sha256"] == manifest_sha256
     assert prepared.policy.network_access is True
     assert prepared.inspiration_input.search_fixture_artifact is None
+    assert len(prepared.inspiration_input.parent_candidates) == 6
+    requirement = service.companion.preparer.store.read_json(
+        prepared.inspiration_input.requirement_artifact.uri
+    )
+    compiled_scope = requirement["compiled_scope"]
+    assert compiled_scope["parent_catalog_id"] == "flat-band-parent-catalog-v1"
+    assert compiled_scope["parent_catalog_sha256"] == (
+        "09d563732717e05ccf216d3b8572b1bcd1d855dd3f5d0106a4cdbc15b9197b99"
+    )
+    assert len(compiled_scope["catalog_entries"]) == 6
     assert prepared.inspiration_input.search_adapter == (
         service.companion.runner.search_adapter.component
     )
@@ -197,6 +207,8 @@ def test_public_factory_runs_static_crossref_through_approval_lifecycle(
         "pymatgen-substitution-engine",
         "signed-hashing-v1",
     }.issubset(component_ids)
+    engine_component = service.companion.runner.transformation_engine.component
+    assert engine_component.version == "2-catalog-v1"
 
     issuer = RequirementFreezeGrantIssuer(
         repository=service.repository,
@@ -223,7 +235,7 @@ def test_public_factory_runs_static_crossref_through_approval_lifecycle(
     assert result["verified"] is True
     assert len(result["bundle"]["selected_candidates"]) == 1
     assert result["cost_ledger"]["model_calls"] == 0
-    assert len(transport.calls) == 3
+    assert len(transport.calls) == 4
     assert all("api.crossref.org/v1/works" in url for url in transport.calls)
 
     project_root = tmp_path / "hermes-public-static"

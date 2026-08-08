@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import re
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from enum import Enum
 
 from material_agent.inspiration.models import (
@@ -70,6 +70,63 @@ def _artifact_lines(
     )
 
 
+def _append_input_provenance(
+    lines: list[str], *, inspiration_input: InspirationInputV1
+) -> None:
+    lines.extend(
+        (
+            "## Frozen input provenance",
+            "",
+            f"- Requirement revision: `{inspiration_input.requirement_revision}`",
+            "- Search adapter snapshot: "
+            f"{_code(inspiration_input.search_adapter.component_id)} / "
+            f"{_code(inspiration_input.search_adapter.version)} / "
+            f"{_code(inspiration_input.search_adapter.implementation_sha256)}",
+            "- Vectorizer snapshot: "
+            f"{_code(inspiration_input.vectorizer.component_id)} / "
+            f"{_code(inspiration_input.vectorizer.version)} / "
+            f"{_code(inspiration_input.vectorizer.implementation_sha256)}",
+        )
+    )
+    _artifact_lines(
+        lines,
+        label="Approval-bound requirement",
+        artifact=inspiration_input.requirement_artifact,
+    )
+    _artifact_lines(
+        lines,
+        label="Policy",
+        artifact=inspiration_input.policy_artifact,
+    )
+    _artifact_lines(
+        lines,
+        label="Tag graph",
+        artifact=inspiration_input.tag_graph_artifact,
+    )
+    _artifact_lines(
+        lines,
+        label="Transformation registry",
+        artifact=inspiration_input.transformation_registry_artifact,
+    )
+    _artifact_lines(
+        lines,
+        label="Search fixture manifest",
+        artifact=inspiration_input.search_fixture_artifact,
+    )
+    lines.extend(("", "### Parent catalog entries supplied to the run", ""))
+    for parent in inspiration_input.parent_candidates:
+        lines.extend(
+            (
+                f"- Candidate {_code(parent.candidate_id)} / structure "
+                f"{_code(parent.structure_id)}",
+                f"  - Artifact URI: {_code(parent.structure_artifact.uri)}",
+                f"  - Artifact SHA-256: {_code(parent.structure_artifact.sha256)}",
+                f"  - Artifact bytes: {_code(parent.structure_artifact.size_bytes)}",
+            )
+        )
+    lines.append("")
+
+
 def _append_execution_funnel(
     lines: list[str],
     *,
@@ -124,6 +181,65 @@ def _append_cost_ledger(lines: list[str], *, bundle: InspirationBundleV1) -> Non
     for field, value in bundle.cost_ledger.model_dump(mode="json").items():
         lines.append(f"| {_code(field)} | {_code(value)} |")
     lines.append("")
+
+
+def _append_selection_audit(
+    lines: list[str],
+    *,
+    selection_audit: Mapping[str, object] | None,
+) -> None:
+    lines.extend(("## Candidate identity and diversity audit", ""))
+    if selection_audit is None:
+        lines.extend(("- Selection audit was not attached.", ""))
+        return
+
+    scalar_fields = (
+        ("Diversity mode", "diversity_mode"),
+        ("Requested Top-K", "requested_top_k"),
+        ("Structure-valid proposal rows", "structure_valid_proposal_count"),
+        ("Candidates after exact merge", "post_exact_merge_candidate_count"),
+        ("Proposal rows collapsed by exact merge", "exact_merge_reduction_count"),
+        ("Selected candidates", "selected_candidate_count"),
+        ("Pool physical routes", "pool_distinct_physical_route_count"),
+        ("Selected physical routes", "selected_distinct_physical_route_count"),
+        (
+            "Requested physical-route floor",
+            "requested_distinct_physical_route_count",
+        ),
+        ("Physical-route quota status", "route_quota_status"),
+        ("Pool parent families", "pool_parent_family_count"),
+        ("Selected parent families", "selected_parent_family_count"),
+        ("Requested mechanism count", "requested_mechanism_count"),
+        ("Available mechanism count", "available_mechanism_count"),
+        ("Jointly feasible mechanism count", "feasible_mechanism_count"),
+        ("Achieved mechanism count", "achieved_mechanism_count"),
+        ("Mechanism quota status", "quota_status"),
+        ("Pool multi-route groups", "pool_multi_route_group_count"),
+        ("Selected multi-route groups", "selected_multi_route_group_count"),
+        ("Selected exact duplicates", "selected_exact_duplicate_count"),
+        ("Selected strict duplicates", "selected_strict_duplicate_count"),
+    )
+    for label, field in scalar_fields:
+        lines.append(f"- {label}: {_code(selection_audit.get(field))}")
+
+    for label, field in (
+        ("Available mechanism IDs", "available_mechanism_ids"),
+        ("Jointly feasible mechanism IDs", "feasible_mechanism_ids"),
+        ("Achieved mechanism IDs", "achieved_mechanism_ids"),
+        ("Underfill reasons", "underfill_reasons"),
+    ):
+        raw = selection_audit.get(field, ())
+        values = raw if isinstance(raw, (list, tuple)) else (raw,)
+        lines.append(f"- {label}: {_items(values)}")
+    lines.extend(
+        (
+            "",
+            "Exact-output merging happens before selection and retains every "
+            "hash-distinct physical route. Strict structure groups and parent-family "
+            "caps are never relaxed to fill Top-K.",
+            "",
+        )
+    )
 
 
 def _append_attempts(
@@ -453,6 +569,7 @@ def render_inspiration_report(
     review_items: Sequence[str],
     warnings: Sequence[str],
     search_attempts: Sequence[SearchAttemptRecord] = (),
+    selection_audit: Mapping[str, object] | None = None,
 ) -> str:
     """Render a stable Markdown audit report without upgrading evidence claims."""
 
@@ -476,6 +593,7 @@ def render_inspiration_report(
         "untrusted data and was not used as an instruction surface.",
         "",
     ]
+    _append_input_provenance(lines, inspiration_input=inspiration_input)
     _append_execution_funnel(
         lines,
         bundle=bundle,
@@ -488,6 +606,7 @@ def render_inspiration_report(
         search_attempts=search_attempts,
     )
     _append_cost_ledger(lines, bundle=bundle)
+    _append_selection_audit(lines, selection_audit=selection_audit)
     _append_attempts(lines, search_attempts=search_attempts)
     _append_queries(lines, queries=queries)
     _append_documents(lines, hits=hits)

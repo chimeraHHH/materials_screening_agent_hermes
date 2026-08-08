@@ -70,7 +70,7 @@ def test_goal_paraphrases_do_not_change_structured_scientific_scope() -> None:
     assert first.target_tag_ids == second.target_tag_ids == (
         "electronic-flat-band",
     )
-    assert first.parent_catalog_entry_id == "operator-parent-tis2-v1"
+    assert first.parent_catalog_id == "flat-band-parent-catalog-v1"
     assert first.expected_output_elements == ("Se", "Ti")
     assert first.goal_sha256 != second.goal_sha256
 
@@ -131,12 +131,14 @@ def test_every_budget_and_selection_field_has_compiled_execution_meaning() -> No
     assert policy.fetch.max_requests == 0
     assert policy.fetch.allow_pdf_fulltext is False
     assert policy.selection.top_k == 4
+    assert policy.selection.max_per_parent_family == 1
     assert policy.selection.min_mechanisms_when_available == 2
     assert (
         compiled.diversity_mode
-        is CompiledDiversityMode.MECHANISM_COVERAGE_WHEN_AVAILABLE
+        is CompiledDiversityMode.MECHANISM_COVERAGE_WHEN_FEASIBLE
     )
-    assert policy.transformation.max_plans >= policy.selection.top_k
+    assert policy.transformation.max_plans == 6
+    assert policy.transformation.max_plans_per_parent == 1
     assert compiled.normalized_material_classes == (
         "layered transition metal compound",
     )
