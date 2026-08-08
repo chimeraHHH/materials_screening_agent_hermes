@@ -86,7 +86,8 @@
 
 - [x] 完成 P3.3 后进入最终真实 Hermes + Crossref natural-language release Gate
 - [x] P3.3 离线 main Gate 报告检查点已发布
-- [ ] 下一报告检查点：最终 Hermes pending interaction 创建后或 release 完成后
+- [x] 最终 Hermes pending interaction 创建与知情审批修复报告已发布
+- [ ] 下一报告检查点：exact-user-approved result 或明确外部失败后
 
 ## Blocked
 

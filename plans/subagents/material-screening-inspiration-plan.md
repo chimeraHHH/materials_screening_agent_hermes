@@ -475,7 +475,7 @@ stages/inspiration/<run_id>/
 
 ### M10：P3.x 真实 release closeout
 
-- [ ] 完整离线、故障注入、dependency、secret、diff、MCP/profile/Skill Gate 通过；
+- [x] 完整离线、故障注入、dependency、secret、diff、MCP/profile/Skill Gate 通过；
 - [x] live Crossref runner 与 Gateway lifecycle 通过；
 - [ ] 真实 Hermes 自然语言 session 在同一 run 中使用 Crossref，经真实用户授权后得到非空结果；
 - [ ] 最终 run record、工作报告、PR/check/merge/公开读取证据闭合；
@@ -714,3 +714,19 @@ stages/inspiration/<run_id>/
 - 完整记录见
   [`docs/runs/2026-08-08-p33-passage-tag-feedback.md`](../../docs/runs/2026-08-08-p33-passage-tag-feedback.md)；
   P3.3 为 `PASSED`，只剩最终真实 Hermes natural-language Crossref release 与 GitHub closeout。
+
+### 2026-08-08：真实 Hermes Crossref approval checkpoint
+
+- 首个 production pending interaction 使用历史通用文案 `offline companion runner`，与冻结的
+  public Crossref policy 不一致；该 run 保持 `0 grant / 0 result`，未执行网络或 runner；
+- `ec1d415` 将 approval prompt 绑定 frozen request/prepared policy，明确 Crossref metadata/abstract
+  公网访问、8 次物理搜索上限以及 body/PDF/internal model 均为 0；Skill/SOUL/contract/verifier 与
+  35 项定向测试固定该知情审批边界；
+- 完整回归为 `777 passed, 14 skipped`，三个环境 dependency、四工具 MCP 与 GitGuardian 均通过；
+- 真实 Hermes v2 session `20260808_204029_977de9` 单次调用 run 后停在
+  `interaction-f2d2ab3eaa402a5ed4481e69`，manifest 为
+  `e6b0d901fa0a8ef60a2797e35ff4b6cc21c78f175c04258940a3e9f40324beda`，当前
+  `1 run / 0 grant / 0 result`；
+- 下一步必须取得用户对该 exact interaction/manifest 的新批准，才能 issue grant 并执行
+  `act → result`。完整 pending 记录见
+  [`docs/runs/2026-08-08-hermes-final-crossref-approval-pending.md`](../../docs/runs/2026-08-08-hermes-final-crossref-approval-pending.md)。
