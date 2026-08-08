@@ -57,7 +57,8 @@ LangGraph 图、checkpoint schema、业务 SQLite migration、四阶段 `StageId
 - [x] Hermes 与主项目使用独立环境，当前只支持单用户、单实例本机试点；
 - [x] unit/contract/integration、真实 MCP stdio、重启恢复和非空 bundle smoke 已通过；
 - [x] 完整离线、公共 Crossref live、依赖一致性、bundle verifier 和 MCP discovery Gate 通过；
-- [ ] 完成 Provider 设备授权后的 Hermes 自然语言 Agent turn。
+- [x] 完成 Provider 设备授权后的 Hermes 自然语言 Agent turn；严格区分 Gateway 科学服务
+  ledger 与 Hermes host provider usage，并保留提示 schema 调试证据。
 
 详细 Hermes 与 Inspiration 里程碑见
 [`material-screening-inspiration-plan.md`](material-screening-inspiration-plan.md)。
@@ -222,7 +223,7 @@ backend 继续属于独立后续里程碑。**
 - [x] 实现真实阶段计划引用、计划/输入篡改防护及 P0.1 checkpoint 兼容策略；
 - [x] 历史 P0 收口快照为 `325 passed, 2 skipped`，P2 v1 收尾快照为
   `337 passed, 7 skipped`；当前 P3 工作树完整离线 Gate 为
-  `666 passed, 13 skipped, 362 warnings`。
+  `668 passed, 13 skipped, 362 warnings`。
 
 P2 系统 v1 收尾（2026-07-28）复核确认：Agent01 是默认生产科学 runner；Agent02
 仅在校验通过的 `MATERIAL_AGENT_ML_WORKER_PYTHON` 下注册，当前 L2 审计限于 3D

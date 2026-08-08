@@ -85,9 +85,11 @@ This recovery command is deliberately absent from Hermes's tool list. Replaying
 the fixed local pilot is safe only because its runner inputs and outputs are
 immutable and deterministic; any byte drift fails closed.
 
-Provider credentials and `API_SERVER_KEY` belong only in the ignored runtime
-profile `.env`; never commit them. Bind the API server to loopback unless a
-separate authenticated deployment boundary has been designed.
+OAuth provider credentials belong only in Hermes's ignored runtime credential
+store; environment-based provider secrets and `API_SERVER_KEY` belong only in
+the ignored runtime profile `.env`. Never print or commit either form. Bind the
+API server to loopback unless a separate authenticated deployment boundary has
+been designed.
 
 The profile is intentionally not a filesystem sandbox. Its practical boundary is
 the absence of terminal/file/browser toolsets plus the Gateway's fixed schemas,

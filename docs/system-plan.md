@@ -272,11 +272,12 @@ Global State 必须使用逻辑 Artifact URI，而不是依赖 Mac 绝对路径�
 - 最终以一次自然语言 Hermes turn 驱动完整固定流程，并明确是否包含公共搜索；
 - 首批结果只作为可审计 proposal，不进行 novelty 或性质背书。
 
-截至 2026-08-08，单用户本机 pilot 已通过两个分离 Gate：公共 Crossref metadata live
-runner 验证真实搜索/真实 `pymatgen` 结构路径；fixture-backed 四工具 MCP run 验证 Hermes
-profile、Gateway、operator 审批、持久化和非空 bundle。固定 Hermes 为 `v2026.8.3`
-（package `0.20.0`）。自然语言 Hermes Agent turn 仍需 Provider 设备授权，也尚未声称一个
-Hermes turn 同时使用公共搜索；当前证据与限制见[首个 pilot 运行记录](./runs/2026-08-08-hermes-inspiration-pilot.md)。
+截至 2026-08-08，单用户本机 pilot 已通过三个分离 Gate：公共 Crossref metadata live
+runner 验证真实搜索/真实 `pymatgen` 结构路径；fixture-backed 四工具 MCP run 验证 Gateway、
+operator 审批、持久化和非空 bundle；完成设备授权后的自然语言 Hermes session 验证真实
+Agent/Skill/Tool 调度、人工授权停点和结果读取。固定 Hermes 为 `v2026.8.3`（package
+`0.20.0`）。自然语言 run 使用固定离线 fixture，不能描述成同一 Hermes turn 同时完成了
+公共搜索；当前证据、两套成本账本和限制见[首个 pilot 运行记录](./runs/2026-08-08-hermes-inspiration-pilot.md)。
 
 ### P1：可靠 ML 筛选
 

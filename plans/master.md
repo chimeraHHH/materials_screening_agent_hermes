@@ -34,17 +34,19 @@
 - 本阶段明确不做 novelty/prior-art 判定，不输出“新材料”结论；
 - 每个可独立验证里程碑形成提交并推送 `hermes-origin/main`。
 
-当前 P3 状态：M0–M4 与 M5 的 MCP 纵切已完成。Hermes/Gateway 使用独立环境和进程；
-真实 Crossref metadata Gate、真实 pymatgen structure proposal、MCP 外 operator 审批、
-SQLite 恢复和非空 bundle 已通过。唯一未通过的 release Gate 是需要用户设备登录的 Hermes
-自然语言 turn；重复设备授权尝试均在未完成登录时超时。不得用 Tool discovery
-或独立 MCP client 冒充该项，PR 在授权前保持 Draft。
+当前 P3 的 M0–M5 工程目标均已通过。Hermes/Gateway 使用独立环境和进程；真实 Crossref
+metadata Gate、真实 pymatgen structure proposal、MCP 外 operator 审批、SQLite 恢复和
+非空 bundle 均已通过。用户完成 Provider 设备授权后，自然语言 Hermes session 已实际
+完成 `run → get → act → result`：先在 `INTERACTION_REQUIRED` 停止，再基于用户明确决定
+消费一次性 grant，最终得到 hash-verified `PARTIAL` Gateway 状态与 `SUCCEEDED` bundle。
+固定 Hermes run 使用离线 fixture，公共搜索能力由分离的 Crossref live Gate 证明；两项
+证据不得合并描述成一次联网 Agent turn。
 
 本次增加 Agent01 Materials Project 富媒体检索报告：发布候选的下游 manifest
 仍保持 `agent01-contract-v1`，附加报告证据使用独立的 enrichment、PNG 和 gzip
 Artifact；Top-N 重端点限额进入运行指纹。该增量新增 `mp-pyrho==0.5.1` 与显式
 Matplotlib 依赖；包含后续 Hermes inspiration 纵切的当前完整离线 Gate 已记录为
-`666 passed, 13 skipped, 362 warnings`。
+`668 passed, 13 skipped, 362 warnings`。
 
 ### 本次 P2：系统 v1 收尾范围
 
@@ -87,7 +89,7 @@ Atomly 因无公开授权 API 保持外部阻塞；这些新增检索控制流�
 |---|---|---|
 | Orchestrator | P0.2 已完成；控制、阶段计划和报告契约已冻结 | [`Orchestrator 计划`](subagents/material-screening-orchestrator-plan.md) |
 | Agent 01 | P0 与增强 Gate 已完成；MP v1 保持冻结；NOMAD/MC3D/C2DB/TQC/NIMS SuperCon 单来源 v2 接入已实现，Atomly 等待授权 API | [`Agent 01 计划`](subagents/material-screening-agent01-plan.md) |
-| Hermes / Inspiration | 单用户本机 pilot 已实现：固定 Hermes、四工具 Gateway、operator 审批、公共 metadata Gate、结构 proposal 与非空 MCP bundle；自然语言 turn 待设备授权 | [`Hermes 与灵感生成器计划`](subagents/material-screening-inspiration-plan.md) |
+| Hermes / Inspiration | 单用户本机 pilot 已实现：固定 Hermes、四工具 Gateway、operator 审批、公共 metadata Gate、结构 proposal、非空 MCP bundle 与自然语言授权 turn 均已通过 | [`Hermes 与灵感生成器计划`](subagents/material-screening-inspiration-plan.md) |
 | Agent 02 | Step 1/1.1、P0.2 Fake 路径及 Step 3 独立 CHGNet worker/CPU Gate 已完成 | [`Agent 02 计划`](subagents/material-screening-ml-agent-plan.md) |
 | Agent 02 生产接入 | 目标 Mac CPU/MPS parity、单次 CPU 回退、Top-5/恢复/资源记录和显式 production factory 已完成；默认无配置时仍不可用 | [`Agent 02 计划`](subagents/material-screening-ml-agent-plan.md) |
 | Agent 03 | v1 mock 控制链、审批、恢复、失败注入、报告、fixture 和结构化 VASPilot bridge PoC 已完成；真实 DFT backend 未实现或注册 | [`Agent 03 计划`](subagents/material-screening-agent-dft-plan.md) |
@@ -107,10 +109,10 @@ Atomly 因无公开授权 API 保持外部阻塞；这些新增检索控制流�
 
 P2 收口后的历史 `main` 快照为 `413 passed, 9 skipped, 142 warnings`。加入后续来源与
 Hermes inspiration 纵切后，当前工作树的完整离线 Gate 为
-`666 passed, 13 skipped, 362 warnings`；跳过项是隔离 Gateway 环境中的两项 MCP/stdio、
+`668 passed, 13 skipped, 362 warnings`；跳过项是隔离 Gateway 环境中的两项 MCP/stdio、
 显式 opt-in 的 Crossref/LLM/MP/NOMAD live probes 和五项 real-ML Gate。warning 为已知
 pymatgen/spglib 提示。历史分计划中的较小测试数字只记录当时任务快照；当前状态以
-`666/13/362`、源码和测试为准。
+`668/13/362`、源码和测试为准。
 Agent03/04 mock 控制链及 bridge PoC 不等于真实科学后端。
 
 2026-08-04 的公开来源复检确认 NOMAD 与 C2DB 均可通过受控访问链路完成真实 Agent01
@@ -447,6 +449,7 @@ flowchart LR
 | 产品限制 | DeepSeek Provider 已通过单请求 `live_llm` 发布 Gate，但仍是显式启用能力 | Offline Parser 继续作为默认；联网配置失败不回退，并保留周期性 live 回归 |
 | 迁移风险 | 本地 SQLite/同步 CLI 不适合多用户和长后台任务 | 服务器阶段迁移 Postgres、worker、RBAC 和监控 |
 | 新架构风险 | Hermes 与 LangGraph 形成双编排或依赖冲突 | 进程隔离；Hermes 只拥有 Agent 交互，科学事务只有现有 Runtime 一个真源 |
+| Provider 可靠性 | 主自然语言链路通过后，三次附加只读报告回归遇到 `Broken pipe` | 不回滚已验证 Gateway 结果；保留失败 usage/会话证据，生产化前增加 provider transport 监控与重试回归 |
 | 审批风险 | MCP caller 自报 `confirmed_by_user` 或并发重复执行 | MCP 外 one-time operator grant，绑定完整 execution manifest/interaction/action 并原子消费 |
 | 证据风险 | 网页全文、prompt injection 或跨领域联想污染科学结论 | metadata-first、Passage locator、EvidenceCard、Bridge invariant/失效条件和硬预算 |
 | 生成风险 | proposal 被误称为新材料或继承 parent 性质证据 | 本阶段不做 novelty；白名单 operator；`scientific_conclusion=false`；性质另行验证 |
@@ -471,7 +474,8 @@ flowchart LR
 3. [x] 完成 M2：Materials Gateway、Hermes profile/Skill、Tool contract 和跨进程 E2E。
 4. [x] 完成 M3–M4 与 M5 MCP Gate：真实公共文献搜索、真实结构 proposal、Hermes profile
    Tool discovery 和首批非空 `InspirationBundle`。
-5. [ ] 完成 Hermes Provider 设备授权，执行自然语言 Agent turn；随后补充运行证据并合并 PR。
+5. [x] 完成 Hermes Provider 设备授权和自然语言 Agent turn；补充运行证据、提示契约回归与
+   成本分账。公开 PR 合并状态由本轮发布步骤单独记录。
 6. [x] 完成 Agent02 Step 2、Agent03 v1 mock、Agent04 MVP mock 和四阶段 P0
    安全回归。
 7. [x] 在独立 Python 3.11 环境实现冻结 JSON worker 协议和真实 CHGNet CPU Gate；
@@ -491,9 +495,9 @@ flowchart LR
   `MATERIAL_AGENT_ML_WORKER_PYTHON` 下注册，当前 L2 审计仅限 3D 单质 Si；Agent03/04
   仅 mock 控制链。
 - [x] 冻结离线演示、验收命令；历史 closeout 为 `337 passed, 7 skipped`，当前 P3
-      工作树 Gate 为 `666 passed, 13 skipped, 362 warnings`，跳过项和环境边界已记录。
-- [x] 当前完整离线 Gate、`pip check`、`git diff --check` 通过；P3 仅运行无密钥 Crossref
-  live Gate，未运行 live MP，未读取或生成 `MP_API_KEY`。
+      工作树 Gate 为 `668 passed, 13 skipped, 362 warnings`，跳过项和环境边界已记录。
+- [x] 当前完整离线 Gate、`pip check`、`git diff --check` 通过；P3 运行了无密钥 Crossref
+  live Gate 与独立 Hermes Provider turn，未运行 live MP，未读取或生成 `MP_API_KEY`。
 - [x] 未修改 Agent01/02 原生公共契约、Orchestrator/checkpoint schema、数据库迁移、
   requirements.lock 或科学阈值；未新增模型、后端、依赖或公共 Schema。
 

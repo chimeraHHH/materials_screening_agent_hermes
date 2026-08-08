@@ -1,8 +1,8 @@
 # Hermes 与灵感生成器实施计划
 
-- 版本：v0.1
+- 版本：v0.2
 - 日期：2026-08-08
-- 状态：实施中
+- 状态：M0–M5 已完成，公开发布收口中
 - 依据：[`docs/system-plan.md`](../../docs/system-plan.md)、
   [`docs/architecture.md`](../../docs/architecture.md)、
   [`ADR-0001`](../../docs/adr/0001-hermes-platform-and-inspiration-boundary.md) 与
@@ -54,8 +54,8 @@
 - [x] 白名单结构变换、完整 Artifact runner、冻结 fixture 与 MCP binding 已收敛；
 - [x] Hermes profile 已实机发现唯一四个 Tool，真实 MCP stdio、operator 审批、进程重启和
   非空结果 Gate 已通过；
-- [ ] Hermes 自然语言 Agent turn 仍等待一次性 Provider 设备授权；重复登录尝试均超时，
-  不能用 MCP smoke 冒充。
+- [x] 用户完成一次性 Provider 设备授权；Hermes 自然语言 session 已经真实四工具链路停在
+  审批点、消费 MCP 外 grant 并返回非空 hash-verified bundle；MCP smoke 未被用来冒充该项。
 
 ## 1. 目标、边界与完成标准
 
@@ -106,7 +106,7 @@ Hermes 是上层 Agent 控制面，负责：
 - [x] 至少生成一个带 invariant、成立条件和失效条件的跨领域 BridgePacket；
 - [x] 至少一个白名单 transformation 在真实 pymatgen Structure 上执行并通过结构校验；
 - [x] 运行内部重复候选只占一个 Top-K 名额，多样性排序可确定性重放；
-- [ ] Hermes 实机调用该 capability，最终得到非空、可审计 `InspirationBundle`；
+- [x] Hermes 实机调用该 capability，最终得到非空、可审计 `InspirationBundle`；
 - [x] 完整离线 Gate、相关 live Gate、`pip check` 和 `git diff --check` 通过；
 - [x] README、主计划、本计划和实机运行记录与当前源码一致；
 - [ ] 所有里程碑提交已推送到 `hermes-origin/main`。
@@ -211,8 +211,10 @@ Gateway 返回契约固定为 `materials-gateway-v1`，只输出安全 DTO：运
 - 禁止 memory/skill 自动写入；
 - Skill 更新只形成 Git diff，经测试和人工审阅后发布；
 - Web 内容视为不可信数据，页面指令不得进入系统控制；
-- 设置总调用数、网络字节、模型 token、walltime 和并发上限；
-- Hermes 版本、profile hash、Skill hash、模型/provider 和 Tool Schema 版本进入运行审计。
+- 分别设置 Gateway materials-service 与 Hermes host 的调用、网络字节、模型 token、walltime
+  和并发上限；两套成本账本不得合并；
+- Hermes 版本、profile hash、Skill hash、模型/provider、host usage 和 Tool Schema 版本进入
+  运行审计。
 
 ## 4. 灵感生成器设计
 
@@ -264,7 +266,8 @@ src/material_agent/inspiration/
 - `TransformationPlanV1`：parent、operator、参数、保留/改变项、证伪测试和结构输出；
 - `InspirationCandidateV1`：内部 identity、全部生成路线和证据；
 - `InspirationBundleV1`：多样性 Top-K、限制和下一验证步骤；
-- `CostLedgerV1`：请求、字节、passage、embedding、LLM token、拒绝与耗时。
+- `CostLedgerV1`：仅记录 Gateway materials-service 的请求、字节、passage、embedding、
+  内部 LLM token、拒绝与耗时；Hermes provider usage 由 host 独立审计。
 
 所有 Pydantic 模型使用 `extra="forbid"`；数值拒绝 NaN/Infinity；ID、路径、URI 和长度有
 明确上限。Schema 中不得出现 `novelty`、`is_novel` 或等价结论字段。
@@ -311,7 +314,8 @@ invariant、transferable control、required conditions、breaking conditions 和
 50%/30%/20%。
 
 每个 tag/bridge 记录搜索收益、EvidenceCard yield、目标支持数、专家接受/拒绝、下载字节和
-embedding/LLM 成本。首版不在线训练，只积累可复核反馈；后续才评估 pairwise reranker。
+Gateway embedding/LLM 成本。Hermes 对话 provider usage 单独记录。首版不在线训练，只积累
+可复核反馈；后续才评估 pairwise reranker。
 
 ### 4.6 白名单 Transformation
 
@@ -425,12 +429,12 @@ stages/inspiration/<run_id>/
 
 - [x] 按固定 commit 安装独立 Hermes runtime；
 - [x] 用仓库 profile 启动 Hermes 并发现限定 Tool/Skill；
-- [ ] 从自然语言请求触发灵感生成、查询状态并读取最终 bundle；
+- [x] 从自然语言请求触发灵感生成、查询状态并读取最终 bundle；
 - [x] 对真实失败进行分类和修复，重复运行直至非空首批产出；
 - [x] 保存命令、环境、版本、运行 ID、Artifact hash、成本和报告；
 - [x] 完整离线 Gate、相关 live Gate、`pip check`、secret/diff 检查通过；
 - [x] 更新 README/计划并推送 MCP pilot 文档里程碑；
-- [ ] 自然语言 turn 通过后补充证据并推送最终里程碑。
+- [x] 自然语言 turn 通过后补充证据并推送最终里程碑分支。
 
 提交原则：每个 M 至少一个可回退提交；跨越多个 M 的大提交禁止。代码与契约、测试、
 文档可以分开提交，但任何提交不得把未实现 roadmap 写成当前能力。
@@ -468,7 +472,8 @@ stages/inspiration/<run_id>/
 - material-agent commit、Python 和直接依赖版本；
 - run/submission ID；
 - 搜索 provider、查询、响应 URI/hash、重试和限流；
-- hits、fetch、bytes、passage/embedding/LLM token 和 walltime；
+- Gateway hits、fetch、bytes、passage/embedding/内部 LLM token 和 walltime；
+- Hermes host provider API calls、input/cache/output/reasoning token 与可用的计费状态；
 - EvidenceCard/BridgePacket/proposal/unique candidate/Top-K 数量；
 - 所有最终 proposal 的 parent、operator、output structure hash、evidence 和 falsifier；
 - 网络或模型失败时的结构化状态；
@@ -580,13 +585,45 @@ stages/inspiration/<run_id>/
   canonical result SHA `80f82f689c843cd4e27da1d922abc7fe1ca7e30c0fd8b1fb17628e86a0e47b1b`；
 - 真实公共 Crossref full-run Gate 两次通过：3 requests、7,944 bytes、2 passages、
   2 EvidenceCards、1 bridge、1 proposal、1 candidate，fetch/PDF/LLM 为 0；
-- 最终非 Provider Gate：完整离线 suite `666 passed, 13 skipped, 362 warnings`，三个环境
+- 该 MCP 检查点当时的非 Provider Gate：完整离线 suite
+  `666 passed, 13 skipped, 362 warnings`，三个环境
   dependency check、bundle verifier、四工具 MCP discovery 和 Crossref live `2 passed`
   全部通过；最终 live capture 的 bundle/stage SHA 分别为
   `61aa3fa520987ed8cacfccf51550acbc31c59f1a6cb9be2a6908c236a28dbbd5` /
   `9b06a81557f17d9de5f998476a85d96e2d21f0425ec2d8a463f13263182f8338`；
 - 完整命令、版本、成本、告警和 Artifact hashes 见
   [`docs/runs/2026-08-08-hermes-inspiration-pilot.md`](../../docs/runs/2026-08-08-hermes-inspiration-pilot.md)；
-- 唯一未通过的本阶段 Gate：Hermes 自然语言 turn 等待用户完成一次性 Provider 设备授权；
-  重复设备授权尝试均超时；不能把 MCP tool discovery 或独立 MCP client 描述成
-  自然语言 Agent 已通过，draft PR 因此不切 Ready、不合并。
+- 此检查点当时唯一未通过的是 Hermes 自然语言 turn；后续用户完成授权且该 Gate 已通过，
+  不能把本段历史状态误读为当前阻塞。完整证据见下一检查点和运行记录。
+
+### 2026-08-08：Hermes 自然语言与提示契约 release checkpoint
+
+- OpenAI Codex device authorization 成功，凭据仅保存在 ignored Hermes runtime；未读取、
+  打印或提交 token；Hermes provider/model 为 `openai-codex` / `gpt-5.6-sol`；
+- session `20260808_165305_c8f7ed` 首次调用把 `budget` 错放顶层，严格 MCP schema 在创建
+  run 前拒绝；同一 submission ID 修正为 `constraints.budget` 后创建
+  `inspiration-132cd2868dadf6674c2809f4` 并停在 `INTERACTION_REQUIRED`；
+- 用户明确继续授权后，operator grant `grant-c7f278598445db5a88bcac06` 绑定 request、完整
+  interaction、execution manifest 与 exact action；Hermes 随后按 `get → act → result`
+  完成，Gateway 为 `PARTIAL`，bundle 为 `SUCCEEDED`，候选性质仍为 `UNKNOWN`；
+- 报告 SHA 为 `9f5dc5bd4cf5f01218236cb3418ff0bfd25dcd01fde4fd2e5431fdaa79bec600`，
+  canonical result SHA 为
+  `6b1bb9c2df0bcd2ab7e8f48b7d03ba074646aa3ab15b49b63041b5c81526bfa2`；
+- Hermes 主 session 的 host 审计为 11 provider API calls、36,240 non-cached input、80,384
+  cache-read、2,584 output、213 reasoning tokens；Gateway materials-service ledger 则为
+  0 LLM calls/input/output tokens。两套账本严格分开，provider cost `0.0` 仅表示无可靠
+  计费值，不能解释为免费；
+- 提示前向回归先暴露 goal paraphrase，再由精确冻结 request 修复；session
+  `20260808_170431_6f2b15` 的首个 run call 得到标准 request SHA
+  `e45c8f641a21411c0cb60c78ee9597243cabd17a954ee769c897876008147cba` 和
+  `INTERACTION_REQUIRED`，未获新授权、未继续执行；
+- `d95579c` 将完整固定 request、嵌套 budget、`PARTIAL` warnings、有限多样性语义和两套
+  ledger 边界写入版本化 Skill，并以 verifier/unit/MCP schema 回归固定；Skill/SOUL SHA
+  分别为 `6149f3a666d3123bc8c3327d000184fd97717c08835464ce180fc83a010870ba` /
+  `7935f28be25ebb7d12c39bce6b9d483aecddc30ff1b1d016458ccefbdeffcf24`；
+- 主链通过后的三次附加只读报告回归均成功执行 `run_get/result_get`，但 provider 在生成最终
+  文字报告前遇到 `Broken pipe`；数据库保持 1 run/1 result 且无 `run/act` 写操作。该传输
+  失败作为生产化加固项保留，不回写或否定已完成主链证据；
+- 最终回归：主环境 `668 passed, 13 skipped, 362 warnings`，隔离 Gateway MCP
+  `4 passed`，三环境 dependency check、Skill quick validation、bundle verifier、四工具 MCP
+  discovery 与 `git diff --check` 均通过。
