@@ -1,0 +1,35 @@
+{
+  "calibration_role": "ENGINEERING_ONLY",
+  "expert_review_status": "UNKNOWN",
+  "scientific_conclusion": false,
+  "fixtures": [
+    {
+      "fixture_id": "p33-jats",
+      "path": "tests/fixtures/inspiration/p33-jats.xml",
+      "media_type": "application/jats+xml",
+      "sha256": "7a3aa4e33e54102506a99692be529eeb4ea2407d85cfac0b308e0279db99a3e5",
+      "size_bytes": 1738
+    },
+    {
+      "fixture_id": "p33-jsonld",
+      "path": "tests/fixtures/inspiration/p33-jsonld.json",
+      "media_type": "application/ld+json",
+      "sha256": "7b3f11a5bfa6e301576d13e2729887b27d4c3092be94ff7d259787e1dc591132",
+      "size_bytes": 552
+    },
+    {
+      "fixture_id": "p33-plain-html",
+      "path": "tests/fixtures/inspiration/p33-plain.html",
+      "media_type": "text/html",
+      "sha256": "961d1cd1817af4c5f93d7b3dd2a12b44b640b337e34f388cd3e26ad21fedd487",
+      "size_bytes": 1383
+    },
+    {
+      "fixture_id": "p33-structured-html",
+      "path": "tests/fixtures/inspiration/p33-structured.html",
+      "media_type": "text/html",
+      "sha256": "0b51c83a361549d4f16207b3c7be503458b77d856b00213f3cddb12430a2514f",
+      "size_bytes": 1893
+    }
+  ]
+}
