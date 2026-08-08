@@ -633,6 +633,10 @@ class HermesFixtureProjector:
             bridges=bridges,
             plans=plans,
         )
+        fetched_document_count = self._count_fetched_documents(
+            stage,
+            run_id=run_id,
+        )
         ledger = bundle.cost_ledger
         result = GatewayResultRecordV1(
             run_id=run_id,
@@ -653,7 +657,7 @@ class HermesFixtureProjector:
             cost_ledger=CostLedgerProjectionV1(
                 search_requests=ledger.search_requests,
                 search_response_bytes=ledger.search_response_bytes,
-                fetched_documents=ledger.fetch_requests,
+                fetched_documents=fetched_document_count,
                 extracted_passages=ledger.extracted_passages,
                 vectorized_passages=ledger.vectorized_passages,
                 model_calls=ledger.llm_calls,
@@ -749,6 +753,64 @@ class HermesFixtureProjector:
             raise CompanionAdapterError(
                 f"authoritative {filename} artifact is invalid"
             ) from exc
+
+    def _count_fetched_documents(
+        self,
+        stage: InspirationStageResultV1,
+        *,
+        run_id: str,
+    ) -> int:
+        """Count successful documents without confusing them with HTTP attempts."""
+
+        expected_uri = (
+            f"artifact://stages/inspiration/{run_id}/fetch_manifest.jsonl"
+        )
+        matches = tuple(
+            pointer
+            for pointer in stage.intermediate_artifacts
+            if pointer.uri == expected_uri
+        )
+        if len(matches) != 1:
+            raise CompanionAdapterError(
+                "stage result does not identify exactly one fetch manifest"
+            )
+        self._verify_pointer(matches[0])
+        fetched_document_ids: set[str] = set()
+        seen_document_ids: set[str] = set()
+        try:
+            lines = (
+                line
+                for line in self.store.read_bytes(matches[0].uri).splitlines()
+                if line.strip()
+            )
+            for line in lines:
+                record = json.loads(line)
+                if not isinstance(record, dict):
+                    raise ValueError("fetch manifest row must be an object")
+                if record.get("schema_version") != "inspiration-fetch-manifest-v1":
+                    raise ValueError("unsupported fetch manifest schema")
+                document_id = record.get("document_id")
+                fetched = record.get("fetched")
+                body_value = record.get("fetched_body_artifact")
+                if not isinstance(document_id, str) or type(fetched) is not bool:
+                    raise ValueError("fetch manifest identity fields are invalid")
+                if document_id in seen_document_ids:
+                    raise ValueError("fetch manifest repeats a canonical document")
+                seen_document_ids.add(document_id)
+                if not fetched:
+                    if body_value is not None:
+                        raise ValueError("unfetched document names a body Artifact")
+                    continue
+                body_pointer = ArtifactPointerV1.model_validate(body_value)
+                if body_pointer not in stage.intermediate_artifacts:
+                    raise ValueError("fetched body is absent from stage lineage")
+                self._verify_pointer(body_pointer)
+                fetched_document_ids.add(document_id)
+        except (TypeError, ValueError, OSError, json.JSONDecodeError) as exc:
+            raise CompanionAdapterError(
+                "authoritative fetch_manifest.jsonl artifact is invalid"
+            ) from exc
+        return len(fetched_document_ids)
 
     def _verify_pointer(self, pointer: ArtifactPointerV1) -> None:
         try:

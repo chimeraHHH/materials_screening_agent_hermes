@@ -324,7 +324,7 @@ def test_feedback_is_canonical_under_input_order_and_tracks_inclusive_costs() ->
     assert query_rows[acoustic_query.query_id].attempt_success_count == 1
     assert query_rows[acoustic_query.query_id].attempt_failure_count == 1
     assert query_rows[acoustic_query.query_id].search_request_count == 2
-    assert query_rows[acoustic_query.query_id].search_response_bytes == 118
+    assert query_rows[acoustic_query.query_id].search_attempt_response_bytes == 118
     assert query_rows[acoustic_query.query_id].inclusive_hit_count == 1
     assert query_rows[acoustic_query.query_id].inclusive_unique_document_count == 1
     assert query_rows[acoustic_query.query_id].inclusive_passage_count == 1

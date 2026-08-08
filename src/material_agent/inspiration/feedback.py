@@ -127,7 +127,7 @@ class QueryFeedbackRowV1(StrictModel):
     inclusive_evidence_card_count: Annotated[int, Field(ge=0)]
     inclusive_bridge_packet_count: Annotated[int, Field(ge=0)]
     search_request_count: Annotated[int, Field(ge=0)]
-    search_response_bytes: Annotated[int, Field(ge=0)]
+    search_attempt_response_bytes: Annotated[int, Field(ge=0)]
     fetch_request_count: Annotated[int, Field(ge=0)]
     fetch_response_bytes: Annotated[int, Field(ge=0)]
 
@@ -160,7 +160,7 @@ class TagFeedbackRowV1(StrictModel):
     inclusive_evidence_card_count: Annotated[int, Field(ge=0)]
     inclusive_bridge_packet_count: Annotated[int, Field(ge=0)]
     search_request_count: Annotated[int, Field(ge=0)]
-    search_response_bytes: Annotated[int, Field(ge=0)]
+    search_attempt_response_bytes: Annotated[int, Field(ge=0)]
     fetch_request_count: Annotated[int, Field(ge=0)]
     fetch_response_bytes: Annotated[int, Field(ge=0)]
 
@@ -209,7 +209,7 @@ class BridgeFeedbackRowV1(StrictModel):
     inclusive_evidence_card_count: Annotated[int, Field(ge=0)]
     inclusive_bridge_packet_count: Annotated[int, Field(ge=0)]
     search_request_count: Annotated[int, Field(ge=0)]
-    search_response_bytes: Annotated[int, Field(ge=0)]
+    search_attempt_response_bytes: Annotated[int, Field(ge=0)]
     fetch_request_count: Annotated[int, Field(ge=0)]
     fetch_response_bytes: Annotated[int, Field(ge=0)]
 
@@ -357,7 +357,7 @@ class _YieldMetrics:
     inclusive_evidence_card_count: int
     inclusive_bridge_packet_count: int
     search_request_count: int
-    search_response_bytes: int
+    search_attempt_response_bytes: int
     fetch_request_count: int
     fetch_response_bytes: int
 
@@ -377,7 +377,7 @@ class _YieldMetrics:
             "inclusive_evidence_card_count": self.inclusive_evidence_card_count,
             "inclusive_bridge_packet_count": self.inclusive_bridge_packet_count,
             "search_request_count": self.search_request_count,
-            "search_response_bytes": self.search_response_bytes,
+            "search_attempt_response_bytes": self.search_attempt_response_bytes,
             "fetch_request_count": self.fetch_request_count,
             "fetch_response_bytes": self.fetch_response_bytes,
         }
@@ -676,7 +676,7 @@ def compile_tag_feedback_review(
             inclusive_evidence_card_count=len(relevant_evidence_ids),
             inclusive_bridge_packet_count=len(relevant_packet_ids),
             search_request_count=len(relevant_attempts),
-            search_response_bytes=sum(
+            search_attempt_response_bytes=sum(
                 attempt.response_bytes for attempt in relevant_attempts
             ),
             fetch_request_count=sum(

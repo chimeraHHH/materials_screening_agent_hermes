@@ -18,6 +18,8 @@ from material_agent.inspiration.models import (
     SearchQueryV1,
     TransformationPlanV1,
 )
+from material_agent.inspiration.feedback import TagFeedbackReviewV1
+from material_agent.inspiration.fetch import FetchAttemptRecord
 from material_agent.inspiration.search import SearchAttemptRecord
 
 
@@ -138,6 +140,7 @@ def _append_execution_funnel(
     bridge_packets: Sequence[BridgePacketV1],
     transformation_plans: Sequence[TransformationPlanV1],
     search_attempts: Sequence[SearchAttemptRecord],
+    fetch_attempts: Sequence[FetchAttemptRecord],
 ) -> None:
     ledger = bundle.cost_ledger
     collapsed_documents = max(0, ledger.raw_documents - ledger.unique_documents)
@@ -157,6 +160,11 @@ def _append_execution_funnel(
             f"- Extracted passages (ledger): `{ledger.extracted_passages}`",
             f"- Passage records supplied: `{len(passages)}`",
             f"- Vectorized passages (ledger): `{ledger.vectorized_passages}`",
+            f"- Physical body-fetch attempts (ledger): `{ledger.fetch_requests}`",
+            f"- Body-fetch response bytes (ledger): `{ledger.fetch_response_bytes}`",
+            f"- Fetch attempt records attached: `{len(fetch_attempts)}`",
+            "- Successfully fetched bounded documents: "
+            f"`{sum(attempt.outcome == 'success' for attempt in fetch_attempts)}`",
             f"- Evidence cards supplied: `{len(evidence_cards)}`",
             f"- Search-supported bridge packets supplied: `{len(bridge_packets)}`",
             f"- Generated plans (ledger): `{ledger.generated_plans}`",
@@ -269,6 +277,133 @@ def _append_attempts(
                 f"{_code(attempt.pacing_delay_seconds)}",
                 "- Post-error retry delay (seconds): "
                 f"{_code(attempt.retry_delay_seconds)}",
+                "",
+            )
+        )
+
+
+def _append_fetch_attempts(
+    lines: list[str], *, fetch_attempts: Sequence[FetchAttemptRecord]
+) -> None:
+    lines.extend(("## Bounded document-fetch attempt ledger", ""))
+    if not fetch_attempts:
+        lines.extend(
+            (
+                "No physical body-fetch request was made. The run remained "
+                "metadata-only.",
+                "",
+            )
+        )
+        return
+    for ordinal, attempt in enumerate(fetch_attempts, start=1):
+        lines.extend(
+            (
+                f"### Fetch attempt {ordinal}: {_code(attempt.request_id)} / "
+                f"{attempt.attempt_number}",
+                "",
+                f"- Document: {_code(attempt.document_id)}",
+                f"- Outcome: {_code(attempt.outcome)}",
+                f"- Error code: {_code(attempt.error_code)}",
+                f"- HTTP status: {_code(attempt.http_status)}",
+                f"- Response bytes read: `{attempt.response_bytes}`",
+                f"- Safe request URL: {_code(attempt.request_url)}",
+                f"- Full request URL SHA-256: {_code(attempt.request_url_sha256)}",
+                f"- Safe redirect URL: {_code(attempt.redirect_url)}",
+                f"- Full redirect URL SHA-256: {_code(attempt.redirect_url_sha256)}",
+                f"- Retry delay (seconds): {_code(attempt.retry_delay_seconds)}",
+                "",
+            )
+        )
+
+
+def _append_tag_feedback(
+    lines: list[str], *, feedback: TagFeedbackReviewV1 | None
+) -> None:
+    lines.extend(("## Query, tag, and bridge yield feedback", ""))
+    if feedback is None:
+        lines.extend(("No feedback review Artifact was attached.", ""))
+        return
+    lines.extend(
+        (
+            f"- Feedback ID: {_code(feedback.feedback_id)}",
+            "- Compiler: "
+            f"{_code(feedback.compiler.component_id)} / "
+            f"{_code(feedback.compiler.version)} / "
+            f"{_code(feedback.compiler.implementation_sha256)}",
+            f"- Input fingerprint SHA-256: {_code(feedback.input_fingerprint_sha256)}",
+            f"- Aggregation: {_code(feedback.aggregation_semantics)}",
+            f"- Expert review status: {_code(feedback.expert_status)}",
+            f"- Review disposition: {_code(feedback.review_disposition)}",
+            f"- Applies to the curated TagGraph: {_code(feedback.applies_to_tag_graph)}",
+            f"- Scientific conclusion: {_code(feedback.scientific_conclusion)}",
+            "",
+            "Rows below use inclusive, non-additive attribution. Shared documents, "
+            "fetches, and vectors can appear in multiple rows; only the complete cost "
+            "ledger is additive.",
+            "",
+            "### Query yield",
+            "",
+            "| Query | Kind | Executed | Hits | Documents | Passages | Vectors | "
+            "Evidence | Bridges | Search requests/bytes | Fetch requests/bytes | "
+            "Embedding tokens |",
+            "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+        )
+    )
+    for row in feedback.query_rows:
+        lines.append(
+            f"| {_code(row.query_id)} | {_code(row.kind)} | {_code(row.executed)} | "
+            f"{row.inclusive_hit_count} | {row.inclusive_unique_document_count} | "
+            f"{row.inclusive_passage_count} | "
+            f"{row.inclusive_vectorized_passage_count} | "
+            f"{row.inclusive_evidence_card_count} | "
+            f"{row.inclusive_bridge_packet_count} | "
+            f"{row.search_request_count}/{row.search_attempt_response_bytes} | "
+            f"{row.fetch_request_count}/{row.fetch_response_bytes} | "
+            f"{row.embedding_input_tokens} |"
+        )
+    lines.extend(
+        (
+            "",
+            "### Tag yield",
+            "",
+            "| Tag | Kind | Planned/executed queries | Hits | Documents | Passages | "
+            "Vectors | Evidence | Bridges | Fetch requests/bytes | Embedding tokens |",
+            "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+        )
+    )
+    for row in feedback.tag_rows:
+        lines.append(
+            f"| {_code(row.tag_id)} | {_code(row.kind)} | "
+            f"{row.planned_query_count}/{row.executed_query_count} | "
+            f"{row.inclusive_hit_count} | {row.inclusive_unique_document_count} | "
+            f"{row.inclusive_passage_count} | "
+            f"{row.inclusive_vectorized_passage_count} | "
+            f"{row.inclusive_evidence_card_count} | "
+            f"{row.inclusive_bridge_packet_count} | "
+            f"{row.fetch_request_count}/{row.fetch_response_bytes} | "
+            f"{row.embedding_input_tokens} |"
+        )
+    lines.extend(("", "### Bridge calibration", ""))
+    for row in feedback.bridge_rows:
+        lines.extend(
+            (
+                f"#### {_code(row.bridge_rule_id)}",
+                "",
+                f"- Rule version / activation: {_code(row.rule_version)} / "
+                f"{_code(row.activation)}",
+                f"- Evidence status: {_code(row.status)}",
+                f"- Expert status: {_code(row.expert_status)}",
+                f"- Required evidence tags: {_items(row.required_evidence_tag_ids)}",
+                f"- Observed SUPPORT tags: {_items(row.observed_support_tag_ids)}",
+                "- Missing required evidence tags: "
+                f"{_items(row.missing_required_evidence_tag_ids)}",
+                f"- Evidence cards / packets: {row.inclusive_evidence_card_count} / "
+                f"{row.inclusive_bridge_packet_count}",
+                f"- Inclusive fetch requests / bytes: {row.fetch_request_count} / "
+                f"{row.fetch_response_bytes}",
+                f"- Inclusive vectors / embedding tokens: "
+                f"{row.inclusive_vectorized_passage_count} / "
+                f"{row.embedding_input_tokens}",
                 "",
             )
         )
@@ -569,6 +704,8 @@ def render_inspiration_report(
     review_items: Sequence[str],
     warnings: Sequence[str],
     search_attempts: Sequence[SearchAttemptRecord] = (),
+    fetch_attempts: Sequence[FetchAttemptRecord] = (),
+    tag_feedback: TagFeedbackReviewV1 | None = None,
     selection_audit: Mapping[str, object] | None = None,
 ) -> str:
     """Render a stable Markdown audit report without upgrading evidence claims."""
@@ -589,8 +726,9 @@ def render_inspiration_report(
         "bridge-rule matches, structure checks, and ranking scores do not establish "
         "material-property validity.",
         "",
-        "Only bounded metadata passages were vectorized. Source text remains "
-        "untrusted data and was not used as an instruction surface.",
+        "Only bounded selected metadata/body passages were vectorized; no complete "
+        "page or PDF entered the vectorizer. Source text remains untrusted data and "
+        "was not used as an instruction surface.",
         "",
     ]
     _append_input_provenance(lines, inspiration_input=inspiration_input)
@@ -604,10 +742,13 @@ def render_inspiration_report(
         bridge_packets=bridge_packets,
         transformation_plans=transformation_plans,
         search_attempts=search_attempts,
+        fetch_attempts=fetch_attempts,
     )
     _append_cost_ledger(lines, bundle=bundle)
     _append_selection_audit(lines, selection_audit=selection_audit)
     _append_attempts(lines, search_attempts=search_attempts)
+    _append_fetch_attempts(lines, fetch_attempts=fetch_attempts)
+    _append_tag_feedback(lines, feedback=tag_feedback)
     _append_queries(lines, queries=queries)
     _append_documents(lines, hits=hits)
     _append_passages(lines, passages=passages)
