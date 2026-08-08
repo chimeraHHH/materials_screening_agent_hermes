@@ -55,8 +55,10 @@
 - [x] 完整主环境测试通过
 - [x] 隔离 Gateway/MCP 和三个环境 dependency checks 通过
 - [x] live Crossref runner 与 Gateway lifecycle 通过
-- [ ] 真实 Hermes 自然语言 Crossref run 经用户授权完成
-- [ ] provenance、hash、成本、去重、多样性和科学边界指标闭合
+- [x] standalone completed-run verifier 通过 review-fixed 46-case representative static-production-path Gate
+- [x] exact v2 terminal workspace 通过 pinned-Gateway verifier，summary/hash/no-write 已写入 final run record
+- [x] 真实 Hermes 自然语言 Crossref run 经用户授权完成；`-z` 绕过 host resume 的偏差已诚实记录
+- [x] provenance、hash、成本、去重、多样性和科学边界指标闭合
 - [ ] Skill/profile/tool schema、secret、diff、GitHub checks 通过
 - [ ] 最终 run record 与 work report 发布
 - [ ] PR review 后合并 public `main`
@@ -69,12 +71,13 @@
 - [x] P3.2 结论：GO；详见 `docs/reports/2026-08-08-1924-inspiration-progress.md`
 - [x] P3.3 结论：GO；详见 `docs/reports/2026-08-08-2023-inspiration-progress.md`
 - [x] 最终 Hermes pending interaction 与知情审批修复报告已发布
-- [ ] 下一次报告检查点：exact-user-approved result 或明确外部失败后
-- [x] 下一次路线判断：取得 exact approval 后执行同一 Hermes session 的 `act → result`
+- [x] exact-user-approved result 检查点已形成 final v2 run record
+- [ ] 下一次报告检查点：最终 PR merge 与 anonymous-read closeout
+- [x] exact approval 后完成 `act → result`：保持同一 Gateway run/manifest/grant；原计划复用同一 Hermes host session，但 `-z` 实际创建 one-shot act session，原 session 随后只读恢复
 
 ## Blocked
 
-- [x] 当前 blocker：等待用户明确批准 v2 interaction/manifest；0 grant、0 result，禁止代签
+- [x] 用户已精确批准 v2 interaction/manifest；原审批 blocker 已解除
 
 ## Closeout
 

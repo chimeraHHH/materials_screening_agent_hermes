@@ -417,7 +417,8 @@ stages/inspiration/<run_id>/
   列为必填，因此 keyless release Gate 改用 Crossref v1；OpenAlex parser/fixture 继续保留；
 - [x] 运行固定 flat-band 用例，保存 API metadata/abstract 而非默认全文；
 - [x] 验证 DOI/URL 去重、预算、schema drift、raw-response hash 与 provenance；
-- [ ] provider-specific 429/backoff 仍属从单机 pilot 扩展到长期公共服务调用前的加固项，
+- [x] provider-specific 429/backoff 明确延期为从单机 beta 扩展到长期公共服务前的
+  non-blocking 加固项；当前 typed transient/`Retry-After`/有界 retry 由受控故障注入覆盖，
   live Gate 不主动制造公共服务限流；
 - [x] 得到非空 Passage、EvidenceCard 和 BridgePacket；
 - [x] 记录真实成本/失败与产出，提交代码、脱敏 fixture 和运行摘要。
@@ -477,7 +478,15 @@ stages/inspiration/<run_id>/
 
 - [x] 完整离线、故障注入、dependency、secret、diff、MCP/profile/Skill Gate 通过；
 - [x] live Crossref runner 与 Gateway lifecycle 通过；
-- [ ] 真实 Hermes 自然语言 session 在同一 run 中使用 Crossref，经真实用户授权后得到非空结果；
+- [x] standalone completed-run verifier 在静态 transport 的生产组件路径通过 review-fixed 46-case
+  representative Gate；确定性重放 manifest、raw→candidate、ledger、feedback、report 与 Gateway DTO；
+- [x] exact v2 terminal workspace 通过 pinned Gateway verifier，并把稳定 JSON summary、Artifact/hash 与
+  no-write 证据写入 final run record；
+- [x] 冻结发布治理：PR 在 final result 前保持 Draft，最终使用 merge commit；当前单用户 beta
+  以独立审计、本地完整 Gate 与 GitGuardian 为门禁，并把无 branch protection/required CI/review
+  记录为后续共享部署前必须修复的限制；
+- [x] 真实 Hermes 自然语言流程在同一 Gateway run 中使用 Crossref，经真实用户授权后得到非空结果；
+  Hermes `-z` 绕过 host `--resume` 的偏差与后续原 session 只读恢复已记录；
 - [ ] 最终 run record、工作报告、PR/check/merge/公开读取证据闭合；
 - [ ] P3.x 状态只在上述全部完成后改为已完成。
 
@@ -715,7 +724,7 @@ stages/inspiration/<run_id>/
   [`docs/runs/2026-08-08-p33-passage-tag-feedback.md`](../../docs/runs/2026-08-08-p33-passage-tag-feedback.md)；
   P3.3 为 `PASSED`，只剩最终真实 Hermes natural-language Crossref release 与 GitHub closeout。
 
-### 2026-08-08：真实 Hermes Crossref approval checkpoint
+### 2026-08-08：真实 Hermes Crossref approval checkpoint（历史、已解除）
 
 - 首个 production pending interaction 使用历史通用文案 `offline companion runner`，与冻结的
   public Crossref policy 不一致；该 run 保持 `0 grant / 0 result`，未执行网络或 runner；
@@ -723,10 +732,13 @@ stages/inspiration/<run_id>/
   公网访问、8 次物理搜索上限以及 body/PDF/internal model 均为 0；Skill/SOUL/contract/verifier 与
   35 项定向测试固定该知情审批边界；
 - 完整回归为 `777 passed, 14 skipped`，三个环境 dependency、四工具 MCP 与 GitGuardian 均通过；
-- 真实 Hermes v2 session `20260808_204029_977de9` 单次调用 run 后停在
+- 在该 checkpoint，真实 Hermes v2 session `20260808_204029_977de9` 单次调用 run 后停在
   `interaction-f2d2ab3eaa402a5ed4481e69`，manifest 为
-  `e6b0d901fa0a8ef60a2797e35ff4b6cc21c78f175c04258940a3e9f40324beda`，当前
+  `e6b0d901fa0a8ef60a2797e35ff4b6cc21c78f175c04258940a3e9f40324beda`，当时为
   `1 run / 0 grant / 0 result`；
-- 下一步必须取得用户对该 exact interaction/manifest 的新批准，才能 issue grant 并执行
-  `act → result`。完整 pending 记录见
+- 当时的下一步是取得用户对 exact interaction/manifest 的新批准。该批准后来已取得，唯一
+  grant 消费一次、0 recovery，exact v2 达到 `PARTIAL` terminal / `SUCCEEDED` bundle，并通过
+  pinned-runtime no-write verifier；Hermes one-shot host-session 偏差也已记录。完整历史 pending 记录见
   [`docs/runs/2026-08-08-hermes-final-crossref-approval-pending.md`](../../docs/runs/2026-08-08-hermes-final-crossref-approval-pending.md)。
+  最终证据见
+  [`docs/runs/2026-08-08-hermes-final-crossref-v2.md`](../../docs/runs/2026-08-08-hermes-final-crossref-v2.md)。

@@ -2,9 +2,13 @@
 
 ## Status
 
-`WAITING_FOR_EXACT_USER_APPROVAL`. The real Hermes natural-language submit phase
-has passed, but no one-time grant has been issued and Crossref execution has not
-started. This record is intentionally not a final result record.
+Historical checkpoint, `RESOLVED_BY_EXACT_APPROVAL`. At the time captured below,
+the real Hermes natural-language submit phase had passed but no grant had been
+issued and Crossref execution had not started. The user later approved the exact
+manifest/run/interaction, and the resulting terminal evidence is in
+[`2026-08-08-hermes-final-crossref-v2.md`](2026-08-08-hermes-final-crossref-v2.md).
+This file remains the immutable pre-execution decision surface, not a final
+result record.
 
 The first interaction was safely superseded because its generic approval prompt
 said `offline companion runner` although the frozen production policy permitted
@@ -160,7 +164,7 @@ ledger yet.
   metadata API mode.
 - Disposition: never approve, never grant, never act; retain as audit evidence.
 
-## Authorization boundary and next action
+## Authorization boundary at this checkpoint
 
 No earlier generic continuation instruction can bind a grant to the v2
 interaction because the exact interaction and manifest did not yet exist. The
@@ -172,10 +176,16 @@ for run inspiration-2c470e4810392aca2c9a7c4d and interaction
 interaction-f2d2ab3eaa402a5ed4481e69, action approve.
 ```
 
-Only after that exact decision may the trusted operator CLI issue a one-time
-grant and resume this same Hermes session. The final act/result phase must then
+Only after that exact decision could the trusted operator CLI issue a one-time
+grant and continue this Gateway run. The later act/result phase then had to
 verify Crossref attempts, Artifact closure, hashes, costs, PDF/body/LLM zeros,
 property `UNKNOWN`, `scientific_conclusion=false`, and every warning.
+
+That exact decision was subsequently supplied. The unique grant was consumed,
+the result reached `PARTIAL` with a `SUCCEEDED` bundle, and the stated checks
+passed; see the final v2 run record. A Hermes top-level one-shot CLI resume
+caveat discovered during act is documented there rather than hidden in this
+pre-approval checkpoint.
 
 This checkpoint makes no scientific, novelty, prior-art, patent, or
 validated-property claim.

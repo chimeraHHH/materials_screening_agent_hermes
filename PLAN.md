@@ -23,8 +23,8 @@
 ## 2. 研究问题与假设
 
 - 研究问题：能否在不开放任意路径、任意结构生成、全文读取和科学结论权限的前提下，解除
-  单一精确请求与离线 fixture 限制，并以同一 Hermes/Gateway run 完成稳定、低成本、可恢复的
-  灵感生成？
+  单一精确请求与离线 fixture 限制，并以同一 approval-bound Gateway run 完成稳定、低成本、
+  可恢复的灵感生成？Hermes host session 复用是操作目标，不是授权安全绑定。
 - 零假设：解除固定请求或接入真实搜索后，系统无法同时维持严格审批、预算、provenance、
   确定性 replay、运行内去重和科学边界。
 - 备择假设：通过确定性 request compiler、受信 catalog、metadata-first adapter、有限重试和
@@ -69,8 +69,11 @@
 ### 最终 release Gate
 
 - 完整离线、契约、安全、篡改、预算、重试、恢复、多格式、去重和多样性测试通过。
-- live Crossref runner 与同一 Gateway lifecycle 通过；真实 Hermes 自然语言 session 使用
-  Crossref 而不是 fixture，并完成 `run → user approval/grant → act → result`。
+- live Crossref runner 与同一 Gateway lifecycle 通过；真实 Hermes 自然语言流程使用 Crossref
+  而不是 fixture，并完成 `run → user approval/grant → act → result`；host-session 偏差必须单列。
+- 用独立、只读的 completed-run verifier 重新验证 Gateway terminal/result、完整 Artifact
+  pointer/Schema/lineage、成本重算、stage 目录无 orphan/symlink，以及 body/PDF/内部 LLM 为 0；
+  verifier 不属于冻结执行组件，不能修改 run、grant、数据库或 Artifact。
 - provenance/引用闭包 100%，默认 PDF 0，内部 LLM 0，Top-K exact/strict duplicate 0，
   novelty/validated-property 声明 0。
 - 所有工作报告、run record、代码、测试和 GitHub PR/检查/合并证据一致。
@@ -122,6 +125,7 @@
 | `src/material_agent/inspiration/engine.py` | 单 bridge、单 substitution route | 受 catalog/policy 约束的多 parent/multi-route 生成 | 重复结构或空泛机制 |
 | `src/material_agent/inspiration/reporting.py` | 简要权威报告 | query/attempt/raw/passage/bridge/route/dedup/MMR/ledger 细节 | 报告与 authoritative artifact 漂移 |
 | `integrations/hermes/` | 固定请求 Skill/profile | 受支持词汇、live service、fail-closed 指引 | Agent 把审批或 UNKNOWN 说错 |
+| `integrations/hermes/scripts/verify_completed_inspiration_run.py` | 新增只读发布复验器 | exact terminal 上重放 manifest/Artifact/ledger/report/Gateway 全链 | verifier 漏检或误写历史 workspace |
 | `tests/` | pilot 回归 | compiler/retry/live lifecycle/diversity/fetch/tag feedback Gate | fixture 冒充 live 能力 |
 
 ## 8. 执行设计与证据梯度
@@ -137,6 +141,12 @@
 运行和工作报告放在 `docs/runs/` 与 `docs/reports/`。任何实机证据必须包含精确命令、版本、
 branch/SHA、run/session ID、Artifact/hash、成本与失败；credential 只存在 ignored runtime，
 不得读取、打印或提交。
+
+PR `#3` 在 exact result 与最终独立审计前保持 Draft；最终集成使用 merge commit，保留各个
+审计检查点的提交身份，禁止临时改用 squash/rebase。当前公开仓库是单用户 local beta，尚无
+branch protection、required review 或 required CI；本次只接受“独立只读审计 + 本地完整 Gate +
+GitGuardian”作为发布门禁，并把治理缺口保留为限制。任何共享或公网运行版本必须先增加受保护
+分支、required CI 和 required review。
 
 ## 9. 回退与恢复
 
@@ -157,3 +167,7 @@ branch/SHA、run/session ID、Artifact/hash、成本与失败；credential 只�
 | 2026-08-08 19:41 | 冻结 P3.3 主实验契约 | 三路只读审计确认 pure extractors 可复用，缺口集中在受限 fetch seam、runner lineage 与 immutable feedback | 保持 public schema、P3.2 catalog、默认 public fetch=0 和科学边界不变 |
 | 2026-08-08 20:23 | P3.3 Passage & Tag Feedback Gate 通过 | metadata-first skip-fetch、三格式离线 body seam、selected-passage-only vector、immutable feedback、共享 DOI/预算/瞬时故障和 replay 均闭合 | public body fetch 因 DNS preflight/connection 未绑定而继续为 0；P3.x 只剩 exact-user-approved 真实 Hermes release 与 GitHub closeout |
 | 2026-08-08 20:42 | 真实 Hermes submit Gate 与知情审批修复通过 | 首个 pending prompt 错称 offline，保持 0 grant/0 result；修复后 v2 明示 Crossref 公网 metadata、8 attempts、body/PDF/model=0，真实 Hermes 单次 run 后停止 | final act/result 仍必须由用户在看到 exact interaction 与 manifest 后重新授权；不得使用先前泛化授权代签 |
+| 2026-08-08 20:57 | 批准前完成发布治理审计 | 修正 PR 对 PDF extraction 的错误表述；冻结 merge commit 策略，并记录单用户 beta 暂无平台 required CI/review/保护分支的风险接受 | 不扩大运行能力；共享或公网版本必须新增平台强制门禁 |
+| 2026-08-08 21:00 | 冻结 completed-run verifier 辅助实验 | 审计发现 `materials_result_get` 不会在终态后重验全部中间 Artifact；新增只读发布复验器可把手工 closeout 变成可重复 Gate | 不修改五个冻结执行组件、profile 或 v2 输入；若发生写入或 manifest 漂移立即放弃该实现 |
+| 2026-08-08 21:34–23:25 | completed-run verifier 静态生产路径实验与发布后审计通过 | review-fixed 46-case Gate 含 3 个正向控制与 43 个负向/对抗案例，覆盖 pending、WAL/symlink/orphan、规范 URI/lineage/ID、响应与重试边界、canonical-byte 类型混淆、精确 confirmation binding、selection/fetch 受影响 Artifact→bundle/stage 链重算、Crossref schema/marker 边界、伪造 manifest/grant 和 lineage crosswire；锁定环境完整 suite `825 passed, 12 skipped` | `SUPPORTED` 仅指静态 transport 的生产组件路径；exact v2 后续在 pinned Gateway runtime 通过同一加固 verifier |
+| 2026-08-08 22:56 | exact-user-approved Crossref v2 达到终态并通过全闭包复验 | 唯一 grant consumed、0 recovery；4 metadata requests、body/PDF/internal LLM=0；Gateway `PARTIAL`、bundle `SUCCEEDED`、property `UNKNOWN`；pinned Gateway verifier no-write 通过 | Hermes 顶层 `-z` 忽略 `--resume`，act 落入新 host session；同一 Gateway run/manifest/grant 未漂移，原 session 后续只读恢复，偏差作为限制保留 |
