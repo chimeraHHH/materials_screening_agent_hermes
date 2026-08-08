@@ -63,6 +63,13 @@ consumes an out-of-band operator grant bound to the request, complete interactio
 (including the frozen execution-manifest hash), and exact action. A caller-set
 `confirmed_by_user` field is necessary schema data, never proof of approval.
 
+Before a requirement-freeze grant is issued, the approval prompt must accurately
+disclose the prepared execution mode. The production Crossref prompt names
+public metadata/abstract network access, the maximum physical search attempts,
+and zero article-body fetch, full-PDF, and internal-model budgets. If a public
+prepared run advertises offline execution, treat it as a contract mismatch and
+do not grant or call `materials_run_act`.
+
 If Crossref exhausts bounded transient retries, the run terminates with
 `EXTERNAL_SEARCH_UNAVAILABLE` and `retryable=true`. It has already consumed its
 approval and must not be replayed automatically. After an explicit user decision,

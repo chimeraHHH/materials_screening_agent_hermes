@@ -94,6 +94,13 @@ a matching operator grant fails while the run remains `INTERACTION_REQUIRED`.
 After showing the exact interaction and frozen execution-manifest hash to the
 user, a trusted local operator records the decision with the Gateway runtime:
 
+For the production profile, that interaction must explicitly say that approval
+permits bounded public Crossref metadata/abstract network access, state the
+physical search-attempt ceiling, and state zero article-body fetch, full-PDF, and
+internal-model budgets. An interaction that incorrectly says the production run
+is offline is not informed approval: do not issue a grant, and replace the run
+only after correcting and validating the Gateway contract.
+
 ```bash
 .venv-gateway/bin/python -m material_agent.integration.operator_approval \
   --workspace /absolute/path/to/a/bounded/workspace \

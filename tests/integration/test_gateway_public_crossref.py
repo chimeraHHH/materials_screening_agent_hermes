@@ -171,6 +171,12 @@ def test_public_factory_runs_static_crossref_through_approval_lifecycle(
     assert started["state"]["status"] == "INTERACTION_REQUIRED"
     run_id = started["run_id"]
     interaction_id = started["state"]["interaction"]["interaction_id"]
+    assert started["state"]["interaction"]["prompt"] == (
+        "Freeze this bounded inspiration request before execution? Approval "
+        "permits bounded public Crossref metadata/abstract network access with "
+        "at most 8 physical search attempts; article-body fetch requests=0, "
+        "full-PDF reads=0, and internal model calls=0."
+    )
 
     assert isinstance(service.companion, OfflineInspirationCompanionAdapter)
     record = service.repository.get_run(run_id)

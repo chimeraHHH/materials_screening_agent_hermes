@@ -186,6 +186,8 @@ def verify() -> None:
         "`EXTERNAL_SEARCH_UNAVAILABLE` with `retryable=true`",
         "new run with a new\n   `submission_id` and obtain a fresh approval",
         "Crossref schema drift is nonretryable",
+        "live approval prompt must disclose\n   public Crossref metadata/abstract network access",
+        "prompt that says offline execution for this public request\n   as a contract mismatch",
         "Never request, read, or summarize full PDFs",
         "immutable, review-only runtime Artifact",
         "`review_disposition=REVIEW_ONLY`",
@@ -217,6 +219,8 @@ def verify() -> None:
         "`EXTERNAL_SEARCH_UNAVAILABLE`",
         "new `submission_id` and obtain a fresh approval",
         "schema drift and other permanent adapter failures are nonretryable",
+        "approval prompt must accurately\ndisclose the prepared execution mode",
+        "public\nprepared run advertises offline execution",
         "immutable, review-only internal Artifact",
         "inclusive, non-additive",
         "Only the Gateway `CostLedger` is additive",
@@ -253,6 +257,8 @@ def verify() -> None:
         raise ValueError("Hermes README must document fresh transient-failure approval")
     for wording in (
         "zero body-fetch request\nbudget",
+        "interaction must explicitly say that approval\npermits bounded public Crossref metadata/abstract network access",
+        "incorrectly says the production run\nis offline is not informed approval",
         "offline and fixture-backed",
         "not public-network body-fetch\ncapability",
         "DNS validation is bound\nto the actual connection address",

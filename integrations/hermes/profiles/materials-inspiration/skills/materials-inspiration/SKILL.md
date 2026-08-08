@@ -85,7 +85,13 @@ only scientific state and artifact authority.
 5. If the state requires an interaction, explain the exact question or approval
    to the user. A trusted host/operator must record the user's decision through
    the out-of-band one-time grant channel; `confirmed_by_user=true` alone has no
-   authority. Call `materials_run_act` only after that grant exists.
+   authority. For the production request, the live approval prompt must disclose
+   public Crossref metadata/abstract network access, the physical search-attempt
+   ceiling, and zero article-body fetch, full-PDF, and internal-model budgets.
+   Treat an approval prompt that says offline execution for this public request
+   as a contract mismatch: do not approve it or start network access. Call
+   `materials_run_act` only after the exact, accurate prompt is shown and its
+   matching grant exists.
 6. When the run succeeds or partially succeeds, call `materials_result_get` and
    present selected candidates together with evidence, assumptions, invalidation
    conditions, and the cheapest downstream falsification step.
