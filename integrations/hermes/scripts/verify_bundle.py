@@ -56,8 +56,8 @@ CANONICAL_SUPPORTED_CONSTRAINTS = {
     "require_diverse_routes": True,
     "budget": {
         "max_search_requests": 8,
-        "max_unique_documents": 3,
-        "max_passages": 3,
+        "max_unique_documents": 4,
+        "max_passages": 4,
         "max_model_calls": 0,
         "max_walltime_seconds": 300,
         "allow_full_pdf": False,
@@ -155,8 +155,8 @@ def verify() -> None:
         if f"`{term}`" not in skill_text:
             raise ValueError(f"Skill omits supported vocabulary term: {term}")
     for wording in (
-        "at least six physical search attempts",
-        "three unique\n     documents, three passages, zero model calls, and 180 seconds",
+        "at least eight physical search attempts",
+        "four unique\n     documents, four passages, zero model calls, and 180 seconds",
         "subset of `Ti` and `Se`",
         "excluded_elements` must contain neither",
         "`UNSUPPORTED_INSPIRATION_REQUEST` before approval or network",
@@ -178,7 +178,7 @@ def verify() -> None:
         "approval-bound rationale",
         "Scientific execution comes only from these reviewed\nconstraints",
         "`UNSUPPORTED_INSPIRATION_REQUEST`",
-        "at least six physical search attempts",
+        "at least eight physical search attempts",
         "`EXTERNAL_SEARCH_UNAVAILABLE`",
         "new `submission_id` and obtain a fresh approval",
         "schema drift and other permanent adapter failures are nonretryable",
@@ -191,7 +191,7 @@ def verify() -> None:
         raise ValueError("Skill must preserve terminal warnings in result reports")
     if "Gateway materials-service ledger" not in skill_text:
         raise ValueError("Skill must distinguish Gateway and Hermes usage ledgers")
-    if "does not guarantee two or more routes" not in skill_text:
+    if "requires two supported mechanism" not in skill_text:
         raise ValueError("Skill must document bounded diversity semantics")
     hermes_readme = HERMES_README_PATH.read_text(encoding="utf-8")
     if EXPECTED_SERVICE_FACTORY not in hermes_readme:

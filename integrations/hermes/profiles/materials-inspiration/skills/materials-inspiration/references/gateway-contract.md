@@ -31,10 +31,11 @@ constraints:
   `transition metal dichalcogenide`;
 - case, whitespace, and hyphens are normalized; fuzzy matching is forbidden;
 - `dimensionality` is exactly `2D`;
-- the pinned TiS2-to-TiSe2 route means required elements are a subset of Ti/Se
-  and excluded elements do not include Ti or Se;
-- the budget allows at least six physical search attempts, three unique
-  documents, three passages, zero model calls, and 180 seconds; full PDFs and
+- the operator-owned, SHA-pinned engineering catalog is the only source of parent
+  structures and routes; callers cannot provide a CIF or path, output elements
+  are Ti/Se, and excluded elements do not include Ti or Se;
+- the budget allows at least eight physical search attempts, four unique
+  documents, four passages, zero model calls, and 180 seconds; full PDFs and
   expensive computation remain disabled.
 
 Unsupported structured requests fail before approval and network access with
@@ -86,9 +87,12 @@ never be presented as verified.
 - `scientific_conclusion=false`: the bundle contains hypotheses for downstream
   validation, not a final scientific claim.
 
-`require_diverse_routes=true` enables diversity-aware selection among routes that
-survive validation, subject to `top_k`; it does not guarantee multiple routes
-when `top_k=1` or only one valid route is available.
+With `top_k>=2`, `require_diverse_routes=true` requests two supported mechanisms
+when they are jointly feasible under strict-structure and parent-family quotas,
+and audits a two-physical-route floor. `false` removes only the second-mechanism
+floor; exact/strict deduplication and MMR remain active. Pool insufficiency and
+hard-quota infeasibility are explicit selection-audit outcomes, never silent
+claims that the requested diversity was achieved.
 
 The result's cost ledger covers the Gateway materials service only. Hermes host
 provider calls and tokens, when auditable, are a separate ledger. A zero or

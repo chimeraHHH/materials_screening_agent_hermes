@@ -47,8 +47,10 @@ compiles a narrow, source-controlled flat/narrow electronic-band request family
 from strict structured constraints and performs bounded Crossref metadata search.
 The free-form goal is approval-bound and hashed but never parsed to infer scope.
 Unsupported requests fail before approval or network access. The current
-deterministic output route is TiS2-to-TiSe2; see the versioned Skill for the exact
-vocabularies and minimum budgets. The service stores artifacts beneath
+operator-owned, SHA-pinned engineering catalog exposes only reviewed TiS2/TiSSe
+to TiSe2 substitution routes and accepts no caller-supplied CIF or path; see the
+versioned Skill for the exact vocabularies and minimum budgets. The service
+stores artifacts beneath
 `<workspace>/<project>/` and persists Gateway state in
 `<workspace>/<project>/.gateway/materials-gateway.sqlite3`. A separate mode-0600
 `operator-approval-grants.sqlite3` stores one-time action grants and is never

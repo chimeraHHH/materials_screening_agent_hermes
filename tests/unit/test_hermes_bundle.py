@@ -24,7 +24,7 @@ SKILL_PATH = (
     / "materials-inspiration/SKILL.md"
 )
 SUPPORTED_REQUEST_SHA256 = (
-    "bd9841221e60480915da9641b4db52bbf200d6c71d596f3c1f5727384284d244"
+    "0598117ef45e17ec44f328f3effff5722166e2df589b8695ff0ff1c5a25220c6"
 )
 
 
@@ -68,5 +68,5 @@ def test_skill_example_compiles_the_complete_supported_public_request() -> None:
     assert compiled.policy.network_access is True
     assert compiled.target_tag_ids == ("electronic-flat-band",)
     assert compiled.expected_output_elements == ("Se", "Ti")
-    assert compiled.physical_search_attempt_limit == 6
+    assert compiled.physical_search_attempt_limit == 8
     assert inspiration_request_sha256(request) == SUPPORTED_REQUEST_SHA256

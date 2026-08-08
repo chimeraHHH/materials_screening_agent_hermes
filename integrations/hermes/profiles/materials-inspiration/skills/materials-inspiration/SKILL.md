@@ -37,10 +37,12 @@ only scientific state and artifact authority.
    - case, whitespace, and hyphen spelling differences are normalized, but no
      fuzzy or semantic matching is performed;
    - `dimensionality` must be `2D`;
-   - the current deterministic route produces TiSe2, so `required_elements` must
-     be a subset of `Ti` and `Se`, while `excluded_elements` must contain neither;
-   - the budget must allow at least six physical search attempts, three unique
-     documents, three passages, zero model calls, and 180 seconds, with full-PDF
+   - the operator-owned, SHA-pinned parent catalog exposes only reviewed
+     engineering-calibration routes that produce TiSe2; callers cannot supply a
+     CIF or path, `required_elements` must be a subset of `Ti` and `Se`, and
+     `excluded_elements` must contain neither;
+   - the budget must allow at least eight physical search attempts, four unique
+     documents, four passages, zero model calls, and 180 seconds, with full-PDF
      access and expensive computation both disabled.
 
    For an explicit low-cost request, use those minimum counts and `top_k=1`
@@ -68,8 +70,8 @@ only scientific state and artifact authority.
        "require_diverse_routes": true,
        "budget": {
          "max_search_requests": 8,
-         "max_unique_documents": 3,
-         "max_passages": 3,
+         "max_unique_documents": 4,
+         "max_passages": 4,
          "max_model_calls": 0,
          "max_walltime_seconds": 300,
          "allow_full_pdf": false,
@@ -130,9 +132,12 @@ call when tool arguments, states, or evidence boundaries are unclear.
   breaking conditions.
 - Present a diverse Top-K. Do not fill multiple slots with the same route or
   equivalent output structure.
-- Treat `require_diverse_routes` as diversity-aware selection among available
-  routes, bounded by `top_k`; it does not guarantee two or more routes when
-  `top_k=1` or when only one valid route survives.
+- `require_diverse_routes=true` with `top_k>=2` requires two supported mechanism
+  tags when they are jointly feasible under strict-structure and parent-family
+  quotas. It also audits a two-physical-route floor. `false` removes only the
+  second-mechanism floor; exact/strict deduplication and MMR stay active. If the
+  pool or hard quotas make a floor infeasible, report the selection-audit status
+  and underfill reasons instead of silently claiming diversity.
 
 ## Report the result
 
