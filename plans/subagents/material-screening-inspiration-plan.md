@@ -1,8 +1,8 @@
 # Hermes 与灵感生成器实施计划
 
-- 版本：v0.2
+- 版本：v0.3
 - 日期：2026-08-08
-- 状态：已完成（单用户本机 pilot）
+- 状态：P0.3 fixed-request pilot 已完成；P3.x local beta 实施中
 - 依据：[`docs/system-plan.md`](../../docs/system-plan.md)、
   [`docs/architecture.md`](../../docs/architecture.md)、
   [`ADR-0001`](../../docs/adr/0001-hermes-platform-and-inspiration-boundary.md) 与
@@ -110,6 +110,11 @@ Hermes 是上层 Agent 控制面，负责：
 - [x] 完整离线 Gate、相关 live Gate、`pip check` 和 `git diff --check` 通过；
 - [x] README、主计划、本计划和实机运行记录与当前源码一致；
 - [x] 所有里程碑提交已推送到 `hermes-origin/main`。
+
+以上 checkbox 是 P0.3 的历史完成标准。2026-08-08 用户继续授权后，新增的 P3.x 完成标准
+见 [ADR-0002](../../docs/adr/0002-inspiration-generalization-completion-scope.md)、仓库根目录
+[`PLAN.md`](../../PLAN.md) 与 [`CHECKLIST.md`](../../CHECKLIST.md)。P0.3 保持可信 baseline，
+不得把其单一 fixed-request 结果写成 P3.x 已完成证据。
 
 ## 2. 分层架构与状态所有权
 
@@ -435,6 +440,46 @@ stages/inspiration/<run_id>/
 - [x] 完整离线 Gate、相关 live Gate、`pip check`、secret/diff 检查通过；
 - [x] 更新 README/计划并推送 MCP pilot 文档里程碑；
 - [x] 自然语言 turn 通过后补充证据并合并到公开 `hermes-origin/main`。
+
+### M6：P3.x 范围与报告制度冻结
+
+- [x] 区分 P0.3 fixed-request pilot 与 P3.x local beta；
+- [x] 新增 ADR-0002、`PLAN.md`、`CHECKLIST.md` 和不可变工作报告制度；
+- [ ] 提交并推送 scope/report checkpoint。
+
+### M7：P3.1 请求通用化与真实搜索可靠性
+
+- [ ] 实现受支持 flat/narrow-band 同义请求的确定性 compiler，其他输入 fail closed；
+- [ ] 保留 fixture replay，并把 production Hermes profile 切换到同一 Gateway run 的 Crossref；
+- [ ] 实现 typed transient error、`Retry-After`、有界 retry 和 attempt Artifact/ledger；
+- [ ] 文档/passage/vector 层运行内去重且保留全部 query/raw-hit lineage；
+- [ ] 扩充权威报告并通过 unit/contract/integration/live Gate；
+- [ ] 发布工作报告并提交、推送。
+
+### M8：P3.2 多候选去重与多样性
+
+- [ ] 引入 SHA-pinned operator-owned parent catalog，不开放任意路径；
+- [ ] 多 parent/multi-route runner 生成至少 5 个结构有效 proposal；
+- [ ] 同结构多路线合并，Top-5 exact/strict duplicate 为 0；
+- [ ] 机制可用时 Top-5 至少覆盖 2 个 mechanism；候选不足时诚实少输出；
+- [ ] `require_diverse_routes` 进入 policy、报告和回归语义；
+- [ ] 发布工作报告并提交、推送。
+
+### M9：P3.3 多格式 Passage 与 Tag feedback
+
+- [ ] 将 JSON metadata、JSON-LD/Highwire、JATS/XML、HTML extractor 接入受限 runner seam；
+- [ ] metadata 足够时不 fetch，默认 PDF 0，只向量化 selected passage package；
+- [ ] 持久化 query/tag/bridge yield、字节和成本 feedback；运行不能在线改 TagGraph；
+- [ ] 校准 fixture 覆盖现有 3 条 bridge rule，无专家结论时显式 `UNKNOWN`；
+- [ ] 发布工作报告并提交、推送。
+
+### M10：P3.x 真实 release closeout
+
+- [ ] 完整离线、故障注入、dependency、secret、diff、MCP/profile/Skill Gate 通过；
+- [ ] live Crossref runner 与 Gateway lifecycle 通过；
+- [ ] 真实 Hermes 自然语言 session 在同一 run 中使用 Crossref，经真实用户授权后得到非空结果；
+- [ ] 最终 run record、工作报告、PR/check/merge/公开读取证据闭合；
+- [ ] P3.x 状态只在上述全部完成后改为已完成。
 
 提交原则：每个 M 至少一个可回退提交；跨越多个 M 的大提交禁止。代码与契约、测试、
 文档可以分开提交，但任何提交不得把未实现 roadmap 写成当前能力。

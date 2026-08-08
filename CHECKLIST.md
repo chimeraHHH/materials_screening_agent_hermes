@@ -1,0 +1,78 @@
+# P3.x Inspiration Generalization 控制清单
+
+## Identity
+
+- parent map node：P3 Hermes inspiration companion
+- loop/run：`p3x-inspiration-generalization-20260808`
+- branch：`agent/inspiration-generalization`
+- stage：implementation / main-test
+
+## In progress
+
+- [x] 审计 public main、现有计划、源码、测试和发布证据
+- [x] 区分可信完成的 fixed-request pilot 与新增 P3.x beta 范围
+- [ ] 提交并推送 P3.x scope、ADR、PLAN/CHECKLIST 和首份工作报告
+
+## P3.1 — Generalization & Reliability
+
+- [ ] 实现严格、确定性的受支持 request compiler
+- [ ] 保留离线 fixture factory，新增同一 Gateway run 的 Crossref factory
+- [ ] 为 transient HTTP/network error 实现有界 retry 与 `Retry-After`
+- [ ] 持久化并计量每次 search attempt
+- [ ] 在文档/passage/vector 层去重并保留所有 raw-hit/query lineage
+- [ ] 外部故障与 scientific no-match 分层正确
+- [ ] 权威报告覆盖 query/attempt/raw/passage/bridge/route/dedup/MMR/ledger
+- [ ] 更新 Hermes profile、Skill、SOUL 与 bundle verifier
+- [ ] P3.1 unit/contract/integration/live Gate 通过
+- [ ] 发布 P3.1 工作报告并提交、推送 GitHub
+
+## P3.2 — Candidate Breadth & Diversity
+
+- [ ] 冻结 operator-owned、SHA-pinned parent catalog 和 provenance
+- [ ] 多 parent/multi-route engine 仍只使用白名单 operator
+- [ ] 构造至少 5 个结构有效 proposal 的可复现 Gate
+- [ ] 验证同结构多路线合并与完整 lineage
+- [ ] 验证 Top-5 exact/strict duplicate 为 0
+- [ ] 验证候选可用时至少覆盖 2 个 mechanism
+- [ ] 映射并报告 `require_diverse_routes` 的真实语义
+- [ ] 排序与关键 Artifact hash 可重放
+- [ ] 发布 P3.2 工作报告并提交、推送 GitHub
+
+## P3.3 — Passage & Tag Feedback
+
+- [ ] 把 JSON metadata、JSON-LD/Highwire、JATS/XML、HTML 抽取接入统一 runner seam
+- [ ] 实现 host/redirect/content-type/bytes/request 约束和 metadata-first skip-fetch
+- [ ] 默认 PDF 全文 0，向量/内部 LLM 输入仅含选定 passage 包
+- [ ] 记录 query/tag/bridge yield、字节和成本 feedback artifact
+- [ ] feedback 不能在线修改 curated TagGraph
+- [ ] 离线校准覆盖现有 3 条 bridge rule，并显式记录 UNKNOWN 专家状态
+- [ ] P3.3 故障注入、预算、prompt-injection 和 replay Gate 通过
+- [ ] 发布 P3.3 工作报告并提交、推送 GitHub
+
+## Final release
+
+- [ ] 完整主环境测试通过
+- [ ] 隔离 Gateway/MCP 和三个环境 dependency checks 通过
+- [ ] live Crossref runner 与 Gateway lifecycle 通过
+- [ ] 真实 Hermes 自然语言 Crossref run 经用户授权完成
+- [ ] provenance、hash、成本、去重、多样性和科学边界指标闭合
+- [ ] Skill/profile/tool schema、secret、diff、GitHub checks 通过
+- [ ] 最终 run record 与 work report 发布
+- [ ] PR review 后合并 public `main`
+- [ ] final release SHA/PR/check/anonymous-read 证据记录
+
+## Next
+
+- [ ] 下一步始终与 [`PLAN.md`](PLAN.md) 的当前里程碑一致
+- [ ] 下一次报告检查点：P3.1 scope commit/push 后
+- [ ] 下一次路线判断：P3.1 静态 Gateway E2E 后
+
+## Blocked
+
+- [ ] 当前无已确认 blocker；live provider 波动按 PLAN 的外部依赖路径处理
+
+## Closeout
+
+- [ ] 用 1–2 句总结工程结论
+- [ ] 将 claim 分类为 supported / refuted / inconclusive
+- [ ] 写明 baseline relation、comparability、failure mode 和 next action
