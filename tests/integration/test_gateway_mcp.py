@@ -273,7 +273,7 @@ class GatewayMcpStdioTest(unittest.TestCase):
                             "submission_id": "mcp-stdio-submission",
                             "goal": "Exercise the stdio boundary",
                             "constraints": {},
-                            "shell": "whoami",
+                            "budget": {"max_search_requests": 1},
                         },
                     )
                     self.assertTrue(rejected.isError)

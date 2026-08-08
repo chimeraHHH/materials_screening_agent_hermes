@@ -16,8 +16,45 @@ only scientific state and artifact authority.
    Ask only for information that the Gateway reports as blocking.
 2. Choose one stable `submission_id` for the user's intent. Reuse it on retries;
    never create multiple runs merely because a tool response was delayed.
-3. Call `materials_inspiration_run` once with the goal, constraints, and
-   `submission_id`.
+3. Create or recover one logical run with `materials_inspiration_run`. Once the
+   Gateway accepts the call and returns a run ID, do not submit it again. If
+   pre-run Schema validation rejects the call without a run ID, correct the
+   arguments and reuse the same `submission_id`.
+   The source-controlled profile currently accepts one fixed pilot request, not
+   arbitrary combinations of a matching goal and new constraints. When the
+   user's intent matches the complete pilot request below, use the goal and
+   constraints exactly as written:
+   `Find bounded mechanism-guided structure proposals for a layered transition-metal compound.`
+   If the intent does not match, report the pilot boundary; never alter the
+   user's intent merely to force acceptance. Only `submission_id` is
+   caller-selected in this pilot.
+   Keep `budget` nested inside `constraints`; a top-level `budget` is invalid
+   and must not be retried with a new submission ID. Use this shape:
+
+   ```json
+   {
+     "submission_id": "stable-intent-id",
+     "goal": "Find bounded mechanism-guided structure proposals for a layered transition-metal compound.",
+     "constraints": {
+       "required_elements": ["Se", "Ti"],
+       "excluded_elements": ["Pb"],
+       "material_classes": ["layered transition-metal dichalcogenide"],
+       "dimensionality": "2D",
+       "target_features": ["electronic flat band"],
+       "top_k": 1,
+       "require_diverse_routes": true,
+       "budget": {
+         "max_search_requests": 3,
+         "max_unique_documents": 1,
+         "max_passages": 3,
+         "max_model_calls": 0,
+         "max_walltime_seconds": 300,
+         "allow_full_pdf": false,
+         "allow_expensive_computation": false
+       }
+     }
+   }
+   ```
 4. Inspect the returned state. If it is running, call `materials_run_get` using
    the returned run ID. Do not submit another run.
 5. If the state requires an interaction, explain the exact question or approval
@@ -59,16 +96,24 @@ call when tool arguments, states, or evidence boundaries are unclear.
   breaking conditions.
 - Present a diverse Top-K. Do not fill multiple slots with the same route or
   equivalent output structure.
+- Treat `require_diverse_routes` as diversity-aware selection among available
+  routes, bounded by `top_k`; it does not guarantee two or more routes when
+  `top_k=1` or when only one valid route survives.
 
 ## Report the result
 
 For each selected candidate, include:
 
+- terminal Gateway status and every warning, separately from bundle outcome;
 - parent and deterministic transformation;
 - supporting document and passage identifiers;
 - shared invariant and cross-domain bridge;
 - structural checks, unknown properties, and failure conditions;
 - diversity rationale and the cheapest next validation step.
 
-End with the run ID, result hash, cost ledger, and the scope statement returned by
-the Gateway. If any field is unavailable, say so explicitly.
+End with the run ID, result hash, Gateway materials-service ledger, and the scope
+statement returned by the Gateway. This ledger excludes Hermes provider calls.
+If host-audited Hermes usage is available, report it separately; never interpret
+zero or unavailable provider cost as free execution. If terminal status is
+`PARTIAL`, list every returned warning and explain why the bundle may still be
+`SUCCEEDED`. If any field is unavailable, say so explicitly.

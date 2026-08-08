@@ -13,6 +13,18 @@ Required inputs:
 - `goal`: concise materials objective;
 - `constraints`: structured, bounded constraints accepted by the schema.
 
+`budget` is a field of `constraints`, never a fourth top-level input. Unknown
+top-level fields fail validation before a run is created. Correct a malformed
+call and reuse the same stable `submission_id`.
+
+The source-controlled pilot factory currently accepts only the complete frozen
+request shown in `SKILL.md`, including every constraint and budget field, with
+only `submission_id` selected by the caller. Its exact goal is:
+`Find bounded mechanism-guided structure proposals for a layered transition-metal compound.`
+Do not paraphrase the goal or vary the frozen constraints for a matching request.
+Report `UNSUPPORTED_FIXTURE_REQUEST` for other intents instead of changing the
+user's requirements to force a match.
+
 The same `submission_id` and canonical request must return the same run. Reusing
 the ID with different content is a conflict and must not be worked around by the
 agent.
@@ -51,6 +63,14 @@ never be presented as verified.
 - `PARTIAL`: some auditable output exists, but one or more planned outputs failed.
 - `scientific_conclusion=false`: the bundle contains hypotheses for downstream
   validation, not a final scientific claim.
+
+`require_diverse_routes=true` enables diversity-aware selection among routes that
+survive validation, subject to `top_k`; it does not guarantee multiple routes
+when `top_k=1` or only one valid route is available.
+
+The result's cost ledger covers the Gateway materials service only. Hermes host
+provider calls and tokens, when auditable, are a separate ledger. A zero or
+unavailable provider cost is not evidence that provider execution was free.
 
 Never introduce novelty, patentability, or prior-art fields into a request or
 response.

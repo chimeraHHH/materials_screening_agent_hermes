@@ -116,6 +116,9 @@ def test_gateway_schema_preserves_scope_and_excludes_originality_judgments() -> 
 
     request = schemas["InspirationRunRequestV1"]["properties"]
     assert request["capability"]["const"] == "inspiration_companion"
+    assert "budget" not in request
+    constraints = schemas["InspirationConstraintsV1"]["properties"]
+    assert constraints["budget"]["$ref"].endswith("/$defs/InspirationBudgetV1")
     budget = schemas["InspirationBudgetV1"]["properties"]
     assert budget["allow_full_pdf"]["const"] is False
     assert budget["allow_expensive_computation"]["const"] is False
