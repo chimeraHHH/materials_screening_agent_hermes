@@ -154,7 +154,16 @@ def test_live_crossref_runs_inside_the_approval_bound_gateway_lifecycle(
         if line.strip()
     )
     assert len(attempts) == result["cost_ledger"]["search_requests"]
-    assert len(tuple((prefix / "raw_search").glob("*.json"))) == 3
+    query_plans = tuple(
+        line
+        for line in (prefix / "query_plans.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+        if line.strip()
+    )
+    raw_search = tuple((prefix / "raw_search").glob("*.json"))
+    assert len(query_plans) == 4
+    assert len(raw_search) == len(query_plans)
     report = (prefix / "report.md").read_text(encoding="utf-8")
     assert "PDF full-text reads: `0`" in report
     assert "Target property status: `UNKNOWN`" in report

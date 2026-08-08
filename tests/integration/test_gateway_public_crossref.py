@@ -204,6 +204,8 @@ def test_public_factory_runs_static_crossref_through_approval_lifecycle(
     }
     assert {
         "crossref-public-adapter",
+        "disabled-document-fetcher",
+        "inspiration-tag-feedback-compiler",
         "pymatgen-substitution-engine",
         "signed-hashing-v1",
     }.issubset(component_ids)

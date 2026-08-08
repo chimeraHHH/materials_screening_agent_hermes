@@ -68,16 +68,24 @@ JSON-LD/Highwire, JATS/XML, and HTML passage Gate is offline and fixture-backed.
 It proves bounded runner/extractor behavior, not public-network body-fetch
 capability. Public body fetching remains disabled until DNS validation is bound
 to the actual connection address and all redirect, host, content-type, request,
-and byte-budget release checks pass. Exhausted
+and byte-budget release checks pass. The current preflight DNS resolution and
+later hostname connection are separate operations; they do not close DNS
+rebinding/TOCTOU. Exhausted
 transient retries terminate with `EXTERNAL_SEARCH_UNAVAILABLE` and
 `retryable=true`; retry only after a new user decision, with a new submission ID,
 new run, and fresh approval. Schema drift is nonretryable.
 
 Runtime `tag_feedback.json` is immutable and review-only. It cannot mutate the
-curated TagGraph or current-run query plan, and expert status remains `UNKNOWN`
-without a separately verified expert-review Artifact. Query/tag/bridge cost
+curated TagGraph or current-run query plan. Its v1 wire values are
+`review_disposition=REVIEW_ONLY`, `applies_to_tag_graph=false`,
+`scientific_conclusion=false`, and
+`aggregation_semantics=INCLUSIVE_NON_ADDITIVE`. The top level and every bridge
+row use `expert_status=UNKNOWN`; v1 accepts no expert-review input. Any change
+requires a separately versioned, verified review workflow. Query/tag/bridge cost
 allocations are inclusive and non-additive; the Gateway `CostLedger` is the sole
-additive run total.
+additive run total. The v1 `materials_result_get` projection exposes only the
+feedback Artifact URI/hash, not its rows, so Hermes must not claim to have read
+or quote those rows.
 
 ## Record a real user approval out of band
 

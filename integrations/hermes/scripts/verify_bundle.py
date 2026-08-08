@@ -12,6 +12,12 @@ from pathlib import Path
 
 import yaml
 
+from material_agent.gateway.models import InspirationRunRequestV1
+from material_agent.integration.request_compiler import (
+    HermesInspirationRequestCompiler,
+)
+from material_agent.inspiration.policy import SearchExecutionMode
+
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 HERMES_ROOT = REPO_ROOT / "integrations" / "hermes"
@@ -145,6 +151,23 @@ def verify() -> None:
         raise ValueError("Skill example must use the supported paraphrased goal")
     if example.get("constraints") != CANONICAL_SUPPORTED_CONSTRAINTS:
         raise ValueError("Skill example must contain the canonical supported constraints")
+    request = InspirationRunRequestV1.model_validate_json(json.dumps(example))
+    compiled = HermesInspirationRequestCompiler(max_retries_per_query=1).compile(
+        request
+    )
+    if (
+        compiled.policy.search_mode is not SearchExecutionMode.PUBLIC_METADATA_API
+        or compiled.policy.network_access is not True
+    ):
+        raise ValueError("production request must compile to public metadata mode")
+    fetch = compiled.policy.fetch
+    if (
+        fetch.max_requests != 0
+        or fetch.max_total_bytes != 0
+        or fetch.max_bytes_per_response != 0
+        or fetch.allow_pdf_fulltext is not False
+    ):
+        raise ValueError("production request must compile to disabled body fetching")
     if GATEWAY_REFERENCE_GUIDANCE not in skill_text:
         raise ValueError("Skill schema-retry guidance drifted")
     if skill_text.count(CANONICAL_SUPPORTED_GOAL) != 1:
@@ -165,11 +188,17 @@ def verify() -> None:
         "Crossref schema drift is nonretryable",
         "Never request, read, or summarize full PDFs",
         "immutable, review-only runtime Artifact",
-        "expert status remains `UNKNOWN`",
+        "`review_disposition=REVIEW_ONLY`",
+        "`applies_to_tag_graph=false`",
+        "`scientific_conclusion=false`",
+        "`aggregation_semantics=INCLUSIVE_NON_ADDITIVE`",
+        "every\n  bridge row use `expert_status=UNKNOWN`",
+        "schema accepts no expert-review\n  input",
         "inclusive and non-additive",
         "body-fetch request budget is zero",
         "does not authorize public-network body fetching",
         "binds\n  DNS validation to the actual connection address",
+        "does not expose feedback\nrows",
         "`MATERIALS_CROSSREF_CONTACT_EMAIL`",
         "never appear in an Artifact",
     ):
@@ -191,6 +220,12 @@ def verify() -> None:
         "immutable, review-only internal Artifact",
         "inclusive, non-additive",
         "Only the Gateway `CostLedger` is additive",
+        "`review_disposition=REVIEW_ONLY`",
+        "`applies_to_tag_graph=false`",
+        "`scientific_conclusion=false`",
+        "`aggregation_semantics=INCLUSIVE_NON_ADDITIVE`",
+        "v1 accepts no expert-review input",
+        "not its query, tag, or bridge rows",
         "body-fetch request budget is zero",
         "not evidence that\npublic-network body fetching is enabled",
         "DNS validation is bound to the actual connection address",
@@ -222,8 +257,15 @@ def verify() -> None:
         "not public-network body-fetch\ncapability",
         "DNS validation is bound\nto the actual connection address",
         "immutable and review-only",
+        "`review_disposition=REVIEW_ONLY`",
+        "`applies_to_tag_graph=false`",
+        "`scientific_conclusion=false`",
+        "`aggregation_semantics=INCLUSIVE_NON_ADDITIVE`",
+        "v1 accepts no expert-review input",
         "inclusive and non-additive",
         "`CostLedger` is the sole\nadditive run total",
+        "do not close DNS\nrebinding/TOCTOU",
+        "exposes only the\nfeedback Artifact URI/hash, not its rows",
     ):
         if wording not in hermes_readme:
             raise ValueError(f"Hermes README P3.3 boundary drifted: {wording}")

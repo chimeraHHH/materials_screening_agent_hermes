@@ -77,6 +77,10 @@ boundaries, cost ledger, the authoritative report SHA-256, and the independently
 verified canonical structured-result SHA-256. A legacy or hashless artifact must
 never be presented as verified.
 
+The v1 projection exposes the feedback Artifact's URI and hash through lineage,
+but not its query, tag, or bridge rows. Hermes must not claim to have inspected
+or quote those rows unless a later live tool schema explicitly returns them.
+
 ## State and evidence vocabulary
 
 - `SEARCH_SUPPORTED`: selected source passages support the stated bridge.
@@ -102,8 +106,12 @@ unavailable provider cost is not evidence that provider execution was free.
 per-query, per-tag, and per-bridge allocations use inclusive, non-additive
 attribution, so shared requests or documents can occur in more than one row.
 Only the Gateway `CostLedger` is additive. Feedback never mutates the curated
-TagGraph or current-run plan, and expert status remains `UNKNOWN` unless a
-separately verified expert-review Artifact exists.
+TagGraph or current-run plan. Its v1 wire values are
+`review_disposition=REVIEW_ONLY`, `applies_to_tag_graph=false`,
+`scientific_conclusion=false`, and
+`aggregation_semantics=INCLUSIVE_NON_ADDITIVE`. The top level and every bridge
+row use `expert_status=UNKNOWN`; v1 accepts no expert-review input. Any change
+requires a separately versioned, verified review workflow.
 
 Never introduce novelty, patentability, or prior-art fields into a request or
 response.

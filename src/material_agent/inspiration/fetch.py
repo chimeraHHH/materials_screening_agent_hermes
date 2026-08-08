@@ -854,7 +854,11 @@ class _FixtureTransport:
 
 
 class FixtureDocumentFetcher(SafeNetworkDocumentFetcher):
-    """Offline fixture fetcher that exercises the same security and budgets."""
+    """Exercise URL, redirect, media, retry, and budget logic offline.
+
+    Fixture transport does not exercise DNS, TLS, or peer-address binding and
+    therefore cannot establish that public-network body fetching is safe.
+    """
 
     network_access = False
 
