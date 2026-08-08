@@ -18,6 +18,8 @@
   与 runner 契约。
 - [Agent01 Plan](plans/subagents/material-screening-agent01-plan.md)：Materials Project 检索、确定性筛选、
   结构处理和发布契约。
+- [Hermes 与灵感生成器 Plan](plans/subagents/material-screening-inspiration-plan.md)：Hermes
+  Gateway、Skill、文献局部证据、跨领域 Tag、白名单结构变换、内部去重和多样性选择。
 - [Agent02 Plan](plans/subagents/material-screening-ml-agent-plan.md)：ML 原生契约、适用域、worker 边界与
   后续真实 ML 路线。
 - [Agent03 Plan](plans/subagents/material-screening-agent-dft-plan.md)：DFT Controller 的目标设计、v1
@@ -36,13 +38,16 @@
 | `src/material_agent/cli.py` | CLI 参数和用户入口 |
 | `src/material_agent/orchestrator/` | LangGraph 控制流、控制契约、SQLite/checkpoint、审批、恢复和 runner registry |
 | `src/material_agent/retrieval/` | Agent01：数据源、查询、结构、确定性判定、排序、Artifact 和报告 |
+| `src/material_agent/inspiration/` | 灵感生成器：文献 metadata/Passage、EvidenceCard、TagGraph、受约束 proposal、内部身份和多样性选择 |
+| `src/material_agent/integration/`、`integrations/hermes/` | Hermes Gateway 的严格 DTO/Tool binding，以及固定 profile、Skill、配置和兼容性测试 |
 | `src/material_agent/ml_screening/` | Agent02：轻量原生契约、pre-filter、适用域、计划、数值/worker 校验、Fake 实现和独立 worker 边界 |
 | `src/material_agent/dft/` | Agent03：v1 mock DFT 控制契约、计划、backend 生命周期、runner、非科研报告和结构化 bridge PoC |
 | `src/material_agent/many_body/` | Agent04：MVP 模型契约、验证、路由、mock backend、runner 和 evidence ceiling |
 | `scripts/`、`tests/fixtures/contracts/` | 冻结契约 fixture 的生成与参考输出 |
 | `tests/{unit,contract,integration,e2e,live}/` | 相应层级的验证 |
 
-Agent01 是默认已注册的生产科学 runner。Agent02 P0.2 Fake Adapter、独立 CHGNet
+Agent01 是默认已注册的生产科学 runner。Inspiration 首版作为独立 companion capability，
+不属于冻结的四阶段 `StageId`，也不得绕过 Requirement/Artifact/hash 边界。Agent02 P0.2 Fake Adapter、独立 CHGNet
 worker/production factory、Agent03 v1 mock 控制链及结构化 bridge PoC、Agent04 MVP
 mock 控制链均已有源码；Agent03/04 尚无真实科学 backend，Agent02 只有在显式 worker
 配置及 lock/model-card/health Gate 通过后才注册。Agent02–04 默认 production capability 均未注册；
@@ -90,7 +95,7 @@ mock 控制链均已有源码；Agent03/04 尚无真实科学 backend，Agent02 
 ## Plan 更新协议
 
 - 每个 subagent 只维护自己的 plan：Orchestrator、Agent01、Agent02、Agent03、Agent04
-  分别对应上文链接。
+  和 Inspiration 分别对应上文链接。
 - 日常实现细节、局部决策、测试结果和本 agent 待办只更新自己的 plan。
 - 跨 agent 依赖、全局优先级、里程碑、阻塞项或系统级验收变化更新
   `plans/master.md`。

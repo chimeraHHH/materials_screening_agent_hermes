@@ -10,7 +10,7 @@
 - [README](../../README.md)：当前实现状态、默认离线 Gate、Artifact 和已知限制。
 - [系统蓝图](../../docs/system-plan.md)：L3 证据边界、科学 policy、审批和安全原则。
 - [技术架构 Agent03 边界](../../docs/architecture.md#55-agent-03-dft-controller)：StageRunner、Artifact、证据和后端所有权。
-- [技术架构后端集成](../../docs/architecture.md#11-vaspilot与未来后端集成)：VASPilot/外部后端的集成拓扑和 Gate。
+- [技术架构后端集成](../../docs/architecture.md#11-vaspilot-与未来后端集成)：VASPilot/外部后端的集成拓扑和 Gate。
 - [主计划](../master.md)：当前里程碑、依赖、阻塞和系统 DoD。
 - [Orchestrator 计划](material-screening-orchestrator-plan.md)：控制面输入、审批、恢复和 `PreparedStagePlan`。
 - [原始系统总方案](../../docs/system-plan-original.md)：仅用于历史追溯。
@@ -23,7 +23,7 @@
 - **不负责：** 自由发明泛函/U/磁序/求解器、直接管理 LangGraph/Slurm、保存 POTCAR、自动构造缺失结构或把 mock 数值写成科研证据。
 - **不可修改范围：** Orchestrator 控制契约、Agent01/02 权威输入、课题组未冻结的科学 policy、外部 backend 状态真源、其他 agent 计划。
 
-仓库没有单独的 integration Markdown；涉及 VASPilot 或未来 DFT 后端时，以[技术架构后端集成章节](../../docs/architecture.md#11-vaspilot与未来后端集成)和本计划第 16 节为准。
+仓库没有单独的 integration Markdown；涉及 VASPilot 或未来 DFT 后端时，以[技术架构后端集成章节](../../docs/architecture.md#11-vaspilot-与未来后端集成)和本计划第 16 节为准。
 
 ### 当前下一步、依赖与阻塞
 
@@ -2804,12 +2804,12 @@ class DFTStageRunner:
 沿用顶层 CLI：
 
 ```bash
-material-agent run-stage dft --project <id>
+material-agent run-stage dft --project <id> --input <stage-input.json>
 material-agent status --project <id> --run <id>
 material-agent approve --project <id> --run <id> \
   --approval <id> --decision approve
 material-agent resume --project <id> --run <id>
-material-agent retry --project <id> --run <id> --stage dft
+material-agent retry --project <id> --run <id>
 material-agent cancel --project <id> --run <id>
 material-agent report --project <id> --run <id>
 ```
@@ -2834,7 +2834,7 @@ Next action:
 ### 23.1 直接启动
 
 ```bash
-material-agent run-stage dft --project <id>
+material-agent run-stage dft --project <id> --input <stage-input.json>
 ```
 
 若存在多个候选而无 selection artifact：

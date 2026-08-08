@@ -1,0 +1,8 @@
+{
+  "request": "Find bounded mechanism-guided structure proposals for a layered transition-metal compound.",
+  "requirement_revision": 1,
+  "target_property": {
+    "name": "electronic-flat-band",
+    "status": "UNKNOWN"
+  }
+}

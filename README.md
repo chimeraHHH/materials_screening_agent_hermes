@@ -4,7 +4,10 @@ This repository implements the durable Orchestrator P0.2 control plane,
 the deterministic single-source public-database retrieval stage, and explicitly
 test-only mock control adapters for the downstream stages described in
 `plans/subagents/material-screening-orchestrator-plan.md` and
-`plans/subagents/material-screening-agent01-plan.md`.
+`plans/subagents/material-screening-agent01-plan.md`. It now also contains a
+single-user local Hermes inspiration companion: metadata-first evidence,
+cross-domain mechanism bridges, one deterministic structure operator, run-local
+deduplication/diversity, and a four-tool persistent MCP Gateway.
 
 The execution plan always contains the ordered
 `retrieval → ml → dft → many_body` routes. Agent 01 is the only default
@@ -14,6 +17,81 @@ only when a validated dedicated Worker executable is explicitly configured;
 otherwise it remains fail-closed and unavailable. Agent03 has a v1 mock
 controller, and Agent04 has an MVP mock controller. Only the real, configured
 Agent02 worker may produce L2 ML evidence; every test fixture remains mock.
+
+## Hermes inspiration pilot
+
+The current pilot is deliberately narrow. It accepts one source-controlled
+layered transition-metal dichalcogenide request and executes a pinned TiS2 →
+TiSe2-equivalent-site proposal. It is an auditable engineering vertical slice,
+not a general scientific planner. The output remains a hypothesis:
+`STRUCTURE_VALID` means structural QC only, the target property is `UNKNOWN`,
+and this repository performs no novelty, patent, or prior-art assessment.
+
+Three isolated Python 3.11 environments keep the scientific engine, MCP SDK,
+and Hermes runtime from contaminating one another:
+
+```bash
+.venv/bin/python integrations/hermes/scripts/bootstrap_gateway_runtime.py
+.venv/bin/python integrations/hermes/scripts/bootstrap_runtime.py
+.venv/bin/python integrations/hermes/scripts/verify_bundle.py
+```
+
+The pinned Hermes distribution is `v2026.8.3` / package `0.20.0` / commit
+`3c27eb6234bf91b8ceee9e9071591b31e9b148cb`. Its profile exposes exactly:
+
+```text
+materials_inspiration_run
+materials_run_get
+materials_run_act
+materials_result_get
+```
+
+The natural-language Gate has run through the authorized Hermes provider path.
+Hermes created and resumed one persistent run, stopped for the real user
+decision, consumed an out-of-band one-time operator grant, and returned one
+hash-verified TiSe2 proposal. The Gateway state was honestly `PARTIAL` while the
+contained bundle was `SUCCEEDED`; the target property remains `UNKNOWN`. The
+fixed Hermes run is offline/fixture-backed, while a separate Crossref live Gate
+proves the public metadata boundary. Exact sessions, hashes, warnings, cost
+ledgers, and debug history are in the
+[pilot run record](docs/runs/2026-08-08-hermes-inspiration-pilot.md).
+For that run, the Gateway materials service used zero internal LLM calls; the
+separate Hermes host audit recorded 11 provider calls, 36,240 non-cached input,
+80,384 cache-read, 2,584 output, and 213 reasoning tokens. A recorded provider
+cost of `0.0` means billing was unavailable, not that execution was free.
+
+An MCP caller cannot approve its own action. `materials_run_act` remains blocked
+until a trusted local operator records a one-time grant bound to the request,
+complete interaction, frozen execution manifest, and exact action. See
+[`integrations/hermes/README.md`](integrations/hermes/README.md) for installation,
+approval, crash recovery, and profile commands.
+
+The reproducible fixed-pilot smoke uses the actual MCP stdio subprocess. A full
+replay must use a fresh, empty ignored workspace and a fresh submission ID; an
+interrupted phase must reuse the exact same pair. The historical
+`hermes-release-20260808-v2` workspace is already terminal and is evidence, not
+an input for another `submit` call:
+
+```bash
+.venv-gateway/bin/python integrations/hermes/scripts/run_gateway_pilot.py submit \
+  --workspace workspace/<fresh-pilot-workspace> \
+  --project materials-inspiration \
+  --submission-id <fresh-pilot-submission-id>
+
+.venv-gateway/bin/python -m material_agent.integration.operator_approval \
+  --workspace workspace/<fresh-pilot-workspace> \
+  --project materials-inspiration \
+  --run-id <run-id-from-submit> \
+  --confirmation-reference <trusted-user-decision-reference>
+
+.venv-gateway/bin/python integrations/hermes/scripts/run_gateway_pilot.py finish \
+  --workspace workspace/<fresh-pilot-workspace> \
+  --project materials-inspiration \
+  --submission-id <fresh-pilot-submission-id>
+```
+
+The first audited run and exact hashes are recorded in
+[`docs/runs/2026-08-08-hermes-inspiration-pilot.md`](docs/runs/2026-08-08-hermes-inspiration-pilot.md).
 
 ## Development environment
 
@@ -787,15 +865,16 @@ MPLCONFIGDIR=/tmp/material-agent-mpl \
 ```
 
 The historical P0.1/P0.2 and v1-closeout commits are retained for traceability.
-After the closeout, the current `main` branch added the DeepSeek Stage 0
+After the closeout, the current development branch added the DeepSeek Stage 0
 provider, additional Agent01 retrieval sources, Agent02 benchmark/DeepH control
-flows, and the Agent03 structured VASPilot bridge PoC. The current offline Gate
-reports `423 passed, 9 skipped, 158 warnings`; skips are the explicit live LLM, live
-Materials Project, live NOMAD, and real-ML/Metal tests. The warnings are known
-pymatgen deprecation warnings and do not indicate test failures. Real-ML tests
-are never part of the offline Gate. On a non-sandboxed target Mac, the
-historical optional real-ML Gate reported `5 passed`; sandbox MPS unavailability
-is an environmental limitation, not a hardware failure.
+flows, the Agent03 structured VASPilot bridge PoC, and the Hermes inspiration
+pilot. The current offline Gate reports `668 passed, 13 skipped, 362 warnings`.
+The skips are two MCP/stdio checks assigned to the isolated Gateway environment,
+opt-in Crossref/LLM/Materials Project/NOMAD live probes, and five real-ML tests.
+The warnings are known pymatgen/spglib warnings and do not indicate test
+failures. Real-ML tests are never part of the offline Gate. On a non-sandboxed
+target Mac, the historical optional real-ML Gate reported `5 passed`; sandbox
+MPS unavailability is an environmental limitation, not a hardware failure.
 
 The standalone Agent01 and Orchestrator-restart Materials Project release
 Gates are opt-in and require network access plus a credential available from
@@ -881,10 +960,11 @@ git diff --check
 ```
 
 The historical closeout result was `337 passed, 7 skipped`. The current
-post-closeout result is `423 passed, 9 skipped`; the additional skips are the
-explicit live LLM and live NOMAD probes. Do not run the live MP Gate in this
-offline audit: it requires network access and a secret `MP_API_KEY`, neither of
-which is needed for the offline baseline.
+Hermes-inspiration branch result is `668 passed, 13 skipped`; the skip reasons
+are the isolated MCP/stdio checks, opt-in Crossref/LLM/Materials Project/NOMAD
+live probes, and real-ML tests. Do not run the live MP Gate in this offline
+audit: it requires network access and a secret `MP_API_KEY`, neither of which is
+needed for the offline baseline.
 The optional real-ML Gate may be run only in its separately provisioned worker
 environment; lack of MPS visibility in a sandbox is recorded as an environment
 boundary. Repository checks also require no tracked virtual environment, model

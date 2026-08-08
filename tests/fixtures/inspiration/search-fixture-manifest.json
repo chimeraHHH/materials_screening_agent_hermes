@@ -1,0 +1,35 @@
+{
+  "responses": [
+    {
+      "payload_artifact": {
+        "media_type": "application/json",
+        "sha256": "eebd31e9fde6bd1601b77af9adfefe6b2880f163af81a86e1dfea2bb78d8c293",
+        "size_bytes": 3152,
+        "uri": "artifact://inputs/openalex_fixture.json"
+      },
+      "provider": "openalex-fixture",
+      "query_id": "query-b39535bd67453f11af089c6d"
+    },
+    {
+      "payload_artifact": {
+        "media_type": "application/json",
+        "sha256": "eebd31e9fde6bd1601b77af9adfefe6b2880f163af81a86e1dfea2bb78d8c293",
+        "size_bytes": 3152,
+        "uri": "artifact://inputs/openalex_fixture.json"
+      },
+      "provider": "openalex-fixture",
+      "query_id": "query-48ff5caf7ad2b176bbb68ec0"
+    },
+    {
+      "payload_artifact": {
+        "media_type": "application/json",
+        "sha256": "eebd31e9fde6bd1601b77af9adfefe6b2880f163af81a86e1dfea2bb78d8c293",
+        "size_bytes": 3152,
+        "uri": "artifact://inputs/openalex_fixture.json"
+      },
+      "provider": "openalex-fixture",
+      "query_id": "query-43d84113f219ad76ebe62de6"
+    }
+  ],
+  "schema_version": "inspiration-search-fixture-v1"
+}

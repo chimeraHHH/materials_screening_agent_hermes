@@ -45,6 +45,12 @@ def pytest_addoption(parser) -> None:
         help="run opt-in public NOMAD API release tests",
     )
     parser.addoption(
+        "--run-live-crossref",
+        action="store_true",
+        default=False,
+        help="run opt-in public Crossref metadata API release tests",
+    )
+    parser.addoption(
         "--run-real-ml",
         action="store_true",
         default=False,
@@ -63,6 +69,9 @@ def pytest_collection_modifyitems(config, items) -> None:
     live_nomad_marker = pytest.mark.skip(
         reason="requires explicit --run-live-nomad"
     )
+    live_crossref_marker = pytest.mark.skip(
+        reason="requires explicit --run-live-crossref"
+    )
     real_ml_marker = pytest.mark.skip(reason="requires explicit --run-real-ml")
     live_llm_marker = pytest.mark.skip(
         reason="requires explicit --run-live-llm"
@@ -78,6 +87,11 @@ def pytest_collection_modifyitems(config, items) -> None:
             and not config.getoption("--run-live-nomad")
         ):
             item.add_marker(live_nomad_marker)
+        if (
+            "live_crossref" in item.keywords
+            and not config.getoption("--run-live-crossref")
+        ):
+            item.add_marker(live_crossref_marker)
         if (
             {"real_ml", "slow_real_ml", "mps_ml"} & set(item.keywords)
             and not config.getoption("--run-real-ml")

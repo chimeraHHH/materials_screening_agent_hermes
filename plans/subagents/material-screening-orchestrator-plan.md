@@ -20,19 +20,48 @@
 - **不负责：** 检索、ML/DFT/多体科学计算、模型或方法参数选择、解析科学结果；不得把 fixture runner 注册为生产能力。
 - **不可修改范围：** Agent 原生契约、科学阈值/模型/泛函/U/磁序/求解器、冻结 fixture、业务代码之外的其他 agent 计划。
 
-涉及外部 DFT/多体后端时，遵循[技术架构的后端与 VASPilot 集成章节](../../docs/architecture.md#11-vaspilot与未来后端集成)；仓库当前没有单独的 integration Markdown 文档。
+涉及外部 DFT/多体后端时，遵循[技术架构的后端与 VASPilot 集成章节](../../docs/architecture.md#11-vaspilot-与未来后端集成)；仓库当前没有单独的 integration Markdown 文档。
 
 ### 当前下一步、依赖与阻塞
 
-1. 以离线契约和四阶段安全回归持续验证 Agent02 P0.2 Fake Adapter、Agent03 v1 mock
-   和 Agent04 MVP mock 不破坏既有 `agent01-contract-v1` 与 P0.2 控制契约。
+1. 以离线契约和四阶段安全回归持续验证 Agent02 条件生产 worker/P0.2 Fake Adapter、
+   Agent03 v1 mock 和 Agent04 MVP mock 不破坏既有 `agent01-contract-v1` 与 P0.2 控制契约。
 2. 在服务器阶段单独设计 Postgres checkpointer、后台 worker 和多用户权限迁移；每项都应有 schema/恢复测试和回滚边界。
-3. 只有各 Agent 的真实 worker/backend、科学验证和安全 Release Gate 全部通过后，
-   才逐个评估 production capability 注册；mock 完成不改变默认注册状态。
+3. Agent02 已在独立 worker 与安全 Gate 通过后实现显式配置下的条件生产注册；Agent03/04
+   仍只有 mock，必须等真实 backend、科学验证和 Release Gate 后再评估生产注册。
 
-当前阻塞是服务器基础设施尚未就绪；Agent02 的真实 worker、Agent03/04 的生产 backend 也尚未提供，不能由 Orchestrator 代为实现或伪造结果。
+当前服务器基础设施和 Agent03/04 生产 backend 尚未就绪，不能由 Orchestrator 代为实现或
+伪造结果。Agent02 独立 worker 已提供，但未配置
+`MATERIAL_AGENT_ML_WORKER_PYTHON` 时仍 fail closed，不是无条件默认能力。
 
 完成每个控制面任务后，只更新本计划的实际状态、契约版本、测试证据、限制和依赖；公共契约变更须同步检查对应 agent plan、fixture、contract test 和 `docs/architecture.md`，不得在本计划复制科学实现细节。
+
+### 当前任务：Hermes Gateway companion（2026-08-08）
+
+用户已确认以 Hermes 统一后续 Agent/Skill/Tool 开发。首版 Gateway 只在
+`OrchestratorRuntime` 公共生命周期和独立 `InspirationRunner` 之上增加协议适配，不修改
+LangGraph 图、checkpoint schema、业务 SQLite migration、四阶段 `StageId`、Agent 原生契约
+或科学 policy。
+
+范围与验收：
+
+- [x] 冻结 `materials-gateway-v1` 安全 DTO 和四个粗粒度 Tool；
+- [x] Gateway 不直接读取 graph/repository/checkpointer，不开放任意 Artifact/path 或底层
+  `run-stage`；
+- [x] submission ID 绑定 canonical payload，重复调用幂等、冲突 fail closed；
+- [x] `status/get` 严格只读，`act` 每次最多一次类型化状态转换；
+- [x] Requirement 批准必须由独立 operator 进程签发绑定 request/interaction/manifest/action
+  的一次性 grant；Hermes tool call 与 `confirmed_by_user=true` 本身不构成审批；
+- [x] 对外报告在返回前同时校验保存的 URI/hash 与 canonical structured-result hash，大小
+  受限并脱敏；
+- [x] Hermes 与主项目使用独立环境，当前只支持单用户、单实例本机试点；
+- [x] unit/contract/integration、真实 MCP stdio、重启恢复和非空 bundle smoke 已通过；
+- [x] 完整离线、公共 Crossref live、依赖一致性、bundle verifier 和 MCP discovery Gate 通过；
+- [x] 完成 Provider 设备授权后的 Hermes 自然语言 Agent turn；严格区分 Gateway 科学服务
+  ledger 与 Hermes host provider usage，并保留提示 schema 调试证据。
+
+详细 Hermes 与 Inspiration 里程碑见
+[`material-screening-inspiration-plan.md`](material-screening-inspiration-plan.md)。
 
 ### Agent01 NOMAD 单来源兼容（2026-07-29）
 
@@ -169,8 +198,9 @@ Requirement Schema、Orchestrator/checkpoint schema、SQLite migration、四阶�
 
 当前状态：**Orchestrator P0.2 已完成：P0.1 发布基线为 `d681de8`，runner-owned
 StagePlan 与动态审批桥接提交为 `701857c`；Agent02/03/04 的 Fake/mock 控制链均已
-通过显式测试 registry 接入，默认 production registry 仍只提供 Agent01 科学 Runner。
-下一候选里程碑是 Agent02 Step 3 真实独立 worker，不属于 P0。**
+通过显式测试 registry 接入。Agent02 真实独立 worker 已在显式环境配置下条件注册；
+无该配置时默认 production registry 仍只提供 Agent01 科学 Runner。Agent03/04 真实
+backend 继续属于独立后续里程碑。**
 
 已完成：
 
@@ -192,13 +222,13 @@ StagePlan 与动态审批桥接提交为 `701857c`；Agent02/03/04 的 Fake/mock
 - [x] 实现 capability 审批下限与 runner 动态审批的 OR 合并规则；
 - [x] 实现真实阶段计划引用、计划/输入篡改防护及 P0.1 checkpoint 兼容策略；
 - [x] 历史 P0 收口快照为 `325 passed, 2 skipped`，P2 v1 收尾快照为
-  `337 passed, 7 skipped`；当前完整离线 Gate 为
-  `413 passed, 9 skipped, 142 warnings`。
+  `337 passed, 7 skipped`；当前 P3 工作树完整离线 Gate 为
+  `668 passed, 13 skipped, 362 warnings`。
 
 P2 系统 v1 收尾（2026-07-28）复核确认：Agent01 是默认生产科学 runner；Agent02
 仅在校验通过的 `MATERIAL_AGENT_ML_WORKER_PYTHON` 下注册，当前 L2 审计限于 3D
 单质 Si；Agent03/04 仅为 mock 控制链且默认不可用。P2 v1 收尾时完整离线 Gate 为
-`337 passed, 7 skipped`；当前 Stage 0 收口后为
+`337 passed, 7 skipped`；Stage 0 收口快照为
 `413 passed, 9 skipped, 142 warnings`。真实 `live_llm` 单请求 Gate 已通过；未运行
 live MP 或接触 `MP_API_KEY`。本次未修改
 公共契约、checkpoint/schema、数据库迁移、依赖或科学阈值。
@@ -402,13 +432,13 @@ CLI 固定为：
 
 ```bash
 material-agent project create
-material-agent run --project <id> --request "..."
+material-agent run --project <id> --source <source-id> --request "..."
 material-agent run-stage <retrieval|ml|dft|many_body> --project <id> --input <stage-input.json> [--run-id <id>]
-material-agent status --project <id> [--run <id>]
+material-agent status --project <id> --run <id>
 material-agent respond --project <id> --run <id> --interaction <id> --json <payload>
 material-agent approve --project <id> --run <id> --approval <id> --decision <approve|reject> [--reason "..."]
 material-agent resume --project <id> --run <id>
-material-agent retry --project <id> --run <id> --stage <stage>
+material-agent retry --project <id> --run <id>
 material-agent cancel --project <id> --run <id>
 material-agent report --project <id> --run <id>
 ```

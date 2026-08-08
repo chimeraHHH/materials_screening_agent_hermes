@@ -1,0 +1,4 @@
+interface:
+  display_name: "Materials Inspiration"
+  short_description: "Generate auditable materials inspiration"
+  default_prompt: "Use $materials-inspiration to turn my materials goal into an auditable, diverse inspiration bundle."

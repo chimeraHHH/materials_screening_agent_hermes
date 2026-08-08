@@ -25,6 +25,8 @@
 8. Artifact 内容、业务状态、控制位置和外部任务状态分别有明确真源。
 9. fixture/mock 必须显式标记，不能提升真实 L2/L3/L4 证据。
 10. LLM 不直接进入科学计算内核，也不能绕过 Schema、policy 或人工 Gate。
+11. Hermes 只拥有 Agent 交互、Skill 和 Tool 调度；Requirement、审批、科学运行和 Artifact
+    继续由材料引擎独占，不能形成两个相同职责的 Orchestrator。
 
 安全、审批和证据语义的产品级规则见[系统蓝图](./system-plan.md)。
 
@@ -34,7 +36,12 @@
 
 ```mermaid
 flowchart TD
-    U["用户 / CLI / 未来 GUI"] --> O["LangGraph Orchestrator"]
+    U["用户"] --> H["Hermes Agent Platform<br/>P3 独立进程"]
+    U --> CLI["现有 CLI"]
+    H --> GW["Materials Gateway<br/>严格 Tool 契约"]
+    CLI --> O["LangGraph Orchestrator"]
+    GW --> O
+    GW --> I["Inspiration companion"]
 
     subgraph CP["控制平面"]
         O --> R0["Stage 0<br/>Requirement Module"]
@@ -47,6 +54,10 @@ flowchart TD
         O --> A2["Agent 02<br/>ML Screening"]
         O --> A3["Agent 03<br/>DFT Controller"]
         O --> A4["Agent 04<br/>Many-Body Controller"]
+
+        I --> LS["Literature Search / Passage"]
+        I --> TG["TagGraph / BridgePacket"]
+        I --> TR["Transformation / Dedup / Diversity"]
 
         A1 --> MP["Materials Project Adapter"]
         A1 --> NOMAD["NOMAD Adapter"]
@@ -69,6 +80,7 @@ flowchart TD
     A2 --> AS
     A3 --> AS
     A4 --> AS
+    I --> AS
     DB --> AS
     G --> O
 ```
@@ -134,6 +146,31 @@ LangGraph Orchestrator 负责：
 - JSON/Markdown 报告。
 
 大对象不得直接进入 checkpoint、SQLite JSON 字段或 LLM prompt。
+
+### 3.4 Hermes 与 Gateway 平面
+
+Hermes 是可关闭、可替换的上层 Agent 平台，不是科学状态数据库。它负责会话、版本化
+Skill、Provider、工具发现和用户交互；通过进程外 Gateway 调用材料 capability。
+
+Gateway 必须满足：
+
+- 只依赖 `OrchestratorRuntime` 或 `InspirationRunner` 公共 API，不直接读写 graph、
+  checkpoint 表或 Agent 私有文件；
+- 输入输出使用 `extra=forbid` 的版本化 DTO，限制字符串、列表、候选预览和报告大小；
+- 不暴露工作区绝对路径、任意 Artifact 读取、fixture 路径、shell 或底层 `run-stage` DAG；
+- tool call 不能代替人工审批；关键转换必须等待独立 operator 进程签发的一次性 grant；
+- grant 绑定 canonical request、完整 interaction、冻结 execution manifest 和精确 action，
+  在 SQLite 事务中原子消费；Hermes 传入 `confirmed_by_user=true` 不产生授权；
+- 同一 submission ID + 同一 payload 幂等复用，不同 payload fail closed；
+- terminal state 分别绑定报告 Artifact SHA-256 与 canonical structured-result SHA-256，读取前
+  同时验证；这能检测单侧损坏，但不是抵御可一致重写全部本地状态者的真实性签名；
+- Hermes 与主项目使用独立 Python 环境；当前 release record 记录并由 bundle verifier
+  校验 profile/Skill/Tool Schema hash，自动绑定到每个 execution manifest 属于 production
+  加固项；
+- 当前 SQLite/单项目锁只允许本机单用户、单 Hermes 实例试点。
+
+Hermes Session、Memory 或自改 Skill 不能保存正式 EvidenceCard、阈值、已接受机制或科学
+结论。正式状态必须写入可校验的材料 Artifact。
 
 ## 4. Orchestrator、状态机与阶段状态
 
@@ -239,6 +276,7 @@ stateDiagram-v2
 | 模块 | 最低输入 | 核心输出 | 明确边界 |
 |---|---|---|---|
 | Stage 0 Requirement | 自然语言或结构化需求 | 不可变 `requirement.json` revision、面向用户的说明 | 不偷偷补科学阈值 |
+| Inspiration companion | 已确认 Requirement、parent structure/manifest、冻结 policy | Passage、EvidenceCard、TagGraph、BridgePacket、结构 proposal、内部去重与多样性 bundle | 不做 novelty，不把 proposal 当性质证据，不直接进入四阶段状态图 |
 | Agent 01 Retrieval | 已确认 Requirement URI/hash/revision | 原始查询证据、候选审计、候选 manifest、来源结构、检索报告；MP 报告 enrichment/PNG/gzip 证据 | 不做 ML/DFT/多体结论 |
 | Agent 02 ML | Candidate manifest、结构引用、Requirement、policy/registry/health | ML 原生计划、适用域、ML 增量 manifest、结构 lineage、报告 | 不重复主检索，不把 ML 能量称为 hull/DFT |
 | Agent 03 DFT | 候选结构、DFT claim、方法 policy、预算、审批 | DFT workflow plan、ExternalJobRef、验证结果、claim 级证据 | 不自由写参数，不以 backend completed 代替 L3 |
@@ -265,6 +303,35 @@ Run 的 hash-verified Orchestrator report，并可追溯地读取其中引用的
 report，构造受限 evidence snapshot。snapshot 中的 action proposal 由本地 policy 产生，
 固定 `execution_allowed=false`；可选 LLM 仅生成针对这些 action ID 的说明。该模块不得
 调用 runner、写 Artifact、写业务 SQLite 或改变控制面状态。
+
+### 5.2.2 Inspiration companion
+
+Inspiration 与 read-only Research Advisor 不同：它会创建新的 proposal Artifact，但首版仍不
+属于冻结的 `StageId`，也不拥有 Orchestrator checkpoint。其输入必须显式引用已确认
+Requirement、parent candidate/structure 和冻结 policy 的 URI/hash。
+
+内部顺序固定为：
+
+```text
+GoalSeed / curated TagGraph
+→ direct + bridge + counter queries
+→ metadata-first SearchHit
+→ located Passage
+→ EvidenceCard
+→ validated BridgePacket
+→ registered deterministic transformation
+→ structure validation
+→ internal identity resolution
+→ diversity-aware Top-K InspirationBundle
+```
+
+搜索默认使用公开学术 metadata/abstract；只有 metadata 不足且预算允许时才解析 JSON-LD、
+Highwire、JATS 或目标 HTML section。PDF 全文默认关闭。只有被选中的短 Passage 进入
+vectorizer/LLM，且每段必须保存 locator 与原始响应 hash。
+
+LLM 只能提出严格 `BridgePacket` 和 registry operator 参数；代码负责结构变换、硬约束、
+identity 与 selection。输出固定说明本阶段未执行 novelty/prior-art 判定，proposal 也不继承
+parent 的性质 evidence。
 
 ### 5.3 Agent 01：公开数据库检索与确定性筛选
 
@@ -517,6 +584,8 @@ transport retry 与 scientific retry 必须分开。任何会改变科学参数�
 | 文件内容 | Artifact Store |
 | 已提交外部任务当前状态 | execution backend / scheduler |
 | 规范化科学结果与 claim | 对应 Agent 的已验证记录 |
+| Hermes 对话、临时偏好 | Hermes profile/session；不是科学真源 |
+| Passage、EvidenceCard、TagGraph、proposal 和 bundle | Inspiration 的 hash-verified Artifact |
 
 业务 migration 不得修改 LangGraph 自有 checkpoint 表。未完成的旧 checkpoint 如果与新图或契约不兼容，必须显式拒绝恢复；已完成报告和 Artifact 应保持可读。
 
@@ -591,6 +660,8 @@ src/material_agent/
 ├── cli.py
 ├── config.py
 ├── domain/
+├── integration/            # P3：Hermes Gateway 严格 DTO/Tool binding
+├── inspiration/            # P3：搜索、证据、Tag、变换、内部去重和多样性
 ├── orchestrator/
 ├── retrieval/
 ├── ml_screening/
@@ -615,6 +686,8 @@ tests/
 ├── e2e/
 ├── fixtures/
 └── eval_cases/              # 计划扩展
+
+integrations/hermes/          # P3：固定 profile、Skill、MCP 配置和 compatibility eval
 ```
 
 依赖方向：
@@ -637,7 +710,7 @@ orchestrator / CLI
 
 ```bash
 material-agent project create
-material-agent run --project <id> --request "..."
+material-agent run --project <id> --source <source-id> --request "..."
 material-agent run-stage <retrieval|ml|dft|many_body> \
   --project <id> --input <stage-input.json> [--run-id <id>]
 material-agent status --project <id> --run <id>
@@ -649,6 +722,7 @@ material-agent resume --project <id> --run <id>
 material-agent retry --project <id> --run <id>
 material-agent cancel --project <id> --run <id>
 material-agent report --project <id> --run <id>
+material-agent inspire --input <inspiration-input.json> --output <artifact-root>  # P3 后续通用 CLI
 ```
 
 CLI 规则：
@@ -661,6 +735,35 @@ CLI 规则：
 - 未注册的生产 capability 返回明确不可用状态，不运行测试 fixture。
 
 当前可运行命令、参数和示例以[仓库 README](../README.md)为准；未来阶段的命令只有在相应 capability 实现后才可视为可用。
+
+### 10.1 Hermes Tool 与 pilot 入口
+
+Hermes source-controlled pilot profile 首版已实现且只允许四个粗粒度工具：
+
+```text
+materials_inspiration_run
+materials_run_get
+materials_run_act
+materials_result_get
+```
+
+`materials_run_act` 使用严格 discriminated union，一次调用最多完成一次澄清、批准、拒绝、
+恢复、重试或取消转换。Tool list 中不得出现任意 Artifact read、shell、自由路径或直接
+DFT/ML/many-body submit。
+
+当前 Gateway 与审批入口保持显式、进程外调用，不冒充尚未实现的顶层 `material-agent`
+子命令：
+
+```bash
+.venv-gateway/bin/python -m material_agent.integration.mcp_server \
+  --workspace /absolute/path/to/a/bounded/workspace \
+  --project materials-inspiration \
+  --service-factory material_agent.integration.hermes_service:create_hermes_fixture_service
+.venv-gateway/bin/python -m material_agent.integration.operator_approval --help
+```
+
+固定 profile、启动参数和可复现实机 smoke 见[仓库 README](../README.md)；首个非空结果、
+hash 与成本见[pilot 运行记录](./runs/2026-08-08-hermes-inspiration-pilot.md)。
 
 ## 11. VASPilot 与未来后端集成
 

@@ -1,0 +1,12 @@
+{
+  "schema_version": "materials-hermes-lock-v1",
+  "repository": "https://github.com/NousResearch/hermes-agent.git",
+  "release_tag": "v2026.8.3",
+  "resolved_commit": "3c27eb6234bf91b8ceee9e9071591b31e9b148cb",
+  "package_version": "0.20.0",
+  "python": "3.11",
+  "uv_extras": [
+    "cli",
+    "mcp"
+  ]
+}

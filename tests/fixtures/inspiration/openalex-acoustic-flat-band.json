@@ -1,0 +1,190 @@
+{
+  "meta": {
+    "count": 1
+  },
+  "results": [
+    {
+      "abstract_inverted_index": {
+        "Local": [
+          0
+        ],
+        "Strong": [
+          43
+        ],
+        "The": [
+          20
+        ],
+        "a": [
+          7,
+          12,
+          52
+        ],
+        "acoustic": [
+          4
+        ],
+        "an": [
+          3,
+          17
+        ],
+        "and": [
+          25,
+          37,
+          47
+        ],
+        "band": [
+          33
+        ],
+        "because": [
+          11
+        ],
+        "breaks": [
+          45
+        ],
+        "broadens": [
+          48
+        ],
+        "can": [
+          29
+        ],
+        "chemistry": [
+          40
+        ],
+        "condition.": [
+          55
+        ],
+        "connectivity": [
+          36
+        ],
+        "controlled.": [
+          42
+        ],
+        "couples": [
+          14
+        ],
+        "direct": [
+          53
+        ],
+        "dispersion,": [
+          27
+        ],
+        "dispersive": [
+          9
+        ],
+        "electronic": [
+          31
+        ],
+        "equivalent": [
+          38
+        ],
+        "extended": [
+          18
+        ],
+        "falsification": [
+          54
+        ],
+        "flat": [
+          32
+        ],
+        "guide": [
+          30
+        ],
+        "hybridization": [
+          44
+        ],
+        "hypotheses": [
+          34
+        ],
+        "in": [
+          2
+        ],
+        "lattice.": [
+          19
+        ],
+        "localization": [
+          46
+        ],
+        "mechanism": [
+          21
+        ],
+        "metamaterial": [
+          5
+        ],
+        "mode": [
+          10
+        ],
+        "mode,": [
+          50
+        ],
+        "preserves": [
+          22
+        ],
+        "produces": [
+          6
+        ],
+        "providing": [
+          51
+        ],
+        "remain": [
+          41
+        ],
+        "resonance": [
+          1
+        ],
+        "resonator": [
+          13
+        ],
+        "separation": [
+          24
+        ],
+        "site": [
+          39
+        ],
+        "spectral": [
+          23
+        ],
+        "suppresses": [
+          26
+        ],
+        "the": [
+          49
+        ],
+        "to": [
+          16
+        ],
+        "weakly": [
+          8,
+          15
+        ],
+        "when": [
+          35
+        ],
+        "which": [
+          28
+        ]
+      },
+      "authorships": [
+        {
+          "author": {
+            "display_name": "Fixture Author"
+          }
+        }
+      ],
+      "display_name": "Local resonance as a bounded cross-domain mechanism fixture",
+      "doi": "https://doi.org/10.5555/material-agent.fixture.1",
+      "id": "https://openalex.org/WFIXTURE1",
+      "keywords": [
+        {
+          "display_name": "Local resonance"
+        },
+        {
+          "display_name": "Electronic flat band"
+        }
+      ],
+      "primary_location": {
+        "landing_page_url": "https://example.org/material-agent-fixture"
+      },
+      "publication_year": 2025,
+      "title": "Local resonance as a bounded cross-domain mechanism fixture"
+    }
+  ]
+}
