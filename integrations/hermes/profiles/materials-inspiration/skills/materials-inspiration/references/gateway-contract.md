@@ -98,10 +98,23 @@ The result's cost ledger covers the Gateway materials service only. Hermes host
 provider calls and tokens, when auditable, are a separate ledger. A zero or
 unavailable provider cost is not evidence that provider execution was free.
 
+`tag_feedback.json` is an immutable, review-only internal Artifact. Its
+per-query, per-tag, and per-bridge allocations use inclusive, non-additive
+attribution, so shared requests or documents can occur in more than one row.
+Only the Gateway `CostLedger` is additive. Feedback never mutates the curated
+TagGraph or current-run plan, and expert status remains `UNKNOWN` unless a
+separately verified expert-review Artifact exists.
+
 Never introduce novelty, patentability, or prior-art fields into a request or
 response.
 
-The adapter reads only bounded Crossref metadata and abstracts; it never follows
-full-text links. `MATERIALS_CROSSREF_CONTACT_EMAIL` is optional operator-owned
+The production adapter reads only bounded Crossref metadata and abstracts. Its
+body-fetch request budget is zero, and it never follows article, full-text, or
+PDF links. JSON-LD/Highwire, JATS/XML, and HTML passage extraction has an
+operator-owned offline fixture Gate only; this is not evidence that
+public-network body fetching is enabled. Public body fetching remains disabled
+until DNS validation is bound to the actual connection address and the complete
+redirect, host, content-type, request, and byte-budget release Gate passes.
+`MATERIALS_CROSSREF_CONTACT_EMAIL` is optional operator-owned
 environment state for Crossref's polite pool and must never enter an Artifact,
 manifest, report, or model-visible result.

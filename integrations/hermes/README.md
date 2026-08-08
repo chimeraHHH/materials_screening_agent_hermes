@@ -62,10 +62,22 @@ completion still depends on the canonical structured-result hash plus immutable
 `MATERIALS_CROSSREF_CONTACT_EMAIL` is optional operator-owned environment state.
 It selects Crossref's polite pool but must never enter an Artifact, manifest,
 report, component digest, or model-visible result. The adapter reads bounded
-metadata and abstracts only and does not follow full-text or PDF links. Exhausted
+metadata and abstracts only; the production policy has a zero body-fetch request
+budget and does not follow article, full-text, or PDF links. The repository's
+JSON-LD/Highwire, JATS/XML, and HTML passage Gate is offline and fixture-backed.
+It proves bounded runner/extractor behavior, not public-network body-fetch
+capability. Public body fetching remains disabled until DNS validation is bound
+to the actual connection address and all redirect, host, content-type, request,
+and byte-budget release checks pass. Exhausted
 transient retries terminate with `EXTERNAL_SEARCH_UNAVAILABLE` and
 `retryable=true`; retry only after a new user decision, with a new submission ID,
 new run, and fresh approval. Schema drift is nonretryable.
+
+Runtime `tag_feedback.json` is immutable and review-only. It cannot mutate the
+curated TagGraph or current-run query plan, and expert status remains `UNKNOWN`
+without a separately verified expert-review Artifact. Query/tag/bridge cost
+allocations are inclusive and non-additive; the Gateway `CostLedger` is the sole
+additive run total.
 
 ## Record a real user approval out of band
 

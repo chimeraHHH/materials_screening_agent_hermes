@@ -164,6 +164,12 @@ def verify() -> None:
         "new run with a new\n   `submission_id` and obtain a fresh approval",
         "Crossref schema drift is nonretryable",
         "Never request, read, or summarize full PDFs",
+        "immutable, review-only runtime Artifact",
+        "expert status remains `UNKNOWN`",
+        "inclusive and non-additive",
+        "body-fetch request budget is zero",
+        "does not authorize public-network body fetching",
+        "binds\n  DNS validation to the actual connection address",
         "`MATERIALS_CROSSREF_CONTACT_EMAIL`",
         "never appear in an Artifact",
     ):
@@ -182,7 +188,12 @@ def verify() -> None:
         "`EXTERNAL_SEARCH_UNAVAILABLE`",
         "new `submission_id` and obtain a fresh approval",
         "schema drift and other permanent adapter failures are nonretryable",
-        "never follows\nfull-text links",
+        "immutable, review-only internal Artifact",
+        "inclusive, non-additive",
+        "Only the Gateway `CostLedger` is additive",
+        "body-fetch request budget is zero",
+        "not evidence that\npublic-network body fetching is enabled",
+        "DNS validation is bound to the actual connection address",
         "`MATERIALS_CROSSREF_CONTACT_EMAIL`",
     ):
         if wording not in gateway_contract:
@@ -205,6 +216,17 @@ def verify() -> None:
         or "new user decision" not in hermes_readme
     ):
         raise ValueError("Hermes README must document fresh transient-failure approval")
+    for wording in (
+        "zero body-fetch request\nbudget",
+        "offline and fixture-backed",
+        "not public-network body-fetch\ncapability",
+        "DNS validation is bound\nto the actual connection address",
+        "immutable and review-only",
+        "inclusive and non-additive",
+        "`CostLedger` is the sole\nadditive run total",
+    ):
+        if wording not in hermes_readme:
+            raise ValueError(f"Hermes README P3.3 boundary drifted: {wording}")
     if SOUL_PATH.read_text(encoding="utf-8") != expected_soul(skill_text):
         raise ValueError("SOUL.md does not exactly mirror the versioned Skill")
 
