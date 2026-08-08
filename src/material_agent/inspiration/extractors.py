@@ -35,7 +35,12 @@ _RELEVANT_SECTION_RE = re.compile(
     r"\b(?:abstract|result|discussion|conclusion|mechanism|finding|analysis)\b",
     re.IGNORECASE,
 )
+_FORBIDDEN_XML_DECLARATION_RE = re.compile(
+    r"<!\s*(?:DOCTYPE|ENTITY)\b",
+    re.IGNORECASE,
+)
 _PDF_MEDIA_TYPES = {"application/pdf", "application/x-pdf"}
+_GENERIC_BINARY_MEDIA_TYPES = {"", "application/octet-stream", "binary/octet-stream"}
 
 
 class ExtractionLimitError(ValueError):
@@ -359,8 +364,15 @@ def extract_document(
 
     selected_limits = limits or ExtractionLimits()
     normalized_media_type = media_type.partition(";")[0].strip().casefold()
-    if normalized_media_type in _PDF_MEDIA_TYPES or _looks_like_pdf(payload):
-        return _pdf_disabled_result(normalized_media_type or "application/pdf")
+    if normalized_media_type in _PDF_MEDIA_TYPES:
+        return _pdf_disabled_result(normalized_media_type)
+    if _looks_like_pdf(payload):
+        return _pdf_disabled_result(
+            normalized_media_type or "application/pdf",
+            content_type_mismatch=(
+                normalized_media_type not in _GENERIC_BINARY_MEDIA_TYPES
+            ),
+        )
     if normalized_media_type in {"text/html", "application/xhtml+xml"}:
         return extract_html_document(
             payload,
@@ -373,6 +385,12 @@ def extract_document(
         "application/jats+xml",
     }:
         return extract_jats_document(
+            payload,
+            target_terms=target_terms,
+            limits=selected_limits,
+        )
+    if normalized_media_type == "application/ld+json":
+        return extract_jsonld_document(
             payload,
             target_terms=target_terms,
             limits=selected_limits,
@@ -391,6 +409,88 @@ def extract_document(
         decision=ExtractionDecision.UNEXTRACTABLE,
         media_type=normalized_media_type or "application/octet-stream",
         warnings=("UNSUPPORTED_CONTENT_TYPE",),
+    )
+
+
+def extract_jsonld_document(
+    payload: bytes | str,
+    *,
+    target_terms: Iterable[str] = (),
+    limits: ExtractionLimits | None = None,
+) -> ExtractionResult:
+    """Extract bounded Schema.org article metadata from standalone JSON-LD."""
+
+    selected_limits = limits or ExtractionLimits()
+    if _looks_like_pdf(payload):
+        return _pdf_disabled_result(
+            "application/ld+json",
+            content_type_mismatch=True,
+        )
+    try:
+        value = json.loads(_decode_text(payload, limits=selected_limits))
+    except ExtractionLimitError:
+        raise
+    except (UnicodeDecodeError, json.JSONDecodeError, TypeError):
+        return _unextractable("application/ld+json", "INVALID_JSON_LD")
+
+    title_candidates: list[str] = []
+    keywords: list[str] = []
+    drafts: list[ExtractedTextDraft] = []
+    for path, article in _walk_article_jsonld(value):
+        title = _first_text(article.get("headline"), article.get("name"))
+        if title:
+            title_candidates.append(title)
+        keywords.extend(_split_keywords(article.get("keywords")))
+        abstract = _first_text(article.get("abstract"), article.get("description"))
+        if not abstract:
+            continue
+        field = "abstract" if _first_text(article.get("abstract")) else "description"
+        drafts.append(
+            ExtractedTextDraft(
+                text=abstract,
+                locator_kind=PassageLocatorKind.JSON_LD,
+                selector=f"{path}.{field}",
+                section_heading="Abstract",
+                source_tier=ExtractionTier.STRUCTURED_WEB,
+            )
+        )
+
+    title = _first_text(*title_candidates)
+    selected_keywords = _unique_texts(keywords)
+    selected_drafts = _deduplicate_drafts(
+        drafts,
+        max_drafts=selected_limits.max_drafts,
+    )
+    if not selected_drafts:
+        return ExtractionResult(
+            title=title,
+            keywords=selected_keywords,
+            drafts=(),
+            decision=ExtractionDecision.UNEXTRACTABLE,
+            media_type="application/ld+json",
+            warnings=("NO_SCHOLARLY_JSON_LD_TEXT",),
+        )
+
+    terms = tuple(target_terms)
+    structured_sufficient = any(
+        _is_sufficient_abstract(
+            draft.text,
+            title=title,
+            keywords=selected_keywords,
+            target_terms=terms,
+            min_tokens=selected_limits.min_abstract_tokens,
+        )
+        for draft in selected_drafts
+    )
+    return ExtractionResult(
+        title=title,
+        keywords=selected_keywords,
+        drafts=selected_drafts,
+        decision=ExtractionDecision.BODY_EXTRACTED,
+        media_type="application/ld+json",
+        warnings=(
+            ("STRUCTURED_METADATA_SUFFICIENT",) if structured_sufficient else ()
+        ),
     )
 
 
@@ -541,6 +641,11 @@ def extract_jats_document(
         return _pdf_disabled_result("application/pdf")
     try:
         xml_text = _decode_text(payload, limits=selected_limits)
+        if _FORBIDDEN_XML_DECLARATION_RE.search(xml_text):
+            return _unextractable(
+                "application/jats+xml",
+                "JATS_DTD_OR_ENTITY_FORBIDDEN",
+            )
         root = ElementTree.fromstring(xml_text)
     except (UnicodeDecodeError, ElementTree.ParseError):
         return _unextractable("application/jats+xml", "JATS_PARSE_FAILED")
@@ -872,8 +977,12 @@ def _enforce_size(payload: bytes | str, limits: ExtractionLimits) -> None:
 
 
 def _looks_like_pdf(payload: bytes | str) -> bool:
-    prefix = payload[:8] if isinstance(payload, bytes) else payload[:8].encode("utf-8")
-    return prefix.lstrip().startswith(b"%PDF-")
+    prefix = (
+        payload[:32]
+        if isinstance(payload, bytes)
+        else payload[:32].encode("utf-8")
+    )
+    return prefix.lstrip(b"\x00\t\n\r\f \xef\xbb\xbf").startswith(b"%PDF-")
 
 
 def _reconstruct_inverted_abstract(value: Any) -> str | None:
@@ -964,7 +1073,16 @@ def _walk_article_jsonld(value: Any, path: str = "$") -> Iterable[tuple[str, Map
             types = {item for item in raw_type if isinstance(item, str)}
         else:
             types = set()
-        if types & {"ScholarlyArticle", "Article", "NewsArticle", "TechArticle"}:
+        normalized_types = {
+            re.split(r"[/#:]", item)[-1]
+            for item in types
+        }
+        if normalized_types & {
+            "ScholarlyArticle",
+            "Article",
+            "NewsArticle",
+            "TechArticle",
+        }:
             yield path, value
         for key, child in value.items():
             if isinstance(child, (Mapping, list)):
@@ -1117,12 +1235,21 @@ def _unextractable(media_type: str, warning: str) -> ExtractionResult:
     )
 
 
-def _pdf_disabled_result(media_type: str) -> ExtractionResult:
+def _pdf_disabled_result(
+    media_type: str,
+    *,
+    content_type_mismatch: bool = False,
+) -> ExtractionResult:
+    warnings = (
+        ("CONTENT_TYPE_PDF_MAGIC_MISMATCH", "PDF_EXTRACTION_DISABLED")
+        if content_type_mismatch
+        else ("PDF_EXTRACTION_DISABLED",)
+    )
     return ExtractionResult(
         title=None,
         keywords=(),
         drafts=(),
         decision=ExtractionDecision.SKIP_BODY_UNSUPPORTED,
         media_type=media_type,
-        warnings=("PDF_EXTRACTION_DISABLED",),
+        warnings=warnings,
     )
