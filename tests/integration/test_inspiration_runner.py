@@ -234,8 +234,8 @@ def test_offline_runner_persists_auditable_candidate_and_strict_layout(
     assert ledger.raw_documents == 3
     assert ledger.unique_documents == 1
     assert ledger.fetch_requests == 0
-    assert ledger.extracted_passages == 3
-    assert ledger.vectorized_passages == 3
+    assert ledger.extracted_passages == 1
+    assert ledger.vectorized_passages == 1
     assert ledger.llm_calls == 0
     assert ledger.generated_plans == 1
     assert ledger.candidates_after_internal_dedup == 1
@@ -246,6 +246,7 @@ def test_offline_runner_persists_auditable_candidate_and_strict_layout(
         "input_snapshot.json",
         "policy.json",
         "query_plans.jsonl",
+        "search_attempts.jsonl",
         "search_hits.jsonl",
         "fetch_manifest.jsonl",
         "passages.jsonl",
@@ -261,6 +262,13 @@ def test_offline_runner_persists_auditable_candidate_and_strict_layout(
         "stage_result.json",
     )
     assert all(store.exists(f"{prefix}/{name}") for name in required_paths)
+    attempts = store.read_jsonl(f"{prefix}/search_attempts.jsonl")
+    assert len(attempts) == 3
+    assert all(attempt["outcome"] == "success" for attempt in attempts)
+    assert {attempt["query_id"] for attempt in attempts} == {
+        query["query_id"]
+        for query in store.read_jsonl(f"{prefix}/query_plans.jsonl")
+    }
     assert len(store.read_jsonl(f"{prefix}/bridge_packets.jsonl")) == 1
     transformation_records = store.read_jsonl(
         f"{prefix}/transformation_proposals.jsonl"
@@ -281,7 +289,7 @@ def test_offline_runner_persists_auditable_candidate_and_strict_layout(
     assert real_checks["retrieval_structure_processing"] == "PASS"
     assert len(store.read_jsonl(f"{prefix}/internal_duplicate_groups.jsonl")) == 1
     assert len(list((store.root / prefix / "raw_search").glob("*.json"))) == 3
-    assert len(list((store.root / prefix / "vectors").glob("*.f32le"))) == 3
+    assert len(list((store.root / prefix / "vectors").glob("*.f32le"))) == 1
     assert len(list((store.root / prefix / "structures").glob("*.cif"))) == 1
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")

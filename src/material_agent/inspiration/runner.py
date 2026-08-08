@@ -47,6 +47,7 @@ from material_agent.inspiration.models import (
     PassageV1,
     PassageVectorV1,
     SearchHitV1,
+    SearchQueryKind,
     SearchQueryV1,
     TagGraphV1,
     TransformationPlanV1,
@@ -64,9 +65,12 @@ from material_agent.inspiration.policy import (
 )
 from material_agent.inspiration.reporting import render_inspiration_report
 from material_agent.inspiration.search import (
+    DocumentHitGroup,
     ParsedSearchPage,
     RawSearchPage,
     SearchAdapter,
+    SearchAdapterError,
+    SearchAttemptRecord,
     group_document_hits,
     parse_crossref_page,
     parse_openalex_page,
@@ -318,6 +322,7 @@ class InspirationRunner:
         hits: list[SearchHitV1] = []
         raw_pages: dict[str, RawSearchPage] = {}
         raw_pointers: list[ArtifactPointerV1] = []
+        search_attempts: list[SearchAttemptRecord] = []
         warnings: list[str] = [
             f"QUERY_RULE_SKIPPED:{rule_id}" for rule_id in query_plan.skipped_rule_ids
         ]
@@ -327,38 +332,74 @@ class InspirationRunner:
             if remaining_hits <= 0:
                 warnings.append("RAW_HIT_BUDGET_EXHAUSTED")
                 break
-            page = self.search_adapter.search(
-                query,
-                max_response_bytes=MAX_SEARCH_RESPONSE_BYTES,
-            )
-            self._validate_raw_page(
-                query,
-                page,
-                policy=policy,
-                binding=(
-                    fixture_bindings[query.query_id]
-                    if fixture_bindings is not None
-                    else None
+            try:
+                page = self.search_adapter.search(
+                    query,
+                    max_response_bytes=MAX_SEARCH_RESPONSE_BYTES,
+                )
+            except SearchAdapterError as error:
+                search_attempts.extend(error.attempts)
+                # Failure records remain discoverable at the deterministic run
+                # path even though no scientific bundle can be produced.
+                self._write_jsonl(
+                    f"{prefix}/search_attempts.jsonl",
+                    tuple(attempt.to_dict() for attempt in search_attempts),
+                )
+                raise
+            page_attempts = page.attempts or (
+                SearchAttemptRecord(
+                    query_id=query.query_id,
+                    attempt_number=1,
+                    outcome="success",
+                    error_code=None,
+                    http_status=None,
+                    retry_delay_seconds=0.0,
+                    pacing_delay_seconds=0.0,
+                    response_bytes=len(page.payload),
                 ),
             )
-            raw_pointer = self._write_bytes(
-                f"{prefix}/raw_search/{query.query_id}.json",
-                page.payload,
-                media_type=page.media_type,
-            )
-            raw_pages[query.query_id] = page
-            raw_pointers.append(raw_pointer)
-            search_response_bytes += len(page.payload)
-            parsed = self._parse_search_page(
-                query=query,
-                page=page,
-                raw_response_artifact=raw_pointer,
-                max_hits=remaining_hits,
-            )
+            search_attempts.extend(page_attempts)
+            try:
+                self._validate_raw_page(
+                    query,
+                    page,
+                    policy=policy,
+                    binding=(
+                        fixture_bindings[query.query_id]
+                        if fixture_bindings is not None
+                        else None
+                    ),
+                )
+                raw_pointer = self._write_bytes(
+                    f"{prefix}/raw_search/{query.query_id}.json",
+                    page.payload,
+                    media_type=page.media_type,
+                )
+                raw_pages[query.query_id] = page
+                raw_pointers.append(raw_pointer)
+                search_response_bytes += len(page.payload)
+                parsed = self._parse_search_page(
+                    query=query,
+                    page=page,
+                    raw_response_artifact=raw_pointer,
+                    max_hits=remaining_hits,
+                )
+            except (InspirationRunnerError, SearchAdapterError):
+                # A provider response that later fails contract/schema checks is
+                # still a real, billable attempt and must remain auditable.
+                self._write_jsonl(
+                    f"{prefix}/search_attempts.jsonl",
+                    tuple(attempt.to_dict() for attempt in search_attempts),
+                )
+                raise
             executed_queries.append(query)
             hits.extend(parsed.hits)
             warnings.extend(parsed.warnings)
 
+        attempt_pointer = self._write_jsonl(
+            f"{prefix}/search_attempts.jsonl",
+            tuple(attempt.to_dict() for attempt in search_attempts),
+        )
         hit_tuple = tuple(hits)
         groups = group_document_hits(hit_tuple)
         if len(groups) > policy.search.max_unique_documents:
@@ -377,6 +418,7 @@ class InspirationRunner:
             graph=tag_graph,
             queries=tuple(executed_queries),
             hits=hit_tuple,
+            groups=groups,
             raw_pages=raw_pages,
         )
         warnings.extend(extraction_warnings)
@@ -495,7 +537,7 @@ class InspirationRunner:
         # share the same deterministic ledger representation. Wall-clock
         # duration is enforced above but intentionally not serialized.
         ledger = CostLedgerV1(
-            search_requests=len(executed_queries),
+            search_requests=len(search_attempts),
             search_response_bytes=search_response_bytes,
             fetch_requests=0,
             fetch_response_bytes=0,
@@ -519,6 +561,7 @@ class InspirationRunner:
         intermediate = _unique_pointers(
             (
                 query_plan_pointer,
+                attempt_pointer,
                 *raw_pointers,
                 hit_pointer,
                 fetch_pointer,
@@ -592,6 +635,7 @@ class InspirationRunner:
             transformation_plans=plans,
             review_items=review_items,
             warnings=bounded_warnings,
+            search_attempts=tuple(search_attempts),
         )
         report_pointer = self._write_text(f"{prefix}/report.md", report)
         stage_result = InspirationStageResultV1(
@@ -912,11 +956,14 @@ class InspirationRunner:
         graph: TagGraphV1,
         queries: tuple[SearchQueryV1, ...],
         hits: tuple[SearchHitV1, ...],
+        groups: tuple[DocumentHitGroup, ...],
         raw_pages: dict[str, RawSearchPage],
     ) -> tuple[tuple[PassageV1, ...], tuple[dict[str, object], ...], tuple[str, ...]]:
         query_index = {query.query_id: query for query in queries}
+        hit_index = {hit.hit_id: hit for hit in hits}
         tag_index = {tag.tag_id: tag for tag in graph.tags}
         selected: list[PassageV1] = []
+        selected_keys: set[tuple[str, str]] = set()
         manifest: list[dict[str, object]] = []
         warnings: list[str] = []
         config = selection_config_from_policy(policy.passages)
@@ -925,21 +972,46 @@ class InspirationRunner:
             max_drafts=64,
             min_abstract_tokens=policy.passages.min_tokens,
         )
-        for hit in hits:
-            query_id = hit.query_ids[0]
-            query = query_index[query_id]
-            page = raw_pages[query_id]
+        for group in groups:
+            member_hits = tuple(hit_index[hit_id] for hit_id in group.member_hit_ids)
+            hit = _select_document_processing_hit(
+                member_hits,
+                query_index=query_index,
+            )
+            source_query_id = hit.query_ids[0]
+            page = raw_pages[source_query_id]
+            member_query_ids = tuple(
+                sorted(
+                    {
+                        query_id
+                        for member in member_hits
+                        for query_id in member.query_ids
+                    }
+                )
+            )
+            member_queries = tuple(
+                query_index[query_id] for query_id in member_query_ids
+            )
+            member_tag_ids = tuple(
+                sorted(
+                    {
+                        tag_id
+                        for query in member_queries
+                        for tag_id in query.tag_ids
+                    }
+                )
+            )
             tag_terms = {
                 tag_id: (
                     *tag_index[tag_id].query_terms,
                     *tag_index[tag_id].synonyms,
                     tag_index[tag_id].label,
                 )
-                for tag_id in query.tag_ids
+                for tag_id in member_tag_ids
             }
             target_terms = tuple(
                 dict.fromkeys(
-                    (query.text,)
+                    tuple(query.text for query in member_queries)
                     + tuple(term for terms in tag_terms.values() for term in terms)
                 )
             )
@@ -968,23 +1040,29 @@ class InspirationRunner:
             passage_drafts = select_passage_drafts(
                 extraction.drafts,
                 hit_id=hit.hit_id,
-                document_id=hit.document_id,
+                document_id=group.document_id,
                 query_terms=target_terms,
                 tag_terms=tag_terms,
                 config=config,
                 document_title=extraction.title or hit.title,
             )
             accepted_for_hit = 0
+            deduplicated_for_hit = 0
             for draft in passage_drafts:
+                passage_key = (group.document_id, draft.normalized_text_sha256)
+                if passage_key in selected_keys:
+                    deduplicated_for_hit += 1
+                    continue
                 if len(selected) >= policy.passages.max_total:
                     warnings.append("PASSAGE_BUDGET_EXHAUSTED")
                     break
+                selected_keys.add(passage_key)
                 selected.append(
                     PassageV1(
                         passage_id=deterministic_id(
                             "passage",
                             {
-                                "hit_id": hit.hit_id,
+                                "document_id": group.document_id,
                                 "locator": draft.locator,
                                 "normalized_text_sha256": (
                                     draft.normalized_text_sha256
@@ -992,7 +1070,7 @@ class InspirationRunner:
                             },
                         ),
                         hit_id=hit.hit_id,
-                        document_id=hit.document_id,
+                        document_id=group.document_id,
                         source_artifact=hit.raw_response_artifact,
                         normalizer=draft.normalizer,
                         locator=draft.locator,
@@ -1009,10 +1087,15 @@ class InspirationRunner:
             manifest.append(
                 {
                     "decision": extraction.decision.value,
+                    "deduplicated_passage_count": deduplicated_for_hit,
+                    "document_id": group.document_id,
                     "fetched": fetched,
                     "hit_id": hit.hit_id,
+                    "member_hit_ids": group.member_hit_ids,
                     "media_type": extraction.media_type,
+                    "query_ids": member_query_ids,
                     "raw_response_uri": hit.raw_response_artifact.uri,
+                    "representative_hit_id": hit.hit_id,
                     "selected_passage_count": accepted_for_hit,
                     "warnings": extraction.warnings,
                 }
@@ -1031,7 +1114,15 @@ class InspirationRunner:
         passages: tuple[PassageV1, ...],
     ) -> tuple[tuple[PassageVectorV1, ...], tuple[ArtifactPointerV1, ...], int]:
         hit_index = {hit.hit_id: hit for hit in hits}
-        vectorized_passages = passages[: policy.embedding.max_passages]
+        unique_passages: list[PassageV1] = []
+        seen_passages: set[tuple[str, str]] = set()
+        for passage in passages:
+            passage_key = (passage.document_id, passage.normalized_text_sha256)
+            if passage_key in seen_passages:
+                continue
+            seen_passages.add(passage_key)
+            unique_passages.append(passage)
+        vectorized_passages = tuple(unique_passages[: policy.embedding.max_passages])
         requests = tuple(
             PassageVectorizationRequest(
                 passage=passage,
@@ -1357,6 +1448,82 @@ class InspirationRunner:
         pointer = _artifact_pointer(reference)
         verify_artifact_pointer(self.store, pointer)
         return pointer
+
+
+def _select_document_processing_hit(
+    hits: tuple[SearchHitV1, ...],
+    *,
+    query_index: dict[str, SearchQueryV1],
+) -> SearchHitV1:
+    """Choose one real hit without losing the bridge needed for evidence closure.
+
+    ``PassageV1`` can reference only one hit and ``EvidenceCardV1`` can express
+    only one relation.  P3.1 therefore prefers a SUPPORT-capable BRIDGE hit over
+    DIRECT and COUNTER duplicates.  All raw hits remain in ``search_hits.jsonl``
+    and their document/query membership is repeated in ``fetch_manifest.jsonl``.
+    Reusing one passage as evidence for multiple bridge rules would require an
+    explicit lineage schema v2; silently merging those rule/relations here would
+    make the existing closure validator reject the result.
+    """
+
+    if not hits:
+        raise InspirationRunnerError(
+            "EMPTY_DOCUMENT_GROUP",
+            "document processing requires at least one search hit",
+        )
+
+    ranked: list[tuple[tuple[object, ...], SearchHitV1]] = []
+    for hit in hits:
+        try:
+            queries = tuple(query_index[query_id] for query_id in hit.query_ids)
+        except KeyError as error:
+            raise InspirationRunnerError(
+                "SEARCH_HIT_QUERY_NOT_FOUND",
+                f"search hit {hit.hit_id!r} references an unknown query",
+            ) from error
+        kinds = {query.kind for query in queries}
+        bridge_rule_ids = {
+            query.bridge_rule_id
+            for query in queries
+            if query.bridge_rule_id is not None
+        }
+        if (
+            SearchQueryKind.BRIDGE in kinds
+            and SearchQueryKind.COUNTER in kinds
+        ) or len(bridge_rule_ids) > 1:
+            raise InspirationRunnerError(
+                "AMBIGUOUS_HIT_QUERY_LINEAGE",
+                f"search hit {hit.hit_id!r} cannot close through one evidence relation",
+            )
+        if SearchQueryKind.BRIDGE in kinds:
+            kind_priority = 0
+        elif SearchQueryKind.DIRECT in kinds:
+            kind_priority = 1
+        else:
+            kind_priority = 2
+        lineage_key = tuple(
+            sorted(
+                (
+                    query.bridge_rule_id or "",
+                    query.kind.value,
+                    query.query_id,
+                )
+                for query in queries
+            )
+        )
+        ranked.append(
+            (
+                (
+                    kind_priority,
+                    lineage_key,
+                    hit.provider_rank,
+                    hit.provider,
+                    hit.hit_id,
+                ),
+                hit,
+            )
+        )
+    return min(ranked, key=lambda item: item[0])[1]
 
 
 def _json_value(value: object) -> object:

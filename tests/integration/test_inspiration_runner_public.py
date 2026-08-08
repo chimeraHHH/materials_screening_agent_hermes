@@ -5,6 +5,7 @@ import json
 from collections.abc import Mapping
 from pathlib import Path
 
+import material_agent.inspiration.runner as inspiration_runner_module
 from material_agent.inspiration.engine import PymatgenTransformationEngine
 from material_agent.inspiration.models import (
     ArtifactPointerV1,
@@ -230,7 +231,20 @@ def _run_public(root: Path):
 
 def test_public_crossref_vertical_slice_persists_raw_metadata_and_no_body(
     tmp_path: Path,
+    monkeypatch,
 ) -> None:
+    extraction_result_indexes: list[int] = []
+    extract_crossref_metadata = inspiration_runner_module.extract_crossref_metadata
+
+    def counted_extraction(*args, **kwargs):
+        extraction_result_indexes.append(kwargs["result_index"])
+        return extract_crossref_metadata(*args, **kwargs)
+
+    monkeypatch.setattr(
+        inspiration_runner_module,
+        "extract_crossref_metadata",
+        counted_extraction,
+    )
     store, runner, result, inspiration_input, transport = _run_public(
         tmp_path / "public"
     )
@@ -244,20 +258,56 @@ def test_public_crossref_vertical_slice_persists_raw_metadata_and_no_body(
     assert ledger.search_response_bytes == 3 * len(_response_bytes())
     assert ledger.fetch_requests == 0
     assert ledger.fetch_response_bytes == 0
+    assert ledger.raw_documents == 3
+    assert ledger.unique_documents == 1
+    assert ledger.extracted_passages == 1
+    assert ledger.vectorized_passages == 1
     assert ledger.llm_calls == 0
+    assert extraction_result_indexes == [0]
 
     prefix = "stages/inspiration/run-public-crossref"
+    queries = store.read_jsonl(f"{prefix}/query_plans.jsonl")
+    attempts = store.read_jsonl(f"{prefix}/search_attempts.jsonl")
     hits = store.read_jsonl(f"{prefix}/search_hits.jsonl")
+    assert len(attempts) == 3
+    assert all(attempt["outcome"] == "success" for attempt in attempts)
+    assert sum(attempt["response_bytes"] for attempt in attempts) == (
+        ledger.search_response_bytes
+    )
+    assert {attempt["query_id"] for attempt in attempts} == {
+        record["query_id"] for record in queries
+    }
     assert len(hits) == 3
     assert {record["provider"] for record in hits} == {"crossref"}
+    assert {query_id for record in hits for query_id in record["query_ids"]} == {
+        record["query_id"] for record in queries
+    }
     for record in hits:
         pointer = ArtifactPointerV1.model_validate(record["raw_response_artifact"])
         assert store.read_bytes(pointer.uri) == _response_bytes()
         assert pointer.sha256 == hashlib.sha256(_response_bytes()).hexdigest()
         assert pointer.size_bytes == len(_response_bytes())
 
+    manifest = store.read_jsonl(f"{prefix}/fetch_manifest.jsonl")
+    assert len(manifest) == 1
+    document = manifest[0]
+    assert set(document["member_hit_ids"]) == {
+        record["hit_id"] for record in hits
+    }
+    assert set(document["query_ids"]) == {
+        record["query_id"] for record in queries
+    }
+    assert document["representative_hit_id"] == document["hit_id"]
+    representative = next(
+        record for record in hits if record["hit_id"] == document["hit_id"]
+    )
+    query_kinds = {record["query_id"]: record["kind"] for record in queries}
+    assert {query_kinds[query_id] for query_id in representative["query_ids"]} == {
+        "BRIDGE"
+    }
+
     passages = store.read_jsonl(f"{prefix}/passages.jsonl")
-    assert len(passages) == 3
+    assert len(passages) == 1
     assert {
         record["locator"]["selector"] for record in passages
     } == {"$.message.items[0].abstract"}
@@ -268,6 +318,14 @@ def test_public_crossref_vertical_slice_persists_raw_metadata_and_no_body(
         )
         for record in passages
     )
+    vectors = store.read_jsonl(f"{prefix}/passage_vectors.jsonl")
+    assert len(vectors) == 1
+    assert vectors[0]["passage_id"] == passages[0]["passage_id"]
+    assert len(list((store.root / prefix / "vectors").glob("*.f32le"))) == 1
+    evidence_cards = store.read_jsonl(f"{prefix}/evidence_cards.jsonl")
+    assert len(evidence_cards) == 1
+    assert evidence_cards[0]["relation"] == "SUPPORT"
+    assert len(store.read_jsonl(f"{prefix}/bridge_packets.jsonl")) == 1
     assert "PDF full-text reads: `0`" in result.report
     assert "novelty" not in result.report.casefold()
     runner.verify_stage_result(result.stage_result)
