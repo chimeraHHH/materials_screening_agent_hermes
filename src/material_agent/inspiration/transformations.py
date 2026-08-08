@@ -486,13 +486,20 @@ def _minimum_periodic_distance(structure: Structure) -> float | None:
 def _canonicalize_structure(structure: Structure) -> Structure:
     sites: list[tuple[str, object, tuple[float, float, float]]] = []
     for site in structure:
+        normalized_species = {
+            species: float(amount) for species, amount in site.species.items()
+        }
         species_key = json.dumps(
-            {str(species): float(amount) for species, amount in site.species.items()},
+            {str(species): amount for species, amount in normalized_species.items()},
             sort_keys=True,
             separators=(",", ":"),
         )
         coordinates = tuple(float(value) % 1.0 for value in site.frac_coords)
-        sites.append((species_key, site.species, coordinates))
+        # CIF parsing and in-memory replacement can represent unit occupancy as
+        # either integer ``1`` or float ``1.0``.  Normalize every occupancy here
+        # so identical canonical structures always serialize to identical bytes,
+        # regardless of which parent route supplied an already-present species.
+        sites.append((species_key, normalized_species, coordinates))
     sites.sort(
         key=lambda item: (
             item[0],

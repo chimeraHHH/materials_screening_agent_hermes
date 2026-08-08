@@ -310,7 +310,7 @@ def test_artifact_bytes_hash_round_trip_and_route_replay_are_deterministic() -> 
     assert first.plan.output_structure_id is not None
     assert first.plan.output_structure_id.startswith("str_")
     assert first.plan.output_structure_artifact.sha256 == (
-        "662d5a8dddafd523380f56e2c42e60dbf5631b81c2853997c17cf2588e2570e6"
+        "ed3d528557ded34df9d1b31b34f629d8dfc64305dee2089cbaa9ef07ff2e291d"
     )
     assert first.plan.output_structure_artifact.size_bytes == len(first.artifact_bytes)
     assert substitution_registry_sha256(DEFAULT_SUBSTITUTION_REGISTRY_V1) == (

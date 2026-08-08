@@ -25,7 +25,15 @@ from material_agent.inspiration.models import (
     ParentCandidateRefV1,
     TransformationStatus,
 )
-from material_agent.inspiration.policy import InspirationPolicyV1
+from material_agent.inspiration.parent_catalog import (
+    LoadedParentCatalog,
+    load_flat_band_parent_catalog_v1,
+)
+from material_agent.inspiration.policy import (
+    InspirationPolicyV1,
+    SelectionPolicyV1,
+    TransformationBudgetV1,
+)
 from material_agent.inspiration.runner import (
     ParentStructureInput,
     TransformationContext,
@@ -161,6 +169,71 @@ def _context(
     )
 
 
+def _catalog_context(
+    catalog: LoadedParentCatalog,
+) -> TransformationContext:
+    base = _context()
+    graph = base.tag_graph
+    cards: list[EvidenceCardV1] = []
+    bridges: list[BridgePacketV1] = []
+    for rule in graph.bridge_rules:
+        card = EvidenceCardV1(
+            evidence_card_id=f"evidence-{rule.bridge_rule_id}",
+            relation=EvidenceRelation.SUPPORT,
+            claim_text="A bounded metadata passage supports the reviewed mechanism.",
+            mechanism_tag_ids=rule.required_evidence_tag_ids,
+            applicability_conditions=rule.required_conditions,
+            passage_ids=(f"passage-{rule.bridge_rule_id}",),
+        )
+        cards.append(card)
+        bridges.append(
+            BridgePacketV1(
+                bridge_packet_id=f"bridge-{rule.bridge_rule_id}",
+                bridge_rule_id=rule.bridge_rule_id,
+                source_domain_tag_ids=rule.source_domain_tag_ids,
+                target_tag_ids=rule.target_tag_ids,
+                shared_invariant=rule.shared_invariant,
+                transferable_control=rule.transferable_control,
+                required_conditions=rule.required_conditions,
+                breaking_conditions=rule.breaking_conditions,
+                suggested_queries=(f"reviewed query for {rule.bridge_rule_id}",),
+                evidence_card_ids=(card.evidence_card_id,),
+            )
+        )
+    parents = tuple(
+        ParentCandidateRefV1(
+            candidate_id=item.record.candidate_id,
+            structure_id=item.record.structure_id,
+            structure_artifact=_pointer(
+                f"artifact://inputs/catalog/{item.record.artifact.asset_name}",
+                item.artifact_bytes,
+                STRUCTURE_ARTIFACT_MEDIA_TYPE,
+            ),
+        )
+        for item in catalog.entries
+    )
+    inspiration_input = base.inspiration_input.model_copy(
+        update={"parent_candidates": parents}
+    )
+    return replace(
+        base,
+        inspiration_input=inspiration_input,
+        policy=InspirationPolicyV1(
+            transformation=TransformationBudgetV1(
+                max_plans=6,
+                max_plans_per_parent=1,
+            ),
+            selection=SelectionPolicyV1(top_k=5),
+        ),
+        bridge_packets=tuple(bridges),
+        evidence_cards=tuple(cards),
+        parents=tuple(
+            ParentStructureInput(reference=reference, artifact_bytes=item.artifact_bytes)
+            for reference, item in zip(parents, catalog.entries, strict=True)
+        ),
+    )
+
+
 def test_production_engine_executes_one_real_bounded_route_and_replays() -> None:
     engine = PymatgenTransformationEngine()
 
@@ -238,3 +311,71 @@ def test_evidence_coverage_is_computed_from_support_cards() -> None:
     with pytest.raises(PymatgenTransformationEngineError) as raised:
         engine.generate(replace(context, evidence_cards=(counter,)))
     assert raised.value.code == "BRIDGE_EVIDENCE_INCOMPLETE"
+
+
+def test_catalog_engine_executes_six_reviewed_routes_to_five_exact_outputs() -> None:
+    catalog = load_flat_band_parent_catalog_v1()
+    context = _catalog_context(catalog)
+    engine = PymatgenTransformationEngine(parent_catalog=catalog)
+
+    first = engine.generate(context)
+    assert first == engine.generate(context)
+    assert engine.component.version == "2-catalog-v1"
+    assert len(first) == 6
+    assert all(item.plan.status is TransformationStatus.STRUCTURE_VALID for item in first)
+    assert len({item.plan.output_structure_id for item in first}) == 5
+
+    records = {item.record.candidate_id: item.record for item in catalog.entries}
+    by_parent = {item.plan.parent_candidate_id: item for item in first}
+    bridge_rule_by_packet = {
+        packet.bridge_packet_id: packet.bridge_rule_id
+        for packet in context.bridge_packets
+    }
+    for candidate_id, draft in by_parent.items():
+        record = records[candidate_id]
+        assert draft.plan.route_sha256 == record.route_sha256
+        assert draft.plan.output_structure_id == record.expected_output_structure_id
+        assert draft.plan.output_structure_artifact is not None
+        assert draft.plan.output_structure_artifact.sha256 == record.expected_output_sha256
+        assert draft.parent_family_id == record.family_id
+        assert bridge_rule_by_packet[draft.plan.bridge_packet_ids[0]] == (
+            record.reviewed_bridge_rule_id
+        )
+
+    reference = by_parent["parent-candidate-tis2-1t-reference-v1"]
+    control = by_parent["parent-candidate-tisse-1t-control-v1"]
+    assert reference.plan.route_sha256 != control.plan.route_sha256
+    assert reference.plan.parent_structure_id != control.plan.parent_structure_id
+    assert reference.plan.output_structure_artifact == control.plan.output_structure_artifact
+    assert reference.artifact_bytes == control.artifact_bytes
+
+
+def test_catalog_engine_skips_unsupported_bridges_and_rejects_parent_drift() -> None:
+    catalog = load_flat_band_parent_catalog_v1()
+    context = _catalog_context(catalog)
+    engine = PymatgenTransformationEngine(parent_catalog=catalog)
+    supported = tuple(
+        packet
+        for packet in context.bridge_packets
+        if packet.bridge_rule_id
+        != "photonic-interference-to-electronic-flat-band"
+    )
+
+    drafts = engine.generate(replace(context, bridge_packets=supported))
+    assert len(drafts) == 4
+    assert all(
+        records.record.reviewed_bridge_rule_id
+        != "photonic-interference-to-electronic-flat-band"
+        for draft in drafts
+        for records in catalog.entries
+        if records.record.candidate_id == draft.plan.parent_candidate_id
+    )
+
+    first_parent = context.parents[0]
+    tampered = replace(
+        first_parent,
+        artifact_bytes=first_parent.artifact_bytes + b"# tampered\n",
+    )
+    with pytest.raises(PymatgenTransformationEngineError) as raised:
+        engine.generate(replace(context, parents=(tampered, *context.parents[1:])))
+    assert raised.value.code == "CATALOG_PARENT_MISMATCH"
