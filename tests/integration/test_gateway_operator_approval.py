@@ -67,6 +67,8 @@ def test_operator_grant_is_out_of_band_exact_and_one_time(
             started["run_id"],
             "--confirmation-reference",
             "ticket:human-confirmation-001",
+            "--service-mode",
+            "fixture",
         ]
     ) == 0
     assert "confirmation_reference" in capsys.readouterr().out
@@ -92,6 +94,8 @@ def test_operator_grant_is_out_of_band_exact_and_one_time(
                 started["run_id"],
                 "--confirmation-reference",
                 "ticket:human-confirmation-002",
+                "--service-mode",
+                "fixture",
             ]
         )
     assert replay.value.code == 2
@@ -140,6 +144,8 @@ def test_operator_can_explicitly_recover_a_grant_stranded_by_process_death(
             run_id,
             "--confirmation-reference",
             "ticket:initial-human-confirmation",
+            "--service-mode",
+            "fixture",
         ]
     ) == 0
     capsys.readouterr()
@@ -170,6 +176,8 @@ def test_operator_can_explicitly_recover_a_grant_stranded_by_process_death(
                 run_id,
                 "--confirmation-reference",
                 "ticket:recovery-human-confirmation",
+                "--service-mode",
+                "fixture",
                 "--recover-consumed-grant",
             ]
         )
@@ -185,6 +193,8 @@ def test_operator_can_explicitly_recover_a_grant_stranded_by_process_death(
             run_id,
             "--confirmation-reference",
             "ticket:recovery-human-confirmation",
+            "--service-mode",
+            "fixture",
             "--recover-consumed-grant",
             "--confirm-original-process-stopped",
         ]

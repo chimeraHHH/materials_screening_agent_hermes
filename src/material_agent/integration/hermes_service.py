@@ -1,17 +1,19 @@
-"""Trusted, fixture-backed Hermes service factory for the real offline runner.
+"""Trusted Hermes factories for the bounded inspiration runner.
 
-This is a deliberately narrow local pilot, not a general request-to-science
-planner.  The operator fixes the workspace and project on the MCP command line;
-tool inputs contain no paths.  Only one source-controlled flat-band fixture
-request is accepted, and it executes the real pinned pymatgen substitution
-engine through :class:`InspirationRunner`.
+The offline factory preserves the fixed P0.3 replay.  The public factory adds a
+deterministic request compiler and Crossref metadata I/O, but remains a narrow
+local beta rather than a general request-to-science planner.  The operator fixes
+the workspace and project on the MCP command line; tool inputs contain no paths,
+free structures, provider endpoints, or code.
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
+import os
 from collections import defaultdict
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -73,7 +75,12 @@ from material_agent.inspiration.runner import (
     InspirationRunner,
     verify_artifact_pointer,
 )
-from material_agent.inspiration.search import FixtureSearchAdapter
+from material_agent.inspiration.search import (
+    BoundedHttpTransport,
+    CrossrefPublicAdapter,
+    FixtureSearchAdapter,
+    SearchAdapterError,
+)
 from material_agent.inspiration.tag_graph import (
     curated_flat_band_tag_graph,
     plan_tag_queries,
@@ -83,6 +90,11 @@ from material_agent.inspiration.transformations import (
     substitution_registry_bytes,
 )
 from material_agent.inspiration.vectorizer import SIGNED_HASHING_SNAPSHOT
+from material_agent.integration.request_compiler import (
+    CompiledHermesInspirationRequest,
+    HermesInspirationRequestCompiler,
+    HermesRequestCompilationError,
+)
 from material_agent.retrieval.storage import LocalArtifactStore
 
 
@@ -131,6 +143,12 @@ _FIXTURE_FILE_SHA256 = {
     ),
 }
 _IDENTIFIER_ADAPTER = TypeAdapter(Identifier)
+_CROSSREF_CONTACT_EMAIL_ENV = "MATERIALS_CROSSREF_CONTACT_EMAIL"
+_PUBLIC_CROSSREF_MAX_RETRIES = 1
+_PUBLIC_CROSSREF_TIMEOUT_SECONDS = 20
+_PUBLIC_CROSSREF_MAX_RETRY_DELAY_SECONDS = 10.0
+_PUBLIC_CROSSREF_MAX_TOTAL_WAIT_SECONDS = 10.0
+_RETRYABLE_CROSSREF_HTTP_STATUSES = frozenset({408, 429, 500, 502, 503, 504})
 
 
 class HermesFixtureConfigurationError(RuntimeError):
@@ -389,6 +407,133 @@ class HermesFixturePreparer:
             policy=self.policy,
             tag_graph=self.tag_graph,
             target_tag_ids=("electronic-flat-band",),
+        )
+
+
+class HermesInspirationPreparer:
+    """Compile a request and seed only operator-owned, SHA-pinned inputs."""
+
+    def __init__(
+        self,
+        *,
+        store: LocalArtifactStore,
+        project_id: str,
+        parent_structure: bytes,
+        tag_graph: TagGraphV1,
+        search_adapter: CrossrefPublicAdapter,
+        compiler: HermesInspirationRequestCompiler,
+    ) -> None:
+        if search_adapter.max_retries != compiler.max_retries_per_query:
+            raise HermesFixtureConfigurationError(
+                "request compiler and Crossref retry budgets differ"
+            )
+        self.store = store
+        self.project_id = project_id
+        self.parent_structure = parent_structure
+        self.tag_graph = tag_graph
+        self.search_adapter = search_adapter
+        self.compiler = compiler
+
+    def compile(
+        self,
+        request: InspirationRunRequestV1,
+    ) -> CompiledHermesInspirationRequest:
+        return self.compiler.compile(request)
+
+    def prepare(
+        self,
+        *,
+        run_id: str,
+        request: InspirationRunRequestV1,
+    ) -> PreparedInspirationRun:
+        compiled = self.compile(request)
+        requirement_pointer = _pointer(
+            self.store.write_json(
+                f"inputs/requirements/{run_id}.json",
+                {
+                    "compiled_scope": {
+                        "expected_output_elements": (
+                            compiled.expected_output_elements
+                        ),
+                        "goal_role": "approval-bound-user-rationale-not-parsed",
+                        "goal_sha256": compiled.goal_sha256,
+                        "normalized_material_classes": (
+                            compiled.normalized_material_classes
+                        ),
+                        "normalized_target_features": (
+                            compiled.normalized_target_features
+                        ),
+                        "parent_catalog_entry_id": (
+                            compiled.parent_catalog_entry_id
+                        ),
+                        "physical_search_attempt_limit": (
+                            compiled.physical_search_attempt_limit
+                        ),
+                        "target_tag_ids": compiled.target_tag_ids,
+                    },
+                    "gateway_request": request.model_dump(mode="json"),
+                    "gateway_request_sha256": inspiration_request_sha256(request),
+                    "requirement_revision": 1,
+                    "schema_version": "materials-hermes-inspiration-requirement-v1",
+                },
+                immutable=True,
+            )
+        )
+        policy_pointer = _pointer(
+            self.store.write_json(
+                f"inputs/policies/{run_id}.json",
+                compiled.policy.model_dump(mode="json"),
+                immutable=True,
+            )
+        )
+        graph_pointer = _pointer(
+            self.store.write_json(
+                "inputs/tag_graph.json",
+                self.tag_graph.model_dump(mode="json"),
+                immutable=True,
+            )
+        )
+        registry_pointer = _pointer(
+            self.store.write_bytes(
+                "inputs/substitution_registry.json",
+                substitution_registry_bytes(DEFAULT_SUBSTITUTION_REGISTRY_V1),
+                media_type="application/json",
+                immutable=True,
+            )
+        )
+        parent_pointer = _pointer(
+            self.store.write_bytes(
+                "inputs/parent-tis2.cif",
+                self.parent_structure,
+                media_type=STRUCTURE_MEDIA_TYPE,
+                immutable=True,
+            )
+        )
+        inspiration_input = InspirationInputV1(
+            project_id=self.project_id,
+            request_id=request.submission_id,
+            run_id=run_id,
+            requirement_revision=1,
+            requirement_artifact=requirement_pointer,
+            parent_candidates=(
+                ParentCandidateRefV1(
+                    candidate_id="parent-candidate-tis2",
+                    structure_id="parent-structure-tis2",
+                    structure_artifact=parent_pointer,
+                ),
+            ),
+            policy_artifact=policy_pointer,
+            tag_graph_artifact=graph_pointer,
+            transformation_registry_artifact=registry_pointer,
+            search_fixture_artifact=None,
+            search_adapter=self.search_adapter.component,
+            vectorizer=SIGNED_HASHING_SNAPSHOT,
+        )
+        return PreparedInspirationRun(
+            inspiration_input=inspiration_input,
+            policy=compiled.policy,
+            tag_graph=self.tag_graph,
+            target_tag_ids=compiled.target_tag_ids,
         )
 
 
@@ -711,6 +856,78 @@ class _TrustedFixtureCompanion(OfflineInspirationCompanionAdapter):
         return super().start(run_id=run_id, request=request)
 
 
+class _TrustedInspirationCompanion(OfflineInspirationCompanionAdapter):
+    """Expose bounded compiler and transient-search failures at the public edge."""
+
+    def __init__(self, *, preparer: HermesInspirationPreparer, **kwargs: Any) -> None:
+        super().__init__(preparer=preparer, **kwargs)
+        self.inspiration_preparer = preparer
+
+    def start(
+        self,
+        *,
+        run_id: str,
+        request: InspirationRunRequestV1,
+    ) -> CompanionTransitionV1:
+        try:
+            self.inspiration_preparer.compile(request)
+        except HermesRequestCompilationError:
+            return CompanionTransitionV1(
+                state=FailedStateV1(
+                    public_error_code="UNSUPPORTED_INSPIRATION_REQUEST",
+                    public_message=(
+                        "the request is outside the bounded inspiration beta contract"
+                    ),
+                    retryable=False,
+                )
+            )
+        return super().start(run_id=run_id, request=request)
+
+    def _execute(
+        self,
+        *,
+        run_id: str,
+        request: InspirationRunRequestV1,
+        expected_execution_manifest_sha256: str | None = None,
+    ) -> CompanionTransitionV1:
+        try:
+            return super()._execute(
+                run_id=run_id,
+                request=request,
+                expected_execution_manifest_sha256=(
+                    expected_execution_manifest_sha256
+                ),
+            )
+        except SearchAdapterError as error:
+            if not (
+                error.code in {"NETWORK_ERROR", "WAIT_BUDGET_EXCEEDED"}
+                or error.http_status in _RETRYABLE_CROSSREF_HTTP_STATUSES
+            ):
+                raise
+            return CompanionTransitionV1(
+                state=FailedStateV1(
+                    public_error_code="EXTERNAL_SEARCH_UNAVAILABLE",
+                    public_message=(
+                        "public metadata search is temporarily unavailable; "
+                        "submit a new run later"
+                    ),
+                    retryable=True,
+                )
+            )
+
+
+class _ApprovalBoundInspirationRunner(InspirationRunner):
+    """Expose every injected execution component to the approval manifest."""
+
+    @property
+    def execution_components(self):
+        return (
+            *super().execution_components,
+            self.search_adapter.component,
+            self.vectorizer,
+        )
+
+
 def resolve_hermes_project_root(
     settings: GatewayServerSettings,
     *,
@@ -843,4 +1060,93 @@ def create_hermes_fixture_service(
         companion=companion,
         artifact_reader=store,
         action_authorizer=action_authorizer,
+    )
+
+
+def create_hermes_inspiration_service(
+    settings: GatewayServerSettings,
+    *,
+    transport: BoundedHttpTransport | None = None,
+    sleeper: Callable[[float], None] | None = None,
+    wall_clock: Callable[[], float] | None = None,
+    monotonic_clock: Callable[[], float] | None = None,
+) -> MaterialsGatewayService:
+    """Build the approval-gated Crossref service for the bounded local beta.
+
+    The optional transport and clock seams exist for deterministic offline tests;
+    the Hermes/MCP factory loader supplies only ``settings``.  Crossref contact
+    identity is operator-owned environment state and is never copied into an
+    Artifact or component digest.
+    """
+
+    project_root = resolve_hermes_project_root(settings, create=True)
+    assets = _load_fixture_assets()
+    store = LocalArtifactStore(project_root)
+    contact_email = os.environ.get(_CROSSREF_CONTACT_EMAIL_ENV)
+    if contact_email == "":
+        raise HermesFixtureConfigurationError(
+            "Crossref contact email environment value is invalid"
+        )
+    adapter_kwargs: dict[str, Any] = {
+        "contact_email": contact_email,
+        "max_results": 1,
+        "max_retries": _PUBLIC_CROSSREF_MAX_RETRIES,
+        "max_retry_delay_seconds": (
+            _PUBLIC_CROSSREF_MAX_RETRY_DELAY_SECONDS
+        ),
+        "max_total_wait_seconds": _PUBLIC_CROSSREF_MAX_TOTAL_WAIT_SECONDS,
+        "retry_backoff_seconds": 1.0,
+        "timeout_seconds": _PUBLIC_CROSSREF_TIMEOUT_SECONDS,
+        "transport": transport,
+    }
+    if sleeper is not None:
+        adapter_kwargs["sleeper"] = sleeper
+    if wall_clock is not None:
+        adapter_kwargs["wall_clock"] = wall_clock
+    if monotonic_clock is not None:
+        adapter_kwargs["monotonic_clock"] = monotonic_clock
+    try:
+        search_adapter = CrossrefPublicAdapter(**adapter_kwargs)
+    except (TypeError, ValueError) as exc:
+        raise HermesFixtureConfigurationError(
+            "Crossref public adapter configuration is invalid"
+        ) from exc
+
+    compiler = HermesInspirationRequestCompiler(
+        max_retries_per_query=_PUBLIC_CROSSREF_MAX_RETRIES
+    )
+    tag_graph = curated_flat_band_tag_graph()
+    preparer = HermesInspirationPreparer(
+        store=store,
+        project_id=settings.project_id,
+        parent_structure=assets.parent_structure,
+        tag_graph=tag_graph,
+        search_adapter=search_adapter,
+        compiler=compiler,
+    )
+    runner = _ApprovalBoundInspirationRunner(
+        store=store,
+        search_adapter=search_adapter,
+        transformation_engine=PymatgenTransformationEngine(),
+    )
+    companion = _TrustedInspirationCompanion(
+        runner=runner,
+        preparer=preparer,
+        projector=HermesFixtureProjector(store),
+    )
+    gateway_database = trusted_state_database_path(
+        project_root,
+        GATEWAY_STATE_DATABASE_NAME,
+        must_exist=False,
+    )
+    approval_database = trusted_state_database_path(
+        project_root,
+        OPERATOR_APPROVAL_DATABASE_NAME,
+        must_exist=False,
+    )
+    return MaterialsGatewayService(
+        repository=SqliteGatewayRepository(gateway_database),
+        companion=companion,
+        artifact_reader=store,
+        action_authorizer=SqliteOneTimeActionGrantStore(approval_database),
     )

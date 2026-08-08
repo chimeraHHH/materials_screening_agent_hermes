@@ -60,6 +60,7 @@ def _grant_requirement_freeze(
         settings=settings,
         run_id=run_id,
         confirmation_reference=confirmation_reference,
+        service_mode="fixture",
     )
     assert receipt["run_id"] == run_id
 
