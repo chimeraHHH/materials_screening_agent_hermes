@@ -2,7 +2,7 @@
 
 - 版本：v0.2
 - 日期：2026-08-08
-- 状态：M0–M5 已完成，公开发布收口中
+- 状态：已完成（单用户本机 pilot）
 - 依据：[`docs/system-plan.md`](../../docs/system-plan.md)、
   [`docs/architecture.md`](../../docs/architecture.md)、
   [`ADR-0001`](../../docs/adr/0001-hermes-platform-and-inspiration-boundary.md) 与
@@ -109,7 +109,7 @@ Hermes 是上层 Agent 控制面，负责：
 - [x] Hermes 实机调用该 capability，最终得到非空、可审计 `InspirationBundle`；
 - [x] 完整离线 Gate、相关 live Gate、`pip check` 和 `git diff --check` 通过；
 - [x] README、主计划、本计划和实机运行记录与当前源码一致；
-- [ ] 所有里程碑提交已推送到 `hermes-origin/main`。
+- [x] 所有里程碑提交已推送到 `hermes-origin/main`。
 
 ## 2. 分层架构与状态所有权
 
@@ -434,7 +434,7 @@ stages/inspiration/<run_id>/
 - [x] 保存命令、环境、版本、运行 ID、Artifact hash、成本和报告；
 - [x] 完整离线 Gate、相关 live Gate、`pip check`、secret/diff 检查通过；
 - [x] 更新 README/计划并推送 MCP pilot 文档里程碑；
-- [x] 自然语言 turn 通过后补充证据并推送最终里程碑分支。
+- [x] 自然语言 turn 通过后补充证据并合并到公开 `hermes-origin/main`。
 
 提交原则：每个 M 至少一个可回退提交；跨越多个 M 的大提交禁止。代码与契约、测试、
 文档可以分开提交，但任何提交不得把未实现 roadmap 写成当前能力。
@@ -627,3 +627,12 @@ stages/inspiration/<run_id>/
 - 最终回归：主环境 `668 passed, 13 skipped, 362 warnings`，隔离 Gateway MCP
   `4 passed`，三环境 dependency check、Skill quick validation、bundle verifier、四工具 MCP
   discovery 与 `git diff --check` 均通过。
+
+### 2026-08-08：公开发布 closeout
+
+- 公开仓库：`chimeraHHH/materials_screening_agent_hermes`，visibility `PUBLIC`，默认分支
+  `main`；
+- PR `#1` 从 Draft 切为 Ready，GitGuardian 成功后以 merge commit
+  `e044df1605b8f3711f6ab9af4e6c7d37f2967d35` 合入；
+- 合并内容包含所有 M0–M5 实现、`d95579c` Skill 回归和 `1184d56` 授权运行证据；
+- 本 closeout 只更新发布事实，不扩大单用户 fixed-request pilot 的能力或科学 claim。

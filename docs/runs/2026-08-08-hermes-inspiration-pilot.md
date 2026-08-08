@@ -357,6 +357,8 @@ git diff --check
 - final durable public Crossref Gate: `2 passed in 5.18s`;
 - authorized natural-language Hermes main Gate: passed with one persistent run,
   one consumed grant, and one verified result;
+- public PR `#1`: GitGuardian succeeded and merge commit
+  `e044df1605b8f3711f6ab9af4e6c7d37f2967d35` reached the public default branch;
 - `git diff --check`: passed before the documentation milestone commit.
 
 ## Current release boundary
@@ -364,7 +366,8 @@ git diff --check
 Provider authorization and the natural-language Gate are no longer blockers.
 The OAuth credential stays in the ignored Hermes runtime credential store; it
 was not inspected or included in the repository. The tracked diff contains no
-credential material.
+credential material. The implementation and evidence are published in the
+public `chimeraHHH/materials_screening_agent_hermes` repository.
 
 The result remains a single-user, local, fixed-request pilot. Its natural run is
 offline/fixture-backed; public Crossref search is a separate live Gate. It has no
