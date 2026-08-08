@@ -736,9 +736,9 @@ CLI 规则：
 
 当前可运行命令、参数和示例以[仓库 README](../README.md)为准；未来阶段的命令只有在相应 capability 实现后才可视为可用。
 
-### 10.1 Hermes Tool 与 pilot 入口
+### 10.1 Hermes Tool 与 beta/pilot 入口
 
-Hermes source-controlled pilot profile 首版已实现且只允许四个粗粒度工具：
+Hermes source-controlled production profile 只允许四个粗粒度工具：
 
 ```text
 materials_inspiration_run
@@ -758,12 +758,15 @@ DFT/ML/many-body submit。
 .venv-gateway/bin/python -m material_agent.integration.mcp_server \
   --workspace /absolute/path/to/a/bounded/workspace \
   --project materials-inspiration \
-  --service-factory material_agent.integration.hermes_service:create_hermes_fixture_service
+  --service-factory material_agent.integration.hermes_service:create_hermes_inspiration_service
 .venv-gateway/bin/python -m material_agent.integration.operator_approval --help
 ```
 
-固定 profile、启动参数和可复现实机 smoke 见[仓库 README](../README.md)；首个非空结果、
-hash 与成本见[pilot 运行记录](./runs/2026-08-08-hermes-inspiration-pilot.md)。
+生产 factory 对严格 structured constraints 做确定性编译，并在同一审批绑定 run 中执行
+Crossref metadata；自然语言 goal 只保存并参与审批 hash，不推断科学范围。固定 fixture factory
+仅保留给显式离线 replay。profile、启动参数和 smoke 见[仓库 README](../README.md)；首个
+fixed-pilot 非空结果、hash 与成本见
+[pilot 运行记录](./runs/2026-08-08-hermes-inspiration-pilot.md)。
 
 ## 11. VASPilot 与未来后端集成
 

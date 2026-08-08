@@ -18,12 +18,16 @@ otherwise it remains fail-closed and unavailable. Agent03 has a v1 mock
 controller, and Agent04 has an MVP mock controller. Only the real, configured
 Agent02 worker may produce L2 ML evidence; every test fixture remains mock.
 
-## Hermes inspiration pilot
+## Hermes inspiration beta
 
-The current pilot is deliberately narrow. It accepts one source-controlled
-layered transition-metal dichalcogenide request and executes a pinned TiS2 →
-TiSe2-equivalent-site proposal. It is an auditable engineering vertical slice,
-not a general scientific planner. The output remains a hypothesis:
+The production profile is deliberately narrow. It accepts reviewed structured
+flat/narrow electronic-band constraints, preserves natural-language goals only
+as approval-bound rationale, and executes bounded Crossref metadata search in
+the same persistent Gateway run. Unsupported targets, conflicting Ti/Se route
+constraints, and insufficient budgets fail before approval or network access.
+The original exact-request fixture factory remains available only for explicit
+offline replay. Neither path is a general scientific planner. Every output
+remains a hypothesis:
 `STRUCTURE_VALID` means structural QC only, the target property is `UNKNOWN`,
 and this repository performs no novelty, patent, or prior-art assessment.
 
@@ -46,7 +50,8 @@ materials_run_act
 materials_result_get
 ```
 
-The natural-language Gate has run through the authorized Hermes provider path.
+The first fixed-pilot natural-language Gate ran through the authorized Hermes
+provider path.
 Hermes created and resumed one persistent run, stopped for the real user
 decision, consumed an out-of-band one-time operator grant, and returned one
 hash-verified TiSe2 proposal. The Gateway state was honestly `PARTIAL` while the
@@ -82,7 +87,8 @@ an input for another `submit` call:
   --workspace workspace/<fresh-pilot-workspace> \
   --project materials-inspiration \
   --run-id <run-id-from-submit> \
-  --confirmation-reference <trusted-user-decision-reference>
+  --confirmation-reference <trusted-user-decision-reference> \
+  --service-mode fixture
 
 .venv-gateway/bin/python integrations/hermes/scripts/run_gateway_pilot.py finish \
   --workspace workspace/<fresh-pilot-workspace> \
@@ -959,8 +965,8 @@ PYTHONDONTWRITEBYTECODE=1 MPLCONFIGDIR=/tmp/material-agent-mpl \
 git diff --check
 ```
 
-The historical closeout result was `337 passed, 7 skipped`. The current
-Hermes inspiration release result is `668 passed, 13 skipped`; the skip reasons
+The historical closeout result was `337 passed, 7 skipped`. The P3.1
+generalization checkpoint result is `715 passed, 14 skipped`; the skip reasons
 are the isolated MCP/stdio checks, opt-in Crossref/LLM/Materials Project/NOMAD
 live probes, and real-ML tests. Do not run the live MP Gate in this offline
 audit: it requires network access and a secret `MP_API_KEY`, neither of which is

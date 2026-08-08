@@ -17,13 +17,29 @@ Required inputs:
 top-level fields fail validation before a run is created. Correct a malformed
 call and reuse the same stable `submission_id`.
 
-The source-controlled pilot factory currently accepts only the complete frozen
-request shown in `SKILL.md`, including every constraint and budget field, with
-only `submission_id` selected by the caller. Its exact goal is:
-`Find bounded mechanism-guided structure proposals for a layered transition-metal compound.`
-Do not paraphrase the goal or vary the frozen constraints for a matching request.
-Report `UNSUPPORTED_FIXTURE_REQUEST` for other intents instead of changing the
-user's requirements to force a match.
+The source-controlled production factory compiles a narrow structured request
+family. `goal` is approval-bound rationale: it is preserved and hashed but never
+parsed to infer scope. Scientific execution comes only from these reviewed
+constraints:
+
+- `target_features` is non-empty and contains only `electronic flat band`,
+  `electronic narrow band`, `flat electronic band`, or
+  `narrow electronic band`;
+- `material_classes`, when present, contains only
+  `layered transition metal compound`,
+  `layered transition metal dichalcogenide`, or
+  `transition metal dichalcogenide`;
+- case, whitespace, and hyphens are normalized; fuzzy matching is forbidden;
+- `dimensionality` is exactly `2D`;
+- the pinned TiS2-to-TiSe2 route means required elements are a subset of Ti/Se
+  and excluded elements do not include Ti or Se;
+- the budget allows at least six physical search attempts, three unique
+  documents, three passages, zero model calls, and 180 seconds; full PDFs and
+  expensive computation remain disabled.
+
+Unsupported structured requests fail before approval and network access with
+`UNSUPPORTED_INSPIRATION_REQUEST`. Do not change the user's requirements to make
+them pass.
 
 The same `submission_id` and canonical request must return the same run. Reusing
 the ID with different content is a conflict and must not be worked around by the
@@ -45,6 +61,12 @@ or the action is not currently legal. The production Gateway also atomically
 consumes an out-of-band operator grant bound to the request, complete interaction
 (including the frozen execution-manifest hash), and exact action. A caller-set
 `confirmed_by_user` field is necessary schema data, never proof of approval.
+
+If Crossref exhausts bounded transient retries, the run terminates with
+`EXTERNAL_SEARCH_UNAVAILABLE` and `retryable=true`. It has already consumed its
+approval and must not be replayed automatically. After an explicit user decision,
+create a new submission with a new `submission_id` and obtain a fresh approval.
+Crossref schema drift and other permanent adapter failures are nonretryable.
 
 ## `materials_result_get`
 
@@ -74,3 +96,8 @@ unavailable provider cost is not evidence that provider execution was free.
 
 Never introduce novelty, patentability, or prior-art fields into a request or
 response.
+
+The adapter reads only bounded Crossref metadata and abstracts; it never follows
+full-text links. `MATERIALS_CROSSREF_CONTACT_EMAIL` is optional operator-owned
+environment state for Crossref's polite pool and must never enter an Artifact,
+manifest, report, or model-visible result.

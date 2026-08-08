@@ -12,10 +12,8 @@ from material_agent.gateway import (
     InspirationRunRequestV1,
     inspiration_request_sha256,
 )
-from material_agent.integration.hermes_service import (
-    HERMES_FIXTURE_CONSTRAINTS,
-    HERMES_FIXTURE_GOAL,
-    HermesFixturePreparer,
+from material_agent.integration.request_compiler import (
+    HermesInspirationRequestCompiler,
 )
 
 
@@ -25,8 +23,8 @@ SKILL_PATH = (
     / "integrations/hermes/profiles/materials-inspiration/skills"
     / "materials-inspiration/SKILL.md"
 )
-PILOT_REQUEST_SHA256 = (
-    "e45c8f641a21411c0cb60c78ee9597243cabd17a954ee769c897876008147cba"
+SUPPORTED_REQUEST_SHA256 = (
+    "bd9841221e60480915da9641b4db52bbf200d6c71d596f3c1f5727384284d244"
 )
 
 
@@ -49,7 +47,7 @@ def test_hermes_bundle_verifier_binds_nested_budget_guidance() -> None:
     assert completed.stdout == "Hermes bundle valid\n"
 
 
-def test_skill_example_is_the_complete_supported_fixture_request() -> None:
+def test_skill_example_compiles_the_complete_supported_public_request() -> None:
     skill_text = SKILL_PATH.read_text(encoding="utf-8")
     match = re.search(
         r"Use this shape:\n\n   ```json\n(?P<payload>.*?)\n   ```",
@@ -60,7 +58,15 @@ def test_skill_example_is_the_complete_supported_fixture_request() -> None:
     example = json.loads(textwrap.dedent(match.group("payload")))
     request = InspirationRunRequestV1.model_validate_json(json.dumps(example))
 
-    assert request.goal == HERMES_FIXTURE_GOAL
-    assert request.constraints == HERMES_FIXTURE_CONSTRAINTS
-    assert HermesFixturePreparer.supports(request)
-    assert inspiration_request_sha256(request) == PILOT_REQUEST_SHA256
+    compiled = HermesInspirationRequestCompiler(
+        max_retries_per_query=1
+    ).compile(request)
+
+    assert request.goal == (
+        "Find a reviewable narrow-band mechanism using bounded public metadata."
+    )
+    assert compiled.policy.network_access is True
+    assert compiled.target_tag_ids == ("electronic-flat-band",)
+    assert compiled.expected_output_elements == ("Se", "Ti")
+    assert compiled.physical_search_attempt_limit == 6
+    assert inspiration_request_sha256(request) == SUPPORTED_REQUEST_SHA256
