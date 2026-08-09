@@ -3,8 +3,8 @@
 ## 当前活动轨道：Flat/Narrow-Band Research Benchmark
 
 - [x] 冻结研究计划 v0：范围、B0/E1/E2/E3、预算、指标、统计 Gate 和停止条件
-- [ ] 提交并推送工程基线，建立 public Draft PR
-- [ ] 完成开源数据源正式审计并冻结 source catalog
+- [x] 提交并推送工程基线，建立 public Draft PR #4
+- [x] 完成 20-source 开源数据审计并冻结 source catalog v1
 - [ ] 完成预注册、标注手册和 30-case Pilot
 - [ ] 通过双专家一致性 Gate 并冻结 120-case benchmark
 - [ ] 依次完成 B0、E1、E2、E3、融合、locked test 和科研审查

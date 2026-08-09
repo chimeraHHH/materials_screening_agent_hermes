@@ -8,6 +8,10 @@ Scope: flat-band and narrow-band materials inspiration only
 
 Explicit exclusion: novelty, prior-art, patentability, and validated-property claims
 
+Source audit v1 is frozen in [`SOURCE_AUDIT.md`](SOURCE_AUDIT.md). Its
+machine-readable catalog SHA-256 is
+`57c24de8f0cf616205b03ef16231def711f2dfa9fcac86d94beede9c01b0bb1f`.
+
 ## Objective
 
 Measure whether bounded semantic reasoning, multi-source metadata retrieval, and
@@ -46,7 +50,8 @@ scientific usefulness.
   packets, reasons locally, and returns a strict structured mechanism mapping.
   No external embedding API or trainable model is introduced in the first pass.
 - **E2 multi-source retrieval**: add only sources that pass the license/access
-  audit, while retaining the same total physical-request budget as B0.
+  audit, while retaining the same total physical-request budget as B0. The
+  frozen E2-A sources are Crossref + OpenAlex + arXiv; E2-B adds OpenAIRE.
 - **E3 cross-domain Tag mechanism**: generate candidates through frozen mechanism
   families and adjacent-domain transfer rules; Tags are proposed offline and
   cannot self-promote into the production graph.
@@ -118,6 +123,9 @@ formal Tag release requires expert decisions and a versioned graph hash.
 - Stop and reassess if the pilot agreement Gate fails twice after one manual-only
   revision, if licenses prevent a reproducible benchmark, or if improvements
   require unequal search budgets or hidden-label leakage.
+- Source-side candidate, motif, cluster, or model outputs are sampling strata,
+  never gold labels. Gold judgments come only from the preregistered independent
+  expert/adjudication process.
 
 ## Reproducibility and publication boundary
 

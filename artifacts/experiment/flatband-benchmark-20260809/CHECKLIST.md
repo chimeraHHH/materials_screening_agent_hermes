@@ -8,16 +8,16 @@ Novelty is outside scope.
 - [x] Freeze research scope, systems, metrics, budgets, and stop rules in plan v0
 - [x] Audit the dirty worktree for secrets, generated files, and unrelated changes
 - [x] Run the complete offline engineering Gate
-- [ ] Correct superseded production documentation
-- [ ] Commit and push `research/inspiration-benchmark-v0`
-- [ ] Open a public Draft PR with explicit scientific and production limitations
+- [x] Correct superseded production documentation
+- [x] Commit and push `research/inspiration-benchmark-v0`
+- [x] Open public Draft PR #4 with explicit scientific and production limitations
 
 ## Open-data audit
 
-- [ ] Search official sources for flat/narrow-band labels, material records, and literature metadata
-- [ ] Record license, redistribution, access/auth, rate limits, version, update cadence, and useful fields
-- [ ] Define include/exclude decisions and cache/download boundaries
-- [ ] Freeze `source_catalog` and its SHA before corpus construction
+- [x] Search official sources for flat/narrow-band labels, material records, and literature metadata
+- [x] Record license, redistribution, access/auth, rate limits, version, update cadence, and useful fields
+- [x] Define include/exclude decisions and cache/download boundaries
+- [x] Freeze `source_catalog` and its SHA before corpus construction
 
 ## Preregistration and annotation
 
