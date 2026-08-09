@@ -97,7 +97,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          .venv/bin/python -m pytest -q -p no:cacheprovider
+          .venv/bin/python -m pytest -q -p no:cacheprovider \
+            --ignore-glob='tests/unit/test_flatband_research_*.py'
 
       - name: Build the pinned Hermes environment
         timeout-minutes: 20
@@ -177,3 +178,70 @@ jobs:
           fi
           git cat-file -e "${base_sha}^{commit}"
           git diff --check "$base_sha..HEAD"
+
+  research-contract-gate:
+    name: Flat-band research contract gate (${{ matrix.shard }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 210
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - shard: analysis
+            tests: >-
+              tests/unit/test_flatband_research_analysis.py
+              tests/unit/test_flatband_research_statistics.py
+              tests/unit/test_flatband_research_metrics.py
+          - shard: blinding-gold
+            tests: >-
+              tests/unit/test_flatband_research_blinding.py
+              tests/unit/test_flatband_research_gold.py
+          - shard: cases-experts
+            tests: >-
+              tests/unit/test_flatband_research_cases.py
+              tests/unit/test_flatband_research_experts.py
+          - shard: execution
+            tests: tests/unit/test_flatband_research_execution.py
+          - shard: leakage-contracts-structure
+            tests: >-
+              tests/unit/test_flatband_research_contracts.py
+              tests/unit/test_flatband_research_leakage.py
+              tests/unit/test_flatband_research_structure_grouping.py
+
+    steps:
+      - name: Check out the exact revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          show-progress: false
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          check-latest: false
+          python-version: "3.11"
+
+      - name: Set up pinned uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          enable-cache: false
+          python-version: "3.11"
+          version: "0.12.3"
+
+      - name: Build the locked main environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          uv venv --python "$pythonLocation" .venv
+          uv pip sync --python .venv/bin/python requirements.lock
+          uv pip install --python .venv/bin/python --no-deps --editable .
+
+      - name: Run the research contract shard
+        timeout-minutes: 195
+        shell: bash
+        run: |
+          set -euo pipefail
+          .venv/bin/python -m pytest -q -p no:cacheprovider ${{ matrix.tests }}

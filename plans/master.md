@@ -86,6 +86,12 @@ case 自报唯一 mechanism group，因为两者都会制造虚假的独立样�
   bundle、`pip check`、全仓 `py_compile` 和 diff check 均通过。该证据只说明实现检查点
   自洽；未运行网络、真实模型、真实 30-case Pilot 或专家标注，不构成科研性能证据或
   Pilot GO。
+- **CI 执行边界：** Draft PR head `e0a9f6b` 的首次远端 Gate 没有出现断言失败，但单一
+  pytest step 在 `22%` 处触发 60 分钟硬超时，后置步骤因此未执行。普通/生产 suite 与
+  平带科研合同现按用途拆分：前者本地为 `1008 passed, 15 skipped`（`112.31 s`）；后者
+  283 个测试节点按 analysis、blinding/gold、cases/experts、execution、
+  leakage/contracts/structure 五个互斥分片并行运行。分片只改变 CI 调度，不删除断言；
+  远端新 head 全部通过前，Draft PR 继续视为 `UNSTABLE`。
 - **已闭合的设计反例：** final case/hash 包含结构分组结果会形成输入输出循环；
   release-local structure group ID 不能证明 calibration、R1、R2 之间无近重复。
   二维真空厚度、全局平移和数值微扰对 3D space-group/StructureMatcher 的影响，
