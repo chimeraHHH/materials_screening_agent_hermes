@@ -54,9 +54,12 @@ class StaticCrossrefTransport:
         url: str,
         *,
         headers: Mapping[str, str],
-        timeout_seconds: int,
+        timeout_seconds: float,
         max_response_bytes: int,
+        deadline_monotonic: float | None = None,
+        max_physical_requests: int | None = None,
     ) -> bytes:
+        del deadline_monotonic, max_physical_requests
         self.calls.append(
             {
                 "url": url,

@@ -8,6 +8,7 @@ from urllib.parse import parse_qs, urlsplit
 
 import pytest
 
+from material_agent.inspiration import search as inspiration_search
 from material_agent.inspiration import (
     ArtifactPointerV1,
     SearchQueryKind,
@@ -113,9 +114,12 @@ class _RecordingTransport:
         url: str,
         *,
         headers: dict[str, str],
-        timeout_seconds: int,
+        timeout_seconds: float,
         max_response_bytes: int,
+        deadline_monotonic: float | None = None,
+        max_physical_requests: int | None = None,
     ) -> bytes:
+        del deadline_monotonic, max_physical_requests
         self.calls.append(
             {
                 "url": url,
@@ -170,6 +174,62 @@ class _FakeClock:
         self.sleeps.append(seconds)
         self.monotonic_seconds += seconds
         self.wall_seconds += seconds
+
+
+class _HttpResponse:
+    def __init__(
+        self,
+        url: str,
+        payload: bytes = b"{}",
+        *,
+        content_type: str = "application/json",
+        content_length: str | None = None,
+    ) -> None:
+        self.url = url
+        self.payload = payload
+        self.headers = Message()
+        self.headers["Content-Type"] = content_type
+        if content_length is not None:
+            self.headers["Content-Length"] = content_length
+        self.read_sizes: list[int] = []
+
+    def __enter__(self) -> _HttpResponse:
+        return self
+
+    def __exit__(self, *args: object) -> None:
+        del args
+
+    def geturl(self) -> str:
+        return self.url
+
+    def read(self, size: int) -> bytes:
+        self.read_sizes.append(size)
+        return self.payload[:size]
+
+
+class _UrlOpenSequence:
+    def __init__(self, outcomes: list[_HttpResponse | HTTPError]) -> None:
+        self.outcomes = list(outcomes)
+        self.calls: list[tuple[str, float]] = []
+
+    def __call__(self, request: object, *, timeout: float) -> _HttpResponse:
+        self.calls.append((str(getattr(request, "full_url")), timeout))
+        outcome = self.outcomes.pop(0)
+        if isinstance(outcome, HTTPError):
+            raise outcome
+        return outcome
+
+
+def _redirect_error(
+    source_url: str,
+    location: str | None,
+    *,
+    status: int = 302,
+) -> HTTPError:
+    headers = Message()
+    if location is not None:
+        headers["Location"] = location
+    return HTTPError(source_url, status, "injected redirect", headers, None)
 
 
 def transient_http_error(
@@ -338,6 +398,372 @@ def test_url_transport_marks_permanent_4xx_without_retry_metadata_loss(
     assert raised.value.code == "HTTP_ERROR"
     assert raised.value.http_status == 404
     assert raised.value.retry_after == "7"
+
+
+def test_default_url_opener_has_redirect_following_disabled() -> None:
+    handlers = [
+        handler
+        for handler in inspiration_search._NO_REDIRECT_OPENER.handlers
+        if isinstance(handler, inspiration_search._RejectRedirectHandler)
+    ]
+
+    assert len(handlers) == 1
+    assert handlers[0].redirect_request(None, None, 302, None, None, None) is None
+
+
+@pytest.mark.parametrize(
+    "redirect_url",
+    [
+        "http://api.crossref.org/v1/works",
+        "https://evil.example/v1/works",
+        "https://api.crossref.org:444/v1/works",
+    ],
+)
+def test_url_transport_rejects_untrusted_redirect_before_second_request(
+    monkeypatch: pytest.MonkeyPatch,
+    redirect_url: str,
+) -> None:
+    start_url = "https://api.crossref.org/v1/works"
+    urlopen = _UrlOpenSequence(
+        [
+            _redirect_error(start_url, redirect_url),
+            _HttpResponse(redirect_url),
+        ]
+    )
+    monkeypatch.setattr("material_agent.inspiration.search.urlopen", urlopen)
+
+    with pytest.raises(SearchAdapterError) as raised:
+        UrlLibBoundedTransport().get(
+            start_url,
+            headers={"Accept": "application/json"},
+            timeout_seconds=7,
+            max_response_bytes=100,
+        )
+
+    assert raised.value.code == "UNTRUSTED_METADATA_REDIRECT"
+    assert urlopen.calls == [(start_url, 7)]
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://api.crossref.org/v1/works",
+        "https://evil.example/v1/works",
+        "https://api.crossref.org:444/v1/works",
+    ],
+)
+def test_url_transport_validates_initial_scheme_host_and_port_before_request(
+    monkeypatch: pytest.MonkeyPatch,
+    url: str,
+) -> None:
+    urlopen = _UrlOpenSequence([])
+    monkeypatch.setattr("material_agent.inspiration.search.urlopen", urlopen)
+
+    with pytest.raises(SearchAdapterError) as raised:
+        UrlLibBoundedTransport().get(
+            url,
+            headers={"Accept": "application/json"},
+            timeout_seconds=1,
+            max_response_bytes=100,
+        )
+
+    assert raised.value.code == "UNTRUSTED_METADATA_ENDPOINT"
+    assert urlopen.calls == []
+
+
+@pytest.mark.parametrize("status", [301, 302, 303, 307, 308])
+def test_url_transport_follows_bounded_same_host_redirect_explicitly(
+    monkeypatch: pytest.MonkeyPatch,
+    status: int,
+) -> None:
+    start_url = "https://api.crossref.org/v1/works"
+    target_url = "https://api.crossref.org/v1/works?cursor=next"
+    response = _HttpResponse(target_url, b'{"status":"ok"}')
+    urlopen = _UrlOpenSequence(
+        [
+            _redirect_error(
+                start_url,
+                "/v1/works?cursor=next#ignored",
+                status=status,
+            ),
+            response,
+        ]
+    )
+    monkeypatch.setattr("material_agent.inspiration.search.urlopen", urlopen)
+
+    result = UrlLibBoundedTransport().get(
+        start_url,
+        headers={"Accept": "application/json"},
+        timeout_seconds=9,
+        max_response_bytes=100,
+    )
+
+    assert result.payload == b'{"status":"ok"}'
+    assert tuple(hop.outcome for hop in result.physical_hops) == (
+        "redirect",
+        "success",
+    )
+    assert urlopen.calls == [(start_url, 9), (target_url, 9)]
+    assert response.read_sizes == [101]
+
+
+def test_crossref_adapter_audits_every_redirect_as_a_physical_attempt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    start_url = "https://api.crossref.org/v1/works"
+    target_url = "https://api.crossref.org/v1/works?cursor=next"
+    urlopen = _UrlOpenSequence(
+        [
+            _redirect_error(start_url, target_url),
+            _HttpResponse(target_url, crossref_response_bytes()),
+        ]
+    )
+    monkeypatch.setattr("material_agent.inspiration.search.urlopen", urlopen)
+    adapter = CrossrefPublicAdapter(
+        transport=UrlLibBoundedTransport(),
+        max_retries=0,
+    )
+
+    page = adapter.search(query(), max_response_bytes=10_000)
+
+    assert tuple(attempt.outcome for attempt in page.attempts) == (
+        "redirect",
+        "success",
+    )
+    assert tuple(attempt.attempt_number for attempt in page.attempts) == (1, 2)
+    assert tuple(attempt.http_status for attempt in page.attempts) == (302, 200)
+
+
+def test_url_transport_recomputes_timeout_for_each_redirect_hop(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    start_url = "https://api.crossref.org/v1/works"
+    target_url = "https://api.crossref.org/v1/works?cursor=next"
+    clock = _FakeClock()
+    sequence = _UrlOpenSequence(
+        [
+            _redirect_error(start_url, target_url),
+            _HttpResponse(target_url, b"{}"),
+        ]
+    )
+
+    def advancing_urlopen(request: object, *, timeout: float) -> _HttpResponse:
+        try:
+            return sequence(request, timeout=timeout)
+        finally:
+            clock.monotonic_seconds += 0.4
+
+    monkeypatch.setattr(
+        "material_agent.inspiration.search.urlopen",
+        advancing_urlopen,
+    )
+
+    result = UrlLibBoundedTransport(
+        monotonic_clock=clock.monotonic
+    ).get(
+        start_url,
+        headers={},
+        timeout_seconds=9,
+        max_response_bytes=100,
+        deadline_monotonic=1.0,
+    )
+
+    assert result.payload == b"{}"
+    assert sequence.calls[0][1] == 1.0
+    assert sequence.calls[1][1] == pytest.approx(0.6)
+
+
+def test_crossref_redirect_cannot_exceed_physical_request_budget(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    start_url = "https://api.crossref.org/v1/works"
+    target_url = "https://api.crossref.org/v1/works?cursor=next"
+    urlopen = _UrlOpenSequence(
+        [
+            _redirect_error(start_url, target_url),
+            _HttpResponse(target_url, crossref_response_bytes()),
+        ]
+    )
+    monkeypatch.setattr("material_agent.inspiration.search.urlopen", urlopen)
+    adapter = CrossrefPublicAdapter(
+        transport=UrlLibBoundedTransport(),
+        max_retries=0,
+    )
+
+    with pytest.raises(SearchAdapterError) as raised:
+        adapter.search(
+            query(),
+            max_response_bytes=10_000,
+            max_physical_requests=1,
+        )
+
+    assert raised.value.code == "SEARCH_REQUEST_BUDGET_EXCEEDED"
+    assert len(raised.value.attempts) == 1
+    assert raised.value.attempts[0].outcome == "redirect"
+    assert len(urlopen.calls) == 1
+
+
+def test_url_transport_rejects_redirect_loop_before_repeating_request(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    start_url = "https://api.crossref.org/v1/works"
+    second_url = "https://api.crossref.org/v1/works?hop=1"
+    urlopen = _UrlOpenSequence(
+        [
+            _redirect_error(start_url, "/v1/works?hop=1"),
+            _redirect_error(second_url, "/v1/works"),
+        ]
+    )
+    monkeypatch.setattr("material_agent.inspiration.search.urlopen", urlopen)
+
+    with pytest.raises(SearchAdapterError) as raised:
+        UrlLibBoundedTransport().get(
+            start_url,
+            headers={},
+            timeout_seconds=1,
+            max_response_bytes=100,
+        )
+
+    assert raised.value.code == "METADATA_REDIRECT_LOOP"
+    assert urlopen.calls == [(start_url, 1), (second_url, 1)]
+
+
+def test_url_transport_enforces_maximum_redirect_count(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    start_url = "https://api.crossref.org/v1/works?hop=0"
+    outcomes = [
+        _redirect_error(
+            f"https://api.crossref.org/v1/works?hop={hop}",
+            f"/v1/works?hop={hop + 1}",
+        )
+        for hop in range(6)
+    ]
+    urlopen = _UrlOpenSequence(outcomes)
+    monkeypatch.setattr("material_agent.inspiration.search.urlopen", urlopen)
+
+    with pytest.raises(SearchAdapterError) as raised:
+        UrlLibBoundedTransport().get(
+            start_url,
+            headers={},
+            timeout_seconds=1,
+            max_response_bytes=100,
+        )
+
+    assert raised.value.code == "TOO_MANY_METADATA_REDIRECTS"
+    assert len(urlopen.calls) == 6
+
+
+def test_url_transport_rejects_redirect_without_location(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    start_url = "https://api.crossref.org/v1/works"
+    urlopen = _UrlOpenSequence([_redirect_error(start_url, None)])
+    monkeypatch.setattr("material_agent.inspiration.search.urlopen", urlopen)
+
+    with pytest.raises(SearchAdapterError) as raised:
+        UrlLibBoundedTransport().get(
+            start_url,
+            headers={},
+            timeout_seconds=1,
+            max_response_bytes=100,
+        )
+
+    assert raised.value.code == "MISSING_REDIRECT_LOCATION"
+    assert urlopen.calls == [(start_url, 1)]
+
+
+def test_url_transport_rejects_non_json_before_reading_body(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    url = "https://api.crossref.org/v1/works"
+    response = _HttpResponse(url, b"<html></html>", content_type="text/html")
+    monkeypatch.setattr(
+        "material_agent.inspiration.search.urlopen",
+        _UrlOpenSequence([response]),
+    )
+
+    with pytest.raises(SearchAdapterError) as raised:
+        UrlLibBoundedTransport().get(
+            url,
+            headers={},
+            timeout_seconds=1,
+            max_response_bytes=100,
+        )
+
+    assert raised.value.code == "UNEXPECTED_MEDIA_TYPE"
+    assert response.read_sizes == []
+
+
+@pytest.mark.parametrize("content_length", ["-1", "+1", "abc", "1, 2", ""])
+def test_url_transport_rejects_invalid_content_length_before_read(
+    monkeypatch: pytest.MonkeyPatch,
+    content_length: str,
+) -> None:
+    url = "https://api.crossref.org/v1/works"
+    response = _HttpResponse(url, content_length=content_length)
+    monkeypatch.setattr(
+        "material_agent.inspiration.search.urlopen",
+        _UrlOpenSequence([response]),
+    )
+
+    with pytest.raises(SearchAdapterError) as raised:
+        UrlLibBoundedTransport().get(
+            url,
+            headers={},
+            timeout_seconds=1,
+            max_response_bytes=5,
+        )
+
+    assert raised.value.code == "INVALID_CONTENT_LENGTH"
+    assert response.read_sizes == []
+
+
+@pytest.mark.parametrize("content_length", ["6", "9" * 5_000])
+def test_url_transport_rejects_oversized_declared_length_before_read(
+    monkeypatch: pytest.MonkeyPatch,
+    content_length: str,
+) -> None:
+    url = "https://api.crossref.org/v1/works"
+    response = _HttpResponse(url, content_length=content_length)
+    monkeypatch.setattr(
+        "material_agent.inspiration.search.urlopen",
+        _UrlOpenSequence([response]),
+    )
+
+    with pytest.raises(SearchAdapterError) as raised:
+        UrlLibBoundedTransport().get(
+            url,
+            headers={},
+            timeout_seconds=1,
+            max_response_bytes=5,
+        )
+
+    assert raised.value.code == "RESPONSE_BUDGET_EXCEEDED"
+    assert response.read_sizes == []
+
+
+def test_url_transport_uses_max_plus_one_to_enforce_stream_budget(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    url = "https://api.crossref.org/v1/works"
+    response = _HttpResponse(url, b"123456")
+    monkeypatch.setattr(
+        "material_agent.inspiration.search.urlopen",
+        _UrlOpenSequence([response]),
+    )
+
+    with pytest.raises(SearchAdapterError) as raised:
+        UrlLibBoundedTransport().get(
+            url,
+            headers={},
+            timeout_seconds=1,
+            max_response_bytes=5,
+        )
+
+    assert raised.value.code == "RESPONSE_BUDGET_EXCEEDED"
+    assert raised.value.response_bytes == 6
+    assert response.read_sizes == [6]
 
 
 @pytest.mark.parametrize("status", [408, 429, 500, 502, 503, 504])
@@ -543,6 +969,52 @@ def test_crossref_rate_pacing_is_injected_and_audited_without_timestamps() -> No
     assert second.attempts[0].pacing_delay_seconds == 1
     assert clock.sleeps == [1]
     assert not hasattr(second.attempts[0], "timestamp")
+
+
+def test_crossref_request_timeout_is_capped_by_remaining_run_walltime() -> None:
+    payload = crossref_response_bytes()
+    transport = _RecordingTransport(payload)
+    clock = _FakeClock()
+    adapter = CrossrefPublicAdapter(
+        timeout_seconds=7,
+        transport=transport,
+        sleeper=clock.sleep,
+        monotonic_clock=clock.monotonic,
+    )
+
+    adapter.search(
+        query(),
+        max_response_bytes=len(payload),
+        remaining_walltime_seconds=0.25,
+    )
+
+    assert transport.calls[0]["timeout_seconds"] == 0.25
+
+
+def test_crossref_refuses_retry_that_cannot_finish_before_deadline() -> None:
+    clock = _FakeClock()
+    adapter = CrossrefPublicAdapter(
+        transport=_SequenceTransport(
+            [SearchAdapterError("NETWORK_ERROR", "injected timeout")]
+        ),
+        max_retries=1,
+        retry_backoff_seconds=1.0,
+        sleeper=clock.sleep,
+        monotonic_clock=clock.monotonic,
+    )
+
+    with pytest.raises(SearchAdapterError) as raised:
+        adapter.search(
+            query(),
+            max_response_bytes=100,
+            remaining_walltime_seconds=0.5,
+        )
+
+    assert raised.value.code == "WALLTIME_BUDGET_EXCEEDED"
+    assert len(raised.value.attempts) == 1
+    assert raised.value.attempts[0].error_code == "NETWORK_ERROR"
+    assert raised.value.attempts[0].retry_delay_seconds == 0.0
+    assert clock.sleeps == []
 
 
 def test_crossref_polite_pool_paces_at_three_requests_per_second() -> None:

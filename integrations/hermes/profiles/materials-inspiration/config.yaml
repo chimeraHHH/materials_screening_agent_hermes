@@ -5,7 +5,9 @@ gateway:
     enabled: true
     host: 127.0.0.1
     port: 8642
-    max_concurrent_runs: 2
+    # One managed action worker is deployed by the production lifecycle.
+    # Keep admitted Hermes runs aligned with that serialized capacity.
+    max_concurrent_runs: 1
 
 platform_toolsets:
   cli:
@@ -91,7 +93,7 @@ mcp_servers:
       - "--project"
       - "${MATERIAL_AGENT_PROJECT_ID}"
       - "--service-factory"
-      - "material_agent.integration.hermes_service:create_hermes_inspiration_service"
+      - "material_agent.integration.queued_gateway:create_queued_hermes_inspiration_service"
     enabled: true
     timeout: 300
     connect_timeout: 30

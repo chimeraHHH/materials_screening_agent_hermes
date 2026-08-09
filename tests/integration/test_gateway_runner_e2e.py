@@ -68,6 +68,7 @@ def _grant_requirement_freeze(
 def _base_result(payload: dict[str, Any]) -> GatewayResultRecordV1:
     record = dict(payload)
     record.pop("result_sha256", None)
+    record.pop("readable_report", None)
     record.pop("verified", None)
     return GatewayResultRecordV1.model_validate_json(json.dumps(record))
 
@@ -303,7 +304,10 @@ def test_restarted_result_read_rejects_report_tampering(tmp_path: Path) -> None:
     _close(service)
 
     restarted = create_hermes_fixture_service(settings)
-    with pytest.raises(GatewayDispatchError, match="SHA-256"):
+    with pytest.raises(
+        GatewayDispatchError,
+        match="artifact closure member size differs",
+    ):
         GatewayToolDispatcher(restarted).dispatch(
             "materials_result_get",
             {"run_id": started["run_id"]},

@@ -4,10 +4,19 @@ import json
 from collections.abc import Mapping
 from pathlib import Path
 
+import pytest
+
 from material_agent.gateway.authorization import RequirementFreezeGrantIssuer
-from material_agent.gateway.companion import OfflineInspirationCompanionAdapter
+from material_agent.gateway.companion import (
+    CompanionAdapterError,
+    OfflineInspirationCompanionAdapter,
+)
 from material_agent.gateway.mcp_server import GatewayServerSettings, GatewayToolDispatcher
-from material_agent.gateway.models import InspirationBudgetV1, InspirationConstraintsV1
+from material_agent.gateway.models import (
+    ApproveActionV1,
+    InspirationBudgetV1,
+    InspirationConstraintsV1,
+)
 from material_agent.gateway.persistence import SqliteGatewayRepository
 from material_agent.integration.hermes_service import create_hermes_inspiration_service
 from material_agent.inspiration.search import SearchAdapterError
@@ -25,10 +34,12 @@ class StaticCrossrefTransport:
         url: str,
         *,
         headers: Mapping[str, str],
-        timeout_seconds: int,
+        timeout_seconds: float,
         max_response_bytes: int,
+        deadline_monotonic: float | None = None,
+        max_physical_requests: int | None = None,
     ) -> bytes:
-        del headers, timeout_seconds
+        del headers, timeout_seconds, deadline_monotonic, max_physical_requests
         assert len(self.payload) <= max_response_bytes
         self.calls.append(url)
         return self.payload
@@ -47,10 +58,18 @@ class FailingCrossrefTransport:
         url: str,
         *,
         headers: Mapping[str, str],
-        timeout_seconds: int,
+        timeout_seconds: float,
         max_response_bytes: int,
+        deadline_monotonic: float | None = None,
+        max_physical_requests: int | None = None,
     ) -> bytes:
-        del headers, timeout_seconds, max_response_bytes
+        del (
+            headers,
+            timeout_seconds,
+            max_response_bytes,
+            deadline_monotonic,
+            max_physical_requests,
+        )
         self.calls.append(url)
         raise SearchAdapterError(
             self.code,
@@ -190,6 +209,10 @@ def test_public_factory_runs_static_crossref_through_approval_lifecycle(
         prepared=prepared,
     )
     assert started["state"]["interaction"]["input_sha256"] == manifest_sha256
+    assert (
+        started["state"]["interaction"]["execution_manifest_sha256"]
+        == manifest_sha256
+    )
     assert prepared.policy.network_access is True
     assert prepared.inspiration_input.search_fixture_artifact is None
     assert len(prepared.inspiration_input.parent_candidates) == 6
@@ -211,7 +234,24 @@ def test_public_factory_runs_static_crossref_through_approval_lifecycle(
     assert {
         "crossref-public-adapter",
         "disabled-document-fetcher",
+        "inspiration-bridge-implementation",
+        "inspiration-contracts-implementation",
+        "inspiration-evidence-implementation",
+        "inspiration-extraction-implementation",
+        "inspiration-feedback-implementation",
+        "inspiration-identity-implementation",
+        "inspiration-passages-implementation",
+        "inspiration-projector-implementation",
+        "inspiration-report-implementation",
+        "inspiration-request-compiler-implementation",
+        "inspiration-runner-implementation",
+        "inspiration-search-implementation",
+        "inspiration-selection-implementation",
+        "inspiration-transform-implementation",
+        "inspiration-vector-implementation",
         "inspiration-tag-feedback-compiler",
+        "material-agent-build-identity",
+        "material-agent-execution-source-tree",
         "pymatgen-substitution-engine",
         "signed-hashing-v1",
     }.issubset(component_ids)
@@ -241,6 +281,15 @@ def test_public_factory_runs_static_crossref_through_approval_lifecycle(
     assert terminal["state"]["status"] in {"PARTIAL", "SUCCEEDED"}
     result = dispatcher.dispatch("materials_result_get", {"run_id": run_id})
     assert result["verified"] is True
+    assert result["readable_report"]["content"].startswith(
+        "# Inspiration run report"
+    )
+    assert result["readable_report"]["full_content_sha256"] == result[
+        "authoritative_sha256"
+    ]
+    assert result["readable_evidence"]["total_available"] >= 1
+    assert result["readable_evidence"]["items"][0]["excerpt"]
+    assert result["readable_evidence"]["items"][0]["relations"] == ["SUPPORT"]
     assert len(result["bundle"]["selected_candidates"]) == 1
     assert result["cost_ledger"]["model_calls"] == 0
     assert len(transport.calls) == 4
@@ -256,6 +305,273 @@ def test_public_factory_runs_static_crossref_through_approval_lifecycle(
     assert all(contact_email.encode("utf-8") not in path.read_bytes() for path in text_artifacts)
 
     assert isinstance(service.repository, SqliteGatewayRepository)
+    service.repository.close()
+
+
+def test_completed_public_run_recovers_after_precommit_crash_without_network(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """Discard a terminal transition, restart, and recover its exact closure."""
+
+    monkeypatch.delenv("MATERIALS_CROSSREF_CONTACT_EMAIL", raising=False)
+    settings = GatewayServerSettings(tmp_path, "hermes-public-recovery")
+    first_transport = StaticCrossrefTransport(_response_bytes())
+    first_service = create_hermes_inspiration_service(
+        settings,
+        transport=first_transport,
+        sleeper=lambda _seconds: None,
+    )
+    first_dispatcher = GatewayToolDispatcher(first_service)
+    started = first_dispatcher.dispatch("materials_inspiration_run", _arguments())
+    run_id = started["run_id"]
+    first_record = first_service.repository.get_run(run_id)
+    assert first_record is not None
+    first_prepared = first_service.companion.preparer.prepare(
+        run_id=run_id,
+        request=first_record.request,
+    )
+    manifest_sha256 = first_service.companion.execution_manifest_sha256(
+        request=first_record.request,
+        prepared=first_prepared,
+    )
+
+    # The companion completed, but its transition is intentionally discarded
+    # before MaterialsGatewayService can commit it.
+    approval = ApproveActionV1(
+        interaction_id=started["state"]["interaction"]["interaction_id"],
+        confirmed_by_user=True,
+    )
+    discarded_terminal = first_service.companion.act(
+        run_id=run_id,
+        request=first_record.request,
+        state=first_record.state,
+        action=approval,
+    )
+    assert discarded_terminal.result is not None
+    assert first_transport.calls
+    first_call_count = len(first_transport.calls)
+    first_service.repository.close()
+
+    second_transport = StaticCrossrefTransport(_response_bytes())
+    second_service = create_hermes_inspiration_service(
+        settings,
+        transport=second_transport,
+        sleeper=lambda _seconds: None,
+    )
+    pending_record = second_service.repository.get_run(run_id)
+    assert pending_record is not None
+    assert pending_record.state.status == "INTERACTION_REQUIRED"
+    second_prepared = second_service.companion.preparer.prepare(
+        run_id=run_id,
+        request=pending_record.request,
+    )
+    assert second_service.companion.execution_manifest_sha256(
+        request=pending_record.request,
+        prepared=second_prepared,
+    ) == manifest_sha256
+
+    recovered_terminal = second_service.companion.act(
+        run_id=run_id,
+        request=pending_record.request,
+        state=pending_record.state,
+        action=approval,
+    )
+
+    assert recovered_terminal == discarded_terminal
+    assert len(first_transport.calls) == first_call_count
+    assert second_transport.calls == []
+    assert recovered_terminal.result is not None
+    closure = recovered_terminal.result.artifact_closure
+    assert closure is not None
+    assert closure.stage_result.uri == (
+        f"artifact://stages/inspiration/{run_id}/stage_result.json"
+    )
+    assert closure.artifacts
+    second_service.repository.close()
+
+
+@pytest.mark.parametrize(
+    "artifact_name",
+    ("inspiration_bundle.json", "stage_result.json"),
+)
+def test_completed_public_recovery_fails_closed_on_closure_drift(
+    tmp_path: Path,
+    monkeypatch,
+    artifact_name: str,
+) -> None:
+    monkeypatch.delenv("MATERIALS_CROSSREF_CONTACT_EMAIL", raising=False)
+    project_id = f"hermes-public-recovery-{artifact_name.removesuffix('.json')}"
+    settings = GatewayServerSettings(tmp_path, project_id)
+    first_transport = StaticCrossrefTransport(_response_bytes())
+    first_service = create_hermes_inspiration_service(
+        settings,
+        transport=first_transport,
+        sleeper=lambda _seconds: None,
+    )
+    started = GatewayToolDispatcher(first_service).dispatch(
+        "materials_inspiration_run",
+        _arguments(),
+    )
+    run_id = started["run_id"]
+    record = first_service.repository.get_run(run_id)
+    assert record is not None
+    prepared = first_service.companion.preparer.prepare(
+        run_id=run_id,
+        request=record.request,
+    )
+    manifest_sha256 = first_service.companion.execution_manifest_sha256(
+        request=record.request,
+        prepared=prepared,
+    )
+    completed = first_service.companion._execute(
+        run_id=run_id,
+        request=record.request,
+        expected_execution_manifest_sha256=manifest_sha256,
+    )
+    assert completed.result is not None
+    drifted_path = (
+        tmp_path
+        / project_id
+        / "stages"
+        / "inspiration"
+        / run_id
+        / artifact_name
+    )
+    if artifact_name == "stage_result.json":
+        drifted_path.write_bytes(drifted_path.read_bytes() + b"\n")
+    else:
+        drifted_path.write_bytes(b"{}")
+    first_service.repository.close()
+
+    retry_transport = StaticCrossrefTransport(_response_bytes())
+    retry_service = create_hermes_inspiration_service(
+        settings,
+        transport=retry_transport,
+        sleeper=lambda _seconds: None,
+    )
+    retry_record = retry_service.repository.get_run(run_id)
+    assert retry_record is not None
+    with pytest.raises(CompanionAdapterError):
+        retry_service.companion._execute(
+            run_id=run_id,
+            request=retry_record.request,
+            expected_execution_manifest_sha256=manifest_sha256,
+        )
+    assert retry_transport.calls == []
+    retry_service.repository.close()
+
+
+def test_partial_bound_public_run_is_not_implicitly_reexecuted(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.delenv("MATERIALS_CROSSREF_CONTACT_EMAIL", raising=False)
+    settings = GatewayServerSettings(tmp_path, "hermes-public-partial-recovery")
+    first_transport = StaticCrossrefTransport(_response_bytes())
+    first_service = create_hermes_inspiration_service(
+        settings,
+        transport=first_transport,
+        sleeper=lambda _seconds: None,
+    )
+    started = GatewayToolDispatcher(first_service).dispatch(
+        "materials_inspiration_run",
+        _arguments(),
+    )
+    run_id = started["run_id"]
+    record = first_service.repository.get_run(run_id)
+    assert record is not None
+    prepared = first_service.companion.preparer.prepare(
+        run_id=run_id,
+        request=record.request,
+    )
+    manifest_sha256 = first_service.companion.execution_manifest_sha256(
+        request=record.request,
+        prepared=prepared,
+    )
+    assert first_service.companion.projector.recover_or_bind_completed(
+        run_id=run_id,
+        request=record.request,
+        prepared=prepared,
+        execution_manifest_sha256=manifest_sha256,
+    ) is None
+    assert first_transport.calls == []
+    first_service.repository.close()
+
+    retry_transport = StaticCrossrefTransport(_response_bytes())
+    retry_service = create_hermes_inspiration_service(
+        settings,
+        transport=retry_transport,
+        sleeper=lambda _seconds: None,
+    )
+    retry_record = retry_service.repository.get_run(run_id)
+    assert retry_record is not None
+    with pytest.raises(CompanionAdapterError, match="incomplete"):
+        retry_service.companion._execute(
+            run_id=run_id,
+            request=retry_record.request,
+            expected_execution_manifest_sha256=manifest_sha256,
+        )
+    assert retry_transport.calls == []
+    retry_service.repository.close()
+
+
+@pytest.mark.parametrize("prior_state", ("unbound-stage", "different-manifest"))
+def test_untrusted_prior_public_state_is_never_upgraded_or_reexecuted(
+    tmp_path: Path,
+    monkeypatch,
+    prior_state: str,
+) -> None:
+    monkeypatch.delenv("MATERIALS_CROSSREF_CONTACT_EMAIL", raising=False)
+    project_id = f"hermes-public-prior-{prior_state}"
+    settings = GatewayServerSettings(tmp_path, project_id)
+    transport = StaticCrossrefTransport(_response_bytes())
+    service = create_hermes_inspiration_service(
+        settings,
+        transport=transport,
+        sleeper=lambda _seconds: None,
+    )
+    started = GatewayToolDispatcher(service).dispatch(
+        "materials_inspiration_run",
+        _arguments(),
+    )
+    run_id = started["run_id"]
+    record = service.repository.get_run(run_id)
+    assert record is not None
+    prepared = service.companion.preparer.prepare(
+        run_id=run_id,
+        request=record.request,
+    )
+    manifest_sha256 = service.companion.execution_manifest_sha256(
+        request=record.request,
+        prepared=prepared,
+    )
+    if prior_state == "unbound-stage":
+        prior_path = (
+            tmp_path
+            / project_id
+            / "stages"
+            / "inspiration"
+            / run_id
+            / "partial.json"
+        )
+        prior_path.parent.mkdir(parents=True)
+        prior_path.write_bytes(b"{}")
+    else:
+        assert service.companion.projector.recover_or_bind_completed(
+            run_id=run_id,
+            request=record.request,
+            prepared=prepared,
+            execution_manifest_sha256="0" * 64,
+        ) is None
+
+    with pytest.raises(CompanionAdapterError):
+        service.companion._execute(
+            run_id=run_id,
+            request=record.request,
+            expected_execution_manifest_sha256=manifest_sha256,
+        )
+    assert transport.calls == []
     service.repository.close()
 
 

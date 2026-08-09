@@ -751,6 +751,21 @@ materials_result_get
 恢复、重试或取消转换。Tool list 中不得出现任意 Artifact read、shell、自由路径或直接
 DFT/ML/many-body submit。
 
+Requirement-freeze 交互同时显式返回 `execution_manifest_sha256` 和兼容字段
+`input_sha256`，两者必须完全相同。manifest v2 绑定冻结输入、policy、TagGraph、目标 Tag、
+源码树、构建/lock 文件、实际运行时依赖版本，以及 search/extract/passage/vector/evidence/
+bridge/transform/dedup/selection/report/projector 等完整执行组件；批准后任一内容漂移都必须在
+runner 启动前失败。
+
+`materials_result_get` 仍不是任意 Artifact reader。它先按当前 `run_id` 核对 terminal tuple
+与 canonical result hash，再逐项读取并验证 stage result、报告和所有声明中间 Artifact 的
+URI、字节数和 SHA-256。只有完整闭包通过后，才返回最多 24,000 字符的 Markdown 报告前缀
+（公共 DTO 硬上限 32,000）、最多 32 条每条 1,000 字符的已选证据摘录，以及各自完整内容
+hash、原始长度和显式截断标志。证据摘录只来自结果中已绑定的 document/passage lineage，
+不开放按路径读取其他文件。离线 completed-run verifier 还会从 authoritative Artifacts
+重放 evidence、bridge、selection、ledger、report 和 Gateway projection，检测同步篡改与
+孤儿文件。
+
 当前 Gateway 与审批入口保持显式、进程外调用，不冒充尚未实现的顶层 `material-agent`
 子命令：
 

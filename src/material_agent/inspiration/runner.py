@@ -13,13 +13,15 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import time
 from collections import Counter
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import asdict, dataclass
 from typing import Protocol
 
 from material_agent.inspiration.bridge import build_search_supported_bridges
+from material_agent.inspiration.component_identity import execution_identity_snapshots
 from material_agent.inspiration.evidence import build_evidence_cards
 from material_agent.inspiration.extractors import (
     ExtractionDecision,
@@ -82,6 +84,10 @@ from material_agent.inspiration.policy import (
     SearchExecutionMode,
 )
 from material_agent.inspiration.reporting import render_inspiration_report
+from material_agent.inspiration.retrieval_quality import (
+    MetadataQualityAuditV1,
+    audit_metadata_hits,
+)
 from material_agent.inspiration.search import (
     DocumentHitGroup,
     ParsedSearchPage,
@@ -117,6 +123,66 @@ class InspirationRunnerError(RuntimeError):
     def __init__(self, code: str, message: str) -> None:
         self.code = code
         super().__init__(f"{code}: {message}")
+
+
+@dataclass(slots=True)
+class _RunDeadline:
+    """Injectable monotonic deadline shared by every runner phase."""
+
+    clock: Callable[[], float]
+    started_seconds: float
+    deadline_seconds: float
+    last_observed_seconds: float
+
+    @classmethod
+    def start(
+        cls,
+        *,
+        clock: Callable[[], float],
+        max_walltime_seconds: int,
+    ) -> _RunDeadline:
+        started = _read_monotonic_clock(clock)
+        return cls(
+            clock=clock,
+            started_seconds=started,
+            deadline_seconds=started + max_walltime_seconds,
+            last_observed_seconds=started,
+        )
+
+    def remaining(self, phase: str) -> float:
+        now = _read_monotonic_clock(self.clock)
+        if now < self.last_observed_seconds:
+            raise InspirationRunnerError(
+                "INVALID_MONOTONIC_CLOCK",
+                f"monotonic clock moved backwards before {phase}",
+            )
+        self.last_observed_seconds = now
+        remaining = self.deadline_seconds - now
+        if remaining <= 0:
+            raise InspirationRunnerError(
+                "WALLTIME_BUDGET_EXCEEDED",
+                f"inspiration run deadline expired before {phase}",
+            )
+        return remaining
+
+    def elapsed_ms(self, phase: str) -> int:
+        self.remaining(phase)
+        elapsed_seconds = self.last_observed_seconds - self.started_seconds
+        return math.ceil(elapsed_seconds * 1_000)
+
+
+def _read_monotonic_clock(clock: Callable[[], float]) -> float:
+    value = clock()
+    if (
+        not isinstance(value, (int, float))
+        or isinstance(value, bool)
+        or not math.isfinite(value)
+    ):
+        raise InspirationRunnerError(
+            "INVALID_MONOTONIC_CLOCK",
+            "monotonic clock must return finite seconds",
+        )
+    return float(value)
 
 
 @dataclass(frozen=True, slots=True)
@@ -303,22 +369,36 @@ class InspirationRunner:
         transformation_engine: TransformationEngine,
         vectorizer: ComponentSnapshotV1 = SIGNED_HASHING_SNAPSHOT,
         document_fetcher: DocumentFetcher | None = None,
+        monotonic_clock: Callable[[], float] = time.monotonic,
     ) -> None:
+        if not callable(monotonic_clock):
+            raise ValueError("monotonic_clock must be callable")
         self.store = store
         self.search_adapter = search_adapter
         self.transformation_engine = transformation_engine
         self.vectorizer = vectorizer
         self.document_fetcher = document_fetcher or DisabledDocumentFetcher()
+        self.monotonic_clock = monotonic_clock
 
     @property
     def execution_components(self) -> tuple[ComponentSnapshotV1, ...]:
-        """Return the injected scientific implementation bound at approval."""
+        """Return the complete, freshly content-addressed approval identity."""
 
-        return (
+        components = (
+            *execution_identity_snapshots(),
+            self.search_adapter.component,
+            self.vectorizer,
             self.transformation_engine.component,
             self.document_fetcher.component,
             FEEDBACK_COMPILER_SNAPSHOT,
         )
+        component_ids = tuple(component.component_id for component in components)
+        if len(component_ids) != len(set(component_ids)):
+            raise InspirationRunnerError(
+                "DUPLICATE_EXECUTION_COMPONENT",
+                "approval execution component IDs must be unique",
+            )
+        return tuple(sorted(components, key=lambda component: component.component_id))
 
     def run(
         self,
@@ -328,12 +408,16 @@ class InspirationRunner:
         tag_graph: TagGraphV1,
         target_tag_ids: Sequence[str],
     ) -> InspirationRunResult:
-        started_ns = time.monotonic_ns()
+        deadline = _RunDeadline.start(
+            clock=self.monotonic_clock,
+            max_walltime_seconds=policy.runtime.max_walltime_seconds,
+        )
         self._validate_run_inputs(
             inspiration_input=inspiration_input,
             policy=policy,
             tag_graph=tag_graph,
         )
+        deadline.remaining("input snapshot persistence")
         prefix = f"stages/inspiration/{inspiration_input.run_id}"
 
         input_pointer = self._write_json(
@@ -345,11 +429,41 @@ class InspirationRunner:
             f"{prefix}/tag_graph.json",
             tag_graph,
         )
+        deadline.remaining("query planning")
 
         query_plan = plan_tag_queries(
             tag_graph,
             target_tag_ids=tuple(target_tag_ids),
             budget=policy.search,
+        )
+        if query_plan.allocation_audit is None:
+            raise InspirationRunnerError(
+                "QUERY_ALLOCATION_AUDIT_MISSING",
+                "the frozen query plan has no physical-request allocation audit",
+            )
+        physical_allowance_by_query = {
+            allowance.query_id: allowance.max_physical_requests
+            for allowance in query_plan.allocation_audit.allowances
+        }
+        if set(physical_allowance_by_query) != {
+            query.query_id for query in query_plan.queries
+        }:
+            raise InspirationRunnerError(
+                "QUERY_ALLOCATION_MISMATCH",
+                "physical-request allowances do not exactly cover the query plan",
+            )
+        if query_plan.candidate_pool is None:
+            raise InspirationRunnerError(
+                "QUERY_CANDIDATE_POOL_MISSING",
+                "the frozen query plan has no curated candidate pool",
+            )
+        query_candidate_pool_pointer = self._write_json(
+            f"{prefix}/query_candidate_pool.json",
+            query_plan.candidate_pool,
+        )
+        query_allocation_pointer = self._write_json(
+            f"{prefix}/query_allocation_audit.json",
+            query_plan.allocation_audit,
         )
         query_plan_pointer = self._write_jsonl(
             f"{prefix}/query_plans.jsonl",
@@ -374,6 +488,16 @@ class InspirationRunner:
         ]
         search_response_bytes = 0
         for query in query_plan.queries:
+            try:
+                remaining_walltime = deadline.remaining(
+                    f"search query {query.query_id}"
+                )
+            except InspirationRunnerError:
+                self._write_jsonl(
+                    f"{prefix}/search_attempts.jsonl",
+                    tuple(attempt.to_dict() for attempt in search_attempts),
+                )
+                raise
             remaining_hits = policy.search.max_raw_hits - len(hits)
             if remaining_hits <= 0:
                 warnings.append("RAW_HIT_BUDGET_EXHAUSTED")
@@ -382,6 +506,11 @@ class InspirationRunner:
                 page = self.search_adapter.search(
                     query,
                     max_response_bytes=MAX_SEARCH_RESPONSE_BYTES,
+                    remaining_walltime_seconds=remaining_walltime,
+                    max_physical_requests=min(
+                        physical_allowance_by_query[query.query_id],
+                        policy.search.max_physical_requests - len(search_attempts),
+                    ),
                 )
             except SearchAdapterError as error:
                 search_attempts.extend(error.attempts)
@@ -405,6 +534,23 @@ class InspirationRunner:
                 ),
             )
             search_attempts.extend(page_attempts)
+            if len(search_attempts) > policy.search.max_physical_requests:
+                self._write_jsonl(
+                    f"{prefix}/search_attempts.jsonl",
+                    tuple(attempt.to_dict() for attempt in search_attempts),
+                )
+                raise InspirationRunnerError(
+                    "SEARCH_REQUEST_BUDGET_EXCEEDED",
+                    "search adapter exceeded the frozen physical request budget",
+                )
+            try:
+                deadline.remaining(f"search query {query.query_id} response")
+            except InspirationRunnerError:
+                self._write_jsonl(
+                    f"{prefix}/search_attempts.jsonl",
+                    tuple(attempt.to_dict() for attempt in search_attempts),
+                )
+                raise
             try:
                 self._validate_raw_page(
                     query,
@@ -447,6 +593,14 @@ class InspirationRunner:
             tuple(attempt.to_dict() for attempt in search_attempts),
         )
         hit_tuple = tuple(hits)
+        metadata_quality = audit_metadata_hits(
+            hit_tuple,
+            require_abstract=policy.fetch.max_requests == 0,
+        )
+        metadata_quality_pointer = self._write_json(
+            f"{prefix}/metadata_quality_audit.json",
+            metadata_quality,
+        )
         groups = group_document_hits(hit_tuple)
         if len(groups) > policy.search.max_unique_documents:
             raise InspirationRunnerError(
@@ -467,6 +621,8 @@ class InspirationRunner:
             hits=hit_tuple,
             groups=groups,
             raw_pages=raw_pages,
+            deadline=deadline,
+            metadata_quality=metadata_quality,
         )
         passages = extraction_result.passages
         warnings.extend(extraction_result.warnings)
@@ -495,6 +651,7 @@ class InspirationRunner:
             policy=policy,
             hits=hit_tuple,
             passages=passages,
+            deadline=deadline,
         )
         vectors = vectorization.vectors
         vector_manifest_pointer = self._write_jsonl(
@@ -502,12 +659,14 @@ class InspirationRunner:
             vectors,
         )
 
+        deadline.remaining("evidence classification")
         evidence_result = build_evidence_cards(
             graph=tag_graph,
             queries=tuple(executed_queries),
             hits=hit_tuple,
             passages=passages,
         )
+        deadline.remaining("bridge construction")
         warnings.extend(evidence_result.warnings)
         evidence_pointer = self._write_jsonl(
             f"{prefix}/evidence_cards.jsonl",
@@ -550,17 +709,20 @@ class InspirationRunner:
             tag_graph=tag_graph,
             bridges=bridge_result.packets,
             evidence_cards=evidence_result.cards,
+            deadline=deadline,
         )
         plans = tuple(draft.plan for draft in drafts)
         structure_artifacts = self._persist_transformation_structures(
             prefix=prefix,
             drafts=drafts,
+            deadline=deadline,
         )
         transformation_pointer = self._write_jsonl(
             f"{prefix}/transformation_proposals.jsonl",
             plans,
         )
 
+        deadline.remaining("candidate identity and selection")
         proposals = self._candidate_proposals(
             inspiration_input=inspiration_input,
             drafts=drafts,
@@ -641,15 +803,7 @@ class InspirationRunner:
         if route_quota_status != "MET":
             warnings.append(f"SELECTION_ROUTE_QUOTA:{route_quota_status}")
 
-        elapsed_ms = (time.monotonic_ns() - started_ns) // 1_000_000
-        if elapsed_ms > policy.runtime.max_walltime_seconds * 1_000:
-            raise InspirationRunnerError(
-                "WALLTIME_BUDGET_EXCEEDED",
-                "inspiration run exceeded its walltime budget",
-            )
-        # Offline artifacts are required to replay byte-for-byte, so all modes
-        # share the same deterministic ledger representation. Wall-clock
-        # duration is enforced above but intentionally not serialized.
+        elapsed_ms = deadline.elapsed_ms("cost ledger snapshot")
         ledger = CostLedgerV1(
             search_requests=len(search_attempts),
             search_response_bytes=search_response_bytes,
@@ -671,9 +825,10 @@ class InspirationRunner:
                 plan.status is TransformationStatus.REJECTED for plan in plans
             ),
             candidates_after_internal_dedup=len(identities),
-            walltime_ms=0,
+            walltime_ms=elapsed_ms,
         )
         cost_pointer = self._write_json(f"{prefix}/cost_ledger.json", ledger)
+        deadline.remaining("tag feedback compilation")
 
         feedback_input_artifacts = (
             FeedbackInputArtifactV1(
@@ -737,13 +892,17 @@ class InspirationRunner:
             f"{prefix}/tag_feedback.json",
             feedback,
         )
+        deadline.remaining("terminal bundle rendering")
 
         intermediate = _unique_pointers(
             (
+                query_candidate_pool_pointer,
+                query_allocation_pointer,
                 query_plan_pointer,
                 attempt_pointer,
                 *raw_pointers,
                 hit_pointer,
+                metadata_quality_pointer,
                 fetch_attempt_pointer,
                 fetch_pointer,
                 *extraction_result.fetched_artifacts,
@@ -786,7 +945,7 @@ class InspirationRunner:
         limitations = (
             evidence_scope_limitation,
             "Generated structures have no downstream property validation; target property status is UNKNOWN.",
-            "Artifacts record walltime_ms as zero while enforcing the configured walltime ceiling.",
+            "walltime_ms is a monotonic runtime snapshot; the runner also enforces the deadline through terminal Artifact verification.",
             *selection_limitations,
         )
         next_steps = tuple(
@@ -844,6 +1003,7 @@ class InspirationRunner:
             selection_audit=selection_audit_record,
         )
         report_pointer = self._write_text(f"{prefix}/report.md", report)
+        deadline.remaining("stage result verification")
         stage_result = InspirationStageResultV1(
             result_id=deterministic_id(
                 "inspiration-result",
@@ -872,6 +1032,7 @@ class InspirationRunner:
             stage_result,
         )
         verify_artifact_pointer(self.store, result_pointer)
+        deadline.remaining("terminal result return")
         return InspirationRunResult(
             stage_result=stage_result,
             stage_result_artifact=result_pointer,
@@ -1195,6 +1356,8 @@ class InspirationRunner:
         hits: tuple[SearchHitV1, ...],
         groups: tuple[DocumentHitGroup, ...],
         raw_pages: dict[str, RawSearchPage],
+        deadline: _RunDeadline,
+        metadata_quality: MetadataQualityAuditV1,
     ) -> _PassageExtractionResult:
         query_index = {query.query_id: query for query in queries}
         hit_index = {hit.hit_id: hit for hit in hits}
@@ -1218,11 +1381,25 @@ class InspirationRunner:
             max_drafts=64,
             min_abstract_tokens=policy.passages.min_tokens,
         )
+        quality_rank_by_hit_id = {
+            item.hit_id: (
+                item.eligible_for_evidence_ranking,
+                item.quality_rank,
+            )
+            for item in metadata_quality.entries
+        }
+        if set(quality_rank_by_hit_id) != set(hit_index):
+            raise InspirationRunnerError(
+                "METADATA_QUALITY_AUDIT_MISMATCH",
+                "metadata quality audit does not exactly cover parsed hits",
+            )
         for group in groups:
+            deadline.remaining(f"passage extraction for {group.document_id}")
             member_hits = tuple(hit_index[hit_id] for hit_id in group.member_hit_ids)
             hit = _select_document_processing_hit(
                 member_hits,
                 query_index=query_index,
+                quality_rank_by_hit_id=quality_rank_by_hit_id,
             )
             source_query_id = hit.query_ids[0]
             page = raw_pages[source_query_id]
@@ -1321,6 +1498,22 @@ class InspirationRunner:
                     fetch_status = "BYTE_BUDGET_EXHAUSTED"
                     fetch_error_code = "FETCH_BYTE_BUDGET_EXHAUSTED"
                 else:
+                    remaining_fetch_walltime = deadline.remaining(
+                        f"document fetch for {group.document_id}"
+                    )
+                    fetch_timeout_seconds = min(
+                        policy.fetch.timeout_seconds,
+                        int(
+                            math.floor(
+                                remaining_fetch_walltime / remaining_requests
+                            )
+                        ),
+                    )
+                    if fetch_timeout_seconds < 1:
+                        raise InspirationRunnerError(
+                            "WALLTIME_BUDGET_EXCEEDED",
+                            "remaining walltime cannot cover every allowed fetch slot",
+                        )
                     fetch_request_id = deterministic_id(
                         "fetch",
                         {
@@ -1343,7 +1536,7 @@ class InspirationRunner:
                                     policy.fetch.max_bytes_per_response,
                                     remaining_bytes,
                                 ),
-                                timeout_seconds=policy.fetch.timeout_seconds,
+                                timeout_seconds=fetch_timeout_seconds,
                                 max_retries_per_request=(
                                     policy.fetch.max_retries_per_request
                                 ),
@@ -1428,6 +1621,10 @@ class InspirationRunner:
                         ):
                             fetch_status = "FETCHED_UNEXTRACTABLE"
                         warnings.extend(body_extraction.warnings)
+
+                    deadline.remaining(
+                        f"document fetch completion for {group.document_id}"
+                    )
 
             body_drafts = (
                 selected_extraction.drafts
@@ -1584,7 +1781,9 @@ class InspirationRunner:
         policy: InspirationPolicyV1,
         hits: tuple[SearchHitV1, ...],
         passages: tuple[PassageV1, ...],
+        deadline: _RunDeadline,
     ) -> _VectorizationResult:
+        deadline.remaining("passage vectorization")
         hit_index = {hit.hit_id: hit for hit in hits}
         unique_passages: list[PassageV1] = []
         seen_passages: set[tuple[str, str]] = set()
@@ -1609,9 +1808,13 @@ class InspirationRunner:
             budget=policy.embedding,
             vectorizer=self.vectorizer,
         )
+        deadline.remaining("passage vector persistence")
         records: list[PassageVectorV1] = []
         pointers: list[ArtifactPointerV1] = []
         for item in generated:
+            deadline.remaining(
+                f"vector Artifact {item.passage_vector.passage_id}"
+            )
             path = (
                 f"{prefix}/vectors/"
                 f"{item.passage_vector.passage_id}.f32le"
@@ -1652,7 +1855,9 @@ class InspirationRunner:
         tag_graph: TagGraphV1,
         bridges: tuple[BridgePacketV1, ...],
         evidence_cards: tuple[EvidenceCardV1, ...],
+        deadline: _RunDeadline,
     ) -> tuple[TransformationDraft, ...]:
+        deadline.remaining("transformation input loading")
         parents = tuple(
             ParentStructureInput(
                 reference=parent,
@@ -1674,6 +1879,7 @@ class InspirationRunner:
             artifact_prefix=prefix,
         )
         raw_result = self.transformation_engine.generate(context)
+        deadline.remaining("transformation result validation")
         if not isinstance(raw_result, Sequence):
             raise InspirationRunnerError(
                 "INVALID_TRANSFORMATION_RESULT",
@@ -1714,6 +1920,7 @@ class InspirationRunner:
                 "transformation engine exceeded a per-parent plan budget",
             )
         for draft in drafts:
+            deadline.remaining(f"transformation plan {draft.plan.plan_id}")
             plan = draft.plan
             if plan.status is TransformationStatus.PLANNED:
                 raise InspirationRunnerError(
@@ -1746,9 +1953,13 @@ class InspirationRunner:
         *,
         prefix: str,
         drafts: tuple[TransformationDraft, ...],
+        deadline: _RunDeadline,
     ) -> tuple[ArtifactPointerV1, ...]:
         pointers: list[ArtifactPointerV1] = []
         for draft in drafts:
+            deadline.remaining(
+                f"transformation structure {draft.plan.plan_id}"
+            )
             if draft.artifact_bytes is None:
                 continue
             output_id = draft.plan.output_structure_id
@@ -1933,6 +2144,7 @@ def _select_document_processing_hit(
     hits: tuple[SearchHitV1, ...],
     *,
     query_index: dict[str, SearchQueryV1],
+    quality_rank_by_hit_id: dict[str, tuple[bool, int]] | None = None,
 ) -> SearchHitV1:
     """Choose one real hit without losing the bridge needed for evidence closure.
 
@@ -1953,6 +2165,17 @@ def _select_document_processing_hit(
 
     ranked: list[tuple[tuple[object, ...], SearchHitV1]] = []
     for hit in hits:
+        if quality_rank_by_hit_id is None:
+            quality_priority = (0, 0)
+        else:
+            try:
+                eligible, quality_rank = quality_rank_by_hit_id[hit.hit_id]
+            except KeyError as error:
+                raise InspirationRunnerError(
+                    "METADATA_QUALITY_AUDIT_MISMATCH",
+                    f"search hit {hit.hit_id!r} has no metadata quality decision",
+                ) from error
+            quality_priority = (0 if eligible else 1, quality_rank)
         try:
             queries = tuple(query_index[query_id] for query_id in hit.query_ids)
         except KeyError as error:
@@ -1993,8 +2216,10 @@ def _select_document_processing_hit(
         ranked.append(
             (
                 (
+                    quality_priority[0],
                     kind_priority,
                     lineage_key,
+                    quality_priority[1],
                     hit.provider_rank,
                     hit.provider,
                     hit.hit_id,

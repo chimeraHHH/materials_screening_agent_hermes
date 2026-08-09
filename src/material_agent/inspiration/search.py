@@ -15,15 +15,15 @@ import socket
 import threading
 import time
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import timezone
 from email.utils import parsedate_to_datetime
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any, Callable, Literal, Protocol
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlencode, urlsplit, urlunsplit
-from urllib.request import Request, urlopen
+from urllib.parse import urlencode, urljoin, urlsplit, urlunsplit
+from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 from material_agent.inspiration.models import (
     ArtifactPointerV1,
@@ -40,6 +40,77 @@ _MAX_RETRY_DELAY_SECONDS = 60.0
 _MAX_TOTAL_WAIT_SECONDS = 120.0
 _CROSSREF_PUBLIC_MIN_INTERVAL_SECONDS = 1.0
 _CROSSREF_POLITE_MIN_INTERVAL_SECONDS = 1.0 / 3.0
+_METADATA_REDIRECT_STATUSES = frozenset({301, 302, 303, 307, 308})
+_MAX_METADATA_REDIRECTS = 5
+_MAX_REDIRECT_LOCATION_LENGTH = 2_048
+
+
+class _RejectRedirectHandler(HTTPRedirectHandler):
+    """Keep redirects observable so every physical hop can be authorized first."""
+
+    def redirect_request(  # type: ignore[no-untyped-def]
+        self,
+        req,
+        fp,
+        code,
+        msg,
+        headers,
+        newurl,
+    ):
+        del req, fp, code, msg, headers, newurl
+        return None
+
+
+_NO_REDIRECT_OPENER = build_opener(_RejectRedirectHandler())
+
+
+def urlopen(request: Request, *, timeout: float):  # type: ignore[no-untyped-def]
+    """Open exactly one URL without urllib's implicit redirect handling.
+
+    The module-level boundary is intentionally retained so tests can replace the
+    physical network call.  Redirects surface as :class:`HTTPError` instances and
+    are handled explicitly by :class:`UrlLibBoundedTransport`.
+    """
+
+    return _NO_REDIRECT_OPENER.open(request, timeout=timeout)  # noqa: S310
+
+
+@dataclass(frozen=True, slots=True)
+class PhysicalSearchHop:
+    """One transport-observed HTTP request, including explicit redirects."""
+
+    outcome: Literal["success", "redirect", "error"]
+    error_code: str | None
+    http_status: int | None
+    response_bytes: int = 0
+
+    def __post_init__(self) -> None:
+        if self.outcome not in {"success", "redirect", "error"}:
+            raise ValueError("physical search hop outcome is invalid")
+        if self.outcome == "error" and not self.error_code:
+            raise ValueError("failed physical search hops require an error code")
+        if self.outcome != "error" and self.error_code is not None:
+            raise ValueError("non-error physical search hops cannot have an error code")
+        if self.http_status is not None and not 100 <= self.http_status <= 599:
+            raise ValueError("physical search hop HTTP status is invalid")
+        if type(self.response_bytes) is not int or not 0 <= self.response_bytes <= 10_000_001:
+            raise ValueError("physical search hop response bytes are invalid")
+
+
+@dataclass(frozen=True, slots=True)
+class BoundedHttpResult:
+    """Bounded response bytes plus the exact physical HTTP hop sequence."""
+
+    payload: bytes
+    physical_hops: tuple[PhysicalSearchHop, ...]
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.payload, bytes):
+            raise TypeError("bounded HTTP payload must be bytes")
+        if not self.physical_hops:
+            raise ValueError("bounded HTTP result requires at least one physical hop")
+        if self.physical_hops[-1].outcome != "success":
+            raise ValueError("bounded HTTP result requires a terminal successful hop")
 
 
 class SearchAdapterError(RuntimeError):
@@ -60,6 +131,7 @@ class SearchAdapterError(RuntimeError):
         retry_after: str | None = None,
         response_bytes: int = 0,
         attempts: tuple[SearchAttemptRecord, ...] = (),
+        physical_hops: tuple[PhysicalSearchHop, ...] = (),
     ) -> None:
         if type(response_bytes) is not int or not 0 <= response_bytes <= 10_000_001:
             raise ValueError("response_bytes must be between 0 and 10000001")
@@ -69,6 +141,7 @@ class SearchAdapterError(RuntimeError):
         self.retry_after = retry_after
         self.response_bytes = response_bytes
         self.attempts = tuple(attempts)
+        self.physical_hops = tuple(physical_hops)
         super().__init__(f"{code}: {message}")
 
     def with_attempts(
@@ -84,6 +157,7 @@ class SearchAdapterError(RuntimeError):
             retry_after=self.retry_after,
             response_bytes=self.response_bytes,
             attempts=attempts,
+            physical_hops=self.physical_hops,
         )
 
 
@@ -93,7 +167,7 @@ class SearchAttemptRecord:
 
     query_id: str
     attempt_number: int
-    outcome: Literal["success", "error"]
+    outcome: Literal["success", "redirect", "error"]
     error_code: str | None
     http_status: int | None
     retry_delay_seconds: float
@@ -105,10 +179,10 @@ class SearchAttemptRecord:
             raise ValueError("query_id must be non-empty")
         if self.attempt_number < 1:
             raise ValueError("attempt_number must be positive")
-        if self.outcome not in {"success", "error"}:
-            raise ValueError("outcome must be success or error")
-        if self.outcome == "success" and self.error_code is not None:
-            raise ValueError("successful attempts cannot have an error_code")
+        if self.outcome not in {"success", "redirect", "error"}:
+            raise ValueError("outcome must be success, redirect, or error")
+        if self.outcome != "error" and self.error_code is not None:
+            raise ValueError("non-error attempts cannot have an error_code")
         if self.outcome == "error" and not self.error_code:
             raise ValueError("failed attempts require an error_code")
         if self.http_status is not None and not 100 <= self.http_status <= 599:
@@ -173,7 +247,14 @@ class SearchAdapter(Protocol):
     component: ComponentSnapshotV1
     network_access: bool
 
-    def search(self, query: SearchQueryV1, *, max_response_bytes: int) -> RawSearchPage:
+    def search(
+        self,
+        query: SearchQueryV1,
+        *,
+        max_response_bytes: int,
+        remaining_walltime_seconds: float | None = None,
+        max_physical_requests: int | None = None,
+    ) -> RawSearchPage:
         """Return one bounded raw metadata response for ``query``."""
 
 
@@ -185,10 +266,90 @@ class BoundedHttpTransport(Protocol):
         url: str,
         *,
         headers: Mapping[str, str],
-        timeout_seconds: int,
+        timeout_seconds: float,
         max_response_bytes: int,
-    ) -> bytes:
+        deadline_monotonic: float | None = None,
+        max_physical_requests: int | None = None,
+    ) -> bytes | BoundedHttpResult:
         """Return a response only when it fits the declared byte budget."""
+
+
+def _validated_metadata_url(
+    url: str,
+    *,
+    allowed_hosts: frozenset[str],
+    is_redirect: bool,
+) -> str:
+    """Return a fragment-free URL only after validating its network authority."""
+
+    error_code = (
+        "UNTRUSTED_METADATA_REDIRECT"
+        if is_redirect
+        else "UNTRUSTED_METADATA_ENDPOINT"
+    )
+    error_message = (
+        "metadata redirect must use an allowlisted HTTPS endpoint on port 443"
+        if is_redirect
+        else "metadata requests must use an allowlisted HTTPS endpoint on port 443"
+    )
+    if not isinstance(url, str) or not url or any(
+        ord(character) <= 0x20 or ord(character) == 0x7F for character in url
+    ):
+        raise SearchAdapterError(error_code, error_message)
+    try:
+        parsed = urlsplit(url)
+        port = parsed.port
+    except ValueError as error:
+        raise SearchAdapterError(error_code, error_message) from error
+    hostname = parsed.hostname.casefold() if parsed.hostname is not None else None
+    if (
+        parsed.scheme.casefold() != "https"
+        or hostname not in allowed_hosts
+        or port not in {None, 443}
+        or parsed.username is not None
+        or parsed.password is not None
+    ):
+        raise SearchAdapterError(error_code, error_message)
+    return urlunsplit(
+        (
+            "https",
+            parsed.netloc,
+            parsed.path,
+            parsed.query,
+            "",
+        )
+    )
+
+
+def _metadata_url_key(url: str) -> tuple[str, str, int, str, str]:
+    """Canonical comparison key for redirect-loop and hidden-redirect checks."""
+
+    parsed = urlsplit(url)
+    assert parsed.hostname is not None
+    return (
+        parsed.scheme.casefold(),
+        parsed.hostname.casefold(),
+        parsed.port or 443,
+        parsed.path or "/",
+        parsed.query,
+    )
+
+
+def _redirect_target(current_url: str, headers: object) -> str:
+    """Resolve one bounded Location header without authorizing or requesting it."""
+
+    location = headers.get("Location") if hasattr(headers, "get") else None
+    if not isinstance(location, str) or not location.strip():
+        raise SearchAdapterError(
+            "MISSING_REDIRECT_LOCATION",
+            "metadata redirect did not include a Location header",
+        )
+    if len(location) > _MAX_REDIRECT_LOCATION_LENGTH:
+        raise SearchAdapterError(
+            "INVALID_REDIRECT_LOCATION",
+            "metadata redirect Location exceeded its bounded length",
+        )
+    return urljoin(current_url, location)
 
 
 class UrlLibBoundedTransport:
@@ -196,96 +357,285 @@ class UrlLibBoundedTransport:
 
     allowed_hosts = frozenset({"api.crossref.org"})
 
+    def __init__(
+        self,
+        *,
+        monotonic_clock: Callable[[], float] = time.monotonic,
+    ) -> None:
+        if not callable(monotonic_clock):
+            raise ValueError("monotonic_clock must be callable")
+        self.monotonic_clock = monotonic_clock
+
     def get(
         self,
         url: str,
         *,
         headers: Mapping[str, str],
-        timeout_seconds: int,
+        timeout_seconds: float,
         max_response_bytes: int,
-    ) -> bytes:
-        if not 1 <= timeout_seconds <= 120:
+        deadline_monotonic: float | None = None,
+        max_physical_requests: int | None = None,
+    ) -> BoundedHttpResult:
+        if (
+            not isinstance(timeout_seconds, (int, float))
+            or isinstance(timeout_seconds, bool)
+            or not math.isfinite(timeout_seconds)
+            or not 0 < timeout_seconds <= 120
+        ):
             raise SearchAdapterError(
                 "INVALID_TIMEOUT",
-                "timeout_seconds must be between 1 and 120",
+                "timeout_seconds must be greater than zero and at most 120",
             )
         if not 1 <= max_response_bytes <= 10_000_000:
             raise SearchAdapterError(
                 "INVALID_RESPONSE_BUDGET",
                 "max_response_bytes must be between 1 and 10000000",
             )
-        requested = urlsplit(url)
-        if requested.scheme != "https" or requested.hostname not in self.allowed_hosts:
+        if deadline_monotonic is not None and (
+            not isinstance(deadline_monotonic, (int, float))
+            or isinstance(deadline_monotonic, bool)
+            or not math.isfinite(deadline_monotonic)
+        ):
             raise SearchAdapterError(
-                "UNTRUSTED_METADATA_ENDPOINT",
-                "metadata requests must use an allowlisted HTTPS endpoint",
+                "INVALID_DEADLINE",
+                "deadline_monotonic must be a finite number of seconds",
             )
-
-        request = Request(url, headers=dict(headers), method="GET")
-        try:
-            with urlopen(request, timeout=timeout_seconds) as response:  # noqa: S310
-                resolved = urlsplit(response.geturl())
-                if (
-                    resolved.scheme != "https"
-                    or resolved.hostname not in self.allowed_hosts
-                ):
-                    raise SearchAdapterError(
-                        "UNTRUSTED_METADATA_REDIRECT",
-                        "metadata endpoint redirected outside the allowlist",
-                    )
-                media_type = response.headers.get_content_type().casefold()
-                if media_type not in {"application/json", "application/vnd.api+json"}:
-                    raise SearchAdapterError(
-                        "UNEXPECTED_MEDIA_TYPE",
-                        f"metadata endpoint returned {media_type!r}",
-                    )
-                content_length = response.headers.get("Content-Length")
-                if content_length is not None:
-                    try:
-                        declared_length = int(content_length)
-                    except ValueError as error:
-                        raise SearchAdapterError(
-                            "INVALID_CONTENT_LENGTH",
-                            "metadata endpoint returned an invalid Content-Length",
-                        ) from error
-                    if declared_length > max_response_bytes:
-                        raise SearchAdapterError(
-                            "RESPONSE_BUDGET_EXCEEDED",
-                            "metadata response exceeds its declared byte budget",
-                        )
-                payload = response.read(max_response_bytes + 1)
-        except SearchAdapterError:
-            raise
-        except HTTPError as error:
-            status = int(error.code)
-            retry_after = None
-            if error.headers is not None:
-                candidate = error.headers.get("Retry-After")
-                if isinstance(candidate, str) and len(candidate) <= 128:
-                    retry_after = candidate
+        if max_physical_requests is not None and (
+            type(max_physical_requests) is not int
+            or not 1 <= max_physical_requests <= 64
+        ):
             raise SearchAdapterError(
-                (
+                "INVALID_PHYSICAL_REQUEST_BUDGET",
+                "max_physical_requests must be between 1 and 64",
+            )
+        current_url = _validated_metadata_url(
+            url,
+            allowed_hosts=self.allowed_hosts,
+            is_redirect=False,
+        )
+        seen_urls = {_metadata_url_key(current_url)}
+        redirects_followed = 0
+        physical_hops: list[PhysicalSearchHop] = []
+
+        while True:
+            if (
+                max_physical_requests is not None
+                and len(physical_hops) >= max_physical_requests
+            ):
+                raise SearchAdapterError(
+                    "SEARCH_REQUEST_BUDGET_EXCEEDED",
+                    "metadata redirects exhausted the physical request budget",
+                    physical_hops=tuple(physical_hops),
+                )
+            # Validate again at the physical-request boundary.  In particular, no
+            # redirected URL reaches urlopen before its scheme, host, and port pass.
+            current_url = _validated_metadata_url(
+                current_url,
+                allowed_hosts=self.allowed_hosts,
+                is_redirect=redirects_followed > 0,
+            )
+            request = Request(current_url, headers=dict(headers), method="GET")
+            request_timeout = float(timeout_seconds)
+            if deadline_monotonic is not None:
+                remaining = deadline_monotonic - _read_finite_clock(
+                    self.monotonic_clock,
+                    "transport_monotonic_clock",
+                )
+                if remaining <= 0:
+                    raise SearchAdapterError(
+                        "WALLTIME_BUDGET_EXCEEDED",
+                        "metadata request deadline expired before the next hop",
+                        physical_hops=tuple(physical_hops),
+                    )
+                request_timeout = min(request_timeout, remaining)
+            try:
+                with urlopen(request, timeout=request_timeout) as response:  # noqa: S310
+                    try:
+                        resolved_url = _validated_metadata_url(
+                            response.geturl(),
+                            allowed_hosts=self.allowed_hosts,
+                            is_redirect=True,
+                        )
+                        if _metadata_url_key(resolved_url) != _metadata_url_key(
+                            current_url
+                        ):
+                            raise SearchAdapterError(
+                                "UNEXPECTED_METADATA_REDIRECT",
+                                "metadata transport followed an unvalidated redirect",
+                            )
+                        media_type = response.headers.get_content_type().casefold()
+                        if media_type not in {
+                            "application/json",
+                            "application/vnd.api+json",
+                        }:
+                            raise SearchAdapterError(
+                                "UNEXPECTED_MEDIA_TYPE",
+                                f"metadata endpoint returned {media_type!r}",
+                            )
+                        content_length = response.headers.get("Content-Length")
+                        if content_length is not None:
+                            normalized_length = content_length.strip()
+                            if (
+                                not normalized_length.isascii()
+                                or not normalized_length.isdigit()
+                            ):
+                                raise SearchAdapterError(
+                                    "INVALID_CONTENT_LENGTH",
+                                    "metadata endpoint returned an invalid Content-Length",
+                                )
+                            significant_length = normalized_length.lstrip("0") or "0"
+                            budget_text = str(max_response_bytes)
+                            if (
+                                len(significant_length) > len(budget_text)
+                                or (
+                                    len(significant_length) == len(budget_text)
+                                    and significant_length > budget_text
+                                )
+                            ):
+                                raise SearchAdapterError(
+                                    "RESPONSE_BUDGET_EXCEEDED",
+                                    "metadata response exceeds its declared byte budget",
+                                )
+                        payload = response.read(max_response_bytes + 1)
+                        if len(payload) > max_response_bytes:
+                            raise SearchAdapterError(
+                                "RESPONSE_BUDGET_EXCEEDED",
+                                "metadata response exceeded its byte budget while streaming",
+                                response_bytes=len(payload),
+                            )
+                        if deadline_monotonic is not None and (
+                            _read_finite_clock(
+                                self.monotonic_clock,
+                                "transport_monotonic_clock",
+                            )
+                            >= deadline_monotonic
+                        ):
+                            raise SearchAdapterError(
+                                "WALLTIME_BUDGET_EXCEEDED",
+                                "metadata response completed after the run deadline",
+                                response_bytes=len(payload),
+                            )
+                    except SearchAdapterError as error:
+                        failed_hops = (
+                            *physical_hops,
+                            PhysicalSearchHop(
+                                outcome="error",
+                                error_code=error.code,
+                                http_status=error.http_status or 200,
+                                response_bytes=error.response_bytes,
+                            ),
+                        )
+                        raise SearchAdapterError(
+                            error.code,
+                            error.message,
+                            http_status=error.http_status,
+                            retry_after=error.retry_after,
+                            response_bytes=error.response_bytes,
+                            physical_hops=failed_hops,
+                        ) from error
+                physical_hops.append(
+                    PhysicalSearchHop(
+                        outcome="success",
+                        error_code=None,
+                        http_status=200,
+                        response_bytes=len(payload),
+                    )
+                )
+                return BoundedHttpResult(
+                    payload=payload,
+                    physical_hops=tuple(physical_hops),
+                )
+            except HTTPError as error:
+                status = int(error.code)
+                if status in _METADATA_REDIRECT_STATUSES:
+                    try:
+                        try:
+                            target_url = _redirect_target(current_url, error.headers)
+                            target_url = _validated_metadata_url(
+                                target_url,
+                                allowed_hosts=self.allowed_hosts,
+                                is_redirect=True,
+                            )
+                            target_key = _metadata_url_key(target_url)
+                            if target_key in seen_urls:
+                                raise SearchAdapterError(
+                                    "METADATA_REDIRECT_LOOP",
+                                    "metadata endpoint returned a redirect loop",
+                                    http_status=status,
+                                )
+                            if redirects_followed >= _MAX_METADATA_REDIRECTS:
+                                raise SearchAdapterError(
+                                    "TOO_MANY_METADATA_REDIRECTS",
+                                    "metadata endpoint exceeded the redirect limit",
+                                    http_status=status,
+                                )
+                        except SearchAdapterError as redirect_error:
+                            failed_hops = (
+                                *physical_hops,
+                                PhysicalSearchHop(
+                                    outcome="error",
+                                    error_code=redirect_error.code,
+                                    http_status=status,
+                                ),
+                            )
+                            raise SearchAdapterError(
+                                redirect_error.code,
+                                redirect_error.message,
+                                http_status=status,
+                                physical_hops=failed_hops,
+                            ) from redirect_error
+                    finally:
+                        error.close()
+                    physical_hops.append(
+                        PhysicalSearchHop(
+                            outcome="redirect",
+                            error_code=None,
+                            http_status=status,
+                        )
+                    )
+                    seen_urls.add(target_key)
+                    redirects_followed += 1
+                    current_url = target_url
+                    continue
+                retry_after = None
+                if error.headers is not None:
+                    candidate = error.headers.get("Retry-After")
+                    if isinstance(candidate, str) and len(candidate) <= 128:
+                        retry_after = candidate
+                code = (
                     "TRANSIENT_HTTP_ERROR"
                     if status in _TRANSIENT_HTTP_STATUSES
                     else "HTTP_ERROR"
-                ),
-                f"metadata endpoint returned HTTP {status}",
-                http_status=status,
-                retry_after=retry_after,
-            ) from error
-        except (TimeoutError, socket.timeout, URLError, OSError) as error:
-            raise SearchAdapterError(
-                "NETWORK_ERROR",
-                "metadata endpoint could not be read within the bounded request",
-            ) from error
-
-        if len(payload) > max_response_bytes:
-            raise SearchAdapterError(
-                "RESPONSE_BUDGET_EXCEEDED",
-                "metadata response exceeded its byte budget while streaming",
-                response_bytes=len(payload),
-            )
-        return payload
+                )
+                failed_hops = (
+                    *physical_hops,
+                    PhysicalSearchHop(
+                        outcome="error",
+                        error_code=code,
+                        http_status=status,
+                    ),
+                )
+                raise SearchAdapterError(
+                    code,
+                    f"metadata endpoint returned HTTP {status}",
+                    http_status=status,
+                    retry_after=retry_after,
+                    physical_hops=failed_hops,
+                ) from error
+            except (TimeoutError, socket.timeout, URLError, OSError) as error:
+                failed_hops = (
+                    *physical_hops,
+                    PhysicalSearchHop(
+                        outcome="error",
+                        error_code="NETWORK_ERROR",
+                        http_status=None,
+                    ),
+                )
+                raise SearchAdapterError(
+                    "NETWORK_ERROR",
+                    "metadata endpoint could not be read within the bounded request",
+                    physical_hops=failed_hops,
+                ) from error
 
 
 def _validate_bounded_seconds(name: str, value: float, *, maximum: float) -> None:
@@ -342,6 +692,47 @@ def _parse_retry_after_seconds(
 def _is_transient_search_error(error: SearchAdapterError) -> bool:
     return error.code == "NETWORK_ERROR" or (
         error.http_status in _TRANSIENT_HTTP_STATUSES
+    )
+
+
+def _remaining_before_deadline(
+    deadline_monotonic: float | None,
+    *,
+    monotonic_clock: Callable[[], float],
+) -> float | None:
+    if deadline_monotonic is None:
+        return None
+    remaining = deadline_monotonic - _read_finite_clock(
+        monotonic_clock,
+        "monotonic_clock",
+    )
+    if remaining <= 0:
+        raise SearchAdapterError(
+            "WALLTIME_BUDGET_EXCEEDED",
+            "the inspiration run deadline has expired",
+        )
+    return remaining
+
+
+def _attempt_records_from_physical_hops(
+    *,
+    query_id: str,
+    first_attempt_number: int,
+    physical_hops: tuple[PhysicalSearchHop, ...],
+    pacing_delay_seconds: float,
+) -> tuple[SearchAttemptRecord, ...]:
+    return tuple(
+        SearchAttemptRecord(
+            query_id=query_id,
+            attempt_number=first_attempt_number + offset,
+            outcome=hop.outcome,
+            error_code=hop.error_code,
+            http_status=hop.http_status,
+            retry_delay_seconds=0.0,
+            pacing_delay_seconds=(pacing_delay_seconds if offset == 0 else 0.0),
+            response_bytes=hop.response_bytes,
+        )
+        for offset, hop in enumerate(physical_hops)
     )
 
 
@@ -476,7 +867,9 @@ class CrossrefPublicAdapter:
         self.max_results = max_results
         self.timeout_seconds = timeout_seconds
         self.contact_email = contact_email
-        self.transport = transport or UrlLibBoundedTransport()
+        self.transport = transport or UrlLibBoundedTransport(
+            monotonic_clock=monotonic_clock
+        )
         self.max_retries = max_retries
         self.retry_backoff_seconds = float(retry_backoff_seconds)
         self.max_retry_delay_seconds = float(max_retry_delay_seconds)
@@ -498,7 +891,14 @@ class CrossrefPublicAdapter:
             polite_pool=contact_email is not None,
         )
 
-    def search(self, query: SearchQueryV1, *, max_response_bytes: int) -> RawSearchPage:
+    def search(
+        self,
+        query: SearchQueryV1,
+        *,
+        max_response_bytes: int,
+        remaining_walltime_seconds: float | None = None,
+        max_physical_requests: int | None = None,
+    ) -> RawSearchPage:
         if not isinstance(query, SearchQueryV1):
             raise SearchAdapterError(
                 "INVALID_QUERY",
@@ -508,6 +908,36 @@ class CrossrefPublicAdapter:
             raise SearchAdapterError(
                 "INVALID_RESPONSE_BUDGET",
                 "max_response_bytes must be between 1 and 10000000",
+            )
+        if remaining_walltime_seconds is not None:
+            if (
+                not isinstance(remaining_walltime_seconds, (int, float))
+                or isinstance(remaining_walltime_seconds, bool)
+                or not math.isfinite(remaining_walltime_seconds)
+                or remaining_walltime_seconds <= 0
+            ):
+                raise SearchAdapterError(
+                    "WALLTIME_BUDGET_EXCEEDED",
+                    "remaining_walltime_seconds must be finite and positive",
+                )
+            deadline_monotonic = _read_finite_clock(
+                self.monotonic_clock,
+                "monotonic_clock",
+            ) + float(remaining_walltime_seconds)
+        else:
+            deadline_monotonic = None
+        if max_physical_requests is not None and (
+            type(max_physical_requests) is not int
+            or not 0 <= max_physical_requests <= 64
+        ):
+            raise SearchAdapterError(
+                "INVALID_PHYSICAL_REQUEST_BUDGET",
+                "max_physical_requests must be between 0 and 64",
+            )
+        if max_physical_requests == 0:
+            raise SearchAdapterError(
+                "SEARCH_REQUEST_BUDGET_EXCEEDED",
+                "no physical metadata request remains",
             )
         parameters = {
             "filter": "has-abstract:true",
@@ -525,27 +955,58 @@ class CrossrefPublicAdapter:
         }
         attempts: list[SearchAttemptRecord] = []
         total_wait_seconds = 0.0
-        for attempt_number in range(1, self.max_retries + 2):
+        for logical_attempt_number in range(1, self.max_retries + 2):
             try:
                 pacing_delay = self._pace_request(
                     remaining_wait_seconds=(
                         self.max_total_wait_seconds - total_wait_seconds
-                    )
+                    ),
+                    deadline_monotonic=deadline_monotonic,
                 )
             except SearchAdapterError as error:
                 raise error.with_attempts(tuple(attempts)) from error
             total_wait_seconds += pacing_delay
             try:
-                payload = self.transport.get(
+                remaining_for_request = _remaining_before_deadline(
+                    deadline_monotonic,
+                    monotonic_clock=self.monotonic_clock,
+                )
+                transport_result = self.transport.get(
                     url,
                     headers=headers,
-                    timeout_seconds=self.timeout_seconds,
+                    timeout_seconds=min(
+                        float(self.timeout_seconds),
+                        (
+                            remaining_for_request
+                            if remaining_for_request is not None
+                            else float(self.timeout_seconds)
+                        ),
+                    ),
                     max_response_bytes=max_response_bytes,
+                    deadline_monotonic=deadline_monotonic,
+                    max_physical_requests=(
+                        None
+                        if max_physical_requests is None
+                        else max_physical_requests - len(attempts)
+                    ),
                 )
-                if not isinstance(payload, bytes):
+                if isinstance(transport_result, bytes):
+                    payload = transport_result
+                    physical_hops = (
+                        PhysicalSearchHop(
+                            outcome="success",
+                            error_code=None,
+                            http_status=200,
+                            response_bytes=len(payload),
+                        ),
+                    )
+                elif isinstance(transport_result, BoundedHttpResult):
+                    payload = transport_result.payload
+                    physical_hops = transport_result.physical_hops
+                else:
                     raise SearchAdapterError(
                         "INVALID_NETWORK_PAYLOAD",
-                        "metadata transport must return bytes",
+                        "metadata transport must return bytes or BoundedHttpResult",
                     )
                 if len(payload) > max_response_bytes:
                     raise SearchAdapterError(
@@ -553,50 +1014,125 @@ class CrossrefPublicAdapter:
                         "metadata transport returned more than the declared byte budget",
                         response_bytes=len(payload),
                     )
+                if (
+                    max_physical_requests is not None
+                    and len(attempts) + len(physical_hops) > max_physical_requests
+                ):
+                    raise SearchAdapterError(
+                        "SEARCH_REQUEST_BUDGET_EXCEEDED",
+                        "metadata transport exceeded the physical request budget",
+                        physical_hops=physical_hops,
+                    )
+                try:
+                    _remaining_before_deadline(
+                        deadline_monotonic,
+                        monotonic_clock=self.monotonic_clock,
+                    )
+                except SearchAdapterError as deadline_error:
+                    failed_hops = (
+                        *physical_hops[:-1],
+                        PhysicalSearchHop(
+                            outcome="error",
+                            error_code=deadline_error.code,
+                            http_status=physical_hops[-1].http_status,
+                            response_bytes=len(payload),
+                        ),
+                    )
+                    raise SearchAdapterError(
+                        deadline_error.code,
+                        deadline_error.message,
+                        response_bytes=len(payload),
+                        physical_hops=failed_hops,
+                    ) from deadline_error
             except SearchAdapterError as error:
+                physical_hops = error.physical_hops
+                if not physical_hops and error.code not in {
+                    "WALLTIME_BUDGET_EXCEEDED",
+                    "SEARCH_REQUEST_BUDGET_EXCEEDED",
+                }:
+                    physical_hops = (
+                        PhysicalSearchHop(
+                            outcome="error",
+                            error_code=error.code,
+                            http_status=error.http_status,
+                            response_bytes=error.response_bytes,
+                        ),
+                    )
+                new_records = _attempt_records_from_physical_hops(
+                    query_id=query.query_id,
+                    first_attempt_number=len(attempts) + 1,
+                    physical_hops=physical_hops,
+                    pacing_delay_seconds=pacing_delay,
+                )
                 can_retry = (
-                    attempt_number <= self.max_retries
+                    logical_attempt_number <= self.max_retries
                     and _is_transient_search_error(error)
+                    and (
+                        max_physical_requests is None
+                        or len(attempts) + len(new_records) < max_physical_requests
+                    )
                 )
                 retry_delay = 0.0
+                deadline_prevents_retry = False
                 if can_retry:
                     retry_delay = self._retry_delay_seconds(
                         error,
-                        retry_number=attempt_number,
+                        retry_number=logical_attempt_number,
                     )
                     remaining_wait = self.max_total_wait_seconds - total_wait_seconds
                     if retry_delay > remaining_wait:
                         can_retry = False
                         retry_delay = 0.0
-                attempts.append(
-                    SearchAttemptRecord(
-                        query_id=query.query_id,
-                        attempt_number=attempt_number,
-                        outcome="error",
-                        error_code=error.code,
-                        http_status=error.http_status,
-                        retry_delay_seconds=retry_delay,
-                        pacing_delay_seconds=pacing_delay,
-                        response_bytes=error.response_bytes,
+                    else:
+                        try:
+                            deadline_remaining = _remaining_before_deadline(
+                                deadline_monotonic,
+                                monotonic_clock=self.monotonic_clock,
+                            )
+                        except SearchAdapterError:
+                            deadline_remaining = 0.0
+                        if (
+                            deadline_remaining is not None
+                            and retry_delay >= deadline_remaining
+                        ):
+                            can_retry = False
+                            deadline_prevents_retry = True
+                            retry_delay = 0.0
+                if new_records and retry_delay:
+                    new_records = (
+                        *new_records[:-1],
+                        replace(
+                            new_records[-1],
+                            retry_delay_seconds=retry_delay,
+                        ),
                     )
-                )
+                attempts.extend(new_records)
+                if deadline_prevents_retry:
+                    raise SearchAdapterError(
+                        "WALLTIME_BUDGET_EXCEEDED",
+                        "the remaining run walltime cannot cover the retry delay",
+                        attempts=tuple(attempts),
+                    ) from error
                 if not can_retry:
                     raise error.with_attempts(tuple(attempts)) from error
                 if retry_delay:
                     self.sleeper(retry_delay)
                     total_wait_seconds += retry_delay
+                    try:
+                        _remaining_before_deadline(
+                            deadline_monotonic,
+                            monotonic_clock=self.monotonic_clock,
+                        )
+                    except SearchAdapterError as deadline_error:
+                        raise deadline_error.with_attempts(tuple(attempts)) from error
                 continue
 
-            attempts.append(
-                SearchAttemptRecord(
+            attempts.extend(
+                _attempt_records_from_physical_hops(
                     query_id=query.query_id,
-                    attempt_number=attempt_number,
-                    outcome="success",
-                    error_code=None,
-                    http_status=200,
-                    retry_delay_seconds=0.0,
+                    first_attempt_number=len(attempts) + 1,
+                    physical_hops=physical_hops,
                     pacing_delay_seconds=pacing_delay,
-                    response_bytes=len(payload),
                 )
             )
             return RawSearchPage(
@@ -607,7 +1143,12 @@ class CrossrefPublicAdapter:
             )
         raise AssertionError("finite Crossref retry loop did not return or raise")
 
-    def _pace_request(self, *, remaining_wait_seconds: float) -> float:
+    def _pace_request(
+        self,
+        *,
+        remaining_wait_seconds: float,
+        deadline_monotonic: float | None,
+    ) -> float:
         """Wait until the next provider request is within the configured rate."""
 
         with self._pacing_lock:
@@ -626,6 +1167,15 @@ class CrossrefPublicAdapter:
                 raise SearchAdapterError(
                     "WAIT_BUDGET_EXCEEDED",
                     "Crossref request pacing exceeds the remaining wait budget",
+                )
+            deadline_remaining = _remaining_before_deadline(
+                deadline_monotonic,
+                monotonic_clock=self.monotonic_clock,
+            )
+            if deadline_remaining is not None and delay >= deadline_remaining:
+                raise SearchAdapterError(
+                    "WALLTIME_BUDGET_EXCEEDED",
+                    "Crossref pacing cannot complete before the run deadline",
                 )
             if delay:
                 self.sleeper(delay)
@@ -663,7 +1213,20 @@ class FixtureSearchAdapter:
     def __init__(self, responses: Mapping[str, bytes]) -> None:
         self._responses = dict(responses)
 
-    def search(self, query: SearchQueryV1, *, max_response_bytes: int) -> RawSearchPage:
+    def search(
+        self,
+        query: SearchQueryV1,
+        *,
+        max_response_bytes: int,
+        remaining_walltime_seconds: float | None = None,
+        max_physical_requests: int | None = None,
+    ) -> RawSearchPage:
+        del remaining_walltime_seconds
+        if max_physical_requests == 0:
+            raise SearchAdapterError(
+                "SEARCH_REQUEST_BUDGET_EXCEEDED",
+                "no fixture search attempt remains",
+            )
         if max_response_bytes < 1:
             raise SearchAdapterError(
                 "INVALID_RESPONSE_BUDGET",

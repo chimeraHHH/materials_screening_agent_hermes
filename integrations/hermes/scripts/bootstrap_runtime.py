@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -17,6 +18,27 @@ INTEGRATION_ROOT = REPO_ROOT / "integrations" / "hermes"
 LOCK_PATH = INTEGRATION_ROOT / "hermes.lock.json"
 SOURCE_ROOT = REPO_ROOT / ".external" / "hermes-agent"
 ENV_ROOT = REPO_ROOT / ".venv-hermes"
+
+
+def parse_runtime_version(value: str) -> tuple[int, int, int]:
+    match = re.fullmatch(r"v?(\d+)\.(\d+)\.(\d+)(?:[-+].*)?", value.strip())
+    if match is None:
+        raise RuntimeError("runtime version has an unexpected format")
+    return tuple(int(part) for part in match.groups())  # type: ignore[return-value]
+
+
+def ensure_node(minimum: str) -> None:
+    """Fail before checkout/install when the dashboard Node floor is unmet."""
+
+    for executable in ("node", "npm"):
+        if shutil.which(executable) is None:
+            raise RuntimeError(f"required executable is unavailable: {executable}")
+    actual = output("node", "--version")
+    if parse_runtime_version(actual) < parse_runtime_version(minimum):
+        raise RuntimeError(
+            f"Hermes dashboard requires Node >= {minimum}, got {actual.lstrip('v')}"
+        )
+    parse_runtime_version(output("npm", "--version"))
 
 
 def run(*args: str, cwd: Path | None = None, env: dict[str, str] | None = None) -> None:
@@ -77,6 +99,7 @@ def main() -> int:
     for executable in ("git", "uv"):
         if shutil.which(executable) is None:
             raise RuntimeError(f"required executable is unavailable: {executable}")
+    ensure_node(lock["node_minimum"])
     ensure_source(
         lock["repository"],
         lock["release_tag"],

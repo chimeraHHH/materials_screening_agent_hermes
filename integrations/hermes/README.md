@@ -24,8 +24,28 @@ Its platform configuration names the raw `materials` server; Hermes v0.20.0 then
 registers the dynamic `mcp-materials` toolset and `mcp__materials__*` tools. The
 MCP server exposes four coarse tools and disables server resources and prompts.
 The profile pins the repository-owned
-`material_agent.integration.hermes_service:create_hermes_inspiration_service`
+`material_agent.integration.queued_gateway:create_queued_hermes_inspiration_service`
 factory; neither the model nor a tool caller can replace it or supply paths.
+
+The pinned factory is asynchronous. Grant consumption and job enqueue share one
+SQLite transaction; successful `materials_run_act` returns `RUNNING` after durable
+enqueue.
+It does not execute Crossref or the inspiration runner on the MCP request thread.
+The production lifecycle below starts and supervises the required worker for the
+same workspace/project before accepting traffic. For standalone diagnostics,
+the equivalent worker entry point is:
+
+```bash
+.venv-gateway/bin/python -m material_agent.integration.queued_gateway \
+  --workspace /absolute/path/to/a/bounded/workspace \
+  --project materials-inspiration
+```
+
+The worker claims jobs with a fenced lease, heartbeats during bounded execution,
+and commits checkpoint/terminal state through the same persistent Gateway. If no
+worker is healthy, actions remain durably `RUNNING`; Hermes must poll
+`materials_run_get` and must not repeat the approval action or call
+`materials_result_get` before a terminal state.
 
 The versioned `SKILL.md` is mirrored into `SOUL.md` so its policy is loaded on
 every API-server run without enabling Hermes's inseparable `skill_manage` tool.
@@ -117,14 +137,33 @@ only after correcting and validating the Gateway contract.
   --confirmation-reference user-confirmation:ticket-001
 ```
 
+`approve` remains the backward-compatible default. To decline without running
+scientific code, authorize the exact advertised `reject` or `cancel` action:
+
+```bash
+.venv-gateway/bin/python -m material_agent.integration.operator_approval \
+  --workspace /absolute/path/to/a/bounded/workspace \
+  --project materials-inspiration \
+  --run-id inspiration-... \
+  --confirmation-reference user-rejection:ticket-002 \
+  --decision reject \
+  --reason "bounded scope was not accepted"
+```
+
+The JSON receipt and private grant database record the exact canonical action,
+its decision kind, and the verified execution-manifest SHA. A grant for one
+decision or reject reason cannot authorize another action.
+
 The CLI defaults to the production public service. Source-controlled fixture
 replay is test-only and must be selected explicitly with `--service-mode fixture`.
 
 The grant binds the canonical request, complete interaction, execution manifest,
-and exact action, and is consumed atomically before runner execution. If the MCP
-process dies after consumption but before committing Gateway state, first verify
-that the original process has stopped. The same command can then revalidate all
-frozen inputs and explicitly re-arm the stranded grant with a fresh reference:
+and exact action. In the default queued profile it is consumed atomically with
+job creation, so an MCP restart cannot leave a consumed grant without a durable
+job. The recovery command below exists only for a verified stranded grant from
+the explicitly selected legacy synchronous compatibility factory. First verify
+that the original process has stopped; the command can then revalidate all
+frozen inputs and explicitly re-arm that legacy grant with a fresh reference:
 
 ```bash
 .venv-gateway/bin/python -m material_agent.integration.operator_approval \
@@ -136,9 +175,11 @@ frozen inputs and explicitly re-arm the stranded grant with a fresh reference:
   --confirm-original-process-stopped
 ```
 
-This recovery command is deliberately absent from Hermes's tool list and is only
-for a verified process crash between grant consumption and state commit. Never
-use it to replay a terminal provider failure or bypass a new user decision. The
+This recovery command is deliberately absent from Hermes's tool list. Never use
+it to compensate for an absent queued worker, replay a terminal provider failure,
+or bypass a new user decision. The
+recovery command must repeat the original `--decision` and, for rejection, the
+exact original `--reason`; otherwise no consumed grant matches. The
 fixture service remains available only through explicit `--service-mode fixture`
 for deterministic source-controlled replay; any byte drift fails closed.
 
@@ -194,3 +235,124 @@ been designed.
 The profile is intentionally not a filesystem sandbox. Its practical boundary is
 the absence of terminal/file/browser toolsets plus the Gateway's fixed schemas,
 path guards, size limits, hash verification, and human-approval checks.
+
+## Production lifecycle and release E2E
+
+The checked-in lifecycle wrapper owns one isolated Hermes home, the source
+profile install, dashboard build, process identities, health endpoints, and
+secret-safe operational counters. It requires `uv`, Git, and Node.js
+`>=22.22.0`; the Node check happens before any checkout, environment, profile,
+or dashboard mutation. Provider credentials and `API_SERVER_KEY` remain in the
+process environment or Hermes credential store and are never accepted as CLI
+arguments or copied into the operations event log.
+
+```bash
+export MATERIAL_AGENT_WORKSPACE=/absolute/path/to/a/bounded/workspace
+export MATERIALS_HERMES_PROVIDER=openrouter
+export MATERIALS_HERMES_MODEL=openai/gpt-4.1
+export API_SERVER_KEY='<at-least-32-character-loopback-api-key>'
+export OPENROUTER_API_KEY='<provider-credential>'
+
+./deploy/materials-inspiration deploy
+# Release smoke only: fail deployment on current Crossref unavailability.
+./deploy/materials-inspiration deploy --require-live-crossref
+./deploy/materials-inspiration status
+./deploy/materials-inspiration health
+./deploy/materials-inspiration metrics
+# Resolve only the exact retained manual-recovery incident after review.
+./deploy/materials-inspiration ack-failure \
+  --job-id '<gateway-job-id>' \
+  --expected-code BLOCKED_MANUAL_RECOVERY \
+  --actor '<operator-id>' \
+  --reason '<reviewed incident disposition>'
+./deploy/materials-inspiration stop
+```
+
+`deploy` synchronizes the two pinned Python environments, installs the
+source-controlled profile, records the non-secret model/provider selection,
+builds the dashboard, performs the full local preflight, and starts the owned
+processes. This lifecycle starts the queued Gateway worker before accepting
+dashboard traffic and binds it to the exact same resolved workspace, project,
+Gateway database, approval/outbox database, and Artifact root as the MCP
+server. The mode-0600 process-set record keeps the worker PID, POSIX start
+marker, command SHA-256, and a SHA-256 of that shared runtime binding; status
+recomputes both identities instead of trusting a PID alone. The binding also
+pins the resolved Hermes home/profile root and operations/process-record paths,
+so copying a process record to a different deployment root fails closed. The
+process record and lifecycle lock live at a canonical project `.gateway` path,
+so changing `--ops-dir` cannot create a second ownership domain for the same
+worker queue. The
+managed worker uses a 30-second fenced lease and durable heartbeats/checkpoints.
+An idle worker has no synthetic heartbeat, so idle liveness is explicitly the
+owned PID identity plus queue integrity; while a job is `RUNNING`, its parent
+supervisor refreshes the durable lease heartbeat. Worker and monitor children
+do not inherit provider/API-server credential variables; the worker retains
+only the non-secret runtime binding and optional Crossref contact identity
+needed for its bounded metadata requests. Profile installation and dashboard
+builds also use a minimal environment without provider or API-server secrets;
+only the final dashboard receives the selected provider credential. The release
+profile admits one concurrent Hermes run because the lifecycle currently
+manages one serial action worker; increasing that limit requires a
+correspondingly supervised worker pool and a new queue-capacity test.
+
+The local preflight fails closed on the Node/Python/Hermes pin, profile or
+model/provider drift, missing provider credentials, either SQLite database,
+and the exact four-tool MCP stdio handshake. The profile check compares the
+installed configuration semantically against the
+source profile after only the approved provider/model substitution, and verifies
+the installed SOUL and complete Skill tree byte-for-byte; enabling another tool,
+plugin, prompt, resource, private URL, or editing installed instructions therefore
+blocks start and health. Crossref is an external dependency,
+so a transient outage does not block the default local `deploy`/`start`; use
+`--require-live-crossref` for a release smoke that also fails closed on bounded
+Crossref connectivity. The runtime
+binds the dashboard to `127.0.0.1:9119` and the operational sidecar to
+`127.0.0.1:9120`; the latter exposes `/healthz`, `/readyz`, and Prometheus
+`/metrics`. `/healthz` reports local process/identity/database liveness.
+`/readyz` additionally fails closed when the oldest `READY` job exceeds 120
+seconds, the oldest `RUNNING` lease heartbeat exceeds 15 seconds, a lease has
+expired, or a job is in `BLOCKED_MANUAL_RECOVERY`. Status and metrics expose
+the worker PID/identity match, queue `quick_check`/schema status, queue state
+counts, oldest queue/lease ages, and terminal failed/blocked counts. Queue
+integrity also verifies foreign keys and exact v2 tables, columns, indexes, and
+core constraints. The
+blocked readiness count includes only unacknowledged
+`BLOCKED_MANUAL_RECOVERY` incidents; acknowledged incidents remain visible in
+the failed and acknowledged-blocked totals without keeping readiness red. The
+`ack-failure` command uses the queue's exact failure-code binding: an identical
+replay is idempotent, while a different code, actor, or reason fails closed.
+Its JSON output and mode-0600 operations event include the job, status,
+acknowledgement time, and actor, but never echo the review reason. The
+lifecycle `health` command reports `local_ready` independently from
+`external_crossref_ready`, so an external outage does not hide local worker or
+database state. All lifecycle mutations use fail-fast mode-0600 locks: a
+repository lock serializes shared environment bootstrap, and a workspace lock
+prevents concurrent `deploy`/`start`/`stop`/operator actions from overwriting
+process ownership. Runtime logs rotate at 8 MB with three retained generations;
+the operations audit log rotates at 32 MB with three retained generations, and
+metrics read the retained generations in order. Atomic process-record
+replacement fsyncs both the file and parent directory. `stop` first closes
+dashboard traffic, gives the supervised worker five seconds to checkpoint and
+exit, and bounds the two local-process waits at two seconds each (under ten
+seconds total before command overhead). It signals only PIDs whose process start
+marker and command hash still match the ownership record.
+
+The default automated production E2E has no network dependency. It replaces
+only the production factory's injectable HTTP transport, then verifies submit,
+ungranted-action rejection, out-of-band grant, durable enqueue with an immediate
+`RUNNING` response, execution by an independent worker instance, full online
+artifact closure/readable result, and MCP process restarts:
+
+```bash
+.venv-gateway/bin/python \
+  integrations/hermes/scripts/run_production_e2e.py \
+  --workspace /tmp/materials-inspiration-e2e \
+  --project materials-inspiration-e2e
+```
+
+Pass `--live-crossref-smoke` only for an explicit one-request public Crossref
+connectivity check. It does not mint user approval or execute a live Gateway
+run. Provider readiness resolves the configured credential without printing
+it or making a paid model call; actual credential validity and model behavior
+still require an explicit provider smoke outside the zero-model-call scientific
+run contract.

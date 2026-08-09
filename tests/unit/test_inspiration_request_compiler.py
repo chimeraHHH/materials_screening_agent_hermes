@@ -121,6 +121,10 @@ def test_every_budget_and_selection_field_has_compiled_execution_meaning() -> No
     assert policy.bridge.max_bridge_packets == 3
     assert compiled.physical_search_attempt_limit == 8
     assert compiled.physical_search_attempt_limit <= budget.max_search_requests
+    assert (
+        policy.search.max_physical_requests
+        == compiled.physical_search_attempt_limit
+    )
     assert policy.search.max_unique_documents == budget.max_unique_documents
     assert policy.search.max_raw_hits == budget.max_unique_documents
     assert policy.passages.max_total == budget.max_passages

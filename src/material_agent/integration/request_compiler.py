@@ -193,6 +193,7 @@ class HermesInspirationRequestCompiler:
             network_access=True,
             search=SearchBudgetV1(
                 max_queries=PUBLIC_LOGICAL_QUERY_COUNT,
+                max_physical_requests=physical_attempt_limit,
                 max_direct_queries=1,
                 max_bridge_queries=3,
                 max_counter_queries=0,

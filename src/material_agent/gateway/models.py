@@ -206,6 +206,7 @@ class ApprovalInteractionV1(StrictGatewayModel):
     approval_kind: Literal["requirement_freeze", "expensive_computation"]
     prompt: LongText
     input_sha256: Sha256
+    execution_manifest_sha256: Sha256 | None = None
     allowed_actions: tuple[
         Literal["approve"], Literal["reject"], Literal["cancel"]
     ] = ("approve", "reject", "cancel")
@@ -216,6 +217,24 @@ class ApprovalInteractionV1(StrictGatewayModel):
         if value != ("approve", "reject", "cancel"):
             raise ValueError("approval actions are frozen")
         return value
+
+    @model_validator(mode="after")
+    def validate_execution_manifest_binding(self) -> ApprovalInteractionV1:
+        if (
+            self.execution_manifest_sha256 is not None
+            and self.execution_manifest_sha256 != self.input_sha256
+        ):
+            raise ValueError(
+                "execution manifest SHA-256 must equal the approved input SHA-256"
+            )
+        if (
+            self.approval_kind != "requirement_freeze"
+            and self.execution_manifest_sha256 is not None
+        ):
+            raise ValueError(
+                "execution manifest SHA-256 is only valid for requirement freeze"
+            )
+        return self
 
 
 class RetryInteractionV1(StrictGatewayModel):
@@ -418,6 +437,71 @@ class EvidenceReferenceV1(StrictGatewayModel):
         return value
 
 
+class ReadableEvidenceV1(StrictGatewayModel):
+    """One verified, bounded source excerpt safe to return through the Gateway."""
+
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+        strict=True,
+        allow_inf_nan=False,
+        str_strip_whitespace=False,
+        validate_default=True,
+    )
+
+    document_id: Identifier
+    passage_id: Identifier
+    source_title: Annotated[str, Field(min_length=1, max_length=1_000)]
+    published_year: Annotated[int, Field(ge=1600, le=2200)] | None = None
+    doi: Annotated[str, Field(min_length=6, max_length=256)] | None = None
+    canonical_url: Annotated[str, Field(min_length=8, max_length=2_048)] | None = None
+    relations: Annotated[
+        tuple[Literal["SUPPORT", "COUNTER", "CONTEXT"], ...],
+        Field(min_length=1, max_length=3),
+    ]
+    claim_summaries: Annotated[
+        tuple[LongText, ...], Field(min_length=1, max_length=8)
+    ]
+    excerpt: Annotated[str, Field(min_length=1, max_length=1_000)]
+    excerpt_truncated: bool
+    source_passage_sha256: Sha256
+
+    @field_validator("relations", "claim_summaries")
+    @classmethod
+    def validate_sorted_unique_values(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        if value != tuple(sorted(set(value))):
+            raise ValueError("readable evidence values must be sorted and unique")
+        return value
+
+    @field_validator("canonical_url")
+    @classmethod
+    def validate_canonical_url(cls, value: str | None) -> str | None:
+        if value is not None and not value.startswith(("https://", "http://")):
+            raise ValueError("canonical URL must use HTTP(S)")
+        return value
+
+
+class ReadableEvidenceSetV1(StrictGatewayModel):
+    """Deterministically capped evidence excerpts for selected candidates."""
+
+    items: Annotated[tuple[ReadableEvidenceV1, ...], Field(max_length=32)] = ()
+    total_available: Annotated[int, Field(ge=0, le=2_048)] = 0
+    truncated: bool = False
+
+    @model_validator(mode="after")
+    def validate_count(self) -> ReadableEvidenceSetV1:
+        passage_ids = tuple(item.passage_id for item in self.items)
+        if len(set(passage_ids)) != len(passage_ids):
+            raise ValueError("readable evidence passage IDs must be unique")
+        if passage_ids != tuple(sorted(passage_ids)):
+            raise ValueError("readable evidence must be passage-ID sorted")
+        if self.total_available < len(self.items):
+            raise ValueError("readable evidence count exceeds total available")
+        if self.truncated != (self.total_available > len(self.items)):
+            raise ValueError("readable evidence truncation flag is inconsistent")
+        return self
+
+
 class CandidateSummaryV1(StrictGatewayModel):
     candidate_id: Identifier
     parent_candidate_id: Identifier
@@ -495,6 +579,72 @@ class InspirationBundleSummaryV1(StrictGatewayModel):
         return self
 
 
+class ArtifactReferenceV1(StrictGatewayModel):
+    """One immutable artifact included in a terminal result closure."""
+
+    uri: Annotated[str, Field(min_length=12, max_length=512)]
+    sha256: Sha256
+    size_bytes: Annotated[int, Field(ge=0, le=100_000_000)]
+    media_type: Annotated[str, Field(min_length=1, max_length=128)]
+
+    @field_validator("uri")
+    @classmethod
+    def validate_uri(cls, value: str) -> str:
+        return validate_artifact_uri(value)
+
+
+def artifact_closure_sha256(
+    *,
+    stage_result: ArtifactReferenceV1,
+    artifacts: tuple[ArtifactReferenceV1, ...],
+) -> str:
+    """Hash the complete, ordered terminal artifact pointer set."""
+
+    if not isinstance(stage_result, ArtifactReferenceV1):
+        raise TypeError("stage_result must be an ArtifactReferenceV1")
+    if not isinstance(artifacts, tuple) or any(
+        not isinstance(item, ArtifactReferenceV1) for item in artifacts
+    ):
+        raise TypeError("artifacts must be a tuple of ArtifactReferenceV1 values")
+    return canonical_sha256(
+        {
+            "artifacts": artifacts,
+            "schema_version": "materials-artifact-closure-v1",
+            "stage_result": stage_result,
+        }
+    )
+
+
+class ArtifactClosureV1(StrictGatewayModel):
+    """Bounded full closure used by online terminal-result verification."""
+
+    schema_version: Literal["materials-artifact-closure-v1"] = (
+        "materials-artifact-closure-v1"
+    )
+    stage_result: ArtifactReferenceV1
+    artifacts: Annotated[
+        tuple[ArtifactReferenceV1, ...], Field(min_length=1, max_length=256)
+    ]
+    closure_sha256: Sha256
+
+    @model_validator(mode="after")
+    def validate_closure(self) -> ArtifactClosureV1:
+        uris = tuple(item.uri for item in self.artifacts)
+        if uris != tuple(sorted(uris)):
+            raise ValueError("artifact closure entries must be URI-sorted")
+        if len(set(uris)) != len(uris):
+            raise ValueError("artifact closure entries must be unique")
+        if self.stage_result.uri in set(uris):
+            raise ValueError("stage result must not be duplicated in closure entries")
+        expected = artifact_closure_sha256(
+            stage_result=self.stage_result,
+            artifacts=self.artifacts,
+        )
+        if self.closure_sha256 != expected:
+            raise ValueError("artifact closure SHA-256 does not match its entries")
+        return self
+
+
 class GatewayResultRecordV1(StrictGatewayModel):
     """Persisted bounded result projection prior to artifact verification."""
 
@@ -506,12 +656,16 @@ class GatewayResultRecordV1(StrictGatewayModel):
     evidence_lineage: Annotated[
         tuple[EvidenceReferenceV1, ...], Field(max_length=256)
     ] = ()
+    readable_evidence: ReadableEvidenceSetV1 = Field(
+        default_factory=ReadableEvidenceSetV1
+    )
     validation_boundaries: Annotated[
         tuple[ShortText, ...], Field(min_length=1, max_length=32)
     ]
     cost_ledger: CostLedgerProjectionV1 = Field(
         default_factory=CostLedgerProjectionV1
     )
+    artifact_closure: ArtifactClosureV1 | None = None
 
     @field_validator("report_uri")
     @classmethod
@@ -534,14 +688,55 @@ class GatewayResultRecordV1(StrictGatewayModel):
             missing_passages = set(candidate.evidence_passage_ids) - available_passages
             if missing_documents or missing_passages:
                 raise ValueError("candidate evidence does not close over evidence lineage")
+        readable_passage_ids = {
+            item.passage_id for item in self.readable_evidence.items
+        }
+        if not readable_passage_ids.issubset(available_passages):
+            raise ValueError("readable evidence does not close over evidence lineage")
+        if self.artifact_closure is not None:
+            report_matches = tuple(
+                item
+                for item in self.artifact_closure.artifacts
+                if item.uri == self.report_uri
+            )
+            if len(report_matches) != 1:
+                raise ValueError("artifact closure must contain the bound report once")
+            if report_matches[0].sha256 != self.authoritative_sha256:
+                raise ValueError("artifact closure report SHA-256 differs from result")
         return self
 
 
 def gateway_result_sha256(result: GatewayResultRecordV1) -> str:
-    """Hash the exact canonical terminal result DTO persisted by the Gateway."""
+    """Hash the canonical terminal result DTO persisted by the Gateway.
+
+    Results created before readable evidence and artifact closure were added did
+    not contain those two fields.  Their terminal state already commits to the
+    canonical hash of the original field set, so silently injecting default
+    values while reading them would make an untampered historical run
+    unreadable.  Preserve that exact legacy projection only when both new
+    fields are semantically empty.  Any readable evidence or closure switches
+    to the complete current projection and therefore remains hash-bound.
+    """
 
     if not isinstance(result, GatewayResultRecordV1):
         raise TypeError("result must be GatewayResultRecordV1")
+    if (
+        result.artifact_closure is None
+        and result.readable_evidence == ReadableEvidenceSetV1()
+    ):
+        legacy_fields = (
+            "schema_version",
+            "run_id",
+            "report_uri",
+            "authoritative_sha256",
+            "bundle",
+            "evidence_lineage",
+            "validation_boundaries",
+            "cost_ledger",
+        )
+        return canonical_sha256(
+            {field_name: getattr(result, field_name) for field_name in legacy_fields}
+        )
     return canonical_sha256(
         {
             field_name: getattr(result, field_name)
@@ -550,16 +745,50 @@ def gateway_result_sha256(result: GatewayResultRecordV1) -> str:
     )
 
 
+class ReadableReportV1(StrictGatewayModel):
+    """A verified report prefix with explicit full-content identity and truncation."""
+
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+        strict=True,
+        allow_inf_nan=False,
+        str_strip_whitespace=False,
+        validate_default=True,
+    )
+
+    media_type: Literal["text/markdown"] = "text/markdown"
+    content: Annotated[str, Field(min_length=1, max_length=32_000)]
+    returned_char_count: Annotated[int, Field(ge=1, le=32_000)]
+    original_char_count: Annotated[int, Field(ge=1)]
+    original_size_bytes: Annotated[int, Field(ge=1, le=100_000_000)]
+    full_content_sha256: Sha256
+    truncated: bool
+
+    @model_validator(mode="after")
+    def validate_lengths(self) -> ReadableReportV1:
+        if self.returned_char_count != len(self.content):
+            raise ValueError("returned report character count is inconsistent")
+        if self.original_char_count < self.returned_char_count:
+            raise ValueError("returned report exceeds its original character count")
+        if self.truncated != (self.returned_char_count < self.original_char_count):
+            raise ValueError("readable report truncation flag is inconsistent")
+        return self
+
+
 class MaterialsResultViewV1(GatewayResultRecordV1):
     """Hash-verified terminal projection returned by ``materials_result_get``."""
 
     result_sha256: Sha256
+    readable_report: ReadableReportV1
     verified: Literal[True] = True
 
     @model_validator(mode="after")
     def validate_result_sha256(self) -> MaterialsResultViewV1:
         if gateway_result_sha256(self) != self.result_sha256:
             raise ValueError("canonical result SHA-256 does not match the result view")
+        if self.readable_report.full_content_sha256 != self.authoritative_sha256:
+            raise ValueError("readable report does not match the authoritative report")
         return self
 
 
@@ -661,10 +890,15 @@ PUBLIC_GATEWAY_MODELS: tuple[type[StrictGatewayModel], ...] = (
     FailedStateV1,
     CancelledStateV1,
     EvidenceReferenceV1,
+    ReadableEvidenceV1,
+    ReadableEvidenceSetV1,
+    ArtifactReferenceV1,
+    ArtifactClosureV1,
     CandidateSummaryV1,
     CostLedgerProjectionV1,
     InspirationBundleSummaryV1,
     GatewayResultRecordV1,
+    ReadableReportV1,
     MaterialsResultViewV1,
     CompanionTransitionV1,
     GatewayRunRecordV1,

@@ -71,6 +71,13 @@ complete interaction, frozen execution manifest, and exact action. See
 [`integrations/hermes/README.md`](integrations/hermes/README.md) for installation,
 approval, crash recovery, and profile commands.
 
+The source-controlled production profile pins the durable queued Gateway
+factory. A successful authorized `materials_run_act` atomically consumes the
+grant, enqueues the job, and returns `RUNNING`; an independently supervised
+worker performs the bounded run and Hermes polls `materials_run_get` until a
+terminal state. The synchronous public factory remains a compatibility/testing
+entry point and is not the default profile.
+
 The reproducible fixed-pilot smoke uses the actual MCP stdio subprocess. A full
 replay must use a fresh, empty ignored workspace and a fresh submission ID; an
 interrupted phase must reuse the exact same pair. The historical
@@ -1014,8 +1021,10 @@ cache, live artifact, secret, temporary file, or traceback.
   but there is no default four-stage scientific success path. In particular,
   Agent04 requires an explicit expert-supplied `EffectiveModelPackage`; mock DFT
   output is not converted into a many-body model.
-- Execution is synchronous and single-project. Long-running background workers,
-  multi-user access, and Postgres checkpointing are server-stage work.
+- The Inspiration Gateway now has a durable asynchronous SQLite queue and a
+  single-host fenced worker, while the main Orchestrator CLI remains synchronous
+  and single-project. Multi-host workers, multi-user access, distributed leases,
+  and Postgres checkpointing remain server-stage work.
 - P0 uses at most ten 500-record chunks and reports `PARTIAL` when the
   5,000-record scan ceiling is reached.
 - True cursor-level checkpointing, parallel structure analysis, large-scale

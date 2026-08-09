@@ -1,4 +1,4 @@
-<!-- GENERATED FROM skills/materials-inspiration/SKILL.md; source-sha256: bdf961bcf5ad11679bb47d7d6f13a06a50f391c47fa0115c49528393433d302d -->
+<!-- GENERATED FROM skills/materials-inspiration/SKILL.md; source-sha256: 3dd72b2274d13776c34793d89594e7fed40e847f729ff89cd1dfd2346aceddd1 -->
 
 # Materials Inspiration
 
@@ -89,6 +89,10 @@ only scientific state and artifact authority.
    as a contract mismatch: do not approve it or start network access. Call
    `materials_run_act` only after the exact, accurate prompt is shown and its
    matching grant exists.
+   The production profile durably enqueues that action and returns `RUNNING`;
+   it never executes the inspiration runner on the MCP request thread. Poll
+   `materials_run_get` until a terminal state. Do not repeat the approval action,
+   and do not call `materials_result_get` while the run is still `RUNNING`.
 6. When the run succeeds or partially succeeds, call `materials_result_get` and
    present selected candidates together with evidence, assumptions, invalidation
    conditions, and the cheapest downstream falsification step.

@@ -70,6 +70,13 @@ and zero article-body fetch, full-PDF, and internal-model budgets. If a public
 prepared run advertises offline execution, treat it as a contract mismatch and
 do not grant or call `materials_run_act`.
 
+The source-controlled production profile uses the durable queued factory.
+`materials_run_act` atomically consumes the matching grant and enqueues the job,
+then returns `RUNNING` without executing Crossref or the inspiration runner on
+the MCP request thread. Poll `materials_run_get` until a terminal state. Do not
+repeat the approval action, and do not call `materials_result_get` while the run
+is still `RUNNING`.
+
 If Crossref exhausts bounded transient retries, the run terminates with
 `EXTERNAL_SEARCH_UNAVAILABLE` and `retryable=true`. It has already consumed its
 approval and must not be replayed automatically. After an explicit user decision,

@@ -58,6 +58,6 @@ class InspirationCompanionAdapter(Protocol):
 
 @runtime_checkable
 class ArtifactReader(Protocol):
-    """Read only the exact report URI already bound to a terminal run."""
+    """Read only exact artifact URIs already bound to a terminal closure."""
 
     def read_bytes(self, uri: str) -> bytes: ...

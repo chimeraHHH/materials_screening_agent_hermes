@@ -38,6 +38,9 @@ from material_agent.gateway.models import (
     inspiration_request_sha256,
     inspiration_run_id,
 )
+from material_agent.inspiration.component_identity import (
+    execution_identity_snapshots,
+)
 from material_agent.inspiration.models import (
     ArtifactPointerV1,
     ComponentSnapshotV1,
@@ -101,13 +104,33 @@ def prepared_execution_manifest_sha256(
         for component in execution_components
     ):
         raise TypeError("execution components must be ComponentSnapshotV1 values")
+    supplied_component_ids = tuple(
+        component.component_id for component in execution_components
+    )
+    if len(supplied_component_ids) != len(set(supplied_component_ids)):
+        raise ValueError("execution component IDs must be unique")
+    components_by_id = {
+        component.component_id: component for component in execution_identity_snapshots()
+    }
+    for component in execution_components:
+        frozen_identity = components_by_id.get(component.component_id)
+        if frozen_identity is not None and frozen_identity != component:
+            raise ValueError(
+                "runner component conflicts with its content-addressed identity: "
+                f"{component.component_id}"
+            )
+        components_by_id[component.component_id] = component
+    ordered_components = tuple(
+        components_by_id[component_id]
+        for component_id in sorted(components_by_id)
+    )
     return canonical_sha256(
         {
-            "execution_components": execution_components,
+            "execution_components": ordered_components,
             "gateway_request_sha256": inspiration_request_sha256(request),
             "inspiration_input": prepared.inspiration_input,
             "policy": prepared.policy,
-            "schema_version": "materials-inspiration-execution-manifest-v1",
+            "schema_version": "materials-inspiration-execution-manifest-v2",
             "tag_graph": prepared.tag_graph,
             "target_tag_ids": prepared.target_tag_ids,
         }
@@ -188,6 +211,28 @@ class InspirationRunnerResultLike(Protocol):
     stage_result: InspirationStageResultV1
     stage_result_artifact: ArtifactPointerV1
     bundle: InspirationBundleV1
+
+
+@runtime_checkable
+class CompletedInspirationRunRecovery(Protocol):
+    """Optional projector boundary for fail-closed completed-run recovery.
+
+    A production implementation may persist an immutable execution-intent
+    binding before the runner starts.  On a later call it may return a fully
+    re-verified result only when the exact approved execution manifest and the
+    complete authoritative artifact closure still match.  ``None`` means this
+    caller bound a pristine run and must execute it once; partial or drifted
+    state must raise ``CompanionAdapterError`` instead of returning ``None``.
+    """
+
+    def recover_or_bind_completed(
+        self,
+        *,
+        run_id: str,
+        request: InspirationRunRequestV1,
+        prepared: PreparedInspirationRun,
+        execution_manifest_sha256: str,
+    ) -> InspirationRunnerResultLike | None: ...
 
 
 @runtime_checkable
@@ -277,6 +322,7 @@ class OfflineInspirationCompanionAdapter:
                         prepared=prepared,
                     ),
                     input_sha256=execution_manifest_sha256,
+                    execution_manifest_sha256=execution_manifest_sha256,
                 )
             )
         )
@@ -346,25 +392,40 @@ class OfflineInspirationCompanionAdapter:
         expected_execution_manifest_sha256: str | None = None,
     ) -> CompanionTransitionV1:
         prepared = self._prepare(run_id=run_id, request=request)
+        observed_execution_manifest_sha256 = prepared_execution_manifest_sha256(
+            request=request,
+            prepared=prepared,
+            execution_components=self._execution_components(),
+        )
         if (
             expected_execution_manifest_sha256 is not None
-            and prepared_execution_manifest_sha256(
-                request=request,
-                prepared=prepared,
-                execution_components=self._execution_components(),
-            )
+            and observed_execution_manifest_sha256
             != expected_execution_manifest_sha256
         ):
             raise CompanionAdapterError(
                 "prepared execution manifest changed after approval"
             )
 
-        runner_result = self.runner.run(
-            inspiration_input=prepared.inspiration_input,
-            policy=prepared.policy,
-            tag_graph=prepared.tag_graph,
-            target_tag_ids=prepared.target_tag_ids,
-        )
+        runner_result: InspirationRunnerResultLike | None = None
+        if (
+            expected_execution_manifest_sha256 is not None
+            and isinstance(self.projector, CompletedInspirationRunRecovery)
+        ):
+            runner_result = self.projector.recover_or_bind_completed(
+                run_id=run_id,
+                request=request,
+                prepared=prepared,
+                execution_manifest_sha256=(
+                    observed_execution_manifest_sha256
+                ),
+            )
+        if runner_result is None:
+            runner_result = self.runner.run(
+                inspiration_input=prepared.inspiration_input,
+                policy=prepared.policy,
+                tag_graph=prepared.tag_graph,
+                target_tag_ids=prepared.target_tag_ids,
+            )
         if not isinstance(runner_result, InspirationRunnerResultLike):
             raise CompanionAdapterError("runner returned an invalid result object")
         stage_result = runner_result.stage_result
@@ -465,7 +526,12 @@ class OfflineInspirationCompanionAdapter:
             raise CompanionAdapterError(
                 "runner execution component snapshots are invalid"
             )
-        return components
+        component_ids = tuple(component.component_id for component in components)
+        if len(component_ids) != len(set(component_ids)):
+            raise CompanionAdapterError(
+                "runner execution component snapshot IDs are not unique"
+            )
+        return tuple(sorted(components, key=lambda component: component.component_id))
 
     def _prepare(
         self,

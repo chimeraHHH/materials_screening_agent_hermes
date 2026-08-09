@@ -20,6 +20,7 @@ class SearchExecutionMode(StrEnum):
 
 class SearchBudgetV1(StrictModel):
     max_queries: Annotated[int, Field(ge=1, le=64)] = 12
+    max_physical_requests: Annotated[int, Field(ge=1, le=64)] = 24
     max_direct_queries: Annotated[int, Field(ge=0, le=64)] = 6
     max_bridge_queries: Annotated[int, Field(ge=0, le=64)] = 4
     max_counter_queries: Annotated[int, Field(ge=0, le=64)] = 2
@@ -35,6 +36,8 @@ class SearchBudgetV1(StrictModel):
         )
         if allocated > self.max_queries:
             raise ValueError("query-class allocation exceeds max_queries")
+        if self.max_physical_requests < self.max_queries:
+            raise ValueError("physical request budget cannot be below max_queries")
         if self.max_unique_documents > self.max_raw_hits:
             raise ValueError("unique-document budget exceeds raw-hit budget")
         return self

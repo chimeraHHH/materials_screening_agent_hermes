@@ -99,10 +99,13 @@ class QueryAwareStaticCrossrefTransport:
         url: str,
         *,
         headers: Mapping[str, str],
-        timeout_seconds: int,
+        timeout_seconds: float,
         max_response_bytes: int,
+        deadline_monotonic: float | None = None,
+        max_physical_requests: int | None = None,
     ) -> bytes:
-        del headers, timeout_seconds
+        del headers, timeout_seconds, deadline_monotonic
+        assert max_physical_requests is None or max_physical_requests >= 1
         parameters = parse_qs(urlsplit(url).query, strict_parsing=True)
         texts = parameters.get("query.bibliographic")
         assert texts is not None and len(texts) == 1
