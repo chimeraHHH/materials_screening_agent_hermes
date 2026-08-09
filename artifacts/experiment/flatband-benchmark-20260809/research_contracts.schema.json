@@ -1,0 +1,2971 @@
+{
+  "$id": "urn:materials-screening-agent:flatband-research-contracts:v0-draft",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "models": {
+    "BenchmarkSplitManifestV1": {
+      "$defs": {
+        "BenchmarkSplit": {
+          "enum": [
+            "PILOT_R1",
+            "PILOT_R2",
+            "DEVELOPMENT",
+            "LOCKED_IID",
+            "LOCKED_OOD"
+          ],
+          "title": "BenchmarkSplit",
+          "type": "string"
+        },
+        "Dimensionality": {
+          "enum": [
+            "2D",
+            "3D"
+          ],
+          "title": "Dimensionality",
+          "type": "string"
+        },
+        "MechanismFamily": {
+          "enum": [
+            "LATTICE_INTERFERENCE",
+            "LINE_GRAPH",
+            "ORBITAL_FRUSTRATION_HYBRIDIZATION",
+            "SYMMETRY_INDUCED",
+            "MOIRE_SUPERLATTICE",
+            "CONFINEMENT",
+            "CORRELATION_RENORMALIZATION",
+            "STRAIN_INTERFACE_DEFECT",
+            "ATOMIC_ORBITAL_LOCALIZATION",
+            "OTHER_OR_UNKNOWN"
+          ],
+          "title": "MechanismFamily",
+          "type": "string"
+        },
+        "SplitCaseRefV1": {
+          "additionalProperties": false,
+          "properties": {
+            "case_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "title": "Case Id",
+              "type": "string"
+            },
+            "case_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Case Sha256",
+              "type": "string"
+            },
+            "dimensionality": {
+              "$ref": "#/$defs/Dimensionality"
+            },
+            "leakage_group_ids": {
+              "items": {
+                "maxLength": 128,
+                "minLength": 1,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+                "type": "string"
+              },
+              "maxItems": 64,
+              "minItems": 1,
+              "title": "Leakage Group Ids",
+              "type": "array"
+            },
+            "primary_mechanism_stratum": {
+              "$ref": "#/$defs/MechanismFamily"
+            },
+            "split": {
+              "$ref": "#/$defs/BenchmarkSplit"
+            },
+            "target_class": {
+              "$ref": "#/$defs/TargetBandClass"
+            }
+          },
+          "required": [
+            "case_id",
+            "case_sha256",
+            "split",
+            "target_class",
+            "dimensionality",
+            "primary_mechanism_stratum",
+            "leakage_group_ids"
+          ],
+          "title": "SplitCaseRefV1",
+          "type": "object"
+        },
+        "SplitManifestKind": {
+          "enum": [
+            "PILOT_R1",
+            "PILOT_R2",
+            "MAIN_120"
+          ],
+          "title": "SplitManifestKind",
+          "type": "string"
+        },
+        "TargetBandClass": {
+          "enum": [
+            "FB100",
+            "NB300"
+          ],
+          "title": "TargetBandClass",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "cases": {
+          "items": {
+            "$ref": "#/$defs/SplitCaseRefV1"
+          },
+          "maxItems": 120,
+          "minItems": 30,
+          "title": "Cases",
+          "type": "array"
+        },
+        "manifest_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+          "title": "Manifest Id",
+          "type": "string"
+        },
+        "manifest_kind": {
+          "$ref": "#/$defs/SplitManifestKind"
+        },
+        "manifest_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Manifest Sha256",
+          "type": "string"
+        },
+        "ood_holdout_group_ids": {
+          "default": [],
+          "items": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+            "type": "string"
+          },
+          "maxItems": 64,
+          "title": "Ood Holdout Group Ids",
+          "type": "array"
+        },
+        "schema_version": {
+          "const": "flatband-split-manifest-v1",
+          "default": "flatband-split-manifest-v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "source_catalog_sha256": {
+          "const": "57c24de8f0cf616205b03ef16231def711f2dfa9fcac86d94beede9c01b0bb1f",
+          "default": "57c24de8f0cf616205b03ef16231def711f2dfa9fcac86d94beede9c01b0bb1f",
+          "title": "Source Catalog Sha256",
+          "type": "string"
+        },
+        "split_seed": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "title": "Split Seed",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "manifest_id",
+        "manifest_sha256",
+        "manifest_kind",
+        "split_seed",
+        "cases"
+      ],
+      "title": "BenchmarkSplitManifestV1",
+      "type": "object"
+    },
+    "BlindingManifestV1": {
+      "$defs": {
+        "BlindedEvaluationUnitV1": {
+          "additionalProperties": false,
+          "properties": {
+            "annotation_order": {
+              "maximum": 100000,
+              "minimum": 1,
+              "title": "Annotation Order",
+              "type": "integer"
+            },
+            "blinded_unit_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "title": "Blinded Unit Id",
+              "type": "string"
+            },
+            "case_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "title": "Case Id",
+              "type": "string"
+            },
+            "case_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Case Sha256",
+              "type": "string"
+            },
+            "contributions": {
+              "items": {
+                "$ref": "#/$defs/RankingContributionV1"
+              },
+              "maxItems": 64,
+              "minItems": 1,
+              "title": "Contributions",
+              "type": "array"
+            },
+            "packet_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "title": "Packet Id",
+              "type": "string"
+            },
+            "packet_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Packet Sha256",
+              "type": "string"
+            },
+            "strict_hypothesis_group_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "title": "Strict Hypothesis Group Id",
+              "type": "string"
+            }
+          },
+          "required": [
+            "annotation_order",
+            "blinded_unit_id",
+            "case_id",
+            "case_sha256",
+            "packet_id",
+            "packet_sha256",
+            "strict_hypothesis_group_id",
+            "contributions"
+          ],
+          "title": "BlindedEvaluationUnitV1",
+          "type": "object"
+        },
+        "RankingContributionV1": {
+          "additionalProperties": false,
+          "properties": {
+            "ranking_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "title": "Ranking Id",
+              "type": "string"
+            },
+            "ranking_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Ranking Sha256",
+              "type": "string"
+            },
+            "run_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "title": "Run Id",
+              "type": "string"
+            },
+            "selection_rank": {
+              "maximum": 5,
+              "minimum": 1,
+              "title": "Selection Rank",
+              "type": "integer"
+            },
+            "system_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "title": "System Id",
+              "type": "string"
+            }
+          },
+          "required": [
+            "system_id",
+            "run_id",
+            "ranking_id",
+            "ranking_sha256",
+            "selection_rank"
+          ],
+          "title": "RankingContributionV1",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "adjudicator_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+          "title": "Adjudicator Id",
+          "type": "string"
+        },
+        "expert_registry_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+          "title": "Expert Registry Id",
+          "type": "string"
+        },
+        "expert_registry_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Expert Registry Sha256",
+          "type": "string"
+        },
+        "identity_map_private": {
+          "const": true,
+          "default": true,
+          "title": "Identity Map Private",
+          "type": "boolean"
+        },
+        "manifest_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+          "title": "Manifest Id",
+          "type": "string"
+        },
+        "manifest_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Manifest Sha256",
+          "type": "string"
+        },
+        "peer_annotation_hidden": {
+          "const": true,
+          "default": true,
+          "title": "Peer Annotation Hidden",
+          "type": "boolean"
+        },
+        "randomization_seed": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "title": "Randomization Seed",
+          "type": "integer"
+        },
+        "reviewer_ids": {
+          "items": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+            "type": "string"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "title": "Reviewer Ids",
+          "type": "array"
+        },
+        "schema_version": {
+          "const": "flatband-blinding-manifest-v1",
+          "default": "flatband-blinding-manifest-v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "scientific_conclusion": {
+          "const": false,
+          "default": false,
+          "title": "Scientific Conclusion",
+          "type": "boolean"
+        },
+        "sealed_at": {
+          "maxLength": 40,
+          "minLength": 20,
+          "title": "Sealed At",
+          "type": "string"
+        },
+        "selection_rank_hidden": {
+          "const": true,
+          "default": true,
+          "title": "Selection Rank Hidden",
+          "type": "boolean"
+        },
+        "split_manifest_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+          "title": "Split Manifest Id",
+          "type": "string"
+        },
+        "split_manifest_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Split Manifest Sha256",
+          "type": "string"
+        },
+        "system_identity_hidden": {
+          "const": true,
+          "default": true,
+          "title": "System Identity Hidden",
+          "type": "boolean"
+        },
+        "units": {
+          "items": {
+            "$ref": "#/$defs/BlindedEvaluationUnitV1"
+          },
+          "maxItems": 100000,
+          "minItems": 1,
+          "title": "Units",
+          "type": "array"
+        }
+      },
+      "required": [
+        "manifest_id",
+        "manifest_sha256",
+        "split_manifest_id",
+        "split_manifest_sha256",
+        "expert_registry_id",
+        "expert_registry_sha256",
+        "randomization_seed",
+        "reviewer_ids",
+        "adjudicator_id",
+        "units",
+        "sealed_at"
+      ],
+      "title": "BlindingManifestV1",
+      "type": "object"
+    },
+    "ExpertAdjudicationV1": {
+      "$defs": {
+        "AdjudicationStatus": {
+          "enum": [
+            "RESOLVED",
+            "CASE_INVALID",
+            "UNRESOLVABLE"
+          ],
+          "title": "AdjudicationStatus",
+          "type": "string"
+        },
+        "AnnotationRefV1": {
+          "additionalProperties": false,
+          "properties": {
+            "annotation_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "title": "Annotation Id",
+              "type": "string"
+            },
+            "annotation_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Annotation Sha256",
+              "type": "string"
+            },
+            "reviewer_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "title": "Reviewer Id",
+              "type": "string"
+            }
+          },
+          "required": [
+            "annotation_id",
+            "annotation_sha256",
+            "reviewer_id"
+          ],
+          "title": "AnnotationRefV1",
+          "type": "object"
+        },
+        "BridgeJudgmentV1": {
+          "additionalProperties": false,
+          "properties": {
+            "breaking_conditions": {
+              "$ref": "#/$defs/TriStateJudgment"
+            },
+            "contradiction_handling": {
+              "$ref": "#/$defs/TriStateJudgment"
+            },
+            "overall": {
+              "$ref": "#/$defs/BridgeVerdict"
+            },
+            "required_conditions": {
+              "$ref": "#/$defs/TriStateJudgment"
+            },
+            "shared_invariant": {
+              "$ref": "#/$defs/TriStateJudgment"
+            },
+            "source_mechanism": {
+              "$ref": "#/$defs/TriStateJudgment"
+            },
+            "target_mapping": {
+              "$ref": "#/$defs/TriStateJudgment"
+            },
+            "transferable_control": {
+              "$ref": "#/$defs/TriStateJudgment"
+            }
+          },
+          "required": [
+            "source_mechanism",
+            "shared_invariant",
+            "target_mapping",
+            "transferable_control",
+            "required_conditions",
+            "breaking_conditions",
+            "contradiction_handling",
+            "overall"
+          ],
+          "title": "BridgeJudgmentV1",
+          "type": "object"
+        },
+        "BridgeVerdict": {
+          "enum": [
+            "CORRECT",
+            "CONDITIONAL",
+            "INCORRECT",
+            "UNASSESSABLE"
+          ],
+          "title": "BridgeVerdict",
+          "type": "string"
+        },
+        "MechanismFamily": {
+          "enum": [
+            "LATTICE_INTERFERENCE",
+            "LINE_GRAPH",
+            "ORBITAL_FRUSTRATION_HYBRIDIZATION",
+            "SYMMETRY_INDUCED",
+            "MOIRE_SUPERLATTICE",
+            "CONFINEMENT",
+            "CORRELATION_RENORMALIZATION",
+            "STRAIN_INTERFACE_DEFECT",
+            "ATOMIC_ORBITAL_LOCALIZATION",
+            "OTHER_OR_UNKNOWN"
+          ],
+          "title": "MechanismFamily",
+          "type": "string"
+        },
+        "TriStateJudgment": {
+          "enum": [
+            "PASS",
+            "PARTIAL",
+            "FAIL",
+            "UNASSESSABLE"
+          ],
+          "title": "TriStateJudgment",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "adjudicated_at": {
+          "maxLength": 40,
+          "minLength": 20,
+          "title": "Adjudicated At",
+          "type": "string"
+        },
+        "adjudication_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+          "title": "Adjudication Id",
+          "type": "string"
+        },
+        "adjudication_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Adjudication Sha256",
+          "type": "string"
+        },
+        "adjudicator_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+          "title": "Adjudicator Id",
+          "type": "string"
+        },
+        "annotation_guide_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Annotation Guide Sha256",
+          "type": "string"
+        },
+        "blinded_unit_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+          "title": "Blinded Unit Id",
+          "type": "string"
+        },
+        "case_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+          "title": "Case Id",
+          "type": "string"
+        },
+        "case_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Case Sha256",
+          "type": "string"
+        },
+        "disagreement_fields": {
+          "items": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+            "type": "string"
+          },
+          "maxItems": 32,
+          "minItems": 1,
+          "title": "Disagreement Fields",
+          "type": "array"
+        },
+        "final_bridge_judgment": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BridgeJudgmentV1"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "final_evidence_valid": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Final Evidence Valid"
+        },
+        "final_mechanism_family": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MechanismFamily"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "final_relevance_grade": {
+          "anyOf": [
+            {
+              "maximum": 3,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Final Relevance Grade"
+        },
+        "final_strict_hypothesis_group_id": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Final Strict Hypothesis Group Id"
+        },
+        "packet_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+          "title": "Packet Id",
+          "type": "string"
+        },
+        "packet_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Packet Sha256",
+          "type": "string"
+        },
+        "rationale": {
+          "maxLength": 4000,
+          "minLength": 1,
+          "title": "Rationale",
+          "type": "string"
+        },
+        "raw_annotations": {
+          "items": {
+            "$ref": "#/$defs/AnnotationRefV1"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "title": "Raw Annotations",
+          "type": "array"
+        },
+        "resolution_reason_code": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+          "title": "Resolution Reason Code",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "flatband-expert-adjudication-v1",
+          "default": "flatband-expert-adjudication-v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "scientific_conclusion": {
+          "const": false,
+          "default": false,
+          "title": "Scientific Conclusion",
+          "type": "boolean"
+        },
+        "sealed": {
+          "const": true,
+          "default": true,
+          "title": "Sealed",
+          "type": "boolean"
+        },
+        "status": {
+          "$ref": "#/$defs/AdjudicationStatus"
+        }
+      },
+      "required": [
+        "adjudication_id",
+        "adjudication_sha256",
+        "blinded_unit_id",
+        "case_id",
+        "case_sha256",
+        "packet_id",
+        "packet_sha256",
+        "raw_annotations",
+        "adjudicator_id",
+        "annotation_guide_sha256",
+        "disagreement_fields",
+        "status",
+        "final_relevance_grade",
+        "final_evidence_valid",
+        "final_bridge_judgment",
+        "final_mechanism_family",
+        "final_strict_hypothesis_group_id",
+        "resolution_reason_code",
+        "rationale",
+        "adjudicated_at"
+      ],
+      "title": "ExpertAdjudicationV1",
+      "type": "object"
+    },
+    "ExpertRegistryV1": {
+      "$defs": {
+        "ExpertRegistrationV1": {
+          "additionalProperties": false,
+          "properties": {
+            "annotation_guide_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Annotation Guide Sha256",
+              "type": "string"
+            },
+            "calibration_completed": {
+              "title": "Calibration Completed",
+              "type": "boolean"
+            },
+            "confirmation_reference": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "title": "Confirmation Reference",
+              "type": "string"
+            },
+            "conflict_disclosures": {
+              "items": {
+                "maxLength": 512,
+                "minLength": 1,
+                "type": "string"
+              },
+              "maxItems": 16,
+              "minItems": 1,
+              "title": "Conflict Disclosures",
+              "type": "array"
+            },
+            "domain_expertise": {
+              "items": {
+                "maxLength": 512,
+                "minLength": 1,
+                "type": "string"
+              },
+              "maxItems": 16,
+              "minItems": 1,
+              "title": "Domain Expertise",
+              "type": "array"
+            },
+            "expert_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "title": "Expert Id",
+              "type": "string"
+            },
+            "qualification_summary": {
+              "maxLength": 4000,
+              "minLength": 1,
+              "title": "Qualification Summary",
+              "type": "string"
+            },
+            "registered_at": {
+              "maxLength": 40,
+              "minLength": 20,
+              "title": "Registered At",
+              "type": "string"
+            },
+            "role": {
+              "$ref": "#/$defs/ExpertRole"
+            }
+          },
+          "required": [
+            "expert_id",
+            "role",
+            "domain_expertise",
+            "qualification_summary",
+            "conflict_disclosures",
+            "annotation_guide_sha256",
+            "calibration_completed",
+            "confirmation_reference",
+            "registered_at"
+          ],
+          "title": "ExpertRegistrationV1",
+          "type": "object"
+        },
+        "ExpertRole": {
+          "enum": [
+            "REVIEWER",
+            "ADJUDICATOR"
+          ],
+          "title": "ExpertRole",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "annotation_guide_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Annotation Guide Sha256",
+          "type": "string"
+        },
+        "calibration_set_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Calibration Set Sha256",
+          "type": "string"
+        },
+        "experts": {
+          "items": {
+            "$ref": "#/$defs/ExpertRegistrationV1"
+          },
+          "maxItems": 3,
+          "minItems": 3,
+          "title": "Experts",
+          "type": "array"
+        },
+        "public_identity_mode": {
+          "const": "PSEUDONYMOUS",
+          "default": "PSEUDONYMOUS",
+          "title": "Public Identity Mode",
+          "type": "string"
+        },
+        "registry_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+          "title": "Registry Id",
+          "type": "string"
+        },
+        "registry_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Registry Sha256",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "flatband-expert-registry-v1",
+          "default": "flatband-expert-registry-v1",
+          "title": "Schema Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "registry_id",
+        "registry_sha256",
+        "annotation_guide_sha256",
+        "calibration_set_sha256",
+        "experts"
+      ],
+      "title": "ExpertRegistryV1",
+      "type": "object"
+    },
+    "FlatBandBenchmarkCaseV1": {
+      "$defs": {
+        "BandwidthScope": {
+          "enum": [
+            "FULL_BZ_GRID",
+            "WANNIER_GRID",
+            "HSL_FULL_PATH",
+            "HSL_LOCAL_WINDOW",
+            "STRUCTURAL_PRIOR_ONLY",
+            "SOURCE_LABEL_ONLY",
+            "UNKNOWN"
+          ],
+          "title": "BandwidthScope",
+          "type": "string"
+        },
+        "Dimensionality": {
+          "enum": [
+            "2D",
+            "3D"
+          ],
+          "title": "Dimensionality",
+          "type": "string"
+        },
+        "EvidenceClaimType": {
+          "enum": [
+            "COMPUTED",
+            "PARSED",
+            "HYPOTHESIS"
+          ],
+          "title": "EvidenceClaimType",
+          "type": "string"
+        },
+        "FlatBandEvidenceV1": {
+          "additionalProperties": false,
+          "properties": {
+            "band_tracking_method": {
+              "maxLength": 512,
+              "minLength": 1,
+              "title": "Band Tracking Method",
+              "type": "string"
+            },
+            "bandwidth_e_v": {
+              "anyOf": [
+                {
+                  "maximum": 100.0,
+                  "minimum": 0.0,
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Bandwidth E V"
+            },
+            "bandwidth_scope": {
+              "$ref": "#/$defs/BandwidthScope"
+            },
+            "claim_type": {
+              "$ref": "#/$defs/EvidenceClaimType"
+            },
+            "evidence_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "title": "Evidence Id",
+              "type": "string"
+            },
+            "evidence_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Evidence Sha256",
+              "type": "string"
+            },
+            "fermi_distance_e_v": {
+              "anyOf": [
+                {
+                  "maximum": 100.0,
+                  "minimum": 0.0,
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Fermi Distance E V"
+            },
+            "hubbard_u_e_v": {
+              "anyOf": [
+                {
+                  "maximum": 50.0,
+                  "minimum": 0.0,
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Hubbard U E V"
+            },
+            "isolation_gap_e_v": {
+              "anyOf": [
+                {
+                  "maximum": 100.0,
+                  "minimum": -100.0,
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Isolation Gap E V"
+            },
+            "k_sampling": {
+              "maxLength": 512,
+              "minLength": 1,
+              "title": "K Sampling",
+              "type": "string"
+            },
+            "magnetic_order": {
+              "$ref": "#/$defs/MagneticOrder"
+            },
+            "observed_class": {
+              "$ref": "#/$defs/ObservedBandClass"
+            },
+            "scientific_conclusion": {
+              "const": false,
+              "default": false,
+              "title": "Scientific Conclusion",
+              "type": "boolean"
+            },
+            "soc_state": {
+              "$ref": "#/$defs/SocState"
+            },
+            "source_record": {
+              "$ref": "#/$defs/SourceRecordRefV1"
+            },
+            "spin_channel": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Spin Channel"
+            }
+          },
+          "required": [
+            "evidence_id",
+            "source_record",
+            "claim_type",
+            "observed_class",
+            "bandwidth_scope",
+            "k_sampling",
+            "soc_state",
+            "magnetic_order",
+            "band_tracking_method",
+            "evidence_sha256"
+          ],
+          "title": "FlatBandEvidenceV1",
+          "type": "object"
+        },
+        "MagneticOrder": {
+          "enum": [
+            "NONMAGNETIC",
+            "FERROMAGNETIC",
+            "ANTIFERROMAGNETIC",
+            "NONCOLLINEAR",
+            "PARAMAGNETIC_OR_UNKNOWN"
+          ],
+          "title": "MagneticOrder",
+          "type": "string"
+        },
+        "MechanismFamily": {
+          "enum": [
+            "LATTICE_INTERFERENCE",
+            "LINE_GRAPH",
+            "ORBITAL_FRUSTRATION_HYBRIDIZATION",
+            "SYMMETRY_INDUCED",
+            "MOIRE_SUPERLATTICE",
+            "CONFINEMENT",
+            "CORRELATION_RENORMALIZATION",
+            "STRAIN_INTERFACE_DEFECT",
+            "ATOMIC_ORBITAL_LOCALIZATION",
+            "OTHER_OR_UNKNOWN"
+          ],
+          "title": "MechanismFamily",
+          "type": "string"
+        },
+        "ObservedBandClass": {
+          "enum": [
+            "FB100",
+            "NB300",
+            "BORDER500",
+            "OUT_OF_SCOPE",
+            "UNQUANTIFIED"
+          ],
+          "title": "ObservedBandClass",
+          "type": "string"
+        },
+        "SocState": {
+          "enum": [
+            "INCLUDED",
+            "NOT_INCLUDED",
+            "UNKNOWN"
+          ],
+          "title": "SocState",
+          "type": "string"
+        },
+        "SourceRecordRefV1": {
+          "additionalProperties": false,
+          "properties": {
+            "accessed_at": {
+              "maxLength": 40,
+              "minLength": 20,
+              "title": "Accessed At",
+              "type": "string"
+            },
+            "canonical_url": {
+              "maxLength": 1024,
+              "minLength": 9,
+              "title": "Canonical Url",
+              "type": "string"
+            },
+            "license_expression": {
+              "maxLength": 512,
+              "minLength": 1,
+              "title": "License Expression",
+              "type": "string"
+            },
+            "public_redistribution_allowed": {
+              "title": "Public Redistribution Allowed",
+              "type": "boolean"
+            },
+            "raw_sha256": {
+              "anyOf": [
+                {
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Raw Sha256"
+            },
+            "source_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "title": "Source Id",
+              "type": "string"
+            },
+            "source_record_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "title": "Source Record Id",
+              "type": "string"
+            },
+            "source_version": {
+              "maxLength": 512,
+              "minLength": 1,
+              "title": "Source Version",
+              "type": "string"
+            }
+          },
+          "required": [
+            "source_id",
+            "source_record_id",
+            "canonical_url",
+            "source_version",
+            "license_expression",
+            "accessed_at",
+            "public_redistribution_allowed"
+          ],
+          "title": "SourceRecordRefV1",
+          "type": "object"
+        },
+        "TargetBandClass": {
+          "enum": [
+            "FB100",
+            "NB300"
+          ],
+          "title": "TargetBandClass",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "case_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+          "title": "Case Id",
+          "type": "string"
+        },
+        "case_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Case Sha256",
+          "type": "string"
+        },
+        "dimensionality": {
+          "$ref": "#/$defs/Dimensionality"
+        },
+        "forbidden_transformations": {
+          "default": [],
+          "items": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+            "type": "string"
+          },
+          "maxItems": 64,
+          "title": "Forbidden Transformations",
+          "type": "array"
+        },
+        "formula": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Formula",
+          "type": "string"
+        },
+        "frozen_request": {
+          "maxLength": 4000,
+          "minLength": 1,
+          "title": "Frozen Request",
+          "type": "string"
+        },
+        "frozen_requirement_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Frozen Requirement Sha256",
+          "type": "string"
+        },
+        "hard_constraints": {
+          "default": [],
+          "items": {
+            "maxLength": 512,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 64,
+          "title": "Hard Constraints",
+          "type": "array"
+        },
+        "leakage_group_ids": {
+          "items": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+            "type": "string"
+          },
+          "maxItems": 64,
+          "minItems": 1,
+          "title": "Leakage Group Ids",
+          "type": "array"
+        },
+        "parent_label": {
+          "maxLength": 512,
+          "minLength": 1,
+          "title": "Parent Label",
+          "type": "string"
+        },
+        "primary_mechanism_stratum": {
+          "$ref": "#/$defs/MechanismFamily"
+        },
+        "public_release_allowed": {
+          "title": "Public Release Allowed",
+          "type": "boolean"
+        },
+        "schema_version": {
+          "const": "flatband-benchmark-case-v1",
+          "default": "flatband-benchmark-case-v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "scientific_conclusion": {
+          "const": false,
+          "default": false,
+          "title": "Scientific Conclusion",
+          "type": "boolean"
+        },
+        "seed_evidence": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/FlatBandEvidenceV1"
+          },
+          "maxItems": 32,
+          "title": "Seed Evidence",
+          "type": "array"
+        },
+        "soft_preferences": {
+          "default": [],
+          "items": {
+            "maxLength": 512,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 64,
+          "title": "Soft Preferences",
+          "type": "array"
+        },
+        "source_catalog_sha256": {
+          "const": "57c24de8f0cf616205b03ef16231def711f2dfa9fcac86d94beede9c01b0bb1f",
+          "default": "57c24de8f0cf616205b03ef16231def711f2dfa9fcac86d94beede9c01b0bb1f",
+          "title": "Source Catalog Sha256",
+          "type": "string"
+        },
+        "source_records": {
+          "items": {
+            "$ref": "#/$defs/SourceRecordRefV1"
+          },
+          "maxItems": 16,
+          "minItems": 1,
+          "title": "Source Records",
+          "type": "array"
+        },
+        "structure_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Structure Sha256",
+          "type": "string"
+        },
+        "target_class": {
+          "$ref": "#/$defs/TargetBandClass"
+        },
+        "target_fermi_distance_max_e_v": {
+          "const": 1.0,
+          "default": 1.0,
+          "title": "Target Fermi Distance Max E V",
+          "type": "number"
+        }
+      },
+      "required": [
+        "case_id",
+        "case_sha256",
+        "parent_label",
+        "formula",
+        "structure_sha256",
+        "source_records",
+        "target_class",
+        "dimensionality",
+        "frozen_request",
+        "frozen_requirement_sha256",
+        "primary_mechanism_stratum",
+        "leakage_group_ids",
+        "public_release_allowed"
+      ],
+      "title": "FlatBandBenchmarkCaseV1",
+      "type": "object"
+    },
+    "FlatBandEvidenceV1": {
+      "$defs": {
+        "BandwidthScope": {
+          "enum": [
+            "FULL_BZ_GRID",
+            "WANNIER_GRID",
+            "HSL_FULL_PATH",
+            "HSL_LOCAL_WINDOW",
+            "STRUCTURAL_PRIOR_ONLY",
+            "SOURCE_LABEL_ONLY",
+            "UNKNOWN"
+          ],
+          "title": "BandwidthScope",
+          "type": "string"
+        },
+        "EvidenceClaimType": {
+          "enum": [
+            "COMPUTED",
+            "PARSED",
+            "HYPOTHESIS"
+          ],
+          "title": "EvidenceClaimType",
+          "type": "string"
+        },
+        "MagneticOrder": {
+          "enum": [
+            "NONMAGNETIC",
+            "FERROMAGNETIC",
+            "ANTIFERROMAGNETIC",
+            "NONCOLLINEAR",
+            "PARAMAGNETIC_OR_UNKNOWN"
+          ],
+          "title": "MagneticOrder",
+          "type": "string"
+        },
+        "ObservedBandClass": {
+          "enum": [
+            "FB100",
+            "NB300",
+            "BORDER500",
+            "OUT_OF_SCOPE",
+            "UNQUANTIFIED"
+          ],
+          "title": "ObservedBandClass",
+          "type": "string"
+        },
+        "SocState": {
+          "enum": [
+            "INCLUDED",
+            "NOT_INCLUDED",
+            "UNKNOWN"
+          ],
+          "title": "SocState",
+          "type": "string"
+        },
+        "SourceRecordRefV1": {
+          "additionalProperties": false,
+          "properties": {
+            "accessed_at": {
+              "maxLength": 40,
+              "minLength": 20,
+              "title": "Accessed At",
+              "type": "string"
+            },
+            "canonical_url": {
+              "maxLength": 1024,
+              "minLength": 9,
+              "title": "Canonical Url",
+              "type": "string"
+            },
+            "license_expression": {
+              "maxLength": 512,
+              "minLength": 1,
+              "title": "License Expression",
+              "type": "string"
+            },
+            "public_redistribution_allowed": {
+              "title": "Public Redistribution Allowed",
+              "type": "boolean"
+            },
+            "raw_sha256": {
+              "anyOf": [
+                {
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Raw Sha256"
+            },
+            "source_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "title": "Source Id",
+              "type": "string"
+            },
+            "source_record_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "title": "Source Record Id",
+              "type": "string"
+            },
+            "source_version": {
+              "maxLength": 512,
+              "minLength": 1,
+              "title": "Source Version",
+              "type": "string"
+            }
+          },
+          "required": [
+            "source_id",
+            "source_record_id",
+            "canonical_url",
+            "source_version",
+            "license_expression",
+            "accessed_at",
+            "public_redistribution_allowed"
+          ],
+          "title": "SourceRecordRefV1",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "band_tracking_method": {
+          "maxLength": 512,
+          "minLength": 1,
+          "title": "Band Tracking Method",
+          "type": "string"
+        },
+        "bandwidth_e_v": {
+          "anyOf": [
+            {
+              "maximum": 100.0,
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Bandwidth E V"
+        },
+        "bandwidth_scope": {
+          "$ref": "#/$defs/BandwidthScope"
+        },
+        "claim_type": {
+          "$ref": "#/$defs/EvidenceClaimType"
+        },
+        "evidence_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+          "title": "Evidence Id",
+          "type": "string"
+        },
+        "evidence_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Evidence Sha256",
+          "type": "string"
+        },
+        "fermi_distance_e_v": {
+          "anyOf": [
+            {
+              "maximum": 100.0,
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Fermi Distance E V"
+        },
+        "hubbard_u_e_v": {
+          "anyOf": [
+            {
+              "maximum": 50.0,
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Hubbard U E V"
+        },
+        "isolation_gap_e_v": {
+          "anyOf": [
+            {
+              "maximum": 100.0,
+              "minimum": -100.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Isolation Gap E V"
+        },
+        "k_sampling": {
+          "maxLength": 512,
+          "minLength": 1,
+          "title": "K Sampling",
+          "type": "string"
+        },
+        "magnetic_order": {
+          "$ref": "#/$defs/MagneticOrder"
+        },
+        "observed_class": {
+          "$ref": "#/$defs/ObservedBandClass"
+        },
+        "scientific_conclusion": {
+          "const": false,
+          "default": false,
+          "title": "Scientific Conclusion",
+          "type": "boolean"
+        },
+        "soc_state": {
+          "$ref": "#/$defs/SocState"
+        },
+        "source_record": {
+          "$ref": "#/$defs/SourceRecordRefV1"
+        },
+        "spin_channel": {
+          "anyOf": [
+            {
+              "maxLength": 64,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Spin Channel"
+        }
+      },
+      "required": [
+        "evidence_id",
+        "source_record",
+        "claim_type",
+        "observed_class",
+        "bandwidth_scope",
+        "k_sampling",
+        "soc_state",
+        "magnetic_order",
+        "band_tracking_method",
+        "evidence_sha256"
+      ],
+      "title": "FlatBandEvidenceV1",
+      "type": "object"
+    },
+    "HypothesisPacketV1": {
+      "$defs": {
+        "AssertedEvidenceRelation": {
+          "enum": [
+            "SUPPORT",
+            "COUNTER",
+            "CONTEXT"
+          ],
+          "title": "AssertedEvidenceRelation",
+          "type": "string"
+        },
+        "EvidenceSpanRefV1": {
+          "additionalProperties": false,
+          "properties": {
+            "asserted_relation": {
+              "$ref": "#/$defs/AssertedEvidenceRelation"
+            },
+            "claim_summary": {
+              "maxLength": 512,
+              "minLength": 1,
+              "title": "Claim Summary",
+              "type": "string"
+            },
+            "evidence_link_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "title": "Evidence Link Id",
+              "type": "string"
+            },
+            "private_text_artifact_uri": {
+              "anyOf": [
+                {
+                  "maxLength": 512,
+                  "minLength": 12,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Private Text Artifact Uri"
+            },
+            "source_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "title": "Source Id",
+              "type": "string"
+            },
+            "source_record_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "title": "Source Record Id",
+              "type": "string"
+            },
+            "source_url": {
+              "maxLength": 1024,
+              "minLength": 9,
+              "title": "Source Url",
+              "type": "string"
+            },
+            "span_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "title": "Span Id",
+              "type": "string"
+            },
+            "span_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Span Sha256",
+              "type": "string"
+            }
+          },
+          "required": [
+            "evidence_link_id",
+            "source_id",
+            "source_record_id",
+            "source_url",
+            "span_id",
+            "span_sha256",
+            "asserted_relation",
+            "claim_summary"
+          ],
+          "title": "EvidenceSpanRefV1",
+          "type": "object"
+        },
+        "FalsificationPlanV1": {
+          "additionalProperties": false,
+          "properties": {
+            "fail_condition": {
+              "maxLength": 4000,
+              "minLength": 1,
+              "title": "Fail Condition",
+              "type": "string"
+            },
+            "method": {
+              "maxLength": 4000,
+              "minLength": 1,
+              "title": "Method",
+              "type": "string"
+            },
+            "observable": {
+              "maxLength": 512,
+              "minLength": 1,
+              "title": "Observable",
+              "type": "string"
+            },
+            "pass_condition": {
+              "maxLength": 4000,
+              "minLength": 1,
+              "title": "Pass Condition",
+              "type": "string"
+            }
+          },
+          "required": [
+            "observable",
+            "method",
+            "pass_condition",
+            "fail_condition"
+          ],
+          "title": "FalsificationPlanV1",
+          "type": "object"
+        },
+        "MechanismFamily": {
+          "enum": [
+            "LATTICE_INTERFERENCE",
+            "LINE_GRAPH",
+            "ORBITAL_FRUSTRATION_HYBRIDIZATION",
+            "SYMMETRY_INDUCED",
+            "MOIRE_SUPERLATTICE",
+            "CONFINEMENT",
+            "CORRELATION_RENORMALIZATION",
+            "STRAIN_INTERFACE_DEFECT",
+            "ATOMIC_ORBITAL_LOCALIZATION",
+            "OTHER_OR_UNKNOWN"
+          ],
+          "title": "MechanismFamily",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "breaking_conditions": {
+          "items": {
+            "maxLength": 512,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 32,
+          "minItems": 1,
+          "title": "Breaking Conditions",
+          "type": "array"
+        },
+        "candidate_structure_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Candidate Structure Sha256",
+          "type": "string"
+        },
+        "case_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+          "title": "Case Id",
+          "type": "string"
+        },
+        "case_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Case Sha256",
+          "type": "string"
+        },
+        "claim_type": {
+          "const": "HYPOTHESIS",
+          "default": "HYPOTHESIS",
+          "title": "Claim Type",
+          "type": "string"
+        },
+        "contradictions": {
+          "default": [],
+          "items": {
+            "maxLength": 512,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 32,
+          "title": "Contradictions",
+          "type": "array"
+        },
+        "evidence_links": {
+          "items": {
+            "$ref": "#/$defs/EvidenceSpanRefV1"
+          },
+          "maxItems": 64,
+          "minItems": 1,
+          "title": "Evidence Links",
+          "type": "array"
+        },
+        "falsification": {
+          "$ref": "#/$defs/FalsificationPlanV1"
+        },
+        "mechanism_family": {
+          "$ref": "#/$defs/MechanismFamily"
+        },
+        "packet_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+          "title": "Packet Id",
+          "type": "string"
+        },
+        "packet_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Packet Sha256",
+          "type": "string"
+        },
+        "required_conditions": {
+          "items": {
+            "maxLength": 512,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 32,
+          "minItems": 1,
+          "title": "Required Conditions",
+          "type": "array"
+        },
+        "schema_version": {
+          "const": "flatband-hypothesis-packet-v1",
+          "default": "flatband-hypothesis-packet-v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "scientific_conclusion": {
+          "const": false,
+          "default": false,
+          "title": "Scientific Conclusion",
+          "type": "boolean"
+        },
+        "shared_invariant": {
+          "maxLength": 4000,
+          "minLength": 1,
+          "title": "Shared Invariant",
+          "type": "string"
+        },
+        "source_domain": {
+          "maxLength": 512,
+          "minLength": 1,
+          "title": "Source Domain",
+          "type": "string"
+        },
+        "strict_hypothesis_group_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+          "title": "Strict Hypothesis Group Id",
+          "type": "string"
+        },
+        "strict_structure_group_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+          "title": "Strict Structure Group Id",
+          "type": "string"
+        },
+        "transfer_principle": {
+          "maxLength": 4000,
+          "minLength": 1,
+          "title": "Transfer Principle",
+          "type": "string"
+        },
+        "transformation_operator_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+          "title": "Transformation Operator Id",
+          "type": "string"
+        },
+        "transformation_summary": {
+          "maxLength": 4000,
+          "minLength": 1,
+          "title": "Transformation Summary",
+          "type": "string"
+        },
+        "validated_material": {
+          "const": false,
+          "default": false,
+          "title": "Validated Material",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "packet_id",
+        "packet_sha256",
+        "case_id",
+        "case_sha256",
+        "candidate_structure_sha256",
+        "strict_structure_group_id",
+        "strict_hypothesis_group_id",
+        "transformation_operator_id",
+        "transformation_summary",
+        "source_domain",
+        "mechanism_family",
+        "shared_invariant",
+        "transfer_principle",
+        "required_conditions",
+        "breaking_conditions",
+        "evidence_links",
+        "falsification"
+      ],
+      "title": "HypothesisPacketV1",
+      "type": "object"
+    },
+    "RawExpertAnnotationV1": {
+      "$defs": {
+        "Assessability": {
+          "enum": [
+            "ASSESSABLE",
+            "SYSTEM_PACKET_INVALID",
+            "CASE_INVALID"
+          ],
+          "title": "Assessability",
+          "type": "string"
+        },
+        "BridgeJudgmentV1": {
+          "additionalProperties": false,
+          "properties": {
+            "breaking_conditions": {
+              "$ref": "#/$defs/TriStateJudgment"
+            },
+            "contradiction_handling": {
+              "$ref": "#/$defs/TriStateJudgment"
+            },
+            "overall": {
+              "$ref": "#/$defs/BridgeVerdict"
+            },
+            "required_conditions": {
+              "$ref": "#/$defs/TriStateJudgment"
+            },
+            "shared_invariant": {
+              "$ref": "#/$defs/TriStateJudgment"
+            },
+            "source_mechanism": {
+              "$ref": "#/$defs/TriStateJudgment"
+            },
+            "target_mapping": {
+              "$ref": "#/$defs/TriStateJudgment"
+            },
+            "transferable_control": {
+              "$ref": "#/$defs/TriStateJudgment"
+            }
+          },
+          "required": [
+            "source_mechanism",
+            "shared_invariant",
+            "target_mapping",
+            "transferable_control",
+            "required_conditions",
+            "breaking_conditions",
+            "contradiction_handling",
+            "overall"
+          ],
+          "title": "BridgeJudgmentV1",
+          "type": "object"
+        },
+        "BridgeVerdict": {
+          "enum": [
+            "CORRECT",
+            "CONDITIONAL",
+            "INCORRECT",
+            "UNASSESSABLE"
+          ],
+          "title": "BridgeVerdict",
+          "type": "string"
+        },
+        "EvidenceJudgmentV1": {
+          "additionalProperties": false,
+          "properties": {
+            "evidence_link_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "title": "Evidence Link Id",
+              "type": "string"
+            },
+            "expert_relation": {
+              "$ref": "#/$defs/ExpertEvidenceRelation"
+            },
+            "overclaim": {
+              "title": "Overclaim",
+              "type": "boolean"
+            },
+            "reason_code": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "title": "Reason Code",
+              "type": "string"
+            },
+            "scope_match": {
+              "title": "Scope Match",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "evidence_link_id",
+            "expert_relation",
+            "scope_match",
+            "overclaim",
+            "reason_code"
+          ],
+          "title": "EvidenceJudgmentV1",
+          "type": "object"
+        },
+        "ExpertEvidenceRelation": {
+          "enum": [
+            "VALID_SUPPORT",
+            "VALID_COUNTER",
+            "CONTEXT_ONLY",
+            "UNSUPPORTED",
+            "INSUFFICIENT_PACKET"
+          ],
+          "title": "ExpertEvidenceRelation",
+          "type": "string"
+        },
+        "HardFailReason": {
+          "enum": [
+            "INVALID_STRUCTURE",
+            "DISALLOWED_TRANSFORMATION",
+            "HARD_CONSTRAINT_VIOLATION",
+            "MECHANISM_CONTRADICTED",
+            "NO_USABLE_EVIDENCE",
+            "UNMARKED_INFERENCE",
+            "MALFORMED_PACKET"
+          ],
+          "title": "HardFailReason",
+          "type": "string"
+        },
+        "MechanismFamily": {
+          "enum": [
+            "LATTICE_INTERFERENCE",
+            "LINE_GRAPH",
+            "ORBITAL_FRUSTRATION_HYBRIDIZATION",
+            "SYMMETRY_INDUCED",
+            "MOIRE_SUPERLATTICE",
+            "CONFINEMENT",
+            "CORRELATION_RENORMALIZATION",
+            "STRAIN_INTERFACE_DEFECT",
+            "ATOMIC_ORBITAL_LOCALIZATION",
+            "OTHER_OR_UNKNOWN"
+          ],
+          "title": "MechanismFamily",
+          "type": "string"
+        },
+        "TriStateJudgment": {
+          "enum": [
+            "PASS",
+            "PARTIAL",
+            "FAIL",
+            "UNASSESSABLE"
+          ],
+          "title": "TriStateJudgment",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "annotation_guide_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Annotation Guide Sha256",
+          "type": "string"
+        },
+        "annotation_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+          "title": "Annotation Id",
+          "type": "string"
+        },
+        "annotation_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Annotation Sha256",
+          "type": "string"
+        },
+        "assessability": {
+          "$ref": "#/$defs/Assessability"
+        },
+        "blinded_unit_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+          "title": "Blinded Unit Id",
+          "type": "string"
+        },
+        "bridge_judgment": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BridgeJudgmentV1"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "case_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+          "title": "Case Id",
+          "type": "string"
+        },
+        "case_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Case Sha256",
+          "type": "string"
+        },
+        "confidence": {
+          "anyOf": [
+            {
+              "maximum": 5,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Confidence"
+        },
+        "evidence_judgments": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/EvidenceJudgmentV1"
+          },
+          "maxItems": 64,
+          "title": "Evidence Judgments",
+          "type": "array"
+        },
+        "evidence_valid": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Evidence Valid"
+        },
+        "hard_fail_reasons": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/HardFailReason"
+          },
+          "maxItems": 16,
+          "title": "Hard Fail Reasons",
+          "type": "array"
+        },
+        "mechanism_family": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MechanismFamily"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "packet_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+          "title": "Packet Id",
+          "type": "string"
+        },
+        "packet_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Packet Sha256",
+          "type": "string"
+        },
+        "rationale": {
+          "maxLength": 4000,
+          "minLength": 1,
+          "title": "Rationale",
+          "type": "string"
+        },
+        "relevance_grade": {
+          "anyOf": [
+            {
+              "maximum": 3,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Relevance Grade"
+        },
+        "review_round": {
+          "maximum": 2,
+          "minimum": 1,
+          "title": "Review Round",
+          "type": "integer"
+        },
+        "reviewer_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+          "title": "Reviewer Id",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "flatband-raw-expert-annotation-v1",
+          "default": "flatband-raw-expert-annotation-v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "scientific_conclusion": {
+          "const": false,
+          "default": false,
+          "title": "Scientific Conclusion",
+          "type": "boolean"
+        },
+        "sealed": {
+          "const": true,
+          "default": true,
+          "title": "Sealed",
+          "type": "boolean"
+        },
+        "started_at": {
+          "maxLength": 40,
+          "minLength": 20,
+          "title": "Started At",
+          "type": "string"
+        },
+        "strict_hypothesis_group_id": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Strict Hypothesis Group Id"
+        },
+        "submitted_at": {
+          "maxLength": 40,
+          "minLength": 20,
+          "title": "Submitted At",
+          "type": "string"
+        }
+      },
+      "required": [
+        "annotation_id",
+        "annotation_sha256",
+        "blinded_unit_id",
+        "case_id",
+        "case_sha256",
+        "packet_id",
+        "packet_sha256",
+        "reviewer_id",
+        "review_round",
+        "annotation_guide_sha256",
+        "assessability",
+        "relevance_grade",
+        "evidence_valid",
+        "bridge_judgment",
+        "mechanism_family",
+        "strict_hypothesis_group_id",
+        "confidence",
+        "rationale",
+        "started_at",
+        "submitted_at"
+      ],
+      "title": "RawExpertAnnotationV1",
+      "type": "object"
+    },
+    "ResearchRunLedgerV1": {
+      "$defs": {
+        "LlmUseRecordV1": {
+          "additionalProperties": false,
+          "properties": {
+            "actual_calls": {
+              "default": 0,
+              "maximum": 2,
+              "minimum": 0,
+              "title": "Actual Calls",
+              "type": "integer"
+            },
+            "actual_input_tokens": {
+              "default": 0,
+              "maximum": 12000,
+              "minimum": 0,
+              "title": "Actual Input Tokens",
+              "type": "integer"
+            },
+            "actual_output_tokens": {
+              "default": 0,
+              "maximum": 16000,
+              "minimum": 0,
+              "title": "Actual Output Tokens",
+              "type": "integer"
+            },
+            "enabled": {
+              "title": "Enabled",
+              "type": "boolean"
+            },
+            "max_calls": {
+              "default": 0,
+              "maximum": 2,
+              "minimum": 0,
+              "title": "Max Calls",
+              "type": "integer"
+            },
+            "max_input_tokens": {
+              "default": 0,
+              "maximum": 12000,
+              "minimum": 0,
+              "title": "Max Input Tokens",
+              "type": "integer"
+            },
+            "max_output_tokens": {
+              "default": 0,
+              "maximum": 16000,
+              "minimum": 0,
+              "title": "Max Output Tokens",
+              "type": "integer"
+            },
+            "metadata_packet_limit": {
+              "default": 0,
+              "maximum": 20,
+              "minimum": 0,
+              "title": "Metadata Packet Limit",
+              "type": "integer"
+            },
+            "model": {
+              "anyOf": [
+                {
+                  "maxLength": 512,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Model"
+            },
+            "prompt_sha256": {
+              "anyOf": [
+                {
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Prompt Sha256"
+            },
+            "provider": {
+              "anyOf": [
+                {
+                  "maxLength": 512,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Provider"
+            },
+            "revision": {
+              "anyOf": [
+                {
+                  "maxLength": 512,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Revision"
+            },
+            "tokenizer_sha256": {
+              "anyOf": [
+                {
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Tokenizer Sha256"
+            }
+          },
+          "required": [
+            "enabled"
+          ],
+          "title": "LlmUseRecordV1",
+          "type": "object"
+        },
+        "LocalSemanticModelUseV1": {
+          "additionalProperties": false,
+          "properties": {
+            "bundle_sha256": {
+              "anyOf": [
+                {
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Bundle Sha256"
+            },
+            "enabled": {
+              "title": "Enabled",
+              "type": "boolean"
+            },
+            "input_tokens": {
+              "default": 0,
+              "maximum": 1000000,
+              "minimum": 0,
+              "title": "Input Tokens",
+              "type": "integer"
+            },
+            "model_card_sha256": {
+              "anyOf": [
+                {
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Model Card Sha256"
+            },
+            "tokenizer_sha256": {
+              "anyOf": [
+                {
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Tokenizer Sha256"
+            },
+            "vector_dimension": {
+              "default": 0,
+              "maximum": 65536,
+              "minimum": 0,
+              "title": "Vector Dimension",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "enabled"
+          ],
+          "title": "LocalSemanticModelUseV1",
+          "type": "object"
+        },
+        "ResearchRunOutcome": {
+          "enum": [
+            "SUCCEEDED",
+            "PARTIAL",
+            "FAILED"
+          ],
+          "title": "ResearchRunOutcome",
+          "type": "string"
+        },
+        "SourceRequestAllocationV1": {
+          "additionalProperties": false,
+          "properties": {
+            "actual_physical_requests": {
+              "maximum": 8,
+              "minimum": 0,
+              "title": "Actual Physical Requests",
+              "type": "integer"
+            },
+            "cache_hits": {
+              "default": 0,
+              "maximum": 1000,
+              "minimum": 0,
+              "title": "Cache Hits",
+              "type": "integer"
+            },
+            "max_physical_requests": {
+              "maximum": 8,
+              "minimum": 0,
+              "title": "Max Physical Requests",
+              "type": "integer"
+            },
+            "raw_hits": {
+              "maximum": 10000,
+              "minimum": 0,
+              "title": "Raw Hits",
+              "type": "integer"
+            },
+            "response_bytes": {
+              "maximum": 100000000,
+              "minimum": 0,
+              "title": "Response Bytes",
+              "type": "integer"
+            },
+            "source_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "title": "Source Id",
+              "type": "string"
+            },
+            "unique_documents": {
+              "maximum": 2000,
+              "minimum": 0,
+              "title": "Unique Documents",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "source_id",
+            "max_physical_requests",
+            "actual_physical_requests",
+            "raw_hits",
+            "unique_documents",
+            "response_bytes"
+          ],
+          "title": "SourceRequestAllocationV1",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "actual_total_physical_requests": {
+          "maximum": 8,
+          "minimum": 0,
+          "title": "Actual Total Physical Requests",
+          "type": "integer"
+        },
+        "article_body_fetch_requests": {
+          "const": 0,
+          "default": 0,
+          "title": "Article Body Fetch Requests",
+          "type": "integer"
+        },
+        "case_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+          "title": "Case Id",
+          "type": "string"
+        },
+        "case_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Case Sha256",
+          "type": "string"
+        },
+        "failure_reason_codes": {
+          "default": [],
+          "items": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+            "type": "string"
+          },
+          "maxItems": 32,
+          "title": "Failure Reason Codes",
+          "type": "array"
+        },
+        "full_pdf_reads": {
+          "const": 0,
+          "default": 0,
+          "title": "Full Pdf Reads",
+          "type": "integer"
+        },
+        "git_commit": {
+          "pattern": "^[0-9a-f]{40}$",
+          "title": "Git Commit",
+          "type": "string"
+        },
+        "ledger_created_at": {
+          "maxLength": 40,
+          "minLength": 20,
+          "title": "Ledger Created At",
+          "type": "string"
+        },
+        "ledger_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+          "title": "Ledger Id",
+          "type": "string"
+        },
+        "ledger_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Ledger Sha256",
+          "type": "string"
+        },
+        "llm": {
+          "$ref": "#/$defs/LlmUseRecordV1"
+        },
+        "local_semantic_model": {
+          "$ref": "#/$defs/LocalSemanticModelUseV1"
+        },
+        "max_total_physical_requests": {
+          "const": 8,
+          "default": 8,
+          "title": "Max Total Physical Requests",
+          "type": "integer"
+        },
+        "max_walltime_seconds": {
+          "maximum": 3600,
+          "minimum": 1,
+          "title": "Max Walltime Seconds",
+          "type": "integer"
+        },
+        "outcome": {
+          "$ref": "#/$defs/ResearchRunOutcome"
+        },
+        "ranking_id": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ranking Id"
+        },
+        "ranking_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ranking Sha256"
+        },
+        "run_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+          "title": "Run Id",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "flatband-research-run-ledger-v1",
+          "default": "flatband-research-run-ledger-v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "scientific_conclusion": {
+          "const": false,
+          "default": false,
+          "title": "Scientific Conclusion",
+          "type": "boolean"
+        },
+        "source_allocations": {
+          "items": {
+            "$ref": "#/$defs/SourceRequestAllocationV1"
+          },
+          "maxItems": 4,
+          "minItems": 1,
+          "title": "Source Allocations",
+          "type": "array"
+        },
+        "source_catalog_sha256": {
+          "const": "57c24de8f0cf616205b03ef16231def711f2dfa9fcac86d94beede9c01b0bb1f",
+          "default": "57c24de8f0cf616205b03ef16231def711f2dfa9fcac86d94beede9c01b0bb1f",
+          "title": "Source Catalog Sha256",
+          "type": "string"
+        },
+        "system_config_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "System Config Sha256",
+          "type": "string"
+        },
+        "system_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+          "title": "System Id",
+          "type": "string"
+        },
+        "walltime_ms": {
+          "maximum": 3600000,
+          "minimum": 0,
+          "title": "Walltime Ms",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "ledger_id",
+        "ledger_sha256",
+        "system_id",
+        "system_config_sha256",
+        "git_commit",
+        "run_id",
+        "case_id",
+        "case_sha256",
+        "source_allocations",
+        "actual_total_physical_requests",
+        "llm",
+        "local_semantic_model",
+        "max_walltime_seconds",
+        "walltime_ms",
+        "outcome",
+        "ledger_created_at"
+      ],
+      "title": "ResearchRunLedgerV1",
+      "type": "object"
+    },
+    "SourceRecordRefV1": {
+      "additionalProperties": false,
+      "properties": {
+        "accessed_at": {
+          "maxLength": 40,
+          "minLength": 20,
+          "title": "Accessed At",
+          "type": "string"
+        },
+        "canonical_url": {
+          "maxLength": 1024,
+          "minLength": 9,
+          "title": "Canonical Url",
+          "type": "string"
+        },
+        "license_expression": {
+          "maxLength": 512,
+          "minLength": 1,
+          "title": "License Expression",
+          "type": "string"
+        },
+        "public_redistribution_allowed": {
+          "title": "Public Redistribution Allowed",
+          "type": "boolean"
+        },
+        "raw_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Raw Sha256"
+        },
+        "source_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+          "title": "Source Id",
+          "type": "string"
+        },
+        "source_record_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+          "title": "Source Record Id",
+          "type": "string"
+        },
+        "source_version": {
+          "maxLength": 512,
+          "minLength": 1,
+          "title": "Source Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source_id",
+        "source_record_id",
+        "canonical_url",
+        "source_version",
+        "license_expression",
+        "accessed_at",
+        "public_redistribution_allowed"
+      ],
+      "title": "SourceRecordRefV1",
+      "type": "object"
+    },
+    "SystemRankingV1": {
+      "$defs": {
+        "RankedPacketRefV1": {
+          "additionalProperties": false,
+          "properties": {
+            "packet_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "title": "Packet Id",
+              "type": "string"
+            },
+            "packet_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Packet Sha256",
+              "type": "string"
+            },
+            "selection_rank": {
+              "maximum": 5,
+              "minimum": 1,
+              "title": "Selection Rank",
+              "type": "integer"
+            },
+            "strict_hypothesis_group_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "title": "Strict Hypothesis Group Id",
+              "type": "string"
+            }
+          },
+          "required": [
+            "selection_rank",
+            "packet_id",
+            "packet_sha256",
+            "strict_hypothesis_group_id"
+          ],
+          "title": "RankedPacketRefV1",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "case_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+          "title": "Case Id",
+          "type": "string"
+        },
+        "case_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Case Sha256",
+          "type": "string"
+        },
+        "cost_ledger_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Cost Ledger Sha256",
+          "type": "string"
+        },
+        "ranked_packets": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/RankedPacketRefV1"
+          },
+          "maxItems": 5,
+          "title": "Ranked Packets",
+          "type": "array"
+        },
+        "ranking_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+          "title": "Ranking Id",
+          "type": "string"
+        },
+        "ranking_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Ranking Sha256",
+          "type": "string"
+        },
+        "requested_top_k": {
+          "const": 5,
+          "default": 5,
+          "title": "Requested Top K",
+          "type": "integer"
+        },
+        "run_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+          "title": "Run Id",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "flatband-system-ranking-v1",
+          "default": "flatband-system-ranking-v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "system_config_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "System Config Sha256",
+          "type": "string"
+        },
+        "system_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+          "title": "System Id",
+          "type": "string"
+        },
+        "underfill_reason_codes": {
+          "default": [],
+          "items": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+            "type": "string"
+          },
+          "maxItems": 16,
+          "title": "Underfill Reason Codes",
+          "type": "array"
+        }
+      },
+      "required": [
+        "ranking_id",
+        "ranking_sha256",
+        "system_id",
+        "system_config_sha256",
+        "run_id",
+        "case_id",
+        "case_sha256",
+        "cost_ledger_sha256"
+      ],
+      "title": "SystemRankingV1",
+      "type": "object"
+    }
+  },
+  "schema_version": "flatband-research-contract-bundle-v0-draft"
+}

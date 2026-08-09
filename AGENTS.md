@@ -39,6 +39,7 @@
 | `src/material_agent/orchestrator/` | LangGraph 控制流、控制契约、SQLite/checkpoint、审批、恢复和 runner registry |
 | `src/material_agent/retrieval/` | Agent01：数据源、查询、结构、确定性判定、排序、Artifact 和报告 |
 | `src/material_agent/inspiration/` | 灵感生成器：文献 metadata/Passage、EvidenceCard、TagGraph、受约束 proposal、内部身份和多样性选择 |
+| `src/material_agent/research/` | 隔离的科研 benchmark 契约、指标与统计；不得修改或冒充冻结的 production Inspiration V1 契约 |
 | `src/material_agent/integration/`、`integrations/hermes/` | Hermes Gateway 的严格 DTO/Tool binding，以及固定 profile、Skill、配置和兼容性测试 |
 | `src/material_agent/ml_screening/` | Agent02：轻量原生契约、pre-filter、适用域、计划、数值/worker 校验、Fake 实现和独立 worker 边界 |
 | `src/material_agent/dft/` | Agent03：v1 mock DFT 控制契约、计划、backend 生命周期、runner、非科研报告和结构化 bridge PoC |

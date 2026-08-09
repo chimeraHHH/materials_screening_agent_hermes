@@ -21,7 +21,8 @@ Novelty is outside scope.
 
 ## Preregistration and annotation
 
-- [ ] Freeze case, judgment, evidence, bridge, candidate, and adjudication schemas
+- [x] Complete independent preregistration/annotation/contract red-team and record Pilot NO-GO blockers
+- [ ] Close and freeze case, reviewer-safe packet, judgment, evidence, bridge, candidate, execution-matrix, blinding, run-ledger, final-gold, duplicate-release, expert-registry, and adjudication schemas
 - [ ] Freeze annotation manual with positive, negative, borderline, and conflict examples
 - [ ] Freeze primary/secondary metrics, paired tests, multiplicity correction, missing-data policy, and stop rules
 - [ ] Freeze model/prompt/token/request budgets and leakage controls
@@ -32,7 +33,7 @@ Novelty is outside scope.
 - [ ] Construct 30-case stratified pilot
 - [ ] Blind and randomize system outputs for two independent expert reviews
 - [ ] Adjudicate disagreements and compute Krippendorff's alpha
-- [ ] Pass alpha >= 0.67 or execute the predeclared manual-only revision loop
+- [ ] Pass ordinal alpha >= 0.80 directly, or revise only the manual after alpha in `[0.667, 0.80)` and pass a disjoint 30-case R2 at >= 0.80
 - [ ] Freeze 120 cases: development 60, locked IID 30, locked OOD 30
 - [ ] Freeze family-disjoint split and all release hashes
 

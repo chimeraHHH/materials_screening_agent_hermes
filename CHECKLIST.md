@@ -5,6 +5,7 @@
 - [x] 冻结研究计划 v0：范围、B0/E1/E2/E3、预算、指标、统计 Gate 和停止条件
 - [x] 提交并推送工程基线，建立 public Draft PR #4
 - [x] 完成 20-source 开源数据审计并冻结 source catalog v1
+- [x] 完成科研预注册/标注/契约独立红队；当前 30-case Pilot 决策为 NO-GO
 - [ ] 完成预注册、标注手册和 30-case Pilot
 - [ ] 通过双专家一致性 Gate 并冻结 120-case benchmark
 - [ ] 依次完成 B0、E1、E2、E3、融合、locked test 和科研审查

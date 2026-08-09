@@ -28,6 +28,19 @@ synthetic evaluation fixture、专家审查 Schema 和 semantic provider contrac
 不能替代真实专家金标。首个语义实验使用大模型对受限 metadata packet 进行本地结构化
 推理，不引入外部 embedding API；多源检索必须服从与 B0 相同的八次物理请求预算。
 
+当前正在冻结独立的 `src/material_agent/research/` 科研契约、`aNDCG@5` 指标、泄漏组
+bootstrap/randomization 统计、预注册和标注手册。Pilot 的 ordinal Krippendorff alpha
+必须达到 0.80；`[0.667, 0.80)` 只允许修改手册并在完全不重叠的 30-case R2 复测，低于
+0.667 或 R2 未达 0.80 即停止扩展。专家身份、指南、split、模型和 prompt 的哈希闭合前
+不得启动正式标注。
+
+独立红队已将当前 Pilot 判为 NO-GO：现有公式可保留，但 reviewer-safe 投影、完整
+`case × system` 执行矩阵、泄漏图 connected component、单向 run/ranking 哈希、raw review 到
+final gold、case-level duplicate partition、system config/信息预算及 expert calibration/COI
+尚未闭合。具体顺序见
+[`READINESS_REVIEW.md`](../artifacts/experiment/flatband-benchmark-20260809/READINESS_REVIEW.md)；
+这些项未完成前不得用 schema/test 通过替代真实科研 Gate。
+
 public production 仍为 NO-GO：queued production 与 worker lifecycle 已激活，但 parent
 worker 被 hard-kill 后独立 action child 的清理/回收契约仍未闭合；真实 provider 全链、
 branch protection、required review 和科学 performance Gate 也未完成。
