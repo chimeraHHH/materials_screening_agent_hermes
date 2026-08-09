@@ -77,6 +77,15 @@ jobs:
           uv pip sync --python .venv/bin/python requirements.lock
           uv pip install --python .venv/bin/python --no-deps --editable .
 
+      - name: Build the locked Gateway environment
+        timeout-minutes: 10
+        shell: bash
+        run: |
+          set -euo pipefail
+          .venv/bin/python integrations/hermes/scripts/bootstrap_gateway_runtime.py
+          test -x .venv-gateway/bin/python
+          PYTHONPATH="$GITHUB_WORKSPACE/src" .venv-gateway/bin/python -c "import mcp, material_agent"
+
       - name: Verify the Hermes profile bundle
         shell: bash
         run: |
@@ -89,15 +98,6 @@ jobs:
         run: |
           set -euo pipefail
           .venv/bin/python -m pytest -q -p no:cacheprovider
-
-      - name: Build the locked Gateway environment
-        timeout-minutes: 10
-        shell: bash
-        run: |
-          set -euo pipefail
-          .venv/bin/python integrations/hermes/scripts/bootstrap_gateway_runtime.py
-          test -x .venv-gateway/bin/python
-          PYTHONPATH="$GITHUB_WORKSPACE/src" .venv-gateway/bin/python -c "import mcp, material_agent"
 
       - name: Build the pinned Hermes environment
         timeout-minutes: 20
