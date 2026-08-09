@@ -8,6 +8,7 @@ import json
 import os
 import sqlite3
 import subprocess
+import sys
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
@@ -18,7 +19,7 @@ from urllib.request import Request, urlopen
 
 
 EVENT_SCHEMA_VERSION = "materials-inspiration-ops-event-v1"
-PID_SCHEMA_VERSION = "materials-inspiration-process-set-v2"
+PID_SCHEMA_VERSION = "materials-inspiration-process-set-v3"
 METRICS_SCHEMA_VERSION = "materials-inspiration-metrics-v2"
 QUEUE_SCHEMA_VERSION = "2"
 MAX_EVENT_LOG_BYTES = 32_000_000
@@ -139,6 +140,9 @@ _QUEUE_SQL_TOKENS = {
         "CLOCK_ANOMALYIN(0,1)",
     ),
 }
+_LINUX_PROC_COMMAND_MAX_BYTES = 65_536
+_LINUX_PROC_STAT_MAX_BYTES = 4_096
+_LINUX_START_MARKER_PREFIX = "linux-proc-start-ticks:"
 
 
 class ProductionOpsError(RuntimeError):
@@ -367,11 +371,66 @@ def read_json(path: Path) -> dict[str, Any] | None:
     return value
 
 
-def process_identity(pid: int) -> dict[str, Any] | None:
-    """Return stable POSIX process identity fields without exposing environment."""
+def _linux_start_marker_from_stat(payload: bytes) -> str | None:
+    """Parse Linux ``/proc/<pid>/stat`` field 22 without wall-clock conversion."""
 
-    if not isinstance(pid, int) or pid <= 1:
+    if not isinstance(payload, bytes) or len(payload) > _LINUX_PROC_STAT_MAX_BYTES:
         return None
+    closing_parenthesis = payload.rfind(b")")
+    if closing_parenthesis < 0:
+        return None
+    fields = payload[closing_parenthesis + 1 :].split()
+    if len(fields) <= 19:
+        return None
+    start_ticks = fields[19]
+    if not start_ticks.isdigit() or int(start_ticks) <= 0:
+        return None
+    return _LINUX_START_MARKER_PREFIX + start_ticks.decode("ascii")
+
+
+def _read_linux_start_marker(pid: int) -> str | None:
+    try:
+        with Path(f"/proc/{pid}/stat").open("rb", buffering=0) as stream:
+            payload = stream.read(_LINUX_PROC_STAT_MAX_BYTES + 1)
+    except OSError:
+        return None
+    return _linux_start_marker_from_stat(payload)
+
+
+def _read_linux_command(pid: int) -> bytes | None:
+    try:
+        with Path(f"/proc/{pid}/cmdline").open("rb", buffering=0) as stream:
+            command = stream.read(_LINUX_PROC_COMMAND_MAX_BYTES + 1)
+    except OSError:
+        return None
+    if (
+        not command
+        or len(command) > _LINUX_PROC_COMMAND_MAX_BYTES
+        or not command.rstrip(b"\0")
+    ):
+        return None
+    return command
+
+
+def _linux_process_identity(pid: int) -> dict[str, Any] | None:
+    start_marker = _read_linux_start_marker(pid)
+    if start_marker is None:
+        return None
+    command = _read_linux_command(pid)
+    if (
+        command is None
+        or not command.rstrip(b"\0")
+        or _read_linux_start_marker(pid) != start_marker
+    ):
+        return None
+    return {
+        "command_sha256": hashlib.sha256(command).hexdigest(),
+        "pid": pid,
+        "start_marker": start_marker,
+    }
+
+
+def _ps_process_identity(pid: int) -> dict[str, Any] | None:
     try:
         completed = subprocess.run(
             ("ps", "-p", str(pid), "-o", "lstart=", "-o", "command="),
@@ -395,6 +454,16 @@ def process_identity(pid: int) -> dict[str, Any] | None:
         "pid": pid,
         "start_marker": start_marker,
     }
+
+
+def process_identity(pid: int) -> dict[str, Any] | None:
+    """Return stable POSIX process identity fields without exposing environment."""
+
+    if not isinstance(pid, int) or pid <= 1:
+        return None
+    if sys.platform.startswith("linux"):
+        return _linux_process_identity(pid)
+    return _ps_process_identity(pid)
 
 
 def owned_process_alive(record: Any) -> bool:

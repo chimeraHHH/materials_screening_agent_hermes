@@ -40,6 +40,11 @@ def _identity(pid: int) -> dict[str, object]:
     }
 
 
+def _linux_stat_payload(start_ticks: bytes) -> bytes:
+    fields = [b"S", *(str(value).encode() for value in range(4, 22)), start_ticks]
+    return b"42 (worker ) name) " + b" ".join(fields) + b"\n"
+
+
 def _settings(tmp_path: Path) -> production_runtime.Settings:
     workspace = tmp_path / "workspace"
     workspace.mkdir()
@@ -190,6 +195,177 @@ def test_python_minor_rejects_broken_symlink(tmp_path: Path) -> None:
         match="required isolated Python is unavailable",
     ):
         production_runtime._python_minor(interpreter)
+
+
+def test_linux_stat_parser_uses_field_22_with_parentheses_in_command() -> None:
+    assert production_ops._linux_start_marker_from_stat(
+        _linux_stat_payload(b"424242")
+    ) == "linux-proc-start-ticks:424242"
+
+
+@pytest.mark.parametrize(
+    "payload",
+    (
+        b"42 worker S 1 2 3\n",
+        b"42 (worker) S 1 2 3\n",
+        _linux_stat_payload(b"not-a-number"),
+        _linux_stat_payload(b"0"),
+        b"x" * (production_ops._LINUX_PROC_STAT_MAX_BYTES + 1),
+    ),
+)
+def test_linux_stat_parser_rejects_malformed_or_unbounded_payloads(
+    payload: bytes,
+) -> None:
+    assert production_ops._linux_start_marker_from_stat(payload) is None
+
+
+def test_linux_process_identity_rejects_pid_reuse_during_capture(
+    monkeypatch,
+) -> None:
+    markers = iter(
+        ("linux-proc-start-ticks:100", "linux-proc-start-ticks:101")
+    )
+    monkeypatch.setattr(
+        production_ops,
+        "_read_linux_start_marker",
+        lambda _pid: next(markers),
+    )
+    monkeypatch.setattr(
+        production_ops,
+        "_read_linux_command",
+        lambda _pid: b"python\0-m\0worker\0",
+    )
+
+    assert production_ops._linux_process_identity(42) is None
+
+
+@pytest.mark.parametrize("command", (None, b"", b"\0\0"))
+def test_linux_process_identity_rejects_missing_or_empty_command(
+    monkeypatch,
+    command: bytes | None,
+) -> None:
+    monkeypatch.setattr(
+        production_ops,
+        "_read_linux_start_marker",
+        lambda _pid: "linux-proc-start-ticks:100",
+    )
+    monkeypatch.setattr(
+        production_ops,
+        "_read_linux_command",
+        lambda _pid: command,
+    )
+
+    assert production_ops._linux_process_identity(42) is None
+
+
+def test_linux_process_identity_hashes_raw_nul_delimited_command(
+    monkeypatch,
+) -> None:
+    command = b"python\0-m\0material_agent.integration.queued_gateway\0"
+    monkeypatch.setattr(
+        production_ops,
+        "_read_linux_start_marker",
+        lambda _pid: "linux-proc-start-ticks:100",
+    )
+    monkeypatch.setattr(
+        production_ops,
+        "_read_linux_command",
+        lambda _pid: command,
+    )
+
+    assert production_ops._linux_process_identity(42) == {
+        "command_sha256": hashlib.sha256(command).hexdigest(),
+        "pid": 42,
+        "start_marker": "linux-proc-start-ticks:100",
+    }
+
+
+def test_ps_process_identity_remains_the_non_linux_fallback(monkeypatch) -> None:
+    command = "python -m material_agent.integration.queued_gateway"
+    completed = subprocess.CompletedProcess(
+        args=("ps",),
+        returncode=0,
+        stdout=f"Sun Aug  9 12:00:00 2026 {command}\n",
+        stderr="",
+    )
+    monkeypatch.setattr(
+        production_ops.subprocess,
+        "run",
+        lambda *_args, **_kwargs: completed,
+    )
+
+    assert production_ops._ps_process_identity(42) == {
+        "command_sha256": hashlib.sha256(command.encode()).hexdigest(),
+        "pid": 42,
+        "start_marker": "Sun Aug 9 12:00:00 2026",
+    }
+
+
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="requires /proc")
+def test_linux_real_process_identity_is_stable_and_exact() -> None:
+    process = subprocess.Popen(
+        [sys.executable, "-c", "import time; time.sleep(30)"],
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    identity: dict[str, object] | None = None
+    try:
+        observations = [production_ops.process_identity(process.pid) for _ in range(8)]
+        identity = observations[0]
+        assert identity is not None
+        assert observations == [identity] * len(observations)
+        assert str(identity["start_marker"]).startswith(
+            "linux-proc-start-ticks:"
+        )
+        assert production_ops.owned_process_alive(identity) is True
+        assert production_ops.owned_process_alive(
+            {
+                **identity,
+                "start_marker": f'{identity["start_marker"]}-tampered',
+            }
+        ) is False
+        command_sha256 = str(identity["command_sha256"])
+        different_prefix = "0" if command_sha256[0] != "0" else "1"
+        assert production_ops.owned_process_alive(
+            {
+                **identity,
+                "command_sha256": different_prefix + command_sha256[1:],
+            }
+        ) is False
+    finally:
+        process.terminate()
+        process.wait(timeout=5)
+    assert identity is not None
+    assert production_ops.owned_process_alive(identity) is False
+
+
+def test_v2_process_record_is_not_silently_accepted_by_v3(
+    tmp_path: Path,
+) -> None:
+    gateway_database = tmp_path / "materials-gateway.sqlite3"
+    queue_database = tmp_path / "operator-approval-grants.sqlite3"
+    _gateway_database(gateway_database)
+    SqliteGatewayJobQueue(queue_database).close()
+    expected_binding = "a" * 64
+
+    snapshot = production_ops.metrics_snapshot(
+        event_log=tmp_path / "events.jsonl",
+        gateway_database=gateway_database,
+        queue_database=queue_database,
+        process_record={
+            "processes": {},
+            "runtime_binding_sha256": expected_binding,
+            "schema_version": "materials-inspiration-process-set-v2",
+        },
+        expected_runtime_binding_sha256=expected_binding,
+    )
+
+    assert production_ops.PID_SCHEMA_VERSION == "materials-inspiration-process-set-v3"
+    assert snapshot["process_set_valid"] is False
+    assert snapshot["runtime_binding_match"] is False
+    assert "PROCESS_SET_INVALID" in snapshot["readiness"]["reasons"]
+    assert "RUNTIME_BINDING_MISMATCH" in snapshot["readiness"]["reasons"]
 
 
 def test_queue_snapshot_exposes_backlog_lease_and_blocked_counts(
