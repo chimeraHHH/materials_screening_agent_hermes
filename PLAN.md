@@ -1,4 +1,23 @@
-# P3.x Inspiration Generalization 实施与实验计划
+# Materials Inspiration：工程基线与平带/窄带科研 Benchmark
+
+## 当前活动轨道：Flat/Narrow-Band Benchmark 2026-08-09
+
+- 当前 run：`flatband-benchmark-20260809`
+- 研究计划：[`artifacts/experiment/flatband-benchmark-20260809/PLAN.md`](artifacts/experiment/flatband-benchmark-20260809/PLAN.md)
+- 执行清单：[`artifacts/experiment/flatband-benchmark-20260809/CHECKLIST.md`](artifacts/experiment/flatband-benchmark-20260809/CHECKLIST.md)
+- 当前顺序：公开 Draft PR → 开源数据源审计 → 预注册与标注手册 → 30-case Pilot → 专家一致性 → 120-case benchmark → B0 → E1/E2/E3 → 融合与锁定测试。
+- 当前结论：工程测试通过不等于科研有效；真实专家金标和 locked test 完成前不声明科学性能。
+- 本轨道不评估或声明 novelty。
+
+## 只读工程基线：Production Hardening 2026-08-09
+
+- 当前 run：`production-hardening-20260809`
+- 基线：`537ddd446df71c2ffaab25c2a1801e2be2df3c00`
+- 详细计划：[`artifacts/experiment/production-hardening-20260809/PLAN.md`](artifacts/experiment/production-hardening-20260809/PLAN.md)
+- 执行清单：[`artifacts/experiment/production-hardening-20260809/CHECKLIST.md`](artifacts/experiment/production-hardening-20260809/CHECKLIST.md)
+- 当前实现已经激活 queued factory、受管 worker、监督式 deadline、worker-aware readiness 和 CI workflow；但 parent hard-kill 后独立 action child 的清理仍未闭合，真实 provider 全链和科学金标也未完成，因此 public production 仍为 NO-GO。
+
+以下 P3.x 内容保留为只读历史基线；当前实现不得因兼容旧 pilot 而缩小生产加固目标。
 
 - `run_id`: `p3x-inspiration-generalization-20260808`
 - 实验层级：`main/test`

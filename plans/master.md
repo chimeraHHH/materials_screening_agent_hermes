@@ -13,7 +13,24 @@
 > [Agent 04 计划](subagents/material-screening-agent04-plan.md)中明确记录的状态更新。当前可运行能力以 README、源码、配置和测试为准。
 > 只有这些仓库文档明确确认完成的事项才标为 `[x]`；无法确认的事项保持 `[ ]`。
 
-状态基准日期：2026-08-08
+状态基准日期：2026-08-09
+
+### 当前科研轨道：平带/窄带灵感生成 Benchmark
+
+当前最高优先级已从功能扩展转为真实科研评测。工程基线先通过 public Draft PR 固定，
+随后依次完成开源数据源许可/字段审计、预注册与标注手册、30-case 双专家 Pilot、
+120-case family-disjoint benchmark、B0 以及 E1/E2/E3 单因素消融，最后才允许融合和
+一次 locked-test 评估。详细计划和清单见
+[`flatband-benchmark-20260809`](../artifacts/experiment/flatband-benchmark-20260809/PLAN.md)。
+
+当前研究范围只包含 flat/narrow-band inspiration，不评估 novelty。现有 Crossref run、
+synthetic evaluation fixture、专家审查 Schema 和 semantic provider contract 都是工程证据，
+不能替代真实专家金标。首个语义实验使用大模型对受限 metadata packet 进行本地结构化
+推理，不引入外部 embedding API；多源检索必须服从与 B0 相同的八次物理请求预算。
+
+public production 仍为 NO-GO：queued production 与 worker lifecycle 已激活，但 parent
+worker 被 hard-kill 后独立 action child 的清理/回收契约仍未闭合；真实 provider 全链、
+branch protection、required review 和科学 performance Gate 也未完成。
 
 ### 当前 P3：Hermes 平台与灵感生成器
 

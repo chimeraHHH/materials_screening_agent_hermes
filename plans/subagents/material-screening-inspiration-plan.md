@@ -57,6 +57,63 @@
 - [x] 用户完成一次性 Provider 设备授权；Hermes 自然语言 session 已经真实四工具链路停在
   审批点、消费 MCP 外 grant 并返回非空 hash-verified bundle；MCP smoke 未被用来冒充该项。
 
+### 0.2 Production hardening：持久任务队列（已激活；parent-death P0 未闭合）
+
+本轮 Gate B 将 operator approval 的授权语义与 job 执行账本保持分离，但对异步
+action 强制在同一 approval SQLite `BEGIN IMMEDIATE` 事务中完成 exact grant
+consume 与 durable outbox enqueue，消除“grant 已消费、任务未入队”窗口。
+验收范围为：
+
+- [x] canonical payload hash 绑定的 enqueue 幂等与冲突拒绝；
+- [x] `BEGIN IMMEDIATE` 事务下的原子 claim，以 owner/token/expiry/generation 实现 fencing；
+- [x] heartbeat、小型 canonical JSON checkpoint、complete/fail 与终态响应丢失后幂等重试；
+- [x] 过期 lease 可被新 worker 重领，旧 token 的 heartbeat/checkpoint/terminal write 全部 fail closed；
+- [x] append-only 审计事件、WAL/`synchronous=FULL`、线程和多连接并发/崩溃恢复测试。
+- [x] action job 精确绑定 run/revision、interaction/action 及其 hash、request hash、
+  execution manifest 和完整 grant receipt；worker claim 后全部重验；
+- [x] `QueuedMaterialsGatewayService` 使 `materials_run_act` 请求线程只入队和提交
+  `RUNNING`，`GatewayActionWorker` 独立执行；原 `MaterialsGatewayService` 保持同步兼容；
+- [x] 新增 fixture/public Hermes queued factory 与独立 worker CLI；installed production profile
+  固定 queued factory，真实 fixture
+  companion 的 MCP 集成测试证明 act 先返回 `RUNNING`，worker 后续生成并校验终态 bundle；
+- [x] 覆盖 enqueue 后、runner transition checkpoint 后、Gateway terminal commit 后与 job
+  complete 响应丢失窗口；重启后不重复调用 static runner；
+- [x] 覆盖 companion 已返回但 `TRANSITION_READY` checkpoint 尚未提交的精确窗口；
+  只有显式 `CompletedInspirationRunRecovery` capability 才可重进 companion 以复用完整
+  stage，static 证据为 companion 进入 2 次、runner 仍为 1 次；partial stage 仍人工阻断；
+- [x] lease 必须覆盖冻结的 runner max walltime，后台 heartbeat 续租；本机 POSIX
+  run-scoped process lock 防止新旧 worker 并行写同一 run Artifact namespace；
+- [x] 若旧 worker 可能已进入 runner 但尚无完整 transition checkpoint，自动恢复
+  fail closed 为 `BLOCKED_MANUAL_RECOVERY`，不盲目重跑 Crossref。
+
+定向验证：队列/异步 action 共 `20 passed`；与 Gateway authorization、persistence、
+service、companion、operator approval 及 queued factory integration 合并为 `75 passed`；
+public completed-run recovery 另有 `3 passed`；`compileall`、`git diff --check` 与
+`pip check` 通过。测试包含 spawned-process 原子 claim、多进程 run lock、真实 SQLite
+reopen 与各提交窗口故障注入。
+
+当前 production profile 已固定 queued factory，`production_runtime` 已启动、监督和探测
+worker，readiness/metrics 也绑定同一 queue DB 与运行身份。限制（P0）更新为：action child
+运行在独立 session；parent worker 若被 hard-kill，现有 lifecycle 不能保证立即终止并 reap
+该 child，只能依赖 child 自身 deadline。当前 process lock 仍是单机 POSIX 保证，不是分布式
+锁；partial stage 无 query-level checkpoint 时继续 fail closed，不宣称全链路 crash-safe。
+
+### 0.3 Production hardening：deadline 与物理网络账本（已实现，待全 Gate）
+
+- [x] `InspirationRunner` 使用可注入单调时钟，在查询、抽取、向量、变换、选择、报告和
+  terminal Artifact 校验之间执行硬 deadline 检查；deadline 在中途触发并保留已有 search
+  attempt Artifact，不再只在科学流程结束后检查一次；
+- [x] Crossref adapter/transport 接收剩余 walltime，每个请求 timeout 取配置上限与剩余预算的
+  较小值，pacing/retry 不能跨越 deadline；可注入 clock/sleeper 保留确定性故障回放；
+- [x] 同域 redirect 每一跳形成独立、连续编号的 physical attempt；redirect、retry 和终端
+  response 共同受 `SearchBudgetV1.max_physical_requests` 约束，Gateway compiler 将冻结的
+  physical-attempt ceiling 编入 policy；
+- [x] `CostLedgerV1.walltime_ms` 记录真实单调时钟快照，terminal 返回前再次检查 deadline；
+  固定 clock 的离线 replay 仍逐字节稳定；
+- [x] 定向回归覆盖 redirect 计数/耗尽、timeout 缩短、deadline 阻止 retry、运行中超时与真实
+  walltime 持久化。当前 production public profile 的 body-fetch budget 仍为 0；可选网络正文
+  fetch 只做保守 timeout 分摊，后续发布该能力前仍需把 deadline 深入 fetcher 的每次 sleep/hop。
+
 ## 1. 目标、边界与完成标准
 
 ### 1.1 定位
@@ -742,3 +799,46 @@ stages/inspiration/<run_id>/
   [`docs/runs/2026-08-08-hermes-final-crossref-approval-pending.md`](../../docs/runs/2026-08-08-hermes-final-crossref-approval-pending.md)。
   最终证据见
   [`docs/runs/2026-08-08-hermes-final-crossref-v2.md`](../../docs/runs/2026-08-08-hermes-final-crossref-v2.md)。
+
+### 2026-08-09：生产部署与可观测性 Gate D checkpoint（历史初始快照）
+
+- 新增 `deploy/materials-inspiration` 单入口和 production lifecycle，覆盖 pinned runtime
+  bootstrap、profile install、dashboard build、`start/stop/status/health/metrics`；Hermes home、
+  PID ownership、日志与计数状态均限定在 operator 指定 workspace 下；
+- Hermes lock 明确 Node `>=22.22.0` 与 `web` extra；本机 Node `20.20.2` 实测在 checkout、
+  Python 环境、profile 和 dashboard 写入前 fail-fast，不能再产生“Python 已装好但前端不可用”
+  的半部署状态；
+- preflight 逐项验证 Python 3.11、Hermes commit/version/clean checkout、source profile、
+  model/provider credential resolution、两个 mode-0600 SQLite DB、真实 MCP stdio exact four
+  tools 和默认 live Crossref connectivity；secret 不进入 CLI、PID record、JSONL 或 metrics；
+- loopback sidecar 暴露 `/healthz`、`/readyz` 和 Prometheus `/metrics`；`stop` 仅对 start marker
+  与 command SHA 同时匹配的 owned PID/process group 发信号；
+- offline production E2E 只替换 production factory 的 injectable HTTP transport，完整验证
+  submit、无 grant 拒绝、operator grant、runner、artifact closure/readable result 与两次 MCP
+  restart；实测 `verified=true`、readable evidence 1、终态诚实为 `PARTIAL`；
+- 定向回归为 `7 passed in 12.45s`。尚未在 Node 22.22+ 主机验证真实 dashboard build/start，
+  未执行 opt-in Crossref live smoke，provider probe 只验证 credential 可解析、不发送付费模型
+  请求；这些条件不得描述为已通过。
+
+后续 superseding checkpoint：Node 22.22 组件 bootstrap/build/start/health/stop 已在隔离
+临时环境验证；production profile 固定 queued factory，lifecycle 统一管理 dashboard、monitor
+与 worker，worker/queue 状态进入 readiness/metrics；安装后 profile closure、严格环境白名单、
+bounded log/event rotation、lifecycle/repository locks、失败回滚和 operator acknowledgement 已
+加入。当前 Gate D 定向回归为 `26 passed`。真实 provider credential/model call 仍未执行，
+parent hard-kill 后独立 action child 的清理仍是 public production P0。
+
+### 2026-08-09：Gate E3 语义向量与混合去重工程契约
+
+- `signed-hashing-v1` 继续明确标记为词法基线；新增 provider-neutral 本地语义 adapter，输入
+  仅限 title、section、selected passage 与 normalized tags，并绑定 exact model/revision、
+  tokenizer/config/model bundle/dependency lock/license SHA 与 dimension；
+- adapter 冻结 provider identity、逐次复核 local bundle，拒绝 remote/synthetic production、
+  漂移、token 超限、维度错误、NaN/Inf、非 L2、float32 不一致及 cache 串线；仓库没有真实
+  pinned bundle，默认 production 明确返回 `SEMANTIC_PRODUCTION_UNAVAILABLE`，不会下载模型或
+  回退成伪语义；
+- 新增 versioned lexical+semantic ranked near-dedup；hybrid 缺 embedding 时默认 fail closed，
+  只有显式开关才记录 lexical fallback，且每次 hybrid 决策保留 lexical-only ablation；现有
+  Passage selector 已复用同一决策核的 lexical-only `1/0` 模式，默认排序和 Jaccard 语义不变；
+- synthetic provider 仅证明工程契约与一次可解释的 hybrid/lexical 决策差异。定向回归
+  `42 passed`，`pip check` 与 `git diff --check` 通过；尚缺真实本地 provider、许可证审核、
+  expert-adjudicated gold set，不能声称语义模型科学有效或完成 E3 production/scientific Gate。
