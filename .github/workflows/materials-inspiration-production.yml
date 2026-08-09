@@ -61,9 +61,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(node --version)" = "v22.22.0"
-          test "$(python -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')" = "3.11"
-          test "$(uv --version)" = "uv 0.12.3"
+          node_version="$(node --version)"
+          python_version="$(python -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')"
+          uv_version="$(uv --version | awk '{print $2}')"
+          printf 'node=%s python=%s uv=%s\n' "$node_version" "$python_version" "$uv_version"
+          test "$node_version" = "v22.22.0"
+          test "$python_version" = "3.11"
+          test "$uv_version" = "0.12.3"
 
       - name: Build the locked main environment
         shell: bash
