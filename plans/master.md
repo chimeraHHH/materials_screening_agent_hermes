@@ -34,12 +34,73 @@ bootstrap/randomization 统计、预注册和标注手册。Pilot 的 ordinal Kr
 0.667 或 R2 未达 0.80 即停止扩展。专家身份、指南、split、模型和 prompt 的哈希闭合前
 不得启动正式标注。
 
-独立红队已将当前 Pilot 判为 NO-GO：现有公式可保留，但 reviewer-safe 投影、完整
+2026-08-09 的独立红队将当时 Pilot 判为 NO-GO：现有公式可保留，但 reviewer-safe 投影、完整
 `case × system` 执行矩阵、泄漏图 connected component、单向 run/ranking 哈希、raw review 到
 final gold、case-level duplicate partition、system config/信息预算及 expert calibration/COI
-尚未闭合。具体顺序见
+尚未闭合。该历史发现的候选修复已进入当前 V3 工作树，但尚未取得新的独立 GO。具体顺序见
 [`READINESS_REVIEW.md`](../artifacts/experiment/flatband-benchmark-20260809/READINESS_REVIEW.md)；
 这些项未完成前不得用 schema/test 通过替代真实科研 Gate。
+
+当时 active Gate 是 `PILOT_PROVENANCE_CLOSURE`。该历史阶段只实现并对抗验证 reviewer-safe
+有界证据投影、私有 identity map、完整 execution matrix、单向 budget/ranking/terminal
+闭包、raw/adjudication/final-gold exact coverage、case-level expert duplicate partition、
+leakage connected-component 和 expert calibration/COI 绑定；不构建真实 Pilot case，
+不调用网络或模型，不读取专家标签，也不比较 B0/E1/E2/E3 性能。只有独立红队重新给出
+Pilot GO 且冻结对象形成新内容哈希后，下一节点才是 30-case Pilot R1。
+
+2026-08-09 的历史工作树复核维持 canonical action `iterate`：研究定向测试为
+`91 passed`，已推送 Draft PR #4 的 GitHub Actions 为绿色，但本地生成器
+`scripts/generate_flatband_research_contracts.py --check` 因科研 Schema 漂移而正确失败。
+局部模型可重放不等于 Pilot readiness；目前仍须关闭完整 FrozenCase/pre-run eligibility、
+安全 reviewer manifests/private maps 到 pooled Gold 的 exact cover、由完整 case 与固定算法
+重放的 leakage group、正式 Pilot agreement input、专家真实独立性/校准集不重叠、
+receipt-to-evidence provenance、campaign prerequisite 和由 Execution/Gold 唯一派生的
+AnalysisInputRelease。完成并重新生成内容哈希、通过独立红队之前，禁止启动网络、模型或专家
+Pilot。该 generator drift 已由 2026-08-10 audience-split V3 draft bundle 替代；当前状态以下方
+`PILOT_STRUCTURE_LEAKAGE_CLOSURE` checkpoint 为准。
+
+2026-08-09 的 leakage V2 合并审计发现新的设计反例：若把只有十个枚举值的宽泛
+`MechanismFamily` 本身作为 connected-component 连边，则全 Main universe 理论上最多只有十个
+独立 component，且同一 family 不能同时出现在 development/IID/OOD；这与预注册的
+`20/10/10` component 下限和 IID 语义不可同时满足。canonical action 仍为 `iterate`：保留
+宽泛 mechanism 作为抽样分层和 OOD holdout taxonomy，把正式独立性连边改为由冻结证据和
+算法重放的细粒度 mechanism lineage；在诚实的 Main120 正例、伪 lineage 反例和更新后的
+功效 Gate 通过前暂停正式 AnalysisInput/Main 路径。拒绝的替代是降低 component 下限或给每个
+case 自报唯一 mechanism group，因为两者都会制造虚假的独立样本数。
+
+### 2026-08-10 科研 Gate checkpoint
+
+- **已验收的顺序节点：** GitHub Draft PR #4 仍为 open/draft/mergeable；已推送
+  head `9b2beffc13a778a77d7b133d562cb89e5e205ba0` 的离线 Gate 与 GitGuardian
+  均为绿色。该远端证据只覆盖已推送 head，不覆盖当前本地科研改动。开源数据源正式审计
+  已冻结 20 个唯一来源（12 `INCLUDE`、5 `CONDITIONAL`、3 `EXCLUDE`），catalog 与
+  row schema 均有独立 SHA-256 sidecar；row schema 只接受本目录声明的标准 SPDX
+  表达式或显式 `LicenseRef-*`，未知许可继续 fail closed。
+- **当前 active Gate：** `PILOT_STRUCTURE_LEAKAGE_CLOSURE`；canonical action
+  `iterate`。结构近重复决定 bootstrap/randomization 的独立单位，因此它是科研有效性
+  Gate，而不是可推迟的工程优化。
+- **当前本地实现证据：** 计划提交树在排除尚未接入结构证据的顶层 Pilot 草案后，完整
+  离线 Gate 为 `1291 passed, 15 skipped, 365 warnings`，耗时 `2605.24 s`
+  （wall `2607.71 s`，峰值 RSS `636878848 B`）。跳过项仅为显式 opt-in live、真实 ML、
+  隔离 MCP/stdio 与非 Linux `/proc` 条件。audience-split Schema generator、contract
+  bundle、`pip check`、全仓 `py_compile` 和 diff check 均通过。该证据只说明实现检查点
+  自洽；未运行网络、真实模型、真实 30-case Pilot 或专家标注，不构成科研性能证据或
+  Pilot GO。
+- **已闭合的设计反例：** final case/hash 包含结构分组结果会形成输入输出循环；
+  release-local structure group ID 不能证明 calibration、R1、R2 之间无近重复。
+  二维真空厚度、全局平移和数值微扰对 3D space-group/StructureMatcher 的影响，
+  以及 `symprec=0.001 Å` 对约 `0.002 Å` 合成扰动的敏感性，目前只是本地
+  exploratory smoke 观察；在固定 runner 与攻击 fixture 落盘前不作为已证实科研结果。
+- **当前修复边界：** 私有原始结构字节必须经固定 parser 重放为 normalized payload；
+  2D 要求唯一真空轴、layer-group、真空与原点平移不变签名，3D 使用预注册多阈值的
+  保守并图；pre-group slot/candidate identity 必须排除 final case/group identity；
+  calibration、当前 round 与 prior round 必须合并原始 normalized payload 重新验证。
+- **下一可执行动作：** 当前原始 CIF/POSCAR/PYMATGEN_JSON 封存、解析重放和维度证据已有
+  本地正例/攻击测试；下一步实现仍保持 fail-closed 的 structure compute/finalize、二维
+  layer-group/三维多阈值并图和跨 round union，再把 private release exact-bind 到
+  CandidatePoolV3、Calibration、PreBudget、Execution 和 Pilot 顶层 closure；随后
+  才同步预注册、标注手册与 public/private schemas。新的结构 Gate、R1/R2 Gate 和完整
+  V3 红队通过前，不构建真实 30-case、不调用网络/模型，也不读取专家标签。
 
 public production 仍为 NO-GO：queued production 与 worker lifecycle 已激活，但 parent
 worker 被 hard-kill 后独立 action child 的清理/回收契约仍未闭合；真实 provider 全链、

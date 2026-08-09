@@ -1,12 +1,15 @@
 # 平带/窄带灵感生成 Benchmark 预注册草案
 
-状态：`DRAFT_PENDING_EXPERT_MODEL_AND_SPLIT_IDENTITIES`
+状态：`DRAFT / PILOT_NO_GO_PENDING_SCHEMA_FREEZE_AND_INDEPENDENT_REDTEAM`
 
-版本：v0.1，2026-08-09（Asia/Shanghai）
+版本：v0.2，2026-08-10（Asia/Shanghai）
 
 本文件冻结拟采用的科研问题、实验单元、标签、指标、统计检验、预算、盲法和停止规则。
-它尚未完成外部注册，也不是科研结果。下列待定身份全部闭合并形成新的内容哈希之前，
-不得启动 30-case Pilot、查看系统间性能差异或把任何输出描述为已验证材料。
+它尚未完成外部注册，也不是科研结果。当前 formal V2/V3 链只是本地候选实现；
+终稿 Schema/文档哈希与独立红队尚未闭合。在全部 Gate 通过前，不得启动 30-case Pilot、
+查看系统间性能差异或把任何输出描述为已验证材料。
+相邻 `PREREGISTRATION.sha256` 只标识本次 v0.2 draft checkpoint，不表示外部注册或
+Pilot GO；后续正文改动必须生成新内容身份。
 
 ## 1. 研究问题与证据边界
 
@@ -21,22 +24,28 @@ development 组件选择；不是额外的锁定主假设。
 `HYPOTHESIS`。专家给出的 grade 3 表示“在给定 packet 内强、证据匹配、约束兼容且可证伪”，
 不表示材料已经由实验、DFT 或多体计算验证。
 
-## 2. 已冻结身份与未闭合 Gate
+## 2. 当前身份链与未闭合 Gate
 
 | 对象 | 当前身份 |
 |---|---|
 | source catalog v1 | `57c24de8f0cf616205b03ef16231def711f2dfa9fcac86d94beede9c01b0bb1f` |
-| source catalog schema | `fedca7626203ee337f9d98291dccd0a427d4fd2bd1f42656f9522eb75bd8ff6d` |
-| research contract bundle | 当前仅为 content-addressed draft；digest 见 `research_contracts.schema.sha256` |
+| source catalog schema | `a796757159679a02146ad00f306f8bc6db2642fdd3fc51c82b25aba36936efc7` |
+| public protocol bundle | `89023a4d07531b598a563e78b0c2b225876981ca9e1d5aea884a493f6aa7be81`；`protocol_readiness=PILOT_NO_GO` |
+| private custody schema bundle | `97e95c079c82d41afda7cc5deca1229406dc69387a896da6a9c6686c312b194c`；Schema 定义可公开，私有实例不得发布 |
+| legacy v0 bundle | `research_contracts.schema.json`，历史只读，不是 active formal 输出 |
 | production Inspiration V1 | 保持原冻结契约；本研究模块不得修改它 |
+| formal benchmark chain | private lineage curation → `CandidatePoolReleaseV3` → `CandidateEligibilityAssignmentReleaseV3` → `PreRunEligibilityReleaseV3` → `BenchmarkSplitManifestV2`/`LeakageComponentReleaseV3`/`ExpertStudyRegistryV2` → `FrozenCaseReleaseV3` → `PilotPreBudgetClosureReleaseV3` → `BudgetManifestV2`/`ExecutionReleaseV3` |
+| formal expert chain | `ExpertStudyRegistryV2` + reviewer-specific `ReviewerManifestV2`/`PrivateIdentityMapV2` → sealed raw annotations → `FinalGoldReleaseV2` / pre-adjudication `FormalPilotAgreementReleaseV1` |
 
-正式 Pilot 前还必须冻结并公开其 SHA-256：
+上表的 formal 类型名表示当前唯一允许的研究路径，不表示已注册或 Pilot GO。
+正式 Pilot 前还必须冻结其协议层 SHA-256：
 
 1. 本预注册终稿和标注指南终稿；
 2. 与 Pilot/Main 均不重叠的专家校准集；
 3. 两位独立 reviewer 和一位 distinct adjudicator 的 pseudonymous registry；
 4. Pilot R1 split manifest；如触发，另建不重叠的 Pilot R2 manifest；
-5. 120-case Main manifest、全部 leakage group 和具体 OOD holdout group；
+5. Main 的抽样 frame/配额、Pilot–Main 不重叠规则、`LeakageComponentReleaseV3` 独立性边政策、
+   OOD taxonomy/holdout 选择算法与固定 seed；此时不冻结 Main 120 个具体 case ID；
 6. B0/E1/E2-A/E2-B/E3 的 system config、查询模板、TagGraph、代码 Git SHA；
 7. LLM provider/model/revision、tokenizer、prompt 和结构化输出 schema；
 8. 若运行本地语义模型敏感性实验，其离线 bundle、tokenizer、model card 和许可证；
@@ -44,26 +53,42 @@ development 组件选择；不是额外的锁定主假设。
 
 任何一项缺失均为 `NOT_STARTED`，不能用运行时“latest”、模型别名、网页当前内容或人工记忆补齐。
 
-### 2.1 独立红队后的 Pilot NO-GO 项
+Main 的 exact 120 case IDs（development 60 / locked IID 30 / locked OOD 30）只能在 Pilot Gate
+通过后、任何 Main 检索或系统执行前生成并冻结。该生成只能重放 Pilot 前已冻结的
+抽样、不重叠与 OOD 政策/固定 seed；不得根据 Pilot 的系统效果、难例或标签选择个别 Main case。
 
-2026-08-09 的独立统计/标注/契约红队确认：指标公式本身可以继续使用，但目前还没有形成可执行的
-科研 provenance 闭环。以下项目全部关闭并加入反例测试之前，本草案保持 `Pilot NO-GO`：
+### 2.1 旧 V1 红队整改与当前 Pilot NO-GO 项
 
-1. 建立唯一 `ExecutionMatrix`，枚举所有预期 `split case × system`；失败/空输出也必须占一个格子；
-2. 将私有 system/rank identity map 与 reviewer-facing packet 物理拆开；后者不得包含
-   contribution、系统自报 duplicate group、provider adapter 或原 rank；
-3. reviewer packet 必须含可核验的 bounded evidence excerpt/scope，而不是只显示系统写的摘要；
-4. 将所有 composition/prototype/fingerprint/article/mechanism 泄漏边连成图，冻结 connected
-   component 作为唯一 resampling cluster；
-5. 建立单向的 budget manifest → ranking → terminal run manifest，禁止 ranking/ledger SHA 循环；
-6. 让每个 OOD case 都命中 holdout family，且每个 IID/development case 都不命中；
-7. 建立 raw reviews → adjudication/agreement → `FinalExpertJudgment` 的 exact-coverage release；
-8. strict duplicate 必须来自 case-level expert/adjudicated partition，不能使用系统自报 group；
-9. 建立唯一 evaluator，把 run failure、underfill 和 unresolved unit 自动映射到固定五位置分母；
-10. 冻结 system config、逻辑 query/page/bytes/documents/cache 预算、E2 选择和 Fusion 组合规则；
-11. 用 content-addressed calibration completion、COI/recusal map 和 actual raw-answer SHA 代替布尔声明；
-12. 外部 JSON Schema 只表达结构约束；所有 Pydantic semantic validators 和跨对象 closure 必须由
-    executable verifier 复验，不能把 JSON Schema validation 误称为完整科研验证。
+2026-08-09 的统计/标注/契约红队提出的旧 V1 结构缺口，已在当前本地候选链中改为：
+private definition/assignment curation 先固定细粒度 mechanism lineage；
+`CandidatePoolReleaseV3` 和 `CandidateEligibilityAssignmentReleaseV3` 固定全部 primary/replacement
+候选、双 reviewer 资格审查与 distinct adjudicator；`PreRunEligibilityReleaseV3` 唯一派生
+active selection；`BenchmarkSplitManifestV2` 和 `LeakageComponentReleaseV3` 决定 split/component；
+`FrozenCaseReleaseV3` 绑定实际 case、专家 registry 与上游资格；
+`PilotPreBudgetClosureReleaseV3` 在任何 budget 前重放 calibration/current/prior-round 不重叠；
+`ExecutionReleaseV3` 给出 exact `case × system × rank` 终态；
+`ReviewerManifestV2` 与 reviewer-specific `PrivateIdentityMapV2` 物理分离审阅投影和私有位置映射；
+`FinalGoldReleaseV2` 闭合 raw/adjudication/duplicate；`FormalPilotAgreementReleaseV1` 只从裁决前
+raw labels 和 V2/V3 身份链派生。后者的 `V1` 是 agreement release 自身的 schema 版本；
+其 formal assembler 强制 native `ReviewerManifestV2`/`PrivateIdentityMapV2`，旧 V1 execution/blinding
+bridge 不是 formal 研究路径。
+该 2026-08-09 红队不构成对当前 V2/V3 候选链的独立通过证据；当前链仍须重做独立红队。
+
+但“已有候选实现”不等于 Gate 已关闭。以下项目完成前，本草案保持 `PILOT_NO_GO`：
+
+1. 冻结上述 formal 链的终稿 Schema/代码/文档 SHA，重生所有下游内容寻址实例；
+2. 用独立红队复验 exact cover、错 split/component、alias、duplicate、missing/extra cell、
+   reviewer 身份泄漏、caller 伪造分数和失败分母等反例；
+3. 冻结 system config、逻辑 query/page/bytes/documents/cache 预算、E2 选择与 Fusion 组合规则；
+4. 完成 content-addressed calibration completion、COI/recusal map、专家 assignment 和 actual raw-answer SHA；
+5. 确认可执行 verifier 能重放所有 Pydantic semantic validator 与跨 release closure；
+   JSON Schema validation 单独不构成科研验证；
+6. 将 Pilot R1 的 30 个 `INCLUDED` case、完整 system matrix、reviewer assignment 和私有 custody
+   身份全部内容寻址，且证明所有 case/source 均满足 `INCLUDE`-only 政策。
+7. 完成 structure grouping 的 compute/finalize 与跨 release 联合重放：当前仅有私有原始结构
+   解析、规范化与 2D/3D 真空轴证据；layer-group、3D 多容差并图、近重复 component、
+   final-case 投影以及 CandidatePool/Calibration/PreBudget 的 exact binding 尚未实现，因此保持
+   `PILOT_NO_GO`。
 
 ## 3. 目标定义
 
@@ -86,7 +111,8 @@ source-only label。SOC、磁序/自旋通道、Hubbard U、隔离隙、band tra
 - **system output**：一个 case 下某系统的有序 Top-5 `HypothesisPacket`；
 - **expert judgment unit**：`case × exact packet`。多个系统返回完全相同 packet 时只标注一次；
 - **primary analysis unit**：case；所有系统在同一 case 上配对；
-- **resampling/randomization unit**：所有 leakage 关系图的预先冻结 connected component，而不是
+- **resampling/randomization unit**：`LeakageComponentReleaseV3` 中由预先冻结 hard leakage edge
+  形成的 connected component，而不是
   调用者任选的单个 group、packet 或候选；
 - **duplicate unit**：专家最终发布的 case-local strict hypothesis partition；同一排名中该组第一次
   出现后的位置增益为零，系统自报 group 只作 proposal/audit。
@@ -95,6 +121,9 @@ source-only label。SOC、磁序/自旋通道、Hubbard U、隔离隙、band tra
 reviewer-facing packet 只含匿名 case/hypothesis/evidence 投影，不含 system/run/ranking/rank、
 系统自报 group、另一位 reviewer 标签或聚合结果。每位 reviewer 使用独立随机顺序和统一 renderer。
 来源 adapter 名称不显示；显示规范化 work identity/citation 和可核验的 bounded evidence。
+每条 reviewer evidence 的 metadata preimage/原始记录哈希只在 `PrivateIdentityMapV2` 中做私有、
+内部的确定性 replay；`evidence_preimages_replayed=true` 不是数据 provider 的签名、attestation
+或对科学真实性的背书。
 由于生成文本风格仍可能泄漏，正式报告称 `identity-masked` 而非完美 double-blind，并在提交后记录
 reviewer 的 system-origin guess 作为盲法敏感性指标；guess 不参与 grade。
 
@@ -121,25 +150,32 @@ duplicate。两位 reviewer 先独立密封作答，再与 adjudicator 讨论手
 ### 5.3 Pilot
 
 Pilot R1 恰为 30 个 case，目标边际为 15 个 FB100、15 个 NB300，以及 15 个 2D、15 个
-3D；至少覆盖五个 mechanism family，任一 family 不超过 6 个 case。抽样先按所有 leakage
-边构建 connected components，再在固定 seed 下做可复现的约束选择；至少保留 10 个独立
-component。Pilot 使用 B0、E1、E2-B、E3 的冻结输出，
+3D；至少覆盖五个 mechanism family，任一 family 不超过 6 个 case。抽样先按
+`LeakageComponentReleaseV3` 的 hard leakage edges 构建 connected components，再在固定
+seed 下做可复现的约束选择；至少保留 10 个独立 component。正式 Pilot 是
+`INCLUDE`-only：每个被执行 case 及其 seed evidence 必须解析到
+冻结 source catalog 的 `INCLUDE` 决策，并在 `PreRunEligibilityReleaseV3` 中为 `INCLUDED`；
+`CONDITIONAL`/`EXCLUDE` 不得通过事后例外进入运行分母。Pilot 使用 B0、E1、E2-B、E3 的冻结输出，
 Top-5 exact pooling 后由两位 reviewer 全量独立标注。Pilot 只校验手册可用性和一致性，
 不用于选择效果最好的系统或调阈值。
 
 ### 5.4 Main 120
 
 Main 恰为 development 60、locked IID 30、locked OOD 30。每个 split 保持 FB100/NB300
-和 2D/3D 的边际尽可能平衡；精确配额写入 manifest。组成、结构 prototype/graph、
-fingerprint cluster、共同论文/数据库候选家族和 mechanism family 均作为 leakage edge。
+和 2D/3D 的边际尽可能平衡；精确配额在 Pilot 前写入 sampling policy，具体 120 case
+按第 2 节时序后续冻结。组成、结构 prototype/graph、fingerprint cluster、共同论文/数据库
+候选家族，以及由可核验 evidence 支持的 fine-grained mechanism lineage，才是 `LeakageComponentReleaseV3`
+的 independence edges。broad `MechanismFamily` 只用于抽样分层与 OOD holdout taxonomy，
+不得直接连成 leakage edge；专家事后的 family 标签也不得重写已冻结 component。
 连通分量是唯一 split/resampling identity，任一 component 只能属于一个 split。development 至少
 20 个独立 component，locked IID/OOD 各至少 10 个；不足即不建立 confirmatory split。
 
 OOD 必须冻结完整的 mechanism 或 structure family，而不是普通元素替换。每个 OOD case 必须
 命中至少一个 holdout family，development/IID 必须零命中。这里的 OOD 仅表示相对 benchmark
 development case 的 family holdout，不声称 LLM 预训练或数据库历史中从未见过该材料。具体 holdout 只能在
-合法 sampling frame 构建后、任何系统运行前写入 Main manifest；本草案不伪造尚不存在的
-family inventory。Pilot R1/R2 与 Main 在 case 和全部 leakage group 上严格不重叠。
+合法 sampling frame 构建且 Pilot Gate 通过后、任何 Main 系统运行前写入 Main manifest；
+本草案不伪造尚不存在的 family inventory。Pilot R1/R2 与 Main 在 case 和全部
+`LeakageComponentReleaseV3` component 上严格不重叠。
 
 ## 6. 系统、预算和可比性
 
@@ -206,17 +242,29 @@ Annotation Guide SHA 和 calibration set SHA。reviewer 只能使用 packet 内�
 grade >=2 必须 `evidence_valid=true` 且至少一条 `VALID_SUPPORT`；grade 3 必须
 `bridge.overall=CORRECT`。所有 grade 仍为专家对 proposal utility 的判断，不是材料真实性结论。
 原始标签先密封，只有分歧单元进入 distinct adjudicator；裁决不得覆盖或删除原始标签。
-最终 gold release 必须为每个 pooled unit 恰好生成一条 `AGREED_RAW` 或 `ADJUDICATED` 记录，
-精确绑定两个 raw reviews、registry、masked packet 和 case。duplicate partition 在同一 case 的
+每位 reviewer 只从自己的 `ReviewerManifestV2` 接收投影，与其 `PrivateIdentityMapV2`
+通过 SHA/ID 成对闭合；不接受 V1 reviewer projection 或 caller 自报 system/rank/case 身份。
+`FinalGoldReleaseV2` 必须为每个 present pooled unit 恰好生成一条 `AGREED_RAW` 或
+`ADJUDICATED` 记录，精确绑定两个 raw reviews、`ExpertStudyRegistryV2`、reviewer/private-map
+引用、execution packet 和 case；跨 unit/case alias 必须 fail closed。duplicate partition 在同一 case 的
 全部匿名 packet 标注完成后单独密封并裁决，不能由 unit 内自由字符串或系统 proposal 决定。
 
 ## 8. Pilot 一致性 Gate
 
 一致性主量为裁决前两位 reviewer 原始 0--3 relevance grade 的 ordinal Krippendorff alpha，
-使用 original ordinal distance。两位 reviewer 应完成所有 unit；ordinary missing 不插补也不允许
-分析启动。expected disagreement 为 0 时 alpha 记为 undefined，不能当作 1。置信区间按整 case
-cluster 做 50,000 次 percentile bootstrap。双方均 assessable 的 unit 进入 grade alpha；任何单边
-CASE_INVALID、未闭合标签或 assessability release 缺失使该 Pilot round fail closed。
+使用 original ordinal distance。`FormalPilotAgreementReleaseV1` 必须只从当轮
+`CandidatePoolReleaseV3` + `PreRunEligibilityReleaseV3` + `BenchmarkSplitManifestV2` +
+`LeakageComponentReleaseV3` + `FrozenCaseReleaseV3` + `PilotPreBudgetClosureReleaseV3` +
+`ExecutionReleaseV3` + `ExpertStudyRegistryV2` 中的 assignment +
+两份 reviewer-specific `ReviewerManifestV2`/`PrivateIdentityMapV2` + 裁决前 raw annotations
+唯一派生，不接受 caller 提供的 RatedUnit、case/component 或 metric float。
+
+每个 present pooled unit 必须恰好有两个 assigned reviewer labels。双方都为
+`SYSTEM_PACKET_INVALID` 时，该 unit 以固定 `(0,0)` 纳入 alpha；单边 `SYSTEM_PACKET_INVALID`、
+任一 `CASE_INVALID`、普通 missing、多余/第三个标签或 orphan unit 都使整轮 fail closed，不得
+通过删除“难例”计算 alpha。expected disagreement 为 0 时 alpha 记为 undefined，不能当作 1。
+置信区间按 `LeakageComponentReleaseV3 component → case` 两层做 50,000 次 percentile
+bootstrap，固定 seed 为 `20260809`。minimum exact agreement 只作描述统计，不参与 Gate。
 
 - `alpha >= 0.80`：R1 直接通过；
 - `0.667 <= alpha < 0.80`：只能修改标注手册，不得修改系统、case 定义或已密封 R1 标签；
@@ -275,7 +323,8 @@ locked IID 30 和 OOD 30 内分别计算 Fusion-B0 paired case delta，再以 0.
 主假设通过必须同时满足：
 
 1. observed `Delta aNDCG@5 >= 0.05`；
-2. 以 leakage group 分层重抽的 50,000-replicate paired bootstrap 95% CI 下界 `>0`；
+2. 按 `LeakageComponentReleaseV3 component → case` 两层重抽的 50,000-replicate paired
+   bootstrap 95% CI 下界 `>0`；
 3. connected-component 共同变号的 one-sided paired randomization test：`2^G<=100,000` 时
    精确枚举，否则固定 seed 做 100,000 draws 并使用 add-one `p < 0.05`；
 4. Success@5 和 EvidenceValid@5 差值均 `>= -0.05`；duplicate-rate 差值 `<= +0.05`。
@@ -318,16 +367,22 @@ identity 的独立复核下修复；任何会改变候选或分数的修复使�
 泄漏；系统间预算不等；专家或模型接触 locked labels；运行 identity 漂移；或需要在看到
 locked 结果后修改规则。
 
-本草案正式注册前允许用户手动修订，但每次修改必须更新版本、变更说明和 SHA。Pilot R1
-开始后只允许第 8 节声明的 manual-only revision；Main system runs 开始后不得改变 endpoint、
+本草案正式注册前允许用户手动修订。编辑中 draft 必须更新版本/变更说明，但只在
+候选终稿密封时重生 SHA sidecar；明示过期的 sidecar 不得作为 protocol identity。Pilot R1
+必须在终稿 SHA 闭合后才能开始；开始后只允许第 8 节声明的 manual-only revision；
+Main system runs 开始后不得改变 endpoint、
 split、预算或 promotion Gate。
 
 ## 13. 发布与科研表述
 
+公开协议层可包含 Schema、verifier、抽样/统计算法、字段说明、空或合成示例及其 SHA；
+这不授权公开任何在进行中的 custody instance。活跃 `ReviewerManifestV2`、
+`PrivateIdentityMapV2`、专家 assignment/COI、raw annotation、未发布 Gold 与裁决前 Agreement 实例、
+私有 metadata preimage、blinding key 与运行数据库必须分离、最小权限保管，不进入 GitHub。
 公开包只含许可证允许的结构/事实字段、source IDs、查询、manifest、prompt/schema、项目自有
-标签、派生指标和 provenance。原始受限 abstracts、文章正文/PDF、ICSD/AFLOW/S2 数据、API key、
-provider transcript、运行数据库和标注进行中的私有 blinding key/map 不进入 GitHub。全部标签
-锁定后可发布不含专家顺序/密钥/受限文本的 sanitized system-position mapping，以支持结果复核。
+标签、派生指标和 provenance。原始受限 abstracts、文章正文/PDF、ICSD/AFLOW/S2 数据、API key
+和 provider transcript 不公开。全部标签密封、locked analysis 解封且许可/隐私复核通过后，
+只可发布不含专家顺序/密钥/受限文本的 sanitized mapping 或派生 release，以支持结果复核。
 
 最终报告必须同时给出所有 case 的 outcome/underfill denominator、组件失败、IID/OOD 差异、
 专家一致性和协议偏差。`scientific_conclusion=false` 保持到独立科研审查；即使 primary 通过，

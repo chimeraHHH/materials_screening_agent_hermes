@@ -16,13 +16,17 @@ are outside scope.
   `57c24de8f0cf616205b03ef16231def711f2dfa9fcac86d94beede9c01b0bb1f`
 - Row schema: `source_catalog.schema.json`
 - Schema SHA-256:
-  `fedca7626203ee337f9d98291dccd0a427d4fd2bd1f42656f9522eb75bd8ff6d`
+  `a796757159679a02146ad00f306f8bc6db2642fdd3fc51c82b25aba36936efc7`
+- Content-address sidecars: `source_catalog.sha256` and
+  `source_catalog.schema.sha256`
 - Rows: 20 unique sources
 - Decisions: 12 `INCLUDE`, 5 `CONDITIONAL`, 3 `EXCLUDE`
 
 The catalog is the machine-readable authority. This report explains the
 scientific and governance decisions; it does not replace source-specific terms
-or legal advice.
+or legal advice. Each license is represented as a scoped record: standard
+expressions are restricted to the SPDX identifiers used by this catalog, while
+mixed, restricted, or per-record rights use an explicit `LicenseRef-*` value.
 
 ## Audit method
 
@@ -142,15 +146,18 @@ Cases must be grouped before splitting by all available identities:
 - normalized composition and upstream material/structure identifier;
 - structure prototype or graph-isomorphism family;
 - duplicate/fingerprint cluster;
-- mechanism family, including kagome, breathing-kagome, Lieb, pyrochlore,
-  line/split graph, honeycomb, moire/superlattice, confinement, orbital
-  frustration, correlation-driven narrowing, and interface/defect effects;
+- evidence-backed fine mechanism lineage. The broad mechanism vocabulary
+  (kagome, Lieb, pyrochlore, moire/superlattice, confinement, orbital
+  frustration, correlation-driven narrowing, interface/defect, and related
+  strata) is retained for balanced sampling and OOD taxonomy, but is not itself
+  treated as an independence edge;
 - shared publication or database-derived candidate family.
 
-No group may cross development and locked test. OOD test cases hold out complete
-mechanism or structure families, not merely element substitutions. Source weak
-labels, source ranks, and hidden expert labels are unavailable to the systems
-under test.
+No replayed independence group may cross development and locked test. OOD test
+cases hold out complete preregistered broad-mechanism or structure families,
+not merely element substitutions; the corresponding fine lineages and
+structure groups must also remain disjoint. Source weak labels, source ranks,
+and hidden expert labels are unavailable to the systems under test.
 
 ## Public/private data boundary
 

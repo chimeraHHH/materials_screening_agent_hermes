@@ -25,7 +25,7 @@ jobs:
   production-gate:
     name: Offline and isolated production gate
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 90
     permissions:
       contents: read
 
@@ -93,7 +93,7 @@ jobs:
           .venv/bin/python integrations/hermes/scripts/verify_bundle.py
 
       - name: Run the complete offline test suite
-        timeout-minutes: 30
+        timeout-minutes: 60
         shell: bash
         run: |
           set -euo pipefail

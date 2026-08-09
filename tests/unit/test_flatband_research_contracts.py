@@ -8,6 +8,7 @@ from pydantic import ValidationError
 from material_agent.inspiration.models import StrictModel, canonical_sha256, deterministic_id
 from material_agent.research.flatband_contracts import (
     AdjudicationStatus,
+    AdjudicationReasonCode,
     AnnotationRefV1,
     AssertedEvidenceRelation,
     Assessability,
@@ -19,8 +20,10 @@ from material_agent.research.flatband_contracts import (
     BridgeJudgmentV1,
     BridgeVerdict,
     Dimensionality,
+    DisagreementField,
     EvidenceClaimType,
     EvidenceJudgmentV1,
+    EvidenceReasonCode,
     EvidenceSpanRefV1,
     ExpertAdjudicationV1,
     ExpertEvidenceRelation,
@@ -178,7 +181,16 @@ def _packet() -> HypothesisPacketV1:
         "transformation_summary": "A bounded substitution preserving the parent topology.",
         "source_domain": "photonic lattices",
         "mechanism_family": MechanismFamily.LATTICE_INTERFERENCE,
+        "source_mechanism": (
+            "A compact localized photonic mode forms through destructive interference."
+        ),
         "shared_invariant": "Destructive interference on a connectivity-preserving sublattice.",
+        "target_mapping": (
+            "Map the connectivity-preserving photonic sublattice to the candidate orbital graph."
+        ),
+        "transferable_control": (
+            "Tune symmetry-allowed hopping ratios without changing the parent connectivity."
+        ),
         "transfer_principle": "Preserve the connectivity while changing orbital participation.",
         "required_conditions": ("dominant local hopping",),
         "breaking_conditions": ("large symmetry-breaking hopping",),
@@ -233,12 +245,11 @@ def _annotation(reviewer_id: str = "reviewer-a") -> RawExpertAnnotationV1:
                 expert_relation=ExpertEvidenceRelation.VALID_SUPPORT,
                 scope_match=True,
                 overclaim=False,
-                reason_code="DIRECT_SCOPE_MATCH",
+                reason_code=EvidenceReasonCode.DIRECT_SCOPE_MATCH,
             ),
         ),
         "bridge_judgment": _correct_bridge(),
         "mechanism_family": MechanismFamily.LATTICE_INTERFERENCE,
-        "strict_hypothesis_group_id": "hypothesis-group-1",
         "hard_fail_reasons": (),
         "confidence": 4,
         "rationale": "The bounded packet states the invariant, evidence, limits, and falsifier.",
@@ -431,12 +442,93 @@ def test_raw_annotation_is_blind_append_only_and_grade_three_is_not_truth() -> N
             expert_relation=ExpertEvidenceRelation.CONTEXT_ONLY,
             scope_match=False,
             overclaim=True,
-            reason_code="KEYWORD_ONLY",
+            reason_code=EvidenceReasonCode.KEYWORD_ONLY,
         ),
     )
     payload["annotation_sha256"] = SHA_A
     with pytest.raises(ValidationError, match="valid supporting evidence"):
         RawExpertAnnotationV1.model_validate(payload)
+
+
+def test_annotation_rules_reject_hard_fail_grade_and_bridge_scope_contradictions() -> None:
+    annotation = _annotation()
+    values = annotation.model_dump(
+        mode="python", exclude={"annotation_id", "annotation_sha256"}
+    )
+    values.update(
+        {
+            "assessability": annotation.assessability,
+            "evidence_judgments": annotation.evidence_judgments,
+            "bridge_judgment": annotation.bridge_judgment,
+            "mechanism_family": annotation.mechanism_family,
+            "hard_fail_reasons": annotation.hard_fail_reasons,
+        }
+    )
+    incorrect_bridge = BridgeJudgmentV1(
+        source_mechanism=TriStateJudgment.FAIL,
+        shared_invariant=TriStateJudgment.PASS,
+        target_mapping=TriStateJudgment.PASS,
+        transferable_control=TriStateJudgment.PASS,
+        required_conditions=TriStateJudgment.PASS,
+        breaking_conditions=TriStateJudgment.PASS,
+        contradiction_handling=TriStateJudgment.PASS,
+        overall=BridgeVerdict.INCORRECT,
+    )
+    with pytest.raises(ValidationError, match="correct or conditional bridge"):
+        _identified(
+            RawExpertAnnotationV1,
+            id_field="annotation_id",
+            sha_field="annotation_sha256",
+            prefix="expert-annotation",
+            values={
+                **values,
+                "relevance_grade": 2,
+                "bridge_judgment": incorrect_bridge,
+            },
+        )
+
+    with pytest.raises(ValidationError, match="hard fail requires relevance grade zero"):
+        _identified(
+            RawExpertAnnotationV1,
+            id_field="annotation_id",
+            sha_field="annotation_sha256",
+            prefix="expert-annotation",
+            values={
+                **values,
+                "relevance_grade": 1,
+                "hard_fail_reasons": (HardFailReason.HARD_CONSTRAINT_VIOLATION,),
+            },
+        )
+
+    with pytest.raises(ValidationError, match="reason code contradicts|scope match"):
+        EvidenceJudgmentV1(
+            evidence_link_id="evidence-link-1",
+            expert_relation=ExpertEvidenceRelation.VALID_SUPPORT,
+            scope_match=False,
+            overclaim=False,
+            reason_code=EvidenceReasonCode.SCOPE_MISMATCH,
+        )
+
+    with pytest.raises(ValidationError, match="reason code contradicts"):
+        EvidenceJudgmentV1(
+            evidence_link_id="evidence-link-1",
+            expert_relation=ExpertEvidenceRelation.VALID_SUPPORT,
+            scope_match=True,
+            overclaim=False,
+            reason_code=EvidenceReasonCode.CONTRADICTS_CLAIM,
+        )
+
+    with pytest.raises(ValidationError, match="conditional bridge cannot contain"):
+        BridgeJudgmentV1(
+            source_mechanism=TriStateJudgment.FAIL,
+            shared_invariant=TriStateJudgment.FAIL,
+            target_mapping=TriStateJudgment.FAIL,
+            transferable_control=TriStateJudgment.FAIL,
+            required_conditions=TriStateJudgment.FAIL,
+            breaking_conditions=TriStateJudgment.FAIL,
+            contradiction_handling=TriStateJudgment.FAIL,
+            overall=BridgeVerdict.CONDITIONAL,
+        )
 
 
 def test_invalid_system_packet_must_be_zero_with_a_reason() -> None:
@@ -452,19 +544,9 @@ def test_invalid_system_packet_must_be_zero_with_a_reason() -> None:
         "annotation_guide_sha256": SHA_A,
         "assessability": Assessability.SYSTEM_PACKET_INVALID,
         "relevance_grade": 0,
-        "evidence_valid": False,
-        "bridge_judgment": BridgeJudgmentV1(
-            source_mechanism=TriStateJudgment.UNASSESSABLE,
-            shared_invariant=TriStateJudgment.UNASSESSABLE,
-            target_mapping=TriStateJudgment.UNASSESSABLE,
-            transferable_control=TriStateJudgment.UNASSESSABLE,
-            required_conditions=TriStateJudgment.UNASSESSABLE,
-            breaking_conditions=TriStateJudgment.UNASSESSABLE,
-            contradiction_handling=TriStateJudgment.UNASSESSABLE,
-            overall=BridgeVerdict.UNASSESSABLE,
-        ),
-        "mechanism_family": MechanismFamily.OTHER_OR_UNKNOWN,
-        "strict_hypothesis_group_id": "invalid-packet-cluster",
+        "evidence_valid": None,
+        "bridge_judgment": None,
+        "mechanism_family": None,
         "hard_fail_reasons": (HardFailReason.MALFORMED_PACKET,),
         "confidence": 5,
         "rationale": "The packet is malformed and receives a frozen zero.",
@@ -479,6 +561,34 @@ def test_invalid_system_packet_must_be_zero_with_a_reason() -> None:
         values=values,
     )
     assert annotation.relevance_grade == 0
+
+    poisoned = annotation.model_dump(
+        mode="python", exclude={"annotation_id", "annotation_sha256"}
+    )
+    poisoned.update(
+        {
+            "evidence_valid": True,
+            "evidence_judgments": _annotation().evidence_judgments,
+            "bridge_judgment": _correct_bridge(),
+            "mechanism_family": MechanismFamily.LATTICE_INTERFERENCE,
+        }
+    )
+    with pytest.raises(ValidationError, match="cannot carry substantive"):
+        _identified(
+            RawExpertAnnotationV1,
+            id_field="annotation_id",
+            sha_field="annotation_sha256",
+            prefix="expert-annotation",
+            values=poisoned,
+        )
+
+
+def test_raw_unit_label_cannot_encode_a_duplicate_group() -> None:
+    payload = _annotation().model_dump(mode="python", round_trip=True)
+    payload["strict_hypothesis_group_id"] = "system-proposed-group"
+
+    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+        RawExpertAnnotationV1.model_validate(payload)
 
 
 def test_adjudication_binds_two_raw_reviews_and_distinct_adjudicator() -> None:
@@ -505,14 +615,16 @@ def test_adjudication_binds_two_raw_reviews_and_distinct_adjudicator() -> None:
         ),
         "adjudicator_id": "adjudicator-c",
         "annotation_guide_sha256": SHA_A,
-        "disagreement_fields": ("relevance_grade",),
+        "disagreement_fields": (DisagreementField.RELEVANCE_GRADE,),
         "status": AdjudicationStatus.RESOLVED,
+        "final_assessability": Assessability.ASSESSABLE,
         "final_relevance_grade": 3,
         "final_evidence_valid": True,
+        "final_evidence_judgments": first.evidence_judgments,
         "final_bridge_judgment": _correct_bridge(),
         "final_mechanism_family": MechanismFamily.LATTICE_INTERFERENCE,
-        "final_strict_hypothesis_group_id": "hypothesis-group-1",
-        "resolution_reason_code": "PHYSICS_RATIONALE",
+        "final_hard_fail_reasons": (),
+        "resolution_reason_code": AdjudicationReasonCode.PHYSICS_RATIONALE,
         "rationale": "The adjudicator resolved the disagreement without system identity.",
         "adjudicated_at": "2026-08-09T13:00:00+08:00",
     }
@@ -536,6 +648,13 @@ def test_adjudication_binds_two_raw_reviews_and_distinct_adjudicator() -> None:
 
 def _pilot_manifest(prefix: str, kind: SplitManifestKind) -> BenchmarkSplitManifestV1:
     split = BenchmarkSplit.PILOT_R1 if kind is SplitManifestKind.PILOT_R1 else BenchmarkSplit.PILOT_R2
+    mechanisms = (
+        MechanismFamily.LATTICE_INTERFERENCE,
+        MechanismFamily.LINE_GRAPH,
+        MechanismFamily.ORBITAL_FRUSTRATION_HYBRIDIZATION,
+        MechanismFamily.SYMMETRY_INDUCED,
+        MechanismFamily.CONFINEMENT,
+    )
     cases = tuple(
         SplitCaseRefV1(
             case_id=f"{prefix}-case-{index:02d}",
@@ -543,7 +662,7 @@ def _pilot_manifest(prefix: str, kind: SplitManifestKind) -> BenchmarkSplitManif
             split=split,
             target_class=TargetBandClass.FB100 if index < 15 else TargetBandClass.NB300,
             dimensionality=Dimensionality.TWO_D if index % 2 == 0 else Dimensionality.THREE_D,
-            primary_mechanism_stratum=MechanismFamily.LATTICE_INTERFERENCE,
+            primary_mechanism_stratum=mechanisms[index // 6],
             leakage_group_ids=(f"{prefix}-group-{index:02d}",),
         )
         for index in range(30)
@@ -624,6 +743,44 @@ def test_research_run_ledger_closes_requests_and_forbids_body_or_pdf_reads() -> 
             sha_field="ledger_sha256",
             prefix="research-ledger",
             values=invalid_allocation,
+        )
+
+
+def test_pilot_split_enforces_frozen_margins_and_mechanism_coverage() -> None:
+    manifest = _pilot_manifest("r1", SplitManifestKind.PILOT_R1)
+    base = manifest.model_dump(
+        mode="python", exclude={"manifest_id", "manifest_sha256"}
+    )
+    base["cases"] = manifest.cases
+
+    imbalanced = list(manifest.cases)
+    imbalanced[15] = imbalanced[15].model_copy(
+        update={"target_class": TargetBandClass.FB100}
+    )
+    with pytest.raises(ValidationError, match="FB100/NB300 balance"):
+        _identified(
+            BenchmarkSplitManifestV1,
+            id_field="manifest_id",
+            sha_field="manifest_sha256",
+            prefix="split-manifest",
+            values={**base, "cases": tuple(imbalanced)},
+        )
+
+    one_mechanism = tuple(
+        case.model_copy(
+            update={
+                "primary_mechanism_stratum": MechanismFamily.LATTICE_INTERFERENCE
+            }
+        )
+        for case in manifest.cases
+    )
+    with pytest.raises(ValidationError, match="at least five mechanism families"):
+        _identified(
+            BenchmarkSplitManifestV1,
+            id_field="manifest_id",
+            sha_field="manifest_sha256",
+            prefix="split-manifest",
+            values={**base, "cases": one_mechanism},
         )
 
 

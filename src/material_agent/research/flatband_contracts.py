@@ -99,6 +99,12 @@ class BenchmarkSplit(StrEnum):
     LOCKED_OOD = "LOCKED_OOD"
 
 
+class OodHoldoutAxis(StrEnum):
+    STRUCTURE_PROTOTYPE = "STRUCTURE_PROTOTYPE"
+    STRUCTURE_FINGERPRINT = "STRUCTURE_FINGERPRINT"
+    MECHANISM_FAMILY = "MECHANISM_FAMILY"
+
+
 class SplitManifestKind(StrEnum):
     PILOT_R1 = "PILOT_R1"
     PILOT_R2 = "PILOT_R2"
@@ -117,6 +123,15 @@ class ExpertEvidenceRelation(StrEnum):
     CONTEXT_ONLY = "CONTEXT_ONLY"
     UNSUPPORTED = "UNSUPPORTED"
     INSUFFICIENT_PACKET = "INSUFFICIENT_PACKET"
+
+
+class EvidenceReasonCode(StrEnum):
+    DIRECT_SCOPE_MATCH = "DIRECT_SCOPE_MATCH"
+    SCOPE_MISMATCH = "SCOPE_MISMATCH"
+    KEYWORD_ONLY = "KEYWORD_ONLY"
+    CONTRADICTS_CLAIM = "CONTRADICTS_CLAIM"
+    INSUFFICIENT_EXCERPT = "INSUFFICIENT_EXCERPT"
+    LICENSE_REDACTED = "LICENSE_REDACTED"
 
 
 class Assessability(StrEnum):
@@ -153,6 +168,25 @@ class AdjudicationStatus(StrEnum):
     RESOLVED = "RESOLVED"
     CASE_INVALID = "CASE_INVALID"
     UNRESOLVABLE = "UNRESOLVABLE"
+
+
+class AdjudicationReasonCode(StrEnum):
+    PHYSICS_RATIONALE = "PHYSICS_RATIONALE"
+    EVIDENCE_SCOPE_RESOLUTION = "EVIDENCE_SCOPE_RESOLUTION"
+    BRIDGE_RESOLUTION = "BRIDGE_RESOLUTION"
+    HARD_CONSTRAINT_RESOLUTION = "HARD_CONSTRAINT_RESOLUTION"
+    ASSESSABILITY_RESOLUTION = "ASSESSABILITY_RESOLUTION"
+    UNRESOLVABLE_EVIDENCE = "UNRESOLVABLE_EVIDENCE"
+
+
+class DisagreementField(StrEnum):
+    ASSESSABILITY = "assessability"
+    RELEVANCE_GRADE = "relevance_grade"
+    EVIDENCE_VALID = "evidence_valid"
+    EVIDENCE_JUDGMENTS = "evidence_judgments"
+    BRIDGE_JUDGMENT = "bridge_judgment"
+    MECHANISM_FAMILY = "mechanism_family"
+    HARD_FAIL_REASONS = "hard_fail_reasons"
 
 
 class ResearchRunOutcome(StrEnum):
@@ -376,7 +410,10 @@ class HypothesisPacketV1(StrictModel):
     transformation_summary: LongText
     source_domain: ShortText
     mechanism_family: MechanismFamily
+    source_mechanism: LongText
     shared_invariant: LongText
+    target_mapping: LongText
+    transferable_control: LongText
     transfer_principle: LongText
     required_conditions: Annotated[
         tuple[ShortText, ...], Field(min_length=1, max_length=32)
@@ -509,7 +546,47 @@ class EvidenceJudgmentV1(StrictModel):
     expert_relation: ExpertEvidenceRelation
     scope_match: bool
     overclaim: bool
-    reason_code: Identifier
+    reason_code: EvidenceReasonCode
+
+    @model_validator(mode="after")
+    def validate_relation(self) -> "EvidenceJudgmentV1":
+        allowed_reasons = {
+            ExpertEvidenceRelation.VALID_SUPPORT: {
+                EvidenceReasonCode.DIRECT_SCOPE_MATCH
+            },
+            ExpertEvidenceRelation.VALID_COUNTER: {
+                EvidenceReasonCode.CONTRADICTS_CLAIM
+            },
+            ExpertEvidenceRelation.CONTEXT_ONLY: {
+                EvidenceReasonCode.KEYWORD_ONLY
+            },
+            ExpertEvidenceRelation.UNSUPPORTED: {
+                EvidenceReasonCode.SCOPE_MISMATCH,
+                EvidenceReasonCode.KEYWORD_ONLY,
+            },
+            ExpertEvidenceRelation.INSUFFICIENT_PACKET: {
+                EvidenceReasonCode.INSUFFICIENT_EXCERPT,
+                EvidenceReasonCode.LICENSE_REDACTED,
+            },
+        }
+        if self.reason_code not in allowed_reasons[self.expert_relation]:
+            raise ValueError("evidence reason code contradicts the selected relation")
+        if self.expert_relation in {
+            ExpertEvidenceRelation.VALID_SUPPORT,
+            ExpertEvidenceRelation.VALID_COUNTER,
+        }:
+            if not self.scope_match:
+                raise ValueError("valid evidence relation requires a scope match")
+            if self.overclaim:
+                raise ValueError("valid evidence relation cannot be an overclaim")
+        if self.reason_code is EvidenceReasonCode.SCOPE_MISMATCH and self.scope_match:
+            raise ValueError("scope-mismatch reason requires scope_match=false")
+        if self.reason_code in {
+            EvidenceReasonCode.DIRECT_SCOPE_MATCH,
+            EvidenceReasonCode.CONTRADICTS_CLAIM,
+        } and not self.scope_match:
+            raise ValueError("scope-matched reason requires scope_match=true")
+        return self
 
 
 class BridgeJudgmentV1(StrictModel):
@@ -544,6 +621,20 @@ class BridgeJudgmentV1(StrictModel):
             value is TriStateJudgment.FAIL for value in all_values
         ):
             raise ValueError("correct bridge cannot contain a failed judgment")
+        if self.overall is BridgeVerdict.CONDITIONAL:
+            if any(
+                value in {TriStateJudgment.FAIL, TriStateJudgment.UNASSESSABLE}
+                for value in all_values
+            ):
+                raise ValueError(
+                    "conditional bridge cannot contain failed or unassessable judgments"
+                )
+            if not any(value is TriStateJudgment.PARTIAL for value in all_values):
+                raise ValueError("conditional bridge requires at least one partial judgment")
+        if self.overall is BridgeVerdict.INCORRECT and not any(
+            value is TriStateJudgment.FAIL for value in all_values
+        ):
+            raise ValueError("incorrect bridge requires at least one failed judgment")
         if self.overall is BridgeVerdict.UNASSESSABLE and any(
             value is not TriStateJudgment.UNASSESSABLE for value in all_values
         ):
@@ -573,7 +664,6 @@ class RawExpertAnnotationV1(StrictModel):
     ] = ()
     bridge_judgment: BridgeJudgmentV1 | None
     mechanism_family: MechanismFamily | None
-    strict_hypothesis_group_id: Identifier | None
     hard_fail_reasons: Annotated[
         tuple[HardFailReason, ...], Field(max_length=16)
     ] = ()
@@ -602,30 +692,39 @@ class RawExpertAnnotationV1(StrictModel):
         ):
             raise ValueError("annotation submission precedes start")
 
-        substantive = (
+        core_judgments = (
             self.relevance_grade,
             self.evidence_valid,
             self.bridge_judgment,
             self.mechanism_family,
-            self.strict_hypothesis_group_id,
             self.confidence,
         )
         if self.assessability is Assessability.CASE_INVALID:
-            if any(value is not None for value in substantive):
+            if any(value is not None for value in core_judgments):
                 raise ValueError("invalid case cannot carry candidate judgments")
             if self.evidence_judgments or self.hard_fail_reasons:
                 raise ValueError("invalid case cannot carry candidate reason codes")
-        else:
-            if any(value is None for value in substantive):
-                raise ValueError("assessable packet requires every core judgment")
+        elif self.assessability is Assessability.SYSTEM_PACKET_INVALID:
+            if self.relevance_grade != 0 or not self.hard_fail_reasons:
+                raise ValueError("invalid packet requires grade zero and hard fail")
+            if self.confidence is None:
+                raise ValueError("invalid packet requires annotation confidence")
             if (
-                self.assessability is Assessability.ASSESSABLE
-                and not self.evidence_judgments
+                self.evidence_valid is not None
+                or self.evidence_judgments
+                or self.bridge_judgment is not None
+                or self.mechanism_family is not None
             ):
+                raise ValueError(
+                    "invalid packet cannot carry substantive evidence, bridge, or family labels"
+                )
+        else:
+            if any(value is None for value in core_judgments):
+                raise ValueError("assessable packet requires every core judgment")
+            if not self.evidence_judgments:
                 raise ValueError("assessable packet requires evidence-link judgments")
-            if self.assessability is Assessability.SYSTEM_PACKET_INVALID:
-                if self.relevance_grade != 0 or not self.hard_fail_reasons:
-                    raise ValueError("invalid packet requires grade zero and hard fail")
+            if self.hard_fail_reasons and self.relevance_grade != 0:
+                raise ValueError("any hard fail requires relevance grade zero")
             if self.relevance_grade is not None and self.relevance_grade >= 2:
                 if self.evidence_valid is not True or self.hard_fail_reasons:
                     raise ValueError("grade two or three requires valid evidence and no hard fail")
@@ -634,6 +733,14 @@ class RawExpertAnnotationV1(StrictModel):
                     for item in self.evidence_judgments
                 ):
                     raise ValueError("grade two or three requires valid supporting evidence")
+                if (
+                    self.bridge_judgment is None
+                    or self.bridge_judgment.overall
+                    not in {BridgeVerdict.CORRECT, BridgeVerdict.CONDITIONAL}
+                ):
+                    raise ValueError(
+                        "grade two or three requires a correct or conditional bridge"
+                    )
             if self.relevance_grade == 3 and (
                 self.bridge_judgment is None
                 or self.bridge_judgment.overall is not BridgeVerdict.CORRECT
@@ -676,15 +783,21 @@ class ExpertAdjudicationV1(StrictModel):
     adjudicator_id: Identifier
     annotation_guide_sha256: Sha256
     disagreement_fields: Annotated[
-        tuple[Identifier, ...], Field(min_length=1, max_length=32)
+        tuple[DisagreementField, ...], Field(min_length=1, max_length=8)
     ]
     status: AdjudicationStatus
+    final_assessability: Assessability | None
     final_relevance_grade: Annotated[int, Field(ge=0, le=3)] | None
     final_evidence_valid: bool | None
+    final_evidence_judgments: Annotated[
+        tuple[EvidenceJudgmentV1, ...], Field(max_length=64)
+    ] = ()
     final_bridge_judgment: BridgeJudgmentV1 | None
     final_mechanism_family: MechanismFamily | None
-    final_strict_hypothesis_group_id: Identifier | None
-    resolution_reason_code: Identifier
+    final_hard_fail_reasons: Annotated[
+        tuple[HardFailReason, ...], Field(max_length=16)
+    ] = ()
+    resolution_reason_code: AdjudicationReasonCode
     rationale: LongText
     adjudicated_at: Annotated[str, Field(min_length=20, max_length=40)]
     sealed: Literal[True] = True
@@ -708,27 +821,83 @@ class ExpertAdjudicationV1(StrictModel):
             raise ValueError("adjudication requires two distinct reviewers")
         if self.adjudicator_id in reviewer_ids:
             raise ValueError("adjudicator must differ from both reviewers")
-        _require_sorted_unique(self.disagreement_fields, "disagreement fields")
-        final_values = (
+        disagreement_values = tuple(item.value for item in self.disagreement_fields)
+        _require_sorted_unique(disagreement_values, "disagreement fields")
+        evidence_link_ids = tuple(
+            item.evidence_link_id for item in self.final_evidence_judgments
+        )
+        _require_sorted_unique(evidence_link_ids, "final evidence judgments")
+        hard_fail_values = tuple(item.value for item in self.final_hard_fail_reasons)
+        _require_sorted_unique(hard_fail_values, "final hard-fail reasons")
+        candidate_values = (
             self.final_relevance_grade,
             self.final_evidence_valid,
             self.final_bridge_judgment,
             self.final_mechanism_family,
-            self.final_strict_hypothesis_group_id,
         )
         if self.status is AdjudicationStatus.RESOLVED:
-            if any(value is None for value in final_values):
-                raise ValueError("resolved adjudication requires every final judgment")
+            if self.final_assessability not in {
+                Assessability.ASSESSABLE,
+                Assessability.SYSTEM_PACKET_INVALID,
+            }:
+                raise ValueError("resolved adjudication requires a candidate assessability")
+            if self.final_assessability is Assessability.SYSTEM_PACKET_INVALID:
+                if self.final_relevance_grade != 0 or not self.final_hard_fail_reasons:
+                    raise ValueError("resolved invalid packet requires grade zero and hard fail")
+                if (
+                    self.final_evidence_valid is not None
+                    or self.final_evidence_judgments
+                    or self.final_bridge_judgment is not None
+                    or self.final_mechanism_family is not None
+                ):
+                    raise ValueError(
+                        "resolved invalid packet cannot carry substantive final labels"
+                    )
+            elif any(value is None for value in candidate_values):
+                raise ValueError("resolved assessable adjudication requires every final judgment")
+            elif not self.final_evidence_judgments:
+                raise ValueError("resolved assessable adjudication requires evidence judgments")
+            if self.final_hard_fail_reasons and self.final_relevance_grade != 0:
+                raise ValueError("any final hard fail requires relevance grade zero")
             if self.final_relevance_grade is not None and self.final_relevance_grade >= 2:
-                if self.final_evidence_valid is not True:
-                    raise ValueError("resolved grade two or three requires valid evidence")
+                if self.final_evidence_valid is not True or self.final_hard_fail_reasons:
+                    raise ValueError(
+                        "resolved grade two or three requires valid evidence and no hard fail"
+                    )
+                if not any(
+                    item.expert_relation is ExpertEvidenceRelation.VALID_SUPPORT
+                    for item in self.final_evidence_judgments
+                ):
+                    raise ValueError(
+                        "resolved grade two or three requires valid supporting evidence"
+                    )
+                if (
+                    self.final_bridge_judgment is None
+                    or self.final_bridge_judgment.overall
+                    not in {BridgeVerdict.CORRECT, BridgeVerdict.CONDITIONAL}
+                ):
+                    raise ValueError(
+                        "resolved grade two or three requires a correct or conditional bridge"
+                    )
             if self.final_relevance_grade == 3 and (
                 self.final_bridge_judgment is None
                 or self.final_bridge_judgment.overall is not BridgeVerdict.CORRECT
             ):
                 raise ValueError("resolved grade three requires a correct bridge")
-        elif any(value is not None for value in final_values):
-            raise ValueError("unresolved or invalid adjudication cannot carry final labels")
+        elif self.status is AdjudicationStatus.CASE_INVALID:
+            if self.final_assessability is not Assessability.CASE_INVALID:
+                raise ValueError("invalid-case adjudication requires invalid-case assessability")
+            if any(value is not None for value in candidate_values):
+                raise ValueError("invalid-case adjudication cannot carry candidate labels")
+            if self.final_evidence_judgments or self.final_hard_fail_reasons:
+                raise ValueError("invalid-case adjudication cannot carry candidate reasons")
+        elif (
+            self.final_assessability is not None
+            or any(value is not None for value in candidate_values)
+            or self.final_evidence_judgments
+            or self.final_hard_fail_reasons
+        ):
+            raise ValueError("unresolvable adjudication cannot carry final labels")
         semantic = self.model_dump(
             mode="python", exclude={"adjudication_id", "adjudication_sha256"}
         )
@@ -759,6 +928,11 @@ class SplitCaseRefV1(StrictModel):
         return self
 
 
+class OodHoldoutFamilyV1(StrictModel):
+    axis: OodHoldoutAxis
+    group_id: Identifier
+
+
 class BenchmarkSplitManifestV1(StrictModel):
     schema_version: Literal["flatband-split-manifest-v1"] = (
         "flatband-split-manifest-v1"
@@ -773,8 +947,8 @@ class BenchmarkSplitManifestV1(StrictModel):
     cases: Annotated[
         tuple[SplitCaseRefV1, ...], Field(min_length=30, max_length=120)
     ]
-    ood_holdout_group_ids: Annotated[
-        tuple[Identifier, ...], Field(max_length=64)
+    ood_holdout_families: Annotated[
+        tuple[OodHoldoutFamilyV1, ...], Field(max_length=64)
     ] = ()
 
     @model_validator(mode="after")
@@ -782,7 +956,14 @@ class BenchmarkSplitManifestV1(StrictModel):
         case_ids = tuple(item.case_id for item in self.cases)
         if case_ids != tuple(sorted(set(case_ids))):
             raise ValueError("split cases must be case-ID sorted and unique")
-        _require_sorted_unique(self.ood_holdout_group_ids, "OOD holdout groups")
+        holdout_keys = tuple(
+            (item.axis.value, item.group_id) for item in self.ood_holdout_families
+        )
+        if holdout_keys != tuple(sorted(set(holdout_keys))):
+            raise ValueError("OOD holdout families must be axis/group sorted and unique")
+        holdout_group_ids = tuple(item.group_id for item in self.ood_holdout_families)
+        if len(holdout_group_ids) != len(set(holdout_group_ids)):
+            raise ValueError("an OOD holdout group ID cannot represent multiple axes")
         counts = {split: 0 for split in BenchmarkSplit}
         for case in self.cases:
             counts[case.split] += 1
@@ -799,6 +980,39 @@ class BenchmarkSplitManifestV1(StrictModel):
         actual = {split: count for split, count in counts.items() if count}
         if actual != expected:
             raise ValueError("split counts differ from the preregistered design")
+        cases_by_split = {
+            split: tuple(case for case in self.cases if case.split is split)
+            for split in actual
+        }
+        for split, split_cases in cases_by_split.items():
+            half = len(split_cases) // 2
+            target_counts = {
+                value: sum(case.target_class is value for case in split_cases)
+                for value in TargetBandClass
+            }
+            dimensionality_counts = {
+                value: sum(case.dimensionality is value for case in split_cases)
+                for value in Dimensionality
+            }
+            if set(target_counts.values()) != {half}:
+                raise ValueError("every split requires an exact FB100/NB300 balance")
+            if set(dimensionality_counts.values()) != {half}:
+                raise ValueError("every split requires an exact 2D/3D balance")
+        if self.manifest_kind in {
+            SplitManifestKind.PILOT_R1,
+            SplitManifestKind.PILOT_R2,
+        }:
+            mechanism_counts = {
+                value: sum(
+                    case.primary_mechanism_stratum is value for case in self.cases
+                )
+                for value in MechanismFamily
+            }
+            represented = tuple(count for count in mechanism_counts.values() if count)
+            if len(represented) < 5 or max(represented) > 6:
+                raise ValueError(
+                    "pilot requires at least five mechanism families and at most six cases per family"
+                )
         if self.manifest_kind is SplitManifestKind.MAIN_120:
             group_to_split: dict[str, BenchmarkSplit] = {}
             for case in self.cases:
@@ -806,13 +1020,15 @@ class BenchmarkSplitManifestV1(StrictModel):
                     previous = group_to_split.setdefault(group_id, case.split)
                     if previous is not case.split:
                         raise ValueError("a leakage group crosses benchmark splits")
-            holdouts = set(self.ood_holdout_group_ids)
+            holdouts = set(holdout_group_ids)
             if not holdouts:
                 raise ValueError("main manifest requires frozen OOD holdout groups")
             for case in self.cases:
                 overlap = holdouts & set(case.leakage_group_ids)
                 if overlap and case.split is not BenchmarkSplit.LOCKED_OOD:
                     raise ValueError("OOD holdout group appears outside locked OOD")
+                if case.split is BenchmarkSplit.LOCKED_OOD and not overlap:
+                    raise ValueError("every locked OOD case must hit a frozen holdout group")
             observed_holdouts = {
                 group_id
                 for case in self.cases
@@ -822,7 +1038,7 @@ class BenchmarkSplitManifestV1(StrictModel):
             }
             if observed_holdouts != holdouts:
                 raise ValueError("one or more OOD holdout groups have no OOD case")
-        elif self.ood_holdout_group_ids:
+        elif self.ood_holdout_families:
             raise ValueError("pilot manifest cannot declare OOD holdout groups")
         semantic = self.model_dump(
             mode="python", exclude={"manifest_id", "manifest_sha256"}
@@ -834,6 +1050,248 @@ class BenchmarkSplitManifestV1(StrictModel):
             "split-manifest", {"manifest_sha256": expected_sha256}
         ):
             raise ValueError("split manifest ID does not match manifest SHA-256")
+        return self
+
+
+def mechanism_holdout_taxonomy_group_id(
+    mechanism: MechanismFamily,
+) -> str:
+    """Return the non-resampling identity for a broad mechanism holdout.
+
+    ``MechanismFamily`` has only ten deliberately broad sampling strata.  Its
+    taxonomy identity is therefore valid for declaring an OOD family, but it
+    must never be copied into the connected-component leakage graph.
+    """
+
+    if not isinstance(mechanism, MechanismFamily):
+        raise ValueError("mechanism holdout taxonomy requires MechanismFamily")
+    return deterministic_id(
+        "mechanism-holdout-taxonomy",
+        {"mechanism_family": mechanism.value},
+    )
+
+
+class CaseHoldoutMembershipV2(StrictModel):
+    """Typed OOD membership kept separate from independence graph edges."""
+
+    axis: OodHoldoutAxis
+    group_id: Identifier
+
+
+class SplitCaseRefV2(StrictModel):
+    """Split case with independent resampling and OOD-taxonomy namespaces."""
+
+    case_id: Identifier
+    case_sha256: Sha256
+    split: BenchmarkSplit
+    target_class: TargetBandClass
+    dimensionality: Dimensionality
+    primary_mechanism_stratum: MechanismFamily
+    independence_group_ids: Annotated[
+        tuple[Identifier, ...], Field(min_length=1, max_length=64)
+    ]
+    holdout_memberships: Annotated[
+        tuple[CaseHoldoutMembershipV2, ...], Field(max_length=64)
+    ] = ()
+
+    @model_validator(mode="after")
+    def validate_groups(self) -> "SplitCaseRefV2":
+        _require_sorted_unique(
+            self.independence_group_ids, "case independence groups"
+        )
+        holdout_keys = tuple(
+            (item.axis.value, item.group_id) for item in self.holdout_memberships
+        )
+        if holdout_keys != tuple(sorted(set(holdout_keys))):
+            raise ValueError("case holdout memberships must be axis/group sorted")
+        broad_taxonomy_ids = {
+            mechanism_holdout_taxonomy_group_id(value)
+            for value in MechanismFamily
+        }
+        if broad_taxonomy_ids & set(self.independence_group_ids):
+            raise ValueError(
+                "broad mechanism taxonomy cannot be an independence graph edge"
+            )
+        for membership in self.holdout_memberships:
+            if membership.axis is OodHoldoutAxis.MECHANISM_FAMILY:
+                expected = mechanism_holdout_taxonomy_group_id(
+                    self.primary_mechanism_stratum
+                )
+                if membership.group_id != expected:
+                    raise ValueError(
+                        "mechanism holdout membership differs from case taxonomy"
+                    )
+            elif membership.group_id not in self.independence_group_ids:
+                raise ValueError(
+                    "structure holdout membership must cite an independence group"
+                )
+        return self
+
+
+class BenchmarkSplitManifestV2(StrictModel):
+    """Formal split contract separating OOD taxonomy from resampling edges.
+
+    V1 remains unchanged for historical releases.  V2 is required by Leakage
+    V3 so broad ``MechanismFamily`` strata can define a frozen OOD taxonomy
+    without mathematically collapsing every case in that stratum into one
+    bootstrap/randomization component.
+    """
+
+    schema_version: Literal["flatband-split-manifest-v2"] = (
+        "flatband-split-manifest-v2"
+    )
+    manifest_id: Identifier
+    manifest_sha256: Sha256
+    manifest_kind: SplitManifestKind
+    source_catalog_sha256: Literal[SOURCE_CATALOG_V1_SHA256] = (
+        SOURCE_CATALOG_V1_SHA256
+    )
+    split_seed: Annotated[int, Field(ge=0, le=2**63 - 1)]
+    cases: Annotated[
+        tuple[SplitCaseRefV2, ...], Field(min_length=30, max_length=120)
+    ]
+    ood_holdout_families: Annotated[
+        tuple[OodHoldoutFamilyV1, ...], Field(max_length=64)
+    ] = ()
+
+    @model_validator(mode="after")
+    def validate_manifest(self) -> "BenchmarkSplitManifestV2":
+        case_ids = tuple(item.case_id for item in self.cases)
+        if case_ids != tuple(sorted(set(case_ids))):
+            raise ValueError("split cases must be case-ID sorted and unique")
+        holdout_keys = tuple(
+            (item.axis.value, item.group_id) for item in self.ood_holdout_families
+        )
+        if holdout_keys != tuple(sorted(set(holdout_keys))):
+            raise ValueError("OOD holdout families must be axis/group sorted and unique")
+        holdout_group_ids = tuple(item.group_id for item in self.ood_holdout_families)
+        if len(holdout_group_ids) != len(set(holdout_group_ids)):
+            raise ValueError("an OOD holdout group ID cannot represent multiple axes")
+        for holdout in self.ood_holdout_families:
+            if holdout.axis is OodHoldoutAxis.MECHANISM_FAMILY:
+                valid = {
+                    mechanism_holdout_taxonomy_group_id(value)
+                    for value in MechanismFamily
+                }
+                if holdout.group_id not in valid:
+                    raise ValueError(
+                        "broad mechanism holdout has a non-canonical taxonomy ID"
+                    )
+
+        counts = {split: 0 for split in BenchmarkSplit}
+        for case in self.cases:
+            counts[case.split] += 1
+        if self.manifest_kind is SplitManifestKind.PILOT_R1:
+            expected_counts = {BenchmarkSplit.PILOT_R1: 30}
+        elif self.manifest_kind is SplitManifestKind.PILOT_R2:
+            expected_counts = {BenchmarkSplit.PILOT_R2: 30}
+        else:
+            expected_counts = {
+                BenchmarkSplit.DEVELOPMENT: 60,
+                BenchmarkSplit.LOCKED_IID: 30,
+                BenchmarkSplit.LOCKED_OOD: 30,
+            }
+        actual_counts = {split: count for split, count in counts.items() if count}
+        if actual_counts != expected_counts:
+            raise ValueError("split counts differ from the preregistered design")
+
+        for split in expected_counts:
+            split_cases = tuple(case for case in self.cases if case.split is split)
+            half = len(split_cases) // 2
+            target_counts = {
+                value: sum(case.target_class is value for case in split_cases)
+                for value in TargetBandClass
+            }
+            dimensionality_counts = {
+                value: sum(case.dimensionality is value for case in split_cases)
+                for value in Dimensionality
+            }
+            if set(target_counts.values()) != {half}:
+                raise ValueError("every split requires an exact FB100/NB300 balance")
+            if set(dimensionality_counts.values()) != {half}:
+                raise ValueError("every split requires an exact 2D/3D balance")
+
+        if self.manifest_kind in {
+            SplitManifestKind.PILOT_R1,
+            SplitManifestKind.PILOT_R2,
+        }:
+            mechanism_counts = {
+                value: sum(
+                    case.primary_mechanism_stratum is value for case in self.cases
+                )
+                for value in MechanismFamily
+            }
+            represented = tuple(count for count in mechanism_counts.values() if count)
+            if len(represented) < 5 or max(represented) > 6:
+                raise ValueError(
+                    "pilot requires at least five mechanism families and at most six cases per family"
+                )
+            if self.ood_holdout_families or any(
+                case.holdout_memberships for case in self.cases
+            ):
+                raise ValueError("pilot manifest cannot declare OOD holdouts")
+        else:
+            frozen_holdouts = {
+                (item.axis, item.group_id) for item in self.ood_holdout_families
+            }
+            if not frozen_holdouts:
+                raise ValueError("main manifest requires frozen OOD holdout groups")
+            observed_holdouts: set[tuple[OodHoldoutAxis, str]] = set()
+            for case in self.cases:
+                expected_memberships: set[tuple[OodHoldoutAxis, str]] = set()
+                mechanism_key = (
+                    OodHoldoutAxis.MECHANISM_FAMILY,
+                    mechanism_holdout_taxonomy_group_id(
+                        case.primary_mechanism_stratum
+                    ),
+                )
+                if mechanism_key in frozen_holdouts:
+                    expected_memberships.add(mechanism_key)
+                for axis in (
+                    OodHoldoutAxis.STRUCTURE_PROTOTYPE,
+                    OodHoldoutAxis.STRUCTURE_FINGERPRINT,
+                ):
+                    expected_memberships.update(
+                        (axis, group_id)
+                        for group_id in case.independence_group_ids
+                        if (axis, group_id) in frozen_holdouts
+                    )
+                observed = {
+                    (item.axis, item.group_id)
+                    for item in case.holdout_memberships
+                }
+                if observed != expected_memberships:
+                    raise ValueError(
+                        "case holdout memberships do not replay from frozen taxonomy"
+                    )
+                if case.split is BenchmarkSplit.LOCKED_OOD:
+                    if not observed:
+                        raise ValueError("every locked OOD case must hit a frozen holdout")
+                    observed_holdouts.update(observed)
+                elif observed:
+                    raise ValueError(
+                        "development or IID case hits a frozen OOD holdout"
+                    )
+            if observed_holdouts != frozen_holdouts:
+                raise ValueError("one or more frozen OOD holdouts have no OOD case")
+
+            group_to_split: dict[str, BenchmarkSplit] = {}
+            for case in self.cases:
+                for group_id in case.independence_group_ids:
+                    previous = group_to_split.setdefault(group_id, case.split)
+                    if previous is not case.split:
+                        raise ValueError("an independence group crosses benchmark splits")
+
+        semantic = self.model_dump(
+            mode="python", exclude={"manifest_id", "manifest_sha256"}
+        )
+        expected_sha256 = canonical_sha256(semantic)
+        if self.manifest_sha256 != expected_sha256:
+            raise ValueError("split manifest V2 SHA-256 does not match semantic content")
+        if self.manifest_id != deterministic_id(
+            "split-manifest-v2", {"manifest_sha256": expected_sha256}
+        ):
+            raise ValueError("split manifest V2 ID does not match SHA-256")
         return self
 
 

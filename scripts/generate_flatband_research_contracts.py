@@ -1,56 +1,198 @@
 #!/usr/bin/env python3
-"""Generate or verify the content-addressed draft research schema bundle."""
+"""Generate or verify the audience-split research schema bundles."""
 
 from __future__ import annotations
 
 import argparse
 import hashlib
 import json
+from dataclasses import dataclass
 from pathlib import Path
 
+from pydantic import BaseModel
+
+from material_agent.research.flatband_analysis import (
+    FormalPilotAgreementGateReleaseV1,
+    FormalPilotAgreementReleaseV1,
+)
+from material_agent.research.flatband_blinding import (
+    EvidenceExcerptV2,
+    PostLabelOriginGuessV1,
+    PrivateIdentityMapV2,
+    ReviewerManifestV2,
+)
+from material_agent.research.flatband_cases import (
+    CandidateEligibilityAssignmentReleaseV3,
+    CandidatePoolReleaseV3,
+    FrozenCaseReleaseV3,
+    PilotPreBudgetClosureReleaseV3,
+    PreRunEligibilityReleaseV3,
+)
 from material_agent.research.flatband_contracts import (
-    BenchmarkSplitManifestV1,
-    BlindingManifestV1,
+    BenchmarkSplitManifestV2,
     ExpertAdjudicationV1,
-    ExpertRegistryV1,
     FlatBandBenchmarkCaseV1,
-    FlatBandEvidenceV1,
     HypothesisPacketV1,
     RawExpertAnnotationV1,
-    ResearchRunLedgerV1,
-    SourceRecordRefV1,
-    SystemRankingV1,
+)
+from material_agent.research.flatband_execution import (
+    BudgetManifestV2,
+    ExecutionMatrixV2,
+    ExecutionReleaseV3,
+    ResearchRankingV1,
+    SourceReceiptBundleV1,
+    TerminalRunResultV1,
+    Top5ProjectionV1,
+)
+from material_agent.research.flatband_experts import (
+    CalibrationSetManifestV2,
+    ExpertStudyRegistryV2,
+    PrivateExpertIdentityCustodianAttestationV2,
+    PublicExpertIdentityReleaseV2,
+)
+from material_agent.research.flatband_gold import (
+    DuplicatePartitionAdjudicationV2,
+    FinalDuplicatePartitionV2,
+    FinalExpertJudgmentV2,
+    FinalGoldReleaseV2,
+    RawDuplicatePartitionV2,
+)
+from material_agent.research.flatband_leakage import (
+    LeakageComponentReleaseV3,
+    LeakageRoundClosureContextV3,
+    MechanismLineageAssignmentV3,
+    MechanismLineageAssignmentCurationReleaseV3,
+    MechanismLineageCurationReleaseV3,
+    MechanismLineageRegistryV3,
+)
+from material_agent.research.flatband_source_policy import (
+    CaseSourcePolicyAttestationV2,
 )
 
 
-MODELS = (
-    SourceRecordRefV1,
-    FlatBandEvidenceV1,
+PUBLIC_PROTOCOL_ROOTS: tuple[type[BaseModel], ...] = (
+    BenchmarkSplitManifestV2,
+    LeakageComponentReleaseV3,
+    MechanismLineageRegistryV3,
+    MechanismLineageAssignmentV3,
+    CaseSourcePolicyAttestationV2,
+    PublicExpertIdentityReleaseV2,
+    ExecutionMatrixV2,
+    BudgetManifestV2,
+    ResearchRankingV1,
+    Top5ProjectionV1,
+    FormalPilotAgreementGateReleaseV1,
+)
+
+PRIVATE_CUSTODY_ROOTS: tuple[type[BaseModel], ...] = (
     FlatBandBenchmarkCaseV1,
+    CalibrationSetManifestV2,
+    PrivateExpertIdentityCustodianAttestationV2,
+    ExpertStudyRegistryV2,
+    MechanismLineageCurationReleaseV3,
+    MechanismLineageAssignmentCurationReleaseV3,
+    LeakageRoundClosureContextV3,
+    CandidatePoolReleaseV3,
+    CandidateEligibilityAssignmentReleaseV3,
+    PreRunEligibilityReleaseV3,
+    FrozenCaseReleaseV3,
+    PilotPreBudgetClosureReleaseV3,
     HypothesisPacketV1,
-    SystemRankingV1,
+    SourceReceiptBundleV1,
+    TerminalRunResultV1,
+    ExecutionReleaseV3,
+    EvidenceExcerptV2,
+    ReviewerManifestV2,
+    PrivateIdentityMapV2,
+    PostLabelOriginGuessV1,
     RawExpertAnnotationV1,
     ExpertAdjudicationV1,
-    BenchmarkSplitManifestV1,
-    BlindingManifestV1,
-    ResearchRunLedgerV1,
-    ExpertRegistryV1,
+    RawDuplicatePartitionV2,
+    DuplicatePartitionAdjudicationV2,
+    FinalDuplicatePartitionV2,
+    FinalExpertJudgmentV2,
+    FinalGoldReleaseV2,
+    FormalPilotAgreementReleaseV1,
 )
+
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 OUTPUT_DIRECTORY = (
     REPOSITORY_ROOT / "artifacts" / "experiment" / "flatband-benchmark-20260809"
 )
-SCHEMA_PATH = OUTPUT_DIRECTORY / "research_contracts.schema.json"
-HASH_PATH = OUTPUT_DIRECTORY / "research_contracts.schema.sha256"
 
 
-def generated_bytes() -> bytes:
+@dataclass(frozen=True)
+class BundleSpec:
+    audience: str
+    schema_version: str
+    schema_id: str
+    instance_release_policy: str
+    roots: tuple[type[BaseModel], ...]
+    schema_path: Path
+
+    @property
+    def hash_path(self) -> Path:
+        return self.schema_path.with_suffix(".sha256")
+
+
+BUNDLE_SPECS = (
+    BundleSpec(
+        audience="PUBLIC_PROTOCOL",
+        schema_version="flatband-research-public-protocol-bundle-v1",
+        schema_id=(
+            "urn:materials-screening-agent:flatband-research-public-protocol:v1"
+        ),
+        instance_release_policy=(
+            "PUBLIC_INSTANCES_REQUIRE_PHASE_APPROPRIATE_RELEASE_AUTHORIZATION"
+        ),
+        roots=PUBLIC_PROTOCOL_ROOTS,
+        schema_path=OUTPUT_DIRECTORY / "research_public_protocol.schema.json",
+    ),
+    BundleSpec(
+        audience="PRIVATE_CUSTODY",
+        schema_version="flatband-research-private-custody-bundle-v1",
+        schema_id=(
+            "urn:materials-screening-agent:flatband-research-private-custody:v1"
+        ),
+        instance_release_policy=(
+            "SCHEMA_DEFINITION_MAY_BE_PUBLIC;PRIVATE_INSTANCES_MUST_NOT_BE_PUBLISHED"
+        ),
+        roots=PRIVATE_CUSTODY_ROOTS,
+        schema_path=OUTPUT_DIRECTORY / "research_private_custody.schema.json",
+    ),
+)
+
+
+def _assert_disjoint_roots() -> None:
+    public = {model.__name__ for model in PUBLIC_PROTOCOL_ROOTS}
+    private = {model.__name__ for model in PRIVATE_CUSTODY_ROOTS}
+    overlap = public & private
+    if overlap:
+        raise RuntimeError(
+            "public and private research root allowlists overlap: "
+            + ", ".join(sorted(overlap))
+        )
+
+
+def generated_bytes(spec: BundleSpec) -> bytes:
+    """Return one deterministic audience bundle without touching the filesystem."""
+
+    _assert_disjoint_roots()
+    root_names = tuple(sorted(model.__name__ for model in spec.roots))
+    if len(root_names) != len(set(root_names)):
+        raise RuntimeError(f"{spec.audience} root allowlist contains duplicates")
     document = {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "$id": "urn:materials-screening-agent:flatband-research-contracts:v0-draft",
-        "schema_version": "flatband-research-contract-bundle-v0-draft",
+        "$id": spec.schema_id,
+        "schema_version": spec.schema_version,
+        "audience": spec.audience,
+        "protocol_readiness": "PILOT_NO_GO",
+        "instance_release_policy": spec.instance_release_policy,
+        "root_set_policy": "EXPLICIT_DISJOINT_ALLOWLIST_FAIL_CLOSED",
+        "root_allowlist": root_names,
         "models": {
-            model.__name__: model.model_json_schema(mode="validation") for model in MODELS
+            model.__name__: model.model_json_schema(mode="validation")
+            for model in spec.roots
         },
     }
     return (
@@ -65,8 +207,10 @@ def generated_bytes() -> bytes:
     ).encode("utf-8")
 
 
-def hash_bytes(payload: bytes) -> bytes:
-    return f"{hashlib.sha256(payload).hexdigest()}  {SCHEMA_PATH.name}\n".encode()
+def hash_bytes(payload: bytes, schema_path: Path) -> bytes:
+    return (
+        f"{hashlib.sha256(payload).hexdigest()}  {schema_path.name}\n".encode()
+    )
 
 
 def main() -> int:
@@ -74,22 +218,39 @@ def main() -> int:
     parser.add_argument(
         "--check",
         action="store_true",
-        help="fail unless committed schema and hash exactly match production models",
+        help="fail unless both active audience bundles match production models",
     )
     arguments = parser.parse_args()
-    payload = generated_bytes()
-    digest = hash_bytes(payload)
+    generated = tuple(
+        (
+            spec,
+            generated_bytes(spec),
+        )
+        for spec in BUNDLE_SPECS
+    )
     if arguments.check:
-        if not SCHEMA_PATH.is_file() or not HASH_PATH.is_file():
-            raise SystemExit("flat-band research contract artifacts are missing")
-        if SCHEMA_PATH.read_bytes() != payload or HASH_PATH.read_bytes() != digest:
-            raise SystemExit("flat-band research contract artifacts drifted")
-        print("Flat-band research contract bundle valid")
+        for spec, payload in generated:
+            digest = hash_bytes(payload, spec.schema_path)
+            if not spec.schema_path.is_file() or not spec.hash_path.is_file():
+                raise SystemExit(
+                    f"{spec.audience} research contract artifacts are missing"
+                )
+            if (
+                spec.schema_path.read_bytes() != payload
+                or spec.hash_path.read_bytes() != digest
+            ):
+                raise SystemExit(
+                    f"{spec.audience} research contract artifacts drifted"
+                )
+        print("Audience-split flat-band research contract bundles valid")
         return 0
+
     OUTPUT_DIRECTORY.mkdir(parents=True, exist_ok=True)
-    SCHEMA_PATH.write_bytes(payload)
-    HASH_PATH.write_bytes(digest)
-    print(hashlib.sha256(payload).hexdigest())
+    for spec, payload in generated:
+        digest = hash_bytes(payload, spec.schema_path)
+        spec.schema_path.write_bytes(payload)
+        spec.hash_path.write_bytes(digest)
+        print(f"{spec.audience} {hashlib.sha256(payload).hexdigest()}")
     return 0
 
 

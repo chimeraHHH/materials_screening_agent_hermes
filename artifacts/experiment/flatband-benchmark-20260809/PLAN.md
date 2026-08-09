@@ -12,12 +12,14 @@ Source audit v1 is frozen in [`SOURCE_AUDIT.md`](SOURCE_AUDIT.md). Its
 machine-readable catalog SHA-256 is
 `57c24de8f0cf616205b03ef16231def711f2dfa9fcac86d94beede9c01b0bb1f`.
 
-The isolated research contract bundle, preregistration, and annotation guide
-are content-addressed drafts; their current digests are recorded in the adjacent
-`.sha256` files. Independent red-team review found that the execution matrix,
-reviewer-safe projection, leakage-component identity, final-gold release, and
-run/ranking closure are not yet complete. These draft hashes are not an assertion
-that the schemas are frozen, registration has occurred, or Pilot may start.
+The audience-split public-protocol/private-custody bundles, preregistration, and
+annotation guide are content-addressed drafts; their current digests are recorded
+in adjacent `.sha256` files.  The V3 candidate/eligibility/execution chain and
+reviewer-to-Gold/Pilot-agreement closure have local adversarial tests, but the
+formal 2D/3D structure-group computation, final projection, and cross-release
+near-duplicate union are not implemented.  These draft hashes are not an
+assertion that the schemas are frozen, registration has occurred, or Pilot may
+start.
 
 ## Objective
 
@@ -169,12 +171,13 @@ formal Tag release requires expert decisions and a versioned graph hash.
 - The repository currently contains metric/review/semantic engineering schemas
   and synthetic tests, but no real adjudicated benchmark. No scientific score is
   claimed before the expert Gate.
-- Independent preregistration red-team review is currently `Pilot NO-GO`: a
-  reviewer-facing packet must physically omit system/rank identity; all expected
-  `case × system` cells, failures, raw reviews, adjudications, final gold labels,
-  and duplicate partitions must be joined by one fail-closed release assembler;
-  and all leakage axes must first be collapsed to frozen connected components for
-  resampling. The draft contract bundle is not a completed schema freeze.
+- Independent preregistration review remains `Pilot NO-GO`.  The current first
+  blocker is structure leakage: raw structures and dimensionality evidence can be
+  replayed locally, but layer-group/3D multi-tolerance components, final-case
+  projection, and calibration/R1/R2 cross-release union are still absent.  The
+  V3 reviewer, failure-denominator, raw/adjudication/Gold, and agreement closures
+  do not compensate for an invalid independence graph, and the draft contract
+  bundles are not a completed schema freeze.
 - Public production remains NO-GO. In particular, a hard-killed parent worker can
   leave its independently-sessioned action child alive until the child's own
   deadline; the parent-death cleanup contract is not yet closed.
@@ -187,6 +190,54 @@ formal Tag release requires expert decisions and a versioned graph hash.
 - Source-side candidate, motif, cluster, or model outputs are sampling strata,
   never gold labels. Gold judgments come only from the preregistered independent
   expert/adjudication process.
+
+## Decision checkpoint: repair before Pilot
+
+- **Verdict:** `PILOT_NO_GO`; canonical action `iterate`.
+- **Decisive evidence:** independent annotation/contract red-team findings in
+  [`READINESS_REVIEW.md`](READINESS_REVIEW.md), plus executable counterexamples
+  showing identity leakage, incomplete denominator closure, one-sided invalid
+  labels disappearing from grade alpha, and caller-controlled duplicate groups.
+- **Action:** preserve the current draft and source audit, implement the bounded
+  reviewer projection, leakage connected components, execution matrix, one-way
+  budget/ranking/terminal chain, and raw-review/final-gold/duplicate closure; then
+  obtain a fresh independent Pilot-readiness review.
+- **Rejected alternative:** starting source adapters, LLM calls, or expert Pilot
+  now would create outputs whose denominator, masking, independence unit, and gold
+  provenance cannot be reconstructed; those outputs would be scientifically
+  unusable even if their processes completed successfully.
+- **Next direction:** only a fresh `PILOT_GO` decision may activate the frozen
+  30-case R1 manifest. Until then, no real case construction or performance
+  comparison is authorized by this research plan.
+
+### 2026-08-09 provenance-closure checkpoint
+
+- **Verdict/action:** retain `PILOT_NO_GO` / `iterate`; this is a repair of the
+  scientific denominator and provenance chain, not a production-hardening Gate.
+- **New evidence:** the current research unit/adversarial subset passes 91 tests
+  and the already-pushed Draft PR head has a successful GitHub Actions run, but
+  the live schema generator parity check fails because local research contracts
+  have moved beyond the committed draft bundle.
+- **Remaining first-order blockers:** authoritative full-case and pre-run
+  eligibility releases; reviewer-safe case constraints; exact Execution-to-
+  reviewer-to-raw-to-adjudication-to-pooled-Gold coverage; replayable leakage
+  grouping; exact Pilot agreement inputs; private expert-independence and
+  calibration-disjointness evidence; receipt-to-span evidence provenance;
+  campaign prerequisites; and analysis rows derived only from Execution and
+  Gold.
+- **Rejected interpretation:** neither the 91 passing local tests nor the green
+  CI for the older pushed head is evidence that preregistration is frozen or
+  that real Pilot labeling may begin.
+- **Leakage repair decision:** the first V2 replay exposed a mathematical
+  contradiction: using the ten-value broad `MechanismFamily` enum itself as a
+  connected-component edge caps the complete study at ten independent units,
+  so it cannot coexist with the preregistered Main `20/10/10` component minima.
+  Broad mechanism remains a sampling stratum and typed OOD holdout taxonomy;
+  the independence graph must instead use a finer, frozen, evidence-backed
+  mechanism-lineage identity.  The component minima will not be lowered and
+  caller-created per-case mechanism groups are forbidden.  Formal Main and
+  AnalysisInput remain stopped until an honest Main120 positive fixture and
+  adversarial lineage/holdout tests pass.
 
 ## Reproducibility and publication boundary
 
