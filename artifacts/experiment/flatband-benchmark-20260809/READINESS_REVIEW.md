@@ -128,6 +128,50 @@ is active.
 Performance and benchmark measurement are deliberately deferred by the user and are
 not part of this contract-implementation readiness decision.
 
+## 2026-08-10 protocol re-review addendum
+
+A fresh independent red team reviewed the post-adoption drafts (preregistration
+v0.5, annotation guide v0.6, plan). Verdict: **protocol-layer FAIL**. Blockers:
+(B1) the binary-downgrade threshold conversion claimed a conservative 1.5x
+worst-case equivalence, but the normalized binary/graded gain ratio ranges from
+0x to 3x by transition type and the true worst case (grade 1-to-2 transitions)
+amplifies 3x, halving the effective stringency of the downgrade Gate; (B2)
+reviewer-assigned `SYSTEM_PACKET_INVALID` criteria overlapped the guide's
+ASSESSABLE grade-0 hard-fail criteria while any single-sided invalid failed the
+entire round, making the round either near-certain to fail or the invalid label
+rationally avoided, contaminating both alpha guards. Ten major findings covered
+cross-document downgrade contradictions, `CASE_INVALID` handling, workload
+arithmetic and reduction triggers, Fusion variant counting, W/near-Fermi
+assignment ambiguities, COI coverage and timing, and missing near-Fermi strata.
+
+Repairs were applied in preregistration v0.6 and annotation guide v0.7: the
+binary downgrade mode was withdrawn entirely; `SYSTEM_PACKET_INVALID` was
+narrowed to mechanical/structural failure with `(0, g)` single-sided inclusion,
+per-unit logging, and a 5% integrity-review trigger; the remaining majors and
+minors m1/m2/m4/m5/m7/m9/m10 were fixed as recorded in the plan checkpoint.
+A third independent red team then verified 10 of 12 second-round repairs
+closed, re-deriving all arithmetic (3x worst-case binary amplification, unit
+caps 600/450/300, 12 Fusion configurations, both frozen metric denominators),
+but returned FAIL on one missed spot: annotation-guide section 13 still
+carried the pre-repair round-fail sentence (N1, blocker), alongside an
+unevaluable Pilot invalid-case cap cross-reference (N2, major) and six minors
+(N3-N8). All third-round findings were repaired in preregistration v0.7 and
+annotation guide v0.8: the residual sentence is aligned with the repaired
+rules; Pilot rounds now fail direct passage when symmetric `CASE_INVALID`
+exclusions exceed 10% of 30 with a fresh disjoint round required, and
+development promotion halts above 5% of 60; workload bounds are restated as
+60-118 hours on a consistent per-item basis with an 18-hour allowance;
+malformed packets route exclusively to `SYSTEM_PACKET_INVALID`; level-2
+reduction is evaluated independently of level 1; records lacking both E_F and
+a gap fail closed out of positive strata; adjudicator double recusal excludes
+the unit symmetrically; and the Main-side consequence of "cannot pass
+directly" blocks Gold/Analysis assembly until the integrity review is signed.
+
+These repairs await a further independent verification pass. The Pilot
+decision remains **PILOT NO-GO**: every real-custody blocker in this document
+(real experts, structures, external authority) is unchanged by protocol-text
+repairs.
+
 ## Engineering track remains separate
 
 The GitHub CI failure observed before this review was an engineering portability bug:

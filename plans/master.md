@@ -122,6 +122,30 @@ case 自报唯一 mechanism group，因为两者都会制造虚假的独立样�
   预声明、OOD holdout 约束感知回退序、R2 后唯一一次 binary-gain 降级模式、专家公开描述
   模板。该评审不是独立红队或外部 authority 证据；`PILOT_NO_GO` 与真实 custody blocker
   不变，修订稿需重走独立红队。
+- **2026-08-10 协议层红队复审与修复：** 对 v0.5/v0.6 修订稿的独立红队返回 FAIL（B1：
+  binary 降级阈值"1.5 倍最坏情形等效"数学不成立，真实最坏情形为 1→2 转移的 3 倍；B2：
+  单边 `SYSTEM_PACKET_INVALID` 整轮 fail-closed 与指南 assessability 判据重叠互相矛盾；
+  另有 M1--M10）。修复为预注册 v0.6 / 指南 v0.7：整体撤除 binary 降级模式；invalid 判据
+  收窄为机械/结构性失败，单边改为 `(0,g)` 纳入加留痕加 5% 完整性审查；统一 `CASE_INVALID`
+  处置；工作量上界修正为 60--115 小时并冻结两级缩减判据与固定移除序；Fusion 按 E2 变体
+  冻结 12 配置；冻结 E_F/自旋/多带/覆盖缺失归属规则；COI 两两关系约束与替补 adjudicator。
+  修复稿需再走一轮独立红队；`PILOT_NO_GO` 与真实 custody blocker 不变。
+- **2026-08-10 第三轮红队与修复：** 独立复核确认第二轮 12 项修复中 10 项闭合（全部数学
+  重验通过：3 倍最坏情形、450/300/600 上限、12 个 Fusion 配置、两个指标分母、三箱分层），
+  但发现指南 §13 残留修复前的整轮 fail-closed 旧句（N1 BLOCKER）与 Pilot 无效 case 上限
+  空引用（N2 MAJOR）及六个 minor。已全部修复为预注册 v0.7 / 指南 v0.8：残留句对齐、
+  Pilot 对称排除超 10% 须另建不重叠轮次、development 超 5% 暂停 promotion、工时口径统一
+  为 60--118 小时/定额 18、malformed packet 专属 invalid 状态、二级缩减独立求值、E_F 与
+  带隙双缺失 fail closed、adjudicator 双回避对称排除、Main 侧"不得直接通过"定义为完整性
+  审查签署前 Gold/Analysis 不得组装。待下一轮独立核对；`PILOT_NO_GO` 不变。
+- **2026-08-11 完整离线 Gate（分区）与科研轨道暂停：** 非 flatband 分区
+  `998 passed, 15 skipped`（133s）；flatband 分区 `437 passed, 3 failed`（14222s）。
+  三个失败均为 V3 未闭合的对抗拒绝测试：`test_formal_v3_r2_prebudget_rejects_overlapping_full_candidate_pool`、
+  `test_formal_v3_execution_rejects_alternate_prebudget_same_universes`、
+  `test_top_level_rejects_model_copy_foreign_structure_union_root`，作为已知开放失败如实
+  入库、不得表述为绿色 Gate。用户决定暂停科研轨道修复、优先交付 MVP（见
+  `docs/MVP.md`；MVP 主链已于 2026-08-10 在真实 MC3D 上端到端验证）；三个失败不影响
+  MVP 主链。
 
 public production 仍为 NO-GO：queued production 与 worker lifecycle 已激活，但 parent
 worker 被 hard-kill 后独立 action child 的清理/回收契约仍未闭合；真实 provider 全链、

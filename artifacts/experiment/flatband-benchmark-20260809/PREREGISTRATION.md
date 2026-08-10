@@ -2,7 +2,22 @@
 
 状态：`DRAFT / FULL_FLOW_CONTRACT_IMPLEMENTED / REAL_EXECUTION_NOT_RUN / PILOT_NO_GO`
 
-版本：v0.5，2026-08-10（Asia/Shanghai）
+版本：v0.7，2026-08-10（Asia/Shanghai）
+
+v0.7 变更：按第三轮红队修复——为 Pilot/development 定义无效 case 上限并冻结超限处置
+（N2）；工作量上界改为一致口径的 60--118 小时、投影工时定额改为 18（N3）；malformed
+packet 从 ASSESSABLE grade-0 定义移出（N4）；第二级缩减判据独立于第一级触发（N5）；
+E_F 与带隙均缺失按覆盖缺失 fail closed（N6）；adjudicator 双回避处置（N7）；"本轮不得
+直接通过"的 Main 侧后果定义（N8）。
+
+v0.6 变更：按 2026-08-10 协议层独立红队（FAIL：B1/B2 与 M1--M10）修复——整体撤除
+binary-gain 降级模式（B1/M1/M10：1.5 倍"最坏情形等效"换算数学不成立，真实最坏情形为
+1→2 转移的 3 倍）；`SYSTEM_PACKET_INVALID` 收窄为机械/结构性失败，单边 invalid 改为
+`(0,g)` 纳入加逐 unit 留痕加 5% 完整性审查（B2）；统一 `CASE_INVALID` 处置（M2）；工作量
+上界修正为 60--115 小时并冻结两级缩减判据与固定移除序（M3/M4）；Fusion 配置按 E2 变体
+拆分为 12 个（M5）；冻结 E_F/自旋通道/多带/覆盖缺失的分层归属规则（M6）；COI 两两关系
+约束、替补 adjudicator、签名自我声明与 recusal 时序修正（M7/M8）；次指标增加 near-Fermi
+距离分层（M9）；及 minor 项 m1/m2/m4/m5/m7/m9/m10。
 
 v0.5 变更：采纳 2026-08-10 用户评审（AI 代行分析、用户批准采纳）的修订——专家工作量
 预算与校准计时试点（§7.1）、Fusion 组合算子按组件子集冻结（§6）、COI 操作化与替补校准
@@ -17,7 +32,7 @@ Arm receipt、Execution、双专家 Gold、Analysis V2、development promotion�
 到内部签名审查和 sanitized public result 的 formal 全流程；这只是可重放合同能力。没有创建真实
 private Main 结构/union/人工标注/Campaign 实例，没有发起真实模型调用，也没有运行真实 benchmark。
 当前阶段不以性能或 benchmark 数值作为实现 Gate；不得把 schema、合成测试或空流程描述为材料发现、
-科学结果或 Pilot GO。相邻 `PREREGISTRATION.sha256` 只标识本次 v0.5 draft checkpoint，不表示外部注册或
+科学结果或 Pilot GO。相邻 `PREREGISTRATION.sha256` 只标识本次 v0.7 draft checkpoint，不表示外部注册或
 Pilot GO；后续正文改动必须生成新内容身份。
 
 ## 1. 研究问题与证据边界
@@ -53,9 +68,10 @@ development 组件选择；不是额外的锁定主假设。
 
 1. 本预注册终稿和标注指南终稿；
 2. 与 Pilot/Main 均不重叠的专家校准集；
-3. 两位独立 reviewer、一位 distinct adjudicator 与至少一位替补专家的 pseudonymous
-   registry，含第 7 节 COI 取消资格/披露审查、work/case-level COI map 与 recusal 政策；
-   替补在承担任何 assignment 前必须完成同一指南 SHA 的校准；
+3. 两位独立 reviewer、一位 distinct adjudicator、至少一位替补 reviewer 与一位替补
+   adjudicator 的 pseudonymous registry，含第 7 节 COI 取消资格/披露审查、两两关系约束、
+   work/case-level COI map 与 recusal 政策；任何替补在承担任何 assignment 前必须完成
+   同一指南 SHA 的校准；
 4. Pilot R1 split manifest；如触发，另建不重叠的 Pilot R2 manifest；
 5. Main 的抽样 frame/配额、Pilot–Main 不重叠规则、`LeakageComponentReleaseV3` 独立性边政策、
    OOD taxonomy/holdout 选择算法与固定 seed；此时不冻结 Main 120 个具体 case ID；
@@ -147,6 +163,16 @@ band-tracking 方法不能唯一分辨目标带（如宽范围简并流形）时
 NB300 正类抽样，只能进入 BORDER500/覆盖受限分层或被排除。±1.0 eV 窗口有意宽于关联
 平带文献常用的 ±0.2--0.5 eV：它只是 case 抽样资格窗口（宽进），电子活跃性与物理相关性
 由专家在 packet 证据层判断（严判），其边界效应由 near-Fermi 距离分层报告吸收。
+
+分层归属的确定性规则一并冻结：E_F 使用来源记录报告的值，来源只给带隙而无显式 E_F 时取
+带隙中点，约定作为字段记录、跨来源不混用；spin-polarized 记录中每个自旋通道的目标带分别
+评估，case 分层取满足 near-Fermi 窗口的通道中 `W` 最小者，另一通道记为正交字段；来源
+记录既无显式 E_F 也无带隙时，按覆盖缺失处理、fail closed 出正类；多条带
+同时满足窗口时取 `W` 最小的带为分层带，`W` 并列时取 `min_k |E(k)-E_F|` 更小者，仍并列取
+来源记录顺序在前者，其余带记为正交字段；记录缺少足以定义 `W` 与 `min_k` 的 k 覆盖类别
+（如 source-only label）时 fail closed 出正类，只能进入 weak sampling/OOD 分层或被排除。
+带唯一追踪性的判定由来源记录的 band-tracking 方法字段确定性推导，字段缺失或方法不支持
+唯一追踪即自动出正类，无人工裁量。
 
 带宽覆盖范围必须区分 full-BZ grid、Wannier grid、完整高对称路径、局部路径、结构先验和
 source-only label。SOC、磁序/自旋通道、Hubbard U、隔离隙、band tracking 方法和 k sampling
@@ -242,7 +268,8 @@ holdout 选择算法必须是约束感知的，并与 seed 一同在 Pilot 前�
 零命中、全部边际配额与 component 下限约束的可行 holdout 集合内，按可支持的 locked OOD
 独立 component 数降序排序，数目相同时按冻结的 family 枚举序决胜，取第一个可行 holdout；
 仅当可行集合为空时才宣告不建立 confirmatory split。不得在看到任何系统输出后重新排序或
-更换 holdout。
+更换 holdout。holdout 为 family 集合时，候选集合按 family 枚举索引升序排序后的索引元组
+字典序决胜；该选择算法完全确定性，固定 seed 只用于抽样阶段，不参与 holdout 选择。
 
 ### 5.5 冻结结构与 derivative 泄漏轴
 
@@ -308,9 +335,11 @@ Fusion 的组合算子在 Pilot 前对全部 `2^3` 个组件子集逐一冻结�
 （E2-A `3/3/2`，E2-B `2/2/2/2`），否则用 B0 的 Crossref 8；候选生成层——E3 入选时使用 B0
 词法路径与 E3 冻结 TagGraph 转移路线的并集并保留各自 lineage，否则仅 B0 路径；排序层——
 E1 入选时在同一 2 调用/12,000 token 预算内对候选 bounded metadata packets 应用 E1 的冻结
-语义重排，否则用 B0 词法排序。Top-5 选择统一使用与 B0 相同的冻结去重/多样性选择器。每个
-子集组合的 exact system config（请求分配、TagGraph hash、prompt identity、选择器参数）在
-Pilot 前内容寻址冻结；空子集时 Fusion 不成立，locked labels 不解封。
+语义重排（仍受 E1 的 20-packet 确定性选择规则约束，该规则属于冻结 config），否则用 B0
+词法排序。Top-5 选择统一使用与 B0 相同的冻结去重/多样性选择器。含 E2 的子集按 E2-A/E2-B
+两种变体分别冻结，与不含 E2 的子集合计 12 个配置；每个配置的 exact system config（请求
+分配、TagGraph hash、prompt identity、选择器参数）在 Pilot 前内容寻址冻结；空子集时
+Fusion 不成立，locked labels 不解封。
 
 E3 Tag 是机制转移约束，不是关键词堆叠。每条 route 必须显式表达 source mechanism、shared
 invariant、target mapping、可控变量、成立条件、破坏条件与反证。候选领域可含 photonic、
@@ -334,7 +363,8 @@ Annotation Guide SHA 和 calibration set SHA。reviewer 只能使用 packet 内�
 
 主要 0--3 relevance grade：
 
-- **0**：无效、硬约束冲突、无可用证据、明显错误 bridge 或不可恢复的 malformed packet；
+- **0**：硬约束冲突、无可用证据、明显错误 bridge，或机制被 packet 内反证否定；不可恢复
+  的 malformed packet 走 `SYSTEM_PACKET_INVALID` 状态，不在本 grade 编码；
 - **1**：主题相关但机制/映射弱，证据仅为 context，或关键条件/反证缺失；
 - **2**：plausible、至少一条 scope-matched valid support、无 hard fail，bridge 至少条件成立且有
   明确验证方案；
@@ -352,28 +382,45 @@ grade >=2 必须 `evidence_valid=true` 且至少一条 `VALID_SUPPORT`；grade 3
 全部匿名 packet 标注完成后单独密封并裁决，不能由 unit 内自由字符串或系统 proposal 决定。
 
 COI 与独立性按以下操作化规则执行：参与过本项目系统实现、TagGraph/prompt 设计或看过任何
-系统输出与配置的人不得担任 reviewer 或 adjudicator；adjudicator 与任一 reviewer 之间不得
-存在指导/被指导或直接上下级关系；reviewer 不得标注引用了本人署名文献的 packet，该情形走
-work/case-level recusal 并由已完成校准的替补接手，替补机制不得静默缩小任何系统的分母。
-与项目负责人的合著或机构隶属关系记录为披露项而非取消项，按第 13 节的预冻结聚合模板在
-最终报告如实披露。COI map、recusal 与替补指派必须在任何系统结果生成前冻结。
+系统输出与配置的人不得担任任何标注角色，该条件以内容寻址的签名自我声明记录（内部真实性
+证据，外部不可核验性如实保留）。关系约束对 {两位 reviewer、adjudicator、全部替补} 两两
+适用：任意两人之间不得存在指导/被指导、直接上下级或近三年合著关系；替补顶替时对新组合
+重新执行关系审查。reviewer 或 adjudicator 遇到引用本人署名文献的 unit 均须申报回避：
+reviewer 由已完成校准的替补 reviewer 接手，adjudicator 由替补 adjudicator 接手；两位
+reviewer 对同一 unit 同时回避且无足够合格替补时，或 adjudicator 与替补 adjudicator 对
+同一 unit 均须回避时，该 unit 对全部系统对称排除并记录原因，不得静默缩小单一系统的
+分母。与项目负责人的合著或机构隶属关系记录为披露项而非取消项，
+按第 13 节的预冻结聚合模板如实披露。COI 政策、关系审查结论与替补池在任何系统结果生成前
+冻结；case-level recusal 按预冻结规则在结果生成后触发并全程留痕。
 
 ### 7.1 专家资源与工作量预算
 
 Pilot R1 的标注上限为 30 case × 4 系统 × Top-5 = 600 个 pooled unit（exact-packet pooling
 只合并字节级相同 packet，实际 unique unit 数在 execution 后由 pooling 决定并记录）。冻结
-的预算假设为每 unit 5--10 分钟，加上每 case 的 pre-run audit 与约 20 个匿名 packet 的
-duplicate partition（每 case 10--20 分钟），每位 reviewer 的 R1 预算区间为 30--75 小时，
-另加校准集 5--10 小时；触发 R2 则近似翻倍。Main 的审阅规模约为 Pilot 的 4--5 倍；Main
-capacity decision 必须以 Pilot 实测 unit 用时重算 Main 预算，预算超过专家书面时间承诺时
-不得启动 Main。
+的预算假设为每 unit 5--10 分钟、每 case 约 20 个匿名 packet 的 duplicate partition
+10--20 分钟、pre-run audit 每 case 10--15 分钟；无 pooling 折减时每位 reviewer 的 R1
+预算按分项区间一致口径为 60--118 小时（下界 50+5+5，上界 100+10+7.5 向上取整），另加
+校准集 5--10 小时；触发 R2 则 R1 部分近似翻倍。不得以未
+声明的 pooling 折减假设压低该预算。Main 的审阅规模约为 Pilot 的 4--5 倍；Main capacity
+decision 必须以 Pilot 实测 unit 用时重算 Main 预算，预算超过专家书面时间承诺时不得启动
+Main。
 
-校准集兼作计时试点：每位专家的 calibration completion record 必须记录每 unit 实际用时。
-若两位 reviewer 的校准中位用时超过 8 分钟/unit，必须在 Pilot R1 开始前完成一次预声明的
-scope 缩减修订（注册前修订，产生新协议 SHA），缩减顺序预先冻结为：首先从 Pilot 系统集
-移除 E2-B（其 packet 信息风格与 B0 最接近，且 Pilot 目的是手册可用性与一致性、不是系统
-比较）；仍超载时再移除 E1 或 E3 之一，但 Pilot 必须始终保留至少一个非词法系统；不得缩减
-case 数（30 是 alpha 精度下限）或 Top-5 深度（评价端点）。
+校准集兼作计时试点：每位专家的 calibration completion record 必须记录每 unit 实际用时；
+校准中位用时 `m`（分钟/unit）取两位 reviewer 全部校准 unit 合并后的单一中位数。校准集
+刻意包含边缘案例、用时天然偏慢，该触发器方向保守，予以接受。缩减规则预先冻结为两级。
+第一级：`m > 8` 时，必须在 Pilot R1 开始前完成一次预声明的 scope 缩减修订（注册前修订，
+产生新协议 SHA），从 Pilot 系统集移除 E2-B（其 packet 信息风格与 B0 最接近，且 Pilot
+目的是手册可用性与一致性、不是系统比较），unit 上限降为 450。第二级：以投影工时
+`H = (unit 上限 × m)/60 + 18`（partition 与 pre-run audit 定额，单位小时，覆盖分项上限
+之和 17.5 向上取整）判定，第一级后 `H` 仍超过任一 reviewer 书面承诺工时的，固定移除
+E1、保留 B0/E3（E3 跨域 bridge
+packet 是标注手册压力最大的风格，必须保留人工覆盖；E1 与 E3 同属机制映射风格、重叠更
+高），unit 上限降为 300；若仍超过，停止并作为注册前决策重新协商范围。第二级判据独立于
+第一级是否触发：`m <= 8` 但按当前 unit 上限计算的 `H` 超过书面承诺时，先执行第一级移除
+（E2-B）、重算 `H`，仍超过再执行第二级。任何一级都不得
+缩减 case 数（30 是 alpha 精度下限）或 Top-5 深度（评价端点）。若触发缩减移除 E2-B，
+Pilot 手册覆盖不含多源 packet 风格的限制必须记入 limitations，且 Main 标注开始前的校准
+复核必须包含至少 2 个多源风格 unit。
 
 专家的时间承诺、报酬或致谢安排记录在 `ExpertStudyRegistryV2` 的私有字段，不进入公开包；
 无偿承诺同样必须显式记录，不得默认。
@@ -388,10 +435,18 @@ case 数（30 是 alpha 精度下限）或 Top-5 深度（评价端点）。
 两份 reviewer-specific `ReviewerManifestV2`/`PrivateIdentityMapV2` + 裁决前 raw annotations
 唯一派生，不接受 caller 提供的 RatedUnit、case/component 或 metric float。
 
-每个 present pooled unit 必须恰好有两个 assigned reviewer labels。双方都为
-`SYSTEM_PACKET_INVALID` 时，该 unit 以固定 `(0,0)` 纳入 alpha；单边 `SYSTEM_PACKET_INVALID`、
-任一 `CASE_INVALID`、普通 missing、多余/第三个标签或 orphan unit 都使整轮 fail closed，不得
-通过删除“难例”计算 alpha。expected disagreement 为 0 时 alpha 记为 undefined，不能当作 1。
+每个 present pooled unit 必须恰好有两个 assigned reviewer labels。`SYSTEM_PACKET_INVALID`
+只允许标注指南第 4 节收窄后的机械/结构性失败判据。双方都为 `SYSTEM_PACKET_INVALID` 时，
+该 unit 以固定 `(0,0)` 纳入 alpha；单边 `SYSTEM_PACKET_INVALID` 以 `(0, g)` 按实纳入
+alpha 并逐 unit 留痕，其占全部 present pooled units 的比例超过 5% 时触发数据完整性审查、
+本轮不得直接通过。`CASE_INVALID` 统一按第 7/11 节处置：系统输出后的单边 `CASE_INVALID`
+触发数据完整性审查且本轮不得直接通过；双边一致或裁决确认的 `CASE_INVALID` 使该 case 对
+全部系统对称排除、其 unit 不入 alpha，并计入第 11 节的无效 case 上限；该处置对 Pilot 与
+Main 同样适用；Main 无轮次通过概念，"本轮不得直接通过"在 Main 侧的对应后果为：数据
+完整性审查签署完成前，相应 Gold/Analysis release 不得组装或推进。普通 missing、多余/
+第三个标签或 orphan unit 仍使整轮 fail closed，不得通过删除“难例”计算 alpha。数据完整性审查以固定 reason code 由 adjudicator 与 operator
+共同签署结论，继续/停止决定必须形成内容寻址记录后方可生效。expected disagreement 为 0
+时 alpha 记为 undefined，不能当作 1。
 置信区间按 `LeakageComponentReleaseV3 component → case` 两层做 50,000 次 percentile
 bootstrap，固定 seed 为 `20260809`。minimum exact agreement 只作描述统计，不参与 Gate。
 
@@ -399,7 +454,7 @@ bootstrap，固定 seed 为 `20260809`。minimum exact agreement 只作描述统
 - `0.667 <= alpha < 0.80`：只能修改标注手册，不得修改系统、case 定义或已密封 R1 标签；
   随后在完全不重叠的 30-case R2 重新独立标注，R2 必须 `>=0.80`；
 - `alpha < 0.667`：停止扩展，重新评估判断任务；
-- R2 `<0.80`：除下述唯一一次 binary 降级分支适用外，停止，不构建 Main 120。
+- R2 `<0.80`：停止，不构建 Main 120。
 
 无论总体 alpha 是否通过，都报告 grade confusion、证据有效性一致率、bridge overall 一致率、
 各 mechanism/2D-3D/FB-NB 子组和 undefined bootstrap 比例。不得以裁决后的标签计算 alpha。
@@ -409,16 +464,11 @@ bootstrap，固定 seed 为 `20260809`。minimum exact agreement 只作描述统
 companion alpha 不是 Gate；但 Gate alpha 通过而 companion alpha 低于 0.667 时，必须在
 agreement 报告中显式量化机械一致对 Gate alpha 的贡献，并完成数据完整性审查后才可继续。
 
-预声明唯一一次 endpoint 降级模式，只在 R2 之后作为最后的确定性分支求值：仅当 R2 的
-graded alpha 落在 `[0.667, 0.80)`，且同一批裁决前 raw 标签二值化（grade `>=2` 记 1，其余
-含 `SYSTEM_PACKET_INVALID` 记 0）后的 binary Krippendorff alpha `>= 0.80` 时，改用
-binary-gain benchmark 继续，否则停止。binary 模式下 gain 为二值，固定分母为五个位置均为
-1 的 DCG 值 `2.9484591189`；development promotion 主阈值换算为 `delta >= 0.045`、locked
-primary 换算为 `delta >= 0.075`（按最坏情形——全部增益来自 grade 2——与 graded 门槛等效的
-保守 1.5 倍放大；增益来自 grade 3 时该换算更严），不依赖 grade 粒度的 guardrail 保持原值。
-降级必须公开记录为 endpoint downgrade，此后全部结论只能以 binary utility 表述，不再保留
-graded 主假设，不得事后在两种端点间择优；R1 或 R2 的 graded alpha `< 0.667` 时不允许
-降级，直接停止。
+曾在 v0.5 草案预声明的 binary-gain endpoint 降级模式已于 2026-08-10 协议层红队后整体
+撤除：其"最坏情形 1.5 倍保守换算"论证不成立（归一化增量比 binary/graded 依转移类型为
+0--3 倍，真实最坏情形是 1→2 转移的 3 倍），修复它所需的独立阈值论证、binary companion
+防护与跨文档同步的复杂度超过其残值。一致性 Gate 严格保持 graded alpha 规则，无任何降级
+分支。
 
 ## 9. 指标
 
@@ -430,7 +480,9 @@ graded 主假设，不得事后在两种端点间择优；R1 或 R2 的 graded a
 
 主分析 `g_r = grade_r`；缺失位置和同一 final expert strict group 第一次出现后的所有位置为 0。
 固定分母是假设五个位置均为 grade 3 的 `8.8453773566`，因此弱系统不能通过缩小自己的
-ideal list 获得 1.0。`2^grade-1` 增益及固定分母 `20.6392138322` 只作敏感性分析。
+ideal list 获得 1.0。`2^grade-1` 增益及固定分母 `20.6392138322` 只作敏感性分析。两个
+十进制常量由公式精确值舍入十位而来、仅作标识；实现必须使用公式精确值计算，禁止以十进制
+字符串常量参与运算。
 
 ### 9.2 次指标
 
@@ -440,7 +492,8 @@ ideal list 获得 1.0。`2^grade-1` 增益及固定分母 `20.6392138322` 只作
 - Completion@5：返回数/5；
 - strict duplicate rate：`(returned - unique strict groups)/(returned - 1)`，0/1 个返回时为 0；
 - bridge correctness、mechanism-family coverage、fill/underfill、request/token/latency；
-- IID/OOD、FB100/NB300、2D/3D、SOC/磁性/覆盖范围的预声明分层结果。
+- IID/OOD、FB100/NB300、2D/3D、SOC/磁性/覆盖范围，以及 near-Fermi 距离
+  （`min_k |E(k)-E_F|` 按 `[0,0.2]`、`(0.2,0.5]`、`(0.5,1.0]` eV 三箱）的预声明分层结果。
 
 case-level 分数先在 case 内计算，再按预声明 split 聚合；不得把候选位置当独立样本。
 
@@ -497,6 +550,10 @@ assignments 少于 100,000，则精确枚举；否则固定 seed Monte Carlo。
 - 两位 reviewer 必须完成每个 pooled unit 后才计算 Pilot/Main 指标，不做 label imputation；
 - 若 case 经独立裁决为 `CASE_INVALID`，所有系统在该 case 上对称排除并单列原因，不按系统选择；
 - locked 阶段发现 invalid case 不补样。invalid case 超过 locked 60 的 5% 时不发布主通过结论；
+- Pilot 轮次中经双边一致或裁决确认而对称排除的 `CASE_INVALID` 超过当轮 30 case 的 10%
+  （3 个）时，该轮不得直接通过：完成数据完整性审查后，只能按预冻结抽样规则构建全新的
+  不重叠轮次，原轮全部标签仅作审计证据、不进入任何 Gate；development 60 的对称排除超过
+  5% 时不得进行 promotion 决策，须先完成完整性审查并重新评估抽样质量；
 - `UNRESOLVABLE` packet 固定为 grade/evidence gain 0 并保留位置；比例超过全部 pooled units 的
   5% 时停止主分析并回到标注协议设计；
 - development/Pilot 若在任何系统结果或性能标签揭盲前发现 source/license/structure 无效，可按同一
@@ -543,7 +600,8 @@ wrapper 不是 research-schema root，不能替代被包装的 73-root 类型校
 专家的公开描述采用预冻结的聚合模板：只公布 reviewer/adjudicator 人数、学科方向、职业阶段
 区间（如"博士生/博士后/研究员"）、与平带/窄带主题相关发表经历的有无，以及披露的与项目
 负责人关系类别；不公布姓名、机构、可反推身份的字段组合或 pseudonym 与真实身份的映射。
-该模板在专家 registry 冻结时一同冻结，揭盲后不得临时改写。
+该模板在专家 registry 冻结时一同冻结，揭盲后不得临时改写。若模板字段组合在可招募专家池
+内可能唯一指认个人，相应字段以“不披露”粗化；粗化决定与理由记录在 registry 私有字段。
 
 最终报告必须同时给出所有 case 的 outcome/underfill denominator、组件失败、IID/OOD 差异、
 专家一致性和协议偏差。`scientific_conclusion=false` 保持到独立科研审查；即使 primary 通过，

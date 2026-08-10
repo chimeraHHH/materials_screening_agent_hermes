@@ -222,18 +222,20 @@ retrieval layer uses the selected E2 variant's frozen request allocation when E2
 is promoted (otherwise B0's Crossref 8); the candidate layer unions B0 lexical
 routes with the frozen E3 TagGraph routes when E3 is promoted; the ranking layer
 applies E1's frozen semantic rerank within the same 2-call/12,000-token budget
-when E1 is promoted; top-5 selection always uses B0's frozen dedup/diversity
-selector. All `2^3` subset configurations are content-addressed before Pilot.
+and 20-packet deterministic selection rule when E1 is promoted; top-5 selection
+always uses B0's frozen dedup/diversity selector. Subsets containing E2 are
+frozen separately for the E2-A and E2-B variants, giving 12 content-addressed
+configurations before Pilot.
 
 A companion descriptive alpha restricted to double-`ASSESSABLE` units, with the
 count and share of `(0,0)` invalid-pair units, is always reported and is not a
-Gate. A single pre-declared endpoint downgrade exists and is evaluated only after
-Pilot R2: only when R2's graded alpha lands in `[0.667, 0.80)` while the binary
-alpha (grade `>=2` versus rest) reaches `0.80`, the benchmark continues with
-binary gain (fixed denominator `2.9484591189`), promotion delta `>= 0.045`, and
-locked primary delta `>= 0.075`; grade-independent guardrails keep their values.
-The downgrade is recorded publicly, all conclusions are stated as binary utility,
-and no post-hoc choice between endpoints is permitted.
+Gate; if the Gate alpha passes while the companion alpha falls below 0.667, the
+mechanical-agreement contribution must be quantified and a data-integrity review
+completed before continuing. The binary-gain endpoint downgrade drafted in
+preregistration v0.5 was withdrawn after the 2026-08-10 protocol red team: its
+claimed 1.5x worst-case threshold conversion was mathematically wrong (the true
+worst case, grade 1-to-2 transitions, amplifies 3x). The agreement Gate is
+strictly graded alpha with no downgrade branch.
 
 ## Candidate mechanism families
 
@@ -252,22 +254,35 @@ formal Tag release requires expert decisions and a versioned graph hash.
 Pilot R1 has an upper bound of 30 cases x 4 systems x top-5 = 600 pooled units;
 exact-packet pooling merges only byte-identical packets, and the realized unique
 unit count is recorded after execution. The frozen planning assumption is 5-10
-minutes per unit plus a 10-20 minute per-case duplicate partition and the
-pre-run case audit, giving an R1 budget of 30-75 hours per reviewer plus 5-10
-calibration hours; a triggered R2 approximately doubles it. Main review volume
-is roughly 4-5x Pilot. The Main capacity decision must recompute the Main budget
-from measured Pilot per-unit times, and Main must not start if that budget
-exceeds the experts' written time commitments.
+minutes per unit, a 10-20 minute per-case duplicate partition, and a 10-15
+minute per-case pre-run audit, giving an R1 budget of 60-118 hours per reviewer
+on a consistent per-item basis (lower bound 50+5+5, upper bound 100+10+7.5
+rounded up) with no pooling discount, plus 5-10 calibration hours; a triggered
+R2 approximately doubles the R1 part. No undeclared pooling assumption may
+lower this budget. Main review volume is roughly 4-5x Pilot. The Main capacity
+decision must recompute the Main budget from measured Pilot per-unit times, and
+Main must not start if that budget exceeds the experts' written time
+commitments.
 
 The calibration set doubles as a timing pilot: every calibration completion
-record stores actual per-unit time. If the reviewers' median calibration time
-exceeds 8 minutes per unit, a pre-registered scope-reduction revision (new
-protocol SHA, before Pilot R1) is mandatory, with the frozen reduction order:
-drop E2-B from the Pilot system set first; if still overloaded, drop one of
-E1/E3 while always keeping at least one non-lexical system. Case count (30) and
-top-5 depth are never reduced. Expert time commitments and compensation or
-acknowledgement terms are recorded in private `ExpertStudyRegistryV2` fields,
-including explicit unpaid commitments.
+record stores actual per-unit time, and the median `m` (minutes per unit) pools
+both reviewers' calibration units. Two frozen reduction levels apply. Level 1:
+if `m > 8`, a pre-registered scope-reduction revision (new protocol SHA, before
+Pilot R1) drops E2-B from the Pilot system set, lowering the unit cap to 450.
+Level 2: with projected hours `H = (unit cap x m)/60 + 18` (partition and audit
+allowance covering the 17.5-hour sub-item maximum, rounded up), if `H` still
+exceeds any reviewer's written commitment after level 1, E1 is dropped and
+B0/E3 are kept (E3's cross-domain bridge packets stress the manual hardest and
+must keep human coverage), lowering the unit cap to 300; if `H` still exceeds
+the commitment, the scope is renegotiated as a pre-registration decision.
+Level 2 is evaluated independently of whether level 1 triggered: if `m <= 8`
+but `H` at the current unit cap exceeds the commitment, level 1 is applied
+first, `H` recomputed, and level 2 applied only if it still exceeds. Case count (30) and top-5 depth are never reduced.
+If E2-B is dropped, the absence of multi-source packet styles from the Pilot is
+a recorded limitation, and the calibration recheck before Main annotation must
+include at least two multi-source-style units. Expert time commitments and
+compensation or acknowledgement terms are recorded in private
+`ExpertStudyRegistryV2` fields, including explicit unpaid commitments.
 
 ## Current blockers and stop rules
 
@@ -394,6 +409,61 @@ including explicit unpaid commitments.
   and the remaining real-custody blockers are unchanged. The revised protocol
   drafts (preregistration v0.5, annotation guide v0.6, this plan) require a
   fresh independent red-team pass before any `PILOT_GO` decision.
+
+### 2026-08-10 post-adoption protocol red-team checkpoint
+
+- **Verdict:** the fresh independent protocol red team on preregistration v0.5 /
+  annotation guide v0.6 returned FAIL with two blockers and ten major findings;
+  `PILOT_NO_GO` is retained.
+- **B1:** the binary-downgrade threshold conversion claimed 1.5x worst-case
+  equivalence, but the true worst case (grade 1-to-2 transitions) amplifies 3x;
+  the downgrade mode was therefore withdrawn entirely rather than re-derived.
+- **B2:** reviewer-assigned `SYSTEM_PACKET_INVALID` criteria overlapped the
+  guide's own ASSESSABLE grade-0 hard-fail criteria while any single-sided
+  invalid failed the whole round; the criteria are now narrowed to
+  mechanical/structural failure, and single-sided invalids enter alpha as
+  `(0, g)` with per-unit logging and a 5% integrity-review trigger.
+- **Majors fixed:** cross-document downgrade contradictions (M1, resolved by
+  withdrawal); unified `CASE_INVALID` handling for Pilot and Main (M2);
+  workload arithmetic corrected to a 60-115 hour no-pooling upper bound with an
+  evaluable two-level reduction trigger and a fixed second-level drop order
+  (M3/M4); Fusion configurations split per E2 variant into 12 (M5); frozen
+  E_F, spin-channel, multi-band, and missing-coverage stratum-assignment rules
+  (M6); pairwise COI relation constraints, a backup adjudicator, signed
+  self-attestations, and recusal timing (M7/M8); near-Fermi distance strata
+  added to pre-declared secondary reporting (M9); companion-alpha guards
+  retained with the downgrade removed (M10). Minor findings
+  m1/m2/m4/m5/m7/m9/m10 were also applied.
+- **Boundary:** these repairs are protocol-text changes (preregistration v0.6,
+  annotation guide v0.7). They require another independent red-team pass; real
+  expert, structure, and custody instances remain absent and blocking.
+
+### 2026-08-10 third-round protocol red-team checkpoint
+
+- **Verdict:** the third independent red team verified 10 of 12 second-round
+  repairs closed, with all arithmetic re-derived and confirmed (the 3x
+  worst-case binary amplification, unit caps 600/450/300, 12 Fusion
+  configurations, both frozen metric denominators, and the three near-Fermi
+  strata); the protocol layer remained FAIL on one missed spot.
+- **N1 (blocker, fixed):** annotation-guide section 13 still carried the
+  pre-repair "single-sided invalid / any CASE_INVALID fails the whole round"
+  sentence, contradicting the repaired section 4 and preregistration section
+  8; the sentence is now aligned (guide v0.8).
+- **N2 (major, fixed):** the invalid-case cap was only defined for the locked
+  60; Pilot rounds now fail direct passage when symmetric `CASE_INVALID`
+  exclusions exceed 10% of 30 (a fresh disjoint round is required), and
+  development promotion halts above 5% of 60 (preregistration v0.7).
+- **Minors fixed:** workload bounds restated on a consistent per-item basis as
+  60-118 hours with an 18-hour allowance (N3); malformed packets routed
+  exclusively to `SYSTEM_PACKET_INVALID` (N4); level-2 reduction evaluated
+  independently of level 1 (N5); records lacking both E_F and a gap fail
+  closed out of positive strata (N6); adjudicator plus backup-adjudicator
+  double recusal excludes the unit symmetrically (N7); the Main-side
+  consequence of "cannot pass directly" is defined as blocking Gold/Analysis
+  assembly until the integrity review is signed (N8).
+- **Boundary:** these are protocol-text repairs (preregistration v0.7,
+  annotation guide v0.8) pending a further independent verification pass;
+  real expert, structure, and custody instances remain absent and blocking.
 
 ## Reproducibility and publication boundary
 

@@ -1,6 +1,16 @@
 # 平带/窄带灵感 HypothesisPacket 专家标注指南
 
-状态：v0.6 草案；`FULL_FLOW_CONTRACT_IMPLEMENTED / REAL_ANNOTATION_NOT_RUN / PILOT_NO_GO`
+状态：v0.8 草案；`FULL_FLOW_CONTRACT_IMPLEMENTED / REAL_ANNOTATION_NOT_RUN / PILOT_NO_GO`
+
+v0.8 变更（2026-08-10）：按第三轮红队修复——删除 §13 残留的修复前"单边 invalid/任一
+CASE_INVALID 整轮 fail closed"旧规则并与 §4/预注册 §8 对齐（N1）；malformed packet 从
+ASSESSABLE grade-0 列表移出、专属 `SYSTEM_PACKET_INVALID`（N4）；adjudicator 与替补
+adjudicator 双回避处置（N7）。
+
+v0.7 变更（2026-08-10）：按协议层独立红队修复——`SYSTEM_PACKET_INVALID` 收窄为机械/
+结构性失败，禁用变换/无效结构/无可用证据改为 `ASSESSABLE` grade 0 硬失败；单边 invalid
+与 `CASE_INVALID` 的轮次规则与预注册 §8 统一；COI 两两关系约束、替补 adjudicator 与
+签名自我声明。
 
 v0.6 变更（2026-08-10）：采纳用户评审（AI 代行分析、用户批准采纳），增补 COI 操作化
 规则、替补校准前置、校准计时记录，以及 `W`/near-Fermi 操作定义对应的 overclaim 判据。
@@ -103,15 +113,18 @@ case 和 packet 足够完整，可以做 0--3 判断。证据可能很弱；“�
 
 ### `SYSTEM_PACKET_INVALID`
 
-case 有效，但该系统 packet 无法作为候选判断，例如：
+case 有效，但该系统 packet 存在机械/结构性失败、无法进入科学判断。本状态只允许下列
+判据，与第 7/8 节的科学性 hard fail 互斥：
 
-- 缺结构身份、机制、required/breaking condition、证据或 falsifier；
+- 必需字段（结构身份、机制、required/breaking condition、证据、falsifier）缺失或为空；
 - 引用了不存在/哈希不一致的 evidence span；
-- 变换违反禁止规则或候选结构无效；
 - 输出无法解析且不能由冻结规则恢复。
 
-此时 `relevance_grade=0`，至少选择一个 hard-fail reason。缺失的 evidence/bridge/family 字段
-保持空，不得为满足 Schema 补造 sentinel 科学判断。不要因为 packet 无效而把整个 case 标为无效。
+字段存在但科学上无效（禁用变换、无效候选结构、证据不可用、机制被反证）不属于本状态：
+应标 `ASSESSABLE` 并按第 7/8 节给 grade 0 与对应 hard-fail reason。本状态下
+`relevance_grade=0`，hard-fail reason 记 `MALFORMED_PACKET`。缺失的 evidence/bridge/family
+字段保持空，不得为满足 Schema 补造 sentinel 科学判断。不要因为 packet 无效而把整个 case
+标为无效。
 
 ### `CASE_INVALID`
 
@@ -120,9 +133,11 @@ case 有效，但该系统 packet 无法作为候选判断，例如：
 必须用 rationale 解释。若只是某个 packet 未使用已有 case 信息，应标 packet invalid。
 
 一致性 assembler 使用成对规则：两位 reviewer 均为 `SYSTEM_PACKET_INVALID` 时以
-`(0,0)` 纳入 ordinal alpha；单边 `SYSTEM_PACKET_INVALID`、任一 `CASE_INVALID`、缺标签
-或多于两个标签均使整个 Pilot round fail closed。这是轮次完整性规则，不改变上述
-每位 reviewer 的个体编码规则。
+`(0,0)` 纳入 ordinal alpha；单边 `SYSTEM_PACKET_INVALID` 以 `(0, g)` 按实纳入并逐 unit
+留痕，占比超过 5% 触发数据完整性审查、本轮不得直接通过；单边 `CASE_INVALID` 触发数据
+完整性审查且本轮不得直接通过，双边/裁决确认的 `CASE_INVALID` 对全部系统对称排除且不入
+alpha；缺标签或多于两个标签使整个 Pilot round fail closed。这是轮次完整性规则，不改变
+上述每位 reviewer 的个体编码规则。
 
 ## 5. Evidence link 判断
 
@@ -202,8 +217,9 @@ falsifier 模糊，或存在未解决的 overclaim。Grade 1 表示可作为早�
 
 ### Grade 0 — 无效、无支持或明确错误
 
-包括 malformed/invalid packet、禁用变换、硬约束冲突、无任何可用 evidence、核心 bridge 错误、
-机制被 packet 内 counter evidence 直接否定、或把 source label 当成目标真实性。
+包括禁用变换、硬约束冲突、无任何可用 evidence、核心 bridge 错误、机制被 packet 内
+counter evidence 直接否定、或把 source label 当成目标真实性。不可恢复的 malformed
+packet 按第 4 节走 `SYSTEM_PACKET_INVALID` 状态，不在本 grade 编码。
 
 ### 降级规则
 
@@ -339,15 +355,20 @@ payload 签名；签名覆盖 case/unit、状态、grade/evidence gain 或 dupli
 calibration set SHA。每位专家产生内容寻址 completion record，绑定 role、guide/set、讨论前 raw
 answer SHA 和完成时间。两位 reviewer 独立作答后才讨论。指南一旦密封并进入
 calibration，任何改动都必须产生新 SHA，且旧 calibration completion 失效、需重新确认。
-另在系统结果生成前冻结 work/case-level COI map、
-recusal 与替补专家；不得让作者识别后的临时回避静默缩小某系统分母。COI 操作化规则：
-参与过本项目系统实现、TagGraph/prompt 设计或看过任何系统输出与配置的人不得担任
-reviewer 或 adjudicator；adjudicator 与任一 reviewer 不得存在指导/被指导或直接上下级
-关系；reviewer 遇到引用本人署名文献的 packet 必须申报并走 case-level recusal，由已完成
-校准的替补接手。与项目负责人的合著或机构隶属关系是披露项而非取消项，按预注册第 13 节
-的预冻结聚合模板在最终报告披露。替补专家在承担任何 assignment 前必须完成同一指南 SHA
-的校准；每位专家的 calibration completion record 必须记录每 unit 实际用时，作为预注册
-第 7.1 节工作量计时试点的输入。时间承诺与报酬/致谢安排记录于 registry 私有字段。
+COI 政策、关系审查结论与替补池在任何系统结果生成前冻结；case-level recusal 按预冻结
+规则在结果生成后触发并全程留痕，不得让临时回避静默缩小某系统分母。COI 操作化规则：
+参与过本项目系统实现、TagGraph/prompt 设计或看过任何系统输出与配置的人不得担任任何
+标注角色，该条件以内容寻址的签名自我声明记录（内部真实性证据，外部不可核验性如实
+保留）；关系约束对 {两位 reviewer、adjudicator、全部替补} 两两适用——任意两人之间不得
+存在指导/被指导、直接上下级或近三年合著关系，替补顶替时对新组合重新执行关系审查；
+reviewer 或 adjudicator 遇到引用本人署名文献的 unit 均须申报回避，分别由已完成校准的
+替补 reviewer/替补 adjudicator 接手；两位 reviewer 对同一 unit 同时回避且无足够合格
+替补时，或 adjudicator 与替补 adjudicator 对同一 unit 均须回避时，该 unit 对全部系统
+对称排除并记录原因。与项目负责人的合著或机构隶属关系是披露
+项而非取消项，按预注册第 13 节的预冻结聚合模板在最终报告披露。任何替补在承担
+assignment 前必须完成同一指南 SHA 的校准；每位专家的 calibration completion record
+必须记录每 unit 实际用时，作为预注册第 7.1 节工作量计时试点的输入。时间承诺与报酬/
+致谢安排记录于 registry 私有字段。
 
 校准集在上述 completion 之前还必须完成独立的 `DerivativeScreeningReleaseV3`。两位自然人 reviewer
 各自只使用 assignment 绑定的 exact、非空 case source-record subset，独立给出 `NOT`、`VACANCY`、
@@ -376,8 +397,11 @@ native `ReviewerManifestV2`/`PrivateIdentityMapV2`，不以 `FinalGoldReleaseV2`
 当轮 30 个 `INCLUDED` cases 中所有 present pooled units，每个 unit 恰好两个 assigned labels。
 
 Pilot alpha 只用上述裁决前 raw 0--3 grade。双方 `SYSTEM_PACKET_INVALID` 以 `(0,0)`
-纳入；单边 invalid、任一 `CASE_INVALID`、缺失 completion/label、三个 ratings、伪 unit/case/component
-或 orphan label 都使整轮 fail closed，不能被 alpha 实现静默删除。ordinal alpha 使用
+纳入；单边 `SYSTEM_PACKET_INVALID` 以 `(0, g)` 按实纳入并逐 unit 留痕，占比超过 5% 触发
+数据完整性审查、本轮不得直接通过；单边 `CASE_INVALID` 触发数据完整性审查且本轮不得直接
+通过，双边/裁决确认的 `CASE_INVALID` 对全部系统对称排除、不入 alpha 并计入预注册第 11
+节的无效 case 上限；缺失 completion/label、三个 ratings、伪 unit/case/component 或
+orphan label 使整轮 fail closed，不能被 alpha 实现静默删除。ordinal alpha 使用
 original ordinal distance；95% percentile CI 按 `LeakageComponentReleaseV3 component → case`
 两层 bootstrap 50,000 次，固定 seed `20260809`。minimum exact agreement 只作描述，不是 Gate：
 
