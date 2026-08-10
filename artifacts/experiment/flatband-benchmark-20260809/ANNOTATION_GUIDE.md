@@ -1,10 +1,15 @@
 # 平带/窄带灵感 HypothesisPacket 专家标注指南
 
-状态：v0.3 草案；`DRAFT / PILOT_NO_GO_PENDING_SCHEMA_FREEZE_AND_INDEPENDENT_REDTEAM`
+状态：v0.6 草案；`FULL_FLOW_CONTRACT_IMPLEMENTED / REAL_ANNOTATION_NOT_RUN / PILOT_NO_GO`
 
-适用契约：当前 audience-split public-protocol/private-custody Schema draft；digest 见
-`research_public_protocol.schema.sha256` 和 `research_private_custody.schema.sha256`。当前
-formal V2/V3 链只是本地候选实现，结构泄漏 Gate 与独立红队尚未闭合；不得把它
+v0.6 变更（2026-08-10）：采纳用户评审（AI 代行分析、用户批准采纳），增补 COI 操作化
+规则、替补校准前置、校准计时记录，以及 `W`/near-Fermi 操作定义对应的 overclaim 判据。
+
+适用契约：当前 audience-split public-protocol v2/private-custody v3 Schema draft；digest 见
+`research_public_protocol.schema.sha256` 和 `research_private_custody.schema.sha256`。从执行 preimage、
+双 reviewer 投影、签名 raw/adjudication、Gold、Analysis 到内部签名 release control 的合同全流程
+已经实现并通过合成反例验证；尚无真实 private annotation/Campaign 实例、真实模型执行或外部注册，
+不得把它
 表述为 registered 或 Pilot GO。相邻 `ANNOTATION_GUIDE.sha256` 只标识本次 draft
 checkpoint，不表示终稿冻结；后续正文改动必须生成新身份。
 
@@ -12,12 +17,13 @@ checkpoint，不表示终稿冻结；后续正文改动必须生成新身份。
 是否形成有科学用途、约束兼容、可证伪的平带/窄带研究假设，不评估 novelty，不证明材料
 真实存在、可合成或具有已验证平带。
 
-> **独立红队 Gate：** 当前本地候选链已改为 `ReviewerManifestV2` 与 reviewer-specific
-> `PrivateIdentityMapV2` 物理分离，并由 `FinalGoldReleaseV2` 和 `FormalPilotAgreementReleaseV1`
-> 分别闭合裁决后 Gold 与裁决前 agreement。这仍是待冻结的 draft，不是 registered/GO。
-> 只有终稿 Schema/指南/代码 SHA 重生、calibration/COI/assignment 实例闭合，且独立红队
-> 通过 exact-cover、alias、伪 case/component、第三标签、缺失分母和身份泄漏攻击后，才能发放
-> 从 formal V2/V3 链新生成的 reviewer instances；旧 V1 blinding/execution bridge 不得作为 formal 输入。
+> **合同闭合而非科研通过：** Pilot V2/V3 路径继续使用 `ReviewerManifestV2` 与
+> reviewer-specific `PrivateIdentityMapV2`；Main 使用 `MainReviewerManifestV1` 与
+> `MainPrivateIdentityMapV1`，并从 `MainPhaseExecutionReleaseV1` 的 exact cells 唯一生成 Gold。
+> raw label、label adjudication、raw duplicate partition 和 duplicate adjudication 都绑定 expert
+> assignment 与 annotation-key commitment，并以 `HMAC-SHA256-PRECOMMITTED` 签名。临时 key 与
+> chain of thought 均不存储；真实外部专家身份和外部 key custody 仍为 `NOT_PROVIDED`。这仍是
+> draft/Pilot NO-GO，不是已经发生的人工审阅或科研结果。
 
 Pilot 前只冻结 Main 的 sampling/配额、Pilot–Main disjointness、`LeakageComponentReleaseV3`
 边政策和 OOD taxonomy/holdout 选择算法/固定 seed。Main exact 120 case IDs 只在 Pilot
@@ -43,6 +49,10 @@ reviewer 不得看到或推断：
 - Pilot/Main 的系统性能、promotion 状态或 locked split 结果；
 - novelty/prior-art 分数；
 - 私有 identity map、系统提出的 duplicate group 和原始 packet/ranking ID。
+
+FAILED execution cell 不发给 reviewer：它没有 trace、review unit 或人工 label。formal Gold/Analysis
+会自动为该 case-role 保留五个 `SYSTEM_PACKET_INVALID/RUN_FAILED` 零位置，因此失败不能通过减少
+审阅任务而从分母消失。locked component cells 只用于 Fusion derivation，也不生成独立比较任务。
 
 本实验是 `identity-masked`，不是可保证完美的 double-blind；生成文本风格仍可能泄漏。统一
 deterministic renderer、每位 reviewer 独立顺序和结构化字段用于降低风险。全部标签提交后，
@@ -70,8 +80,10 @@ provider signature/attestation，也不证明来源 claim 科学上为真。revi
 按以下顺序作答；不要先给总体分再倒推子项。
 
 0. **pre-run case audit**：在任何系统输出生成前，两位 reviewer 只看 case 独立判断资格，分歧
-   由 adjudicator 解决；正式 Pilot 只允许 source catalog 决策为 `INCLUDE`、且
-   `PreRunEligibilityReleaseV3` 状态为 `INCLUDED` 的 exact 30 cases；
+   由 adjudicator 解决；任一 raw/final derivative 资格判断不是 `NOT_A_DERIVATIVE` 即排除，
+   不得用 adjudication 洗掉 raw 风险；正式 Pilot 只允许 source catalog 决策为 `INCLUDE`、且
+   `PreRunEligibilityReleaseV3` 状态为 `INCLUDED` 的 exact 30 cases。structure Gate 另对 calibration、
+   当前 full candidate pool 以及 R2 的 prior-R1 full pool fresh-union，不只检查 selected cases；
 1. **case validity**：已通过 pre-run audit 的 case 是否出现新的数据完整性问题？
 2. **packet validity**：packet 是否完整、结构变换是否允许、是否存在 hard fail？
 3. **evidence links**：逐条判断 relation、scope match 和 overclaim；
@@ -131,7 +143,10 @@ claim summary 只能帮助定位，最终 relation 必须以不可变 excerpt/me
 
 - `scope_match=true` 仅当 source system、机制、控制变量和 packet 声称的可迁移部分相容；
 - `overclaim=true` 当 packet 把相关性写成因果、把局部路径写成 full BZ、把计算写成实验、把
-  motif 写成真实平带，或隐去 SOC/磁性/U/尺度等必要限制；
+  motif 写成真实平带，或隐去 SOC/磁性/U/尺度等必要限制；把接触/简并流形的带宽当作孤立
+  单带带宽、或把带中心距离当作 near-Fermi 距离而隐去带宽或覆盖范围时，同样计 overclaim
+  （操作定义与预注册第 3 节一致：`W` 为单条可唯一追踪带在所记录覆盖范围内的能量极差，
+  near-Fermi 距离为该覆盖范围上的 `min_k |E(k)-E_F|`）；
 - 同一 DOI 被 Crossref/OpenAlex/OpenAIRE/arXiv 多次解析仍是一条科学证据，不是多票支持。
 
 grade >=2 至少需要一条 `VALID_SUPPORT`、总体 `evidence_valid=true` 且没有 hard fail。
@@ -313,6 +328,11 @@ fail closed。若 case invalid 或无法在 packet 内解决，使用对应
 `CASE_INVALID/UNRESOLVABLE`，不得查询外部事实后补裁决。`UNRESOLVABLE` 在指标中固定 grade/
 evidence gain 为 0；比例超过全部 pooled units 的 5% 时停止主分析。
 
+Main 提交时，reviewer/adjudicator 客户端必须使用 assignment 中预承诺的 annotation key 对完整语义
+payload 签名；签名覆盖 case/unit、状态、grade/evidence gain 或 duplicate partition、理由代码与时间。
+签名 key 只在提交和 exact replay 时临时提供，不得写入 packet、rationale、Gold、日志或公开包。
+内部 HMAC 不能替代自然人或机构的外部身份认证；缺外部身份证明时只能报告内部真实性闭合。
+
 ## 13. 校准与 Pilot agreement
 
 正式注册前，三位专家绑定同一指南 SHA 和一个与所有 benchmark connected components 不重叠的
@@ -320,7 +340,30 @@ calibration set SHA。每位专家产生内容寻址 completion record，绑定 
 answer SHA 和完成时间。两位 reviewer 独立作答后才讨论。指南一旦密封并进入
 calibration，任何改动都必须产生新 SHA，且旧 calibration completion 失效、需重新确认。
 另在系统结果生成前冻结 work/case-level COI map、
-recusal 与替补专家；不得让作者识别后的临时回避静默缩小某系统分母。
+recusal 与替补专家；不得让作者识别后的临时回避静默缩小某系统分母。COI 操作化规则：
+参与过本项目系统实现、TagGraph/prompt 设计或看过任何系统输出与配置的人不得担任
+reviewer 或 adjudicator；adjudicator 与任一 reviewer 不得存在指导/被指导或直接上下级
+关系；reviewer 遇到引用本人署名文献的 packet 必须申报并走 case-level recusal，由已完成
+校准的替补接手。与项目负责人的合著或机构隶属关系是披露项而非取消项，按预注册第 13 节
+的预冻结聚合模板在最终报告披露。替补专家在承担任何 assignment 前必须完成同一指南 SHA
+的校准；每位专家的 calibration completion record 必须记录每 unit 实际用时，作为预注册
+第 7.1 节工作量计时试点的输入。时间承诺与报酬/致谢安排记录于 registry 私有字段。
+
+校准集在上述 completion 之前还必须完成独立的 `DerivativeScreeningReleaseV3`。两位自然人 reviewer
+各自只使用 assignment 绑定的 exact、非空 case source-record subset，独立给出 `NOT`、`VACANCY`、
+`INTERCALATION`、`NON_STOICHIOMETRIC` 或 `ORDERED_DEFECT`；两份 raw class 不一致时且仅此时，
+由第三位 distinct natural-person adjudicator 裁决。每个 case 必须恰有 assignment、两份 raw review
+和一份 final judgment。校准资格要求两份 raw 与 final 全部为 `NOT`；任一 raw derivative finding
+即使被 adjudication 改为 `NOT` 仍须排除。原始 review 不删除、不覆盖。该过程是有限来源证据上的
+人工风险筛查，不是自动材料真值、结构变换真值、实验或 DFT 结论。候选资格链使用 sibling 值
+`NOT_A_DERIVATIVE`，与本节校准 taxonomy 不得直接互换。
+
+校准与候选结构均须绑定 private structure release。2D 规则是唯一 vacuum axis、source gap
+`>=8 Å`、15 Å canonical padding、layer-group `symprec=[0.05,0.10] Å`；3D 使用
+`[0.01,0.05,0.10] Å` 并图。anonymous matching 是带 2D/3D ratio bounds 的双向保守 OR。
+其 zero-cross-owner 结论只是冻结算法/runtime 下的泄漏 Gate，不证明晶体学或物理独立；多孔 cell、
+disordered occupancy、阈值 bridging、supercell false positive 与未识别 derivative 均是保留局限。
+所有时序由本地 UTC/monotonic clock 重放，`external_timestamp_attestation=false`。
 
 `FormalPilotAgreementReleaseV1` 的 `V1` 是 agreement release 自身的 schema 版本；它强制
 native `ReviewerManifestV2`/`PrivateIdentityMapV2`，不以 `FinalGoldReleaseV2`、旧 V1 bridge
@@ -349,13 +392,19 @@ original ordinal distance；95% percentile CI 按 `LeakageComponentReleaseV3 com
 
 - 可公开 Schema、verifier、算法、字段说明和合成示例；这些是 protocol，不是活跃研究实例的发布授权；
 - 活跃 `ReviewerManifestV2`、`PrivateIdentityMapV2`、assignment/COI、raw labels、未发布 Gold、
-  裁决前 Agreement 实例和 metadata preimage 必须分离、最小权限 custody，不进入 GitHub；
+  裁决前 Agreement 实例、raw structure bytes/private URI、structure member/union instances、
+  derivative roster/assignment/raw review/adjudication/rationale 和 metadata preimage 必须分离、
+  最小权限 custody，不进入 GitHub；
 - 不把受限 abstract、正文、PDF 或私有 blinding map 复制到公开 rationale；
 - 不上传 packet 到第三方模型/云服务；
 - 不把 pseudonymous expert ID 与公开身份在 benchmark 文件内关联；
 - 发现 license/provenance/hash 漂移立即停止；
 - 发现指南无法覆盖的新冲突先标记，不私自改规则；
 - novelty、专利、合成成功率和“已发现新材料”均不在本任务范围。
+- 不把 annotation HMAC key、review signature、key commitment、私有 identity evidence 或 raw
+  reviewer payload 放入公开结果；公开面只能使用经授权的 aggregate projection/ref，并保留
+  `external_authority_identity_attestation=NOT_PROVIDED`、
+  `external_key_custody_attestation=NOT_PROVIDED` 和 external publication permission=false。
 
 ## 15. 提交前检查
 

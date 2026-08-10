@@ -15,6 +15,13 @@ from material_agent.research.flatband_analysis import (
     FormalPilotAgreementGateReleaseV1,
     FormalPilotAgreementReleaseV1,
 )
+from material_agent.research.flatband_analysis_v2 import AnalysisInputReleaseV2
+from material_agent.research.flatband_arm_runtime import (
+    ArmExecutionTraceV1,
+    ModelNativeReasoningReceiptV1,
+    ModelNativeReasoningResponseV1,
+    ModelNativeReasoningWorkItemV1,
+)
 from material_agent.research.flatband_blinding import (
     EvidenceExcerptV2,
     PostLabelOriginGuessV1,
@@ -34,6 +41,9 @@ from material_agent.research.flatband_contracts import (
     FlatBandBenchmarkCaseV1,
     HypothesisPacketV1,
     RawExpertAnnotationV1,
+)
+from material_agent.research.flatband_derivative_screening import (
+    DerivativeScreeningReleaseV3,
 )
 from material_agent.research.flatband_execution import (
     BudgetManifestV2,
@@ -57,6 +67,28 @@ from material_agent.research.flatband_gold import (
     FinalGoldReleaseV2,
     RawDuplicatePartitionV2,
 )
+from material_agent.research.flatband_ingress import (
+    SourceCatalogCheckpointReleaseV1,
+)
+from material_agent.research.flatband_lifecycle import (
+    ClaimSupportReleaseV1,
+    DevelopmentFusionGateReleaseV1,
+    DevelopmentPromotionReleaseV1,
+    FusionConfigurationReleaseV1,
+    LockedAnnotationUnsealReleaseV1,
+    LockedLabelSealV1,
+    LockedTestAuthorizationReleaseV1,
+    LockedUnsealLedgerReleaseV1,
+    ProtocolDeviationReleaseV1,
+    PublicBenchmarkProjectionV1,
+    PublicBenchmarkResultReleaseV1,
+    PublicReleaseAuthorizationV1,
+    ReleaseAuthorityPolicyV1,
+    ReleaseControlAttestationV1,
+    ScientificReviewReleaseV1,
+    ScientificReviewerAttestationV1,
+    ScientificReviewerIdentityAttestationV1,
+)
 from material_agent.research.flatband_leakage import (
     LeakageComponentReleaseV3,
     LeakageRoundClosureContextV3,
@@ -67,6 +99,42 @@ from material_agent.research.flatband_leakage import (
 )
 from material_agent.research.flatband_source_policy import (
     CaseSourcePolicyAttestationV2,
+)
+from material_agent.research.flatband_structure_grouping import (
+    StructureGroupingPrivateEvidenceReleaseV2,
+    StructureGroupingUnionReplayReleaseV2,
+)
+from material_agent.research.flatband_workflow import PilotRoundArtifactsV3
+from material_agent.research.flatband_main import (
+    MainCapacityPolicyV1,
+    MainCandidatePoolReleaseV1,
+    MainEligibilityReleaseV1,
+    MainFrozenCaseReleaseV1,
+    MainPhaseAuthorizationReleaseV1,
+    MainPreBudgetClosureReleaseV1,
+    MainSamplingPolicyReleaseV1,
+    MainStructureUnionReleaseV1,
+    MainStructureUnionVerifierAttestationV1,
+)
+from material_agent.research.flatband_main_execution import (
+    MainPhaseExecutionReleaseV1,
+)
+from material_agent.research.flatband_main_gold import (
+    MainDuplicateAdjudicationV1,
+    MainExpertAssignmentV1,
+    MainFinalDuplicatePartitionV1,
+    MainGoldFormalVerifierAttestationV1,
+    MainGoldReleaseV1,
+    MainLabelAdjudicationV1,
+    MainPrivateIdentityMapV1,
+    MainRawDuplicatePartitionV1,
+    MainRawLabelV1,
+    MainReviewerManifestV1,
+)
+from material_agent.research.flatband_campaign import (
+    FlatBandCampaignReleaseV1,
+    LocalSensitivityNotRunReleaseV1,
+    LockedExecutionPlanV1,
 )
 
 
@@ -82,6 +150,11 @@ PUBLIC_PROTOCOL_ROOTS: tuple[type[BaseModel], ...] = (
     ResearchRankingV1,
     Top5ProjectionV1,
     FormalPilotAgreementGateReleaseV1,
+    SourceCatalogCheckpointReleaseV1,
+    MainCapacityPolicyV1,
+    MainSamplingPolicyReleaseV1,
+    PublicBenchmarkProjectionV1,
+    PublicBenchmarkResultReleaseV1,
 )
 
 PRIVATE_CUSTODY_ROOTS: tuple[type[BaseModel], ...] = (
@@ -94,11 +167,14 @@ PRIVATE_CUSTODY_ROOTS: tuple[type[BaseModel], ...] = (
     LeakageRoundClosureContextV3,
     CandidatePoolReleaseV3,
     CandidateEligibilityAssignmentReleaseV3,
+    DerivativeScreeningReleaseV3,
     PreRunEligibilityReleaseV3,
     FrozenCaseReleaseV3,
     PilotPreBudgetClosureReleaseV3,
     HypothesisPacketV1,
     SourceReceiptBundleV1,
+    StructureGroupingPrivateEvidenceReleaseV2,
+    StructureGroupingUnionReplayReleaseV2,
     TerminalRunResultV1,
     ExecutionReleaseV3,
     EvidenceExcerptV2,
@@ -113,6 +189,48 @@ PRIVATE_CUSTODY_ROOTS: tuple[type[BaseModel], ...] = (
     FinalExpertJudgmentV2,
     FinalGoldReleaseV2,
     FormalPilotAgreementReleaseV1,
+    PilotRoundArtifactsV3,
+    MainCandidatePoolReleaseV1,
+    MainEligibilityReleaseV1,
+    MainFrozenCaseReleaseV1,
+    MainStructureUnionVerifierAttestationV1,
+    MainStructureUnionReleaseV1,
+    MainPreBudgetClosureReleaseV1,
+    MainPhaseAuthorizationReleaseV1,
+    MainPhaseExecutionReleaseV1,
+    MainExpertAssignmentV1,
+    MainReviewerManifestV1,
+    MainPrivateIdentityMapV1,
+    MainRawLabelV1,
+    MainLabelAdjudicationV1,
+    MainRawDuplicatePartitionV1,
+    MainDuplicateAdjudicationV1,
+    MainFinalDuplicatePartitionV1,
+    MainGoldReleaseV1,
+    MainGoldFormalVerifierAttestationV1,
+    AnalysisInputReleaseV2,
+    ModelNativeReasoningWorkItemV1,
+    ModelNativeReasoningResponseV1,
+    ModelNativeReasoningReceiptV1,
+    ArmExecutionTraceV1,
+    DevelopmentPromotionReleaseV1,
+    FusionConfigurationReleaseV1,
+    DevelopmentFusionGateReleaseV1,
+    LockedLabelSealV1,
+    LockedTestAuthorizationReleaseV1,
+    LockedUnsealLedgerReleaseV1,
+    LockedAnnotationUnsealReleaseV1,
+    ProtocolDeviationReleaseV1,
+    ClaimSupportReleaseV1,
+    ReleaseAuthorityPolicyV1,
+    ScientificReviewerIdentityAttestationV1,
+    ScientificReviewerAttestationV1,
+    ScientificReviewReleaseV1,
+    ReleaseControlAttestationV1,
+    PublicReleaseAuthorizationV1,
+    LocalSensitivityNotRunReleaseV1,
+    LockedExecutionPlanV1,
+    FlatBandCampaignReleaseV1,
 )
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
@@ -138,9 +256,9 @@ class BundleSpec:
 BUNDLE_SPECS = (
     BundleSpec(
         audience="PUBLIC_PROTOCOL",
-        schema_version="flatband-research-public-protocol-bundle-v1",
+        schema_version="flatband-research-public-protocol-bundle-v2",
         schema_id=(
-            "urn:materials-screening-agent:flatband-research-public-protocol:v1"
+            "urn:materials-screening-agent:flatband-research-public-protocol:v2"
         ),
         instance_release_policy=(
             "PUBLIC_INSTANCES_REQUIRE_PHASE_APPROPRIATE_RELEASE_AUTHORIZATION"
@@ -150,9 +268,9 @@ BUNDLE_SPECS = (
     ),
     BundleSpec(
         audience="PRIVATE_CUSTODY",
-        schema_version="flatband-research-private-custody-bundle-v1",
+        schema_version="flatband-research-private-custody-bundle-v3",
         schema_id=(
-            "urn:materials-screening-agent:flatband-research-private-custody:v1"
+            "urn:materials-screening-agent:flatband-research-private-custody:v3"
         ),
         instance_release_policy=(
             "SCHEMA_DEFINITION_MAY_BE_PUBLIC;PRIVATE_INSTANCES_MUST_NOT_BE_PUBLISHED"
@@ -187,6 +305,11 @@ def generated_bytes(spec: BundleSpec) -> bytes:
         "schema_version": spec.schema_version,
         "audience": spec.audience,
         "protocol_readiness": "PILOT_NO_GO",
+        "contract_implementation_status": "FULL_FLOW_CONTRACT_IMPLEMENTED",
+        "real_execution_status": "NOT_RUN",
+        "semantic_reasoning_policy": (
+            "MODEL_NATIVE_ONLY_LOCAL_SEMANTIC_MODEL_PROHIBITED"
+        ),
         "instance_release_policy": spec.instance_release_policy,
         "root_set_policy": "EXPLICIT_DISJOINT_ALLOWLIST_FAIL_CLOSED",
         "root_allowlist": root_names,

@@ -13,7 +13,7 @@
 > [Agent 04 计划](subagents/material-screening-agent04-plan.md)中明确记录的状态更新。当前可运行能力以 README、源码、配置和测试为准。
 > 只有这些仓库文档明确确认完成的事项才标为 `[x]`；无法确认的事项保持 `[ ]`。
 
-状态基准日期：2026-08-09
+状态基准日期：2026-08-10
 
 ### 当前科研轨道：平带/窄带灵感生成 Benchmark
 
@@ -25,11 +25,12 @@
 
 当前研究范围只包含 flat/narrow-band inspiration，不评估 novelty。现有 Crossref run、
 synthetic evaluation fixture、专家审查 Schema 和 semantic provider contract 都是工程证据，
-不能替代真实专家金标。首个语义实验使用大模型对受限 metadata packet 进行本地结构化
-推理，不引入外部 embedding API；多源检索必须服从与 B0 相同的八次物理请求预算。
+不能替代真实专家金标。正式语义实验只允许大模型原生 reasoning work/response/receipt
+链；本地代码只做 schema、哈希、parser、exact replay 与统计，不运行本地语义模型，也不
+引入外部 embedding API。多源检索必须服从与 B0 相同的八次物理请求预算。
 
-当前正在冻结独立的 `src/material_agent/research/` 科研契约、`aNDCG@5` 指标、泄漏组
-bootstrap/randomization 统计、预注册和标注手册。Pilot 的 ordinal Krippendorff alpha
+当前工作树已实现独立的 `src/material_agent/research/` 科研契约、`aNDCG@5` 指标、泄漏组
+bootstrap/randomization 统计、预注册和标注手册；真实实例仍未运行。Pilot 的 ordinal Krippendorff alpha
 必须达到 0.80；`[0.667, 0.80)` 只允许修改手册并在完全不重叠的 30-case R2 复测，低于
 0.667 或 R2 未达 0.80 即停止扩展。专家身份、指南、split、模型和 prompt 的哈希闭合前
 不得启动正式标注。
@@ -56,8 +57,8 @@ Pilot GO 且冻结对象形成新内容哈希后，下一节点才是 30-case Pi
 重放的 leakage group、正式 Pilot agreement input、专家真实独立性/校准集不重叠、
 receipt-to-evidence provenance、campaign prerequisite 和由 Execution/Gold 唯一派生的
 AnalysisInputRelease。完成并重新生成内容哈希、通过独立红队之前，禁止启动网络、模型或专家
-Pilot。该 generator drift 已由 2026-08-10 audience-split V3 draft bundle 替代；当前状态以下方
-`PILOT_STRUCTURE_LEAKAGE_CLOSURE` checkpoint 为准。
+Pilot。该 generator drift 已由 2026-08-10 audience-split bundles 替代；当前状态以下方
+`FULL_FLOW_CONTRACT_IMPLEMENTED` checkpoint 为准。
 
 2026-08-09 的 leakage V2 合并审计发现新的设计反例：若把只有十个枚举值的宽泛
 `MechanismFamily` 本身作为 connected-component 连边，则全 Main universe 理论上最多只有十个
@@ -70,43 +71,57 @@ case 自报唯一 mechanism group，因为两者都会制造虚假的独立样�
 
 ### 2026-08-10 科研 Gate checkpoint
 
-- **已验收的顺序节点：** GitHub Draft PR #4 仍为 open/draft/mergeable；已推送
-  head `9b2beffc13a778a77d7b133d562cb89e5e205ba0` 的离线 Gate 与 GitGuardian
-  均为绿色。该远端证据只覆盖已推送 head，不覆盖当前本地科研改动。开源数据源正式审计
-  已冻结 20 个唯一来源（12 `INCLUDE`、5 `CONDITIONAL`、3 `EXCLUDE`），catalog 与
-  row schema 均有独立 SHA-256 sidecar；row schema 只接受本目录声明的标准 SPDX
-  表达式或显式 `LicenseRef-*`，未知许可继续 fail closed。
-- **当前 active Gate：** `PILOT_STRUCTURE_LEAKAGE_CLOSURE`；canonical action
-  `iterate`。结构近重复决定 bootstrap/randomization 的独立单位，因此它是科研有效性
-  Gate，而不是可推迟的工程优化。
-- **当前本地实现证据：** 计划提交树在排除尚未接入结构证据的顶层 Pilot 草案后，完整
-  离线 Gate 为 `1291 passed, 15 skipped, 365 warnings`，耗时 `2605.24 s`
-  （wall `2607.71 s`，峰值 RSS `636878848 B`）。跳过项仅为显式 opt-in live、真实 ML、
-  隔离 MCP/stdio 与非 Linux `/proc` 条件。audience-split Schema generator、contract
-  bundle、`pip check`、全仓 `py_compile` 和 diff check 均通过。该证据只说明实现检查点
-  自洽；未运行网络、真实模型、真实 30-case Pilot 或专家标注，不构成科研性能证据或
-  Pilot GO。
-- **CI 执行边界：** Draft PR head `e0a9f6b` 的首次远端 Gate 没有出现断言失败，但单一
-  pytest step 在 `22%` 处触发 60 分钟硬超时，后置步骤因此未执行。普通/生产 suite 与
-  平带科研合同现按用途拆分：前者本地为 `1008 passed, 15 skipped`（`112.31 s`）；后者
-  283 个测试节点按 analysis、blinding/gold、cases/experts、execution、
-  leakage/contracts/structure 五个互斥分片并行运行。分片只改变 CI 调度，不删除断言；
-  远端新 head 全部通过前，Draft PR 继续视为 `UNSTABLE`。
-- **已闭合的设计反例：** final case/hash 包含结构分组结果会形成输入输出循环；
-  release-local structure group ID 不能证明 calibration、R1、R2 之间无近重复。
-  二维真空厚度、全局平移和数值微扰对 3D space-group/StructureMatcher 的影响，
-  以及 `symprec=0.001 Å` 对约 `0.002 Å` 合成扰动的敏感性，目前只是本地
-  exploratory smoke 观察；在固定 runner 与攻击 fixture 落盘前不作为已证实科研结果。
-- **当前修复边界：** 私有原始结构字节必须经固定 parser 重放为 normalized payload；
-  2D 要求唯一真空轴、layer-group、真空与原点平移不变签名，3D 使用预注册多阈值的
-  保守并图；pre-group slot/candidate identity 必须排除 final case/group identity；
-  calibration、当前 round 与 prior round 必须合并原始 normalized payload 重新验证。
-- **下一可执行动作：** 当前原始 CIF/POSCAR/PYMATGEN_JSON 封存、解析重放和维度证据已有
-  本地正例/攻击测试；下一步实现仍保持 fail-closed 的 structure compute/finalize、二维
-  layer-group/三维多阈值并图和跨 round union，再把 private release exact-bind 到
-  CandidatePoolV3、Calibration、PreBudget、Execution 和 Pilot 顶层 closure；随后
-  才同步预注册、标注手册与 public/private schemas。新的结构 Gate、R1/R2 Gate 和完整
-  V3 红队通过前，不构建真实 30-case、不调用网络/模型，也不读取专家标签。
+- **当前 active checkpoint：** `FULL_FLOW_CONTRACT_IMPLEMENTED`；canonical action 仍为
+  `iterate`，机器可读科研状态保持 `PILOT_NO_GO`。这里的“全流程”只指类型化合同、内容
+  寻址、custody、时序和 exact replay 已实现，不表示真实 Pilot/Main 已运行或科研 Gate
+  已通过。当前不把性能或 benchmark 耗时作为实现阻断。
+- **来源、Pilot 与结构闭包：** 20-row source catalog、source-role policy、raw structure
+  parse/normalize、2D/3D conservative grouping、CandidatePool/Calibration/PreBudget 全池
+  raw-union、derivative screening、R1/R2 agreement 与 execution provenance 已正式接线。
+  release-local group ID、fully-readdressed output、foreign source role、selected-only universe、
+  replacement omission、runtime/clock drift 等攻击均 fail closed。结构方法的 128-site、6-species、
+  8 Å vacuum 与 bounded-supercell 适用域仍是预注册限制，不能外推为一般材料覆盖。
+- **Main120 与模型原生 Arm：** 已实现 60 development / 30 locked IID / 30 locked OOD 的
+  sampling、candidate、双审 eligibility、freeze、PreBudget 与五阶段授权。B0、E1、E2-A、
+  E2-B、E3、Fusion 只接受可见的模型原生 work/response/receipt；`E1-local` 固定为
+  `NOT_RUN_USER_PROHIBITED`，零 execution/output/local invocation，禁止 promotion 和 locked。
+  locked component 的 240 cells 仅是 derivation preimage，不进入 Gold/Analysis denominator。
+- **Execution、Gold 与 Analysis：** 七份 formal execution、FAILED cell 的五个
+  `SYSTEM_PACKET_INVALID/RUN_FAILED` 零位、双 reviewer + distinct adjudicator 的签名 raw
+  label/duplicate partition/adjudication、Gold exact replay、Analysis V2、component→case 两层
+  bootstrap、randomization、Holm、development promotion/Fusion Gate 和固定五个 locked
+  hypotheses 已闭合。所有人工 payload 使用内部预承诺 HMAC；临时 key 只作为 formal replay
+  参数，不能进入 artifact。
+- **Locked 与 release-control：** 已实现 frozen locked plan、authorization、derivation/parent
+  execution、revision-0→revision-1 one-shot ledger、unseal、解封后人工 Gold、claim support、
+  两位独立科研 reviewer 的签名 decision，以及 license/privacy/custody control。执行与 receipts
+  必须早于 unseal，raw labels、raw duplicate partitions 和两类 adjudication 必须严格晚于
+  unseal。公开结果只包含 allowlisted aggregate projection，不嵌签名、commitment、私有身份
+  preimage、raw payload 或 key material。
+- **合同身份：** public protocol bundle v2 含 16 个 active roots，SHA-256
+  `380303adda9cab0929f8fc90ab3b59e5ce9975e3af05c83684bf9997699c184e`；private custody
+  bundle v3 含 73 个 active roots，SHA-256
+  `4581db7cb6aa7ae1cd82ade26110d72a5d0732c8e0f8e06a59cb8cca406bf781`。
+  generator `--check`、五份科研文档与两份 schema sidecar、Source Audit 机器常量均一致。
+- **当前正确性证据：** 完整合成 Campaign smoke 真实调用公开 assembler、其内部 exact replay
+  并再次显式 exact replay，结果为 `1 passed`；覆盖 7 execution、3 组 signed Gold/verifier、
+  3 组 Analysis/attestation、FAILED denominator、typed registry join、locked lifecycle、HMAC
+  review/control 和 public result。独立定向门还包括 Campaign/Lifecycle/MainGold `42 passed`、
+  artifact-store/ingress/runtime/workflow `23 passed`、contract/ingress `16 passed`。这些只证明
+  合同链可构造和 fail closed；合成 Main/Pilot 的深层科学 fixture seam 已在测试中显式标注。
+- **诚实边界与下一动作：** 本 checkpoint 没有调用网络、真实模型、本地语义模型、真实
+  30-case Pilot、Main120、专家标注或 benchmark，也没有生成真实 benchmark 分数、材料候选、novelty、DFT
+  或科学发现。外部 provider execution、自然人/机构身份、key custody、全局 unseal CAS 和
+  publication permission 均为 `NOT_PROVIDED`/false；Main structure union 的真实科学输出也未
+  执行。只有用户另行授权并提供真实私有输入后，才实例化并运行该合同链；在此之前不得把
+  合成测试或 schema 通过描述成 Pilot/scientific GO。
+- **2026-08-10 用户评审采纳：** `READINESS_REVIEW.md` 要求的第 1 步用户人工评审已完成
+  （AI 代行分析、用户批准采纳），修订写入预注册 v0.5、标注指南 v0.6 与实验 PLAN：专家
+  工作量预算与校准计时试点及冻结缩减序、Fusion 组合算子按 `2^3` 子集冻结、COI 操作化与
+  替补校准前置、`min_k |E(k)-E_F|` 与单带 `W` 操作定义、companion alpha 与 `(0,0)` 占比
+  预声明、OOD holdout 约束感知回退序、R2 后唯一一次 binary-gain 降级模式、专家公开描述
+  模板。该评审不是独立红队或外部 authority 证据；`PILOT_NO_GO` 与真实 custody blocker
+  不变，修订稿需重走独立红队。
 
 public production 仍为 NO-GO：queued production 与 worker lifecycle 已激活，但 parent
 worker 被 hard-kill 后独立 action child 的清理/回收契约仍未闭合；真实 provider 全链、

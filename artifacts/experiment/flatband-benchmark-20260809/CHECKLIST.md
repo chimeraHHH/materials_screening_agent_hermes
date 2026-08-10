@@ -22,6 +22,7 @@ Novelty is outside scope.
 ## Preregistration and annotation
 
 - [x] Complete independent preregistration/annotation/contract red-team and record Pilot NO-GO blockers
+- [x] Complete the user manual review of definitions, workload, alpha thresholds, E2 selection, OOD meaning, guardrails, and COI (AI-assisted review adopted by the user, 2026-08-10); adopt the preregistration v0.5 / annotation-guide v0.6 / plan revisions
 - [ ] Close and freeze case, reviewer-safe packet, judgment, evidence, bridge, candidate, execution-matrix, blinding, run-ledger, final-gold, duplicate-release, expert-registry, and adjudication schemas
 - [ ] Freeze annotation manual with positive, negative, borderline, and conflict examples
 - [ ] Freeze primary/secondary metrics, paired tests, multiplicity correction, missing-data policy, and stop rules

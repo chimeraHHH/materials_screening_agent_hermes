@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from material_agent.research.flatband_contracts import RawExpertAnnotationV1
+from material_agent.research.flatband_ingress import SOURCE_AUDIT_V1_SHA256
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
@@ -29,13 +30,13 @@ LEGACY_EXPECTED_SHA256 = (
 PUBLIC_SCHEMA_PATH = ARTIFACT_DIRECTORY / "research_public_protocol.schema.json"
 PUBLIC_HASH_PATH = PUBLIC_SCHEMA_PATH.with_suffix(".sha256")
 PUBLIC_EXPECTED_SHA256 = (
-    "89023a4d07531b598a563e78b0c2b225876981ca9e1d5aea884a493f6aa7be81"
+    "380303adda9cab0929f8fc90ab3b59e5ce9975e3af05c83684bf9997699c184e"
 )
 
 PRIVATE_SCHEMA_PATH = ARTIFACT_DIRECTORY / "research_private_custody.schema.json"
 PRIVATE_HASH_PATH = PRIVATE_SCHEMA_PATH.with_suffix(".sha256")
 PRIVATE_EXPECTED_SHA256 = (
-    "97e95c079c82d41afda7cc5deca1229406dc69387a896da6a9c6686c312b194c"
+    "4581db7cb6aa7ae1cd82ade26110d72a5d0732c8e0f8e06a59cb8cca406bf781"
 )
 
 PUBLIC_PROTOCOL_ROOT_NAMES = {
@@ -45,16 +46,27 @@ PUBLIC_PROTOCOL_ROOT_NAMES = {
     "ExecutionMatrixV2",
     "FormalPilotAgreementGateReleaseV1",
     "LeakageComponentReleaseV3",
+    "MainCapacityPolicyV1",
+    "MainSamplingPolicyReleaseV1",
     "MechanismLineageAssignmentV3",
     "MechanismLineageRegistryV3",
+    "PublicBenchmarkProjectionV1",
+    "PublicBenchmarkResultReleaseV1",
     "PublicExpertIdentityReleaseV2",
     "ResearchRankingV1",
+    "SourceCatalogCheckpointReleaseV1",
     "Top5ProjectionV1",
 }
 PRIVATE_CUSTODY_ROOT_NAMES = {
+    "AnalysisInputReleaseV2",
+    "ArmExecutionTraceV1",
     "CalibrationSetManifestV2",
     "CandidateEligibilityAssignmentReleaseV3",
     "CandidatePoolReleaseV3",
+    "ClaimSupportReleaseV1",
+    "DerivativeScreeningReleaseV3",
+    "DevelopmentFusionGateReleaseV1",
+    "DevelopmentPromotionReleaseV1",
     "DuplicatePartitionAdjudicationV2",
     "EvidenceExcerptV2",
     "ExecutionReleaseV3",
@@ -64,21 +76,60 @@ PRIVATE_CUSTODY_ROOT_NAMES = {
     "FinalExpertJudgmentV2",
     "FinalGoldReleaseV2",
     "FlatBandBenchmarkCaseV1",
+    "FlatBandCampaignReleaseV1",
     "FormalPilotAgreementReleaseV1",
     "FrozenCaseReleaseV3",
+    "FusionConfigurationReleaseV1",
     "HypothesisPacketV1",
     "LeakageRoundClosureContextV3",
+    "LocalSensitivityNotRunReleaseV1",
+    "LockedAnnotationUnsealReleaseV1",
+    "LockedExecutionPlanV1",
+    "LockedLabelSealV1",
+    "LockedTestAuthorizationReleaseV1",
+    "LockedUnsealLedgerReleaseV1",
+    "MainCandidatePoolReleaseV1",
+    "MainDuplicateAdjudicationV1",
+    "MainEligibilityReleaseV1",
+    "MainExpertAssignmentV1",
+    "MainFinalDuplicatePartitionV1",
+    "MainFrozenCaseReleaseV1",
+    "MainGoldFormalVerifierAttestationV1",
+    "MainGoldReleaseV1",
+    "MainLabelAdjudicationV1",
+    "MainPhaseAuthorizationReleaseV1",
+    "MainPhaseExecutionReleaseV1",
+    "MainPreBudgetClosureReleaseV1",
+    "MainPrivateIdentityMapV1",
+    "MainRawDuplicatePartitionV1",
+    "MainRawLabelV1",
+    "MainReviewerManifestV1",
+    "MainStructureUnionReleaseV1",
+    "MainStructureUnionVerifierAttestationV1",
     "MechanismLineageAssignmentCurationReleaseV3",
     "MechanismLineageCurationReleaseV3",
+    "ModelNativeReasoningReceiptV1",
+    "ModelNativeReasoningResponseV1",
+    "ModelNativeReasoningWorkItemV1",
     "PilotPreBudgetClosureReleaseV3",
+    "PilotRoundArtifactsV3",
     "PostLabelOriginGuessV1",
     "PreRunEligibilityReleaseV3",
     "PrivateExpertIdentityCustodianAttestationV2",
     "PrivateIdentityMapV2",
+    "ProtocolDeviationReleaseV1",
+    "PublicReleaseAuthorizationV1",
     "RawDuplicatePartitionV2",
     "RawExpertAnnotationV1",
+    "ReleaseAuthorityPolicyV1",
+    "ReleaseControlAttestationV1",
     "ReviewerManifestV2",
+    "ScientificReviewReleaseV1",
+    "ScientificReviewerAttestationV1",
+    "ScientificReviewerIdentityAttestationV1",
     "SourceReceiptBundleV1",
+    "StructureGroupingPrivateEvidenceReleaseV2",
+    "StructureGroupingUnionReplayReleaseV2",
     "TerminalRunResultV1",
 }
 LEGACY_ROOT_NAMES = {
@@ -117,14 +168,28 @@ RETIRED_LEGACY_ROOT_NAMES = {
     "SystemRankingV1",
 }
 
-PENDING_NO_GO_ROOT_NAMES = {
+NON_ACTIVE_ROOT_NAMES = {
     "AnalysisInputReleaseV1",
+    "LocalModelInvocationReceiptV1",
+    "PrivateArtifactEnvelopeV1",
     "StructureGroupingComputationReleaseV2",
     "StructureGroupingInputManifestV2",
-    "StructureGroupingPrivateEvidenceReleaseV2",
 }
+PRIVATE_NESTED_ONLY_ROOT_NAMES = {
+    "AnalysisCellEvidenceV2",
+    "CaseArmMetricRowV2",
+    "LocalModelInvocationReceiptV1",
+    "MainPhaseExecutionCellEvidenceV1",
+    "MainReviewUnitV1",
+    "StructureGroupingComputationReleaseV2",
+    "StructureGroupingInputManifestV2",
+}
+PRIVATE_REQUIRED_NESTED_LEGACY_ROOT_NAMES = {"ExecutionReleaseV2"}
 
 PUBLIC_FORBIDDEN_PROPERTIES = {
+    "annotation_key_commitment_sha256",
+    "annotation_key_material_included",
+    "annotation_signature_hmac_sha256",
     "blinded_reviewer_id",
     "commitment_key_id",
     "confirmation_reference",
@@ -135,30 +200,70 @@ PUBLIC_FORBIDDEN_PROPERTIES = {
     "excerpt",
     "identity_evidence_artifact_uri",
     "identity_evidence_sha256",
+    "identity_evidence_uri",
+    "independence_review",
+    "key_material_included",
     "natural_person_commitment_sha256",
     "opaque_natural_person_subject_ref",
+    "opaque_natural_person_ref",
+    "private_artifact_uri",
+    "private_identity_evidence_included",
+    "private_identity_evidence_sha256",
     "private_identity_map_id",
     "private_identity_map_sha256",
     "private_text_artifact_uri",
     "private_text_artifact_uri_sha256",
     "qualification_summary",
+    "raw_bytes_base64",
+    "raw_labels",
+    "raw_reviews",
+    "adjudications",
+    "release_control_attestations",
     "rationale",
+    "review_signature_hmac_sha256",
+    "reviewer_decision_key_commitment_sha256",
+    "reviewer_decision_key_material_included",
+    "signature_hmac_sha256",
     "source_span_text",
     "span_utf8",
     "value_utf8",
+    "visible_request_json_utf8",
+    "visible_response_json_utf8",
+}
+PUBLIC_SAFE_SENSITIVE_NAME_EXCEPTIONS = {
+    # These carry no raw payload, signing material, or signature value.
+    "canonical_group_key",
+    "external_key_custody_attestation",
+    "externally_trusted_signature_present",
+    "raw_one_sided_p",
+    "source_record_raw_sha256",
 }
 PRIVATE_REQUIRED_SENSITIVE_PROPERTIES = {
+    "annotation_key_commitment_sha256",
+    "annotation_signature_hmac_sha256",
     "blinded_reviewer_id",
     "conflict_assessments",
     "excerpt",
     "identity_evidence_artifact_uri",
+    "identity_evidence_uri",
+    "independence_review",
     "natural_person_commitment_sha256",
     "opaque_natural_person_subject_ref",
+    "opaque_natural_person_ref",
+    "private_artifact_uri",
+    "private_identity_evidence_sha256",
     "private_identity_map_id",
     "private_text_artifact_uri",
     "rationale",
+    "raw_bytes_base64",
+    "raw_reviews",
+    "adjudications",
+    "review_signature_hmac_sha256",
+    "signature_hmac_sha256",
     "span_utf8",
     "value_utf8",
+    "visible_request_json_utf8",
+    "visible_response_json_utf8",
 }
 
 SOURCE_CATALOG_PATH = ARTIFACT_DIRECTORY / "source_catalog.jsonl"
@@ -171,11 +276,21 @@ SOURCE_CATALOG_SCHEMA_SHA256 = (
 )
 PREREGISTRATION_PATH = ARTIFACT_DIRECTORY / "PREREGISTRATION.md"
 PREREGISTRATION_SHA256 = (
-    "847cbde880724c12ec06e70df79b2d722d2063431c9ad07ac85c9c437dfa9a23"
+    "9d45d5afb56d268f992188d063b58d3df37b492c1b752f4cbdf6ac62b62d3caf"
 )
 ANNOTATION_GUIDE_PATH = ARTIFACT_DIRECTORY / "ANNOTATION_GUIDE.md"
 ANNOTATION_GUIDE_SHA256 = (
-    "1f69b974c3f67be7e185d2ada942132a3f32c33bc8420568ae11162c327af7d5"
+    "0353da9a9a7d3963036f2dc4e1bb722e3b68b4c748dc39bf254afa33ccd76332"
+)
+SOURCE_AUDIT_PATH = ARTIFACT_DIRECTORY / "SOURCE_AUDIT.md"
+SOURCE_AUDIT_SHA256 = (
+    "5574eaa9f70e223a03991ef7f2e5942c38e1afd38898b54243fd4c66b3290660"
+)
+PLAN_PATH = ARTIFACT_DIRECTORY / "PLAN.md"
+PLAN_SHA256 = "9c63c53a23dc4b2eaa38000b6a86b848c4fa0a6060d0d7fd77c6ae400695b54b"
+READINESS_REVIEW_PATH = ARTIFACT_DIRECTORY / "READINESS_REVIEW.md"
+READINESS_REVIEW_SHA256 = (
+    "27039ed842394a05a0976dc9cff23c66c618959f62482e7dd5f8a650e353f0a8"
 )
 
 
@@ -207,6 +322,19 @@ def _schema_titles(value: Any) -> set[str]:
         for node in _walk(value)
         if isinstance(node, dict) and isinstance(node.get("title"), str)
     }
+
+
+def _root_properties(schema: dict[str, Any]) -> dict[str, Any]:
+    properties = schema.get("properties")
+    if isinstance(properties, dict):
+        return properties
+    reference = schema.get("$ref")
+    if isinstance(reference, str) and reference.startswith("#/$defs/"):
+        name = reference.removeprefix("#/$defs/")
+        resolved = schema.get("$defs", {}).get(name, {}).get("properties")
+        if isinstance(resolved, dict):
+            return resolved
+    raise AssertionError("root schema does not expose resolvable properties")
 
 
 def _assert_content_addressed(
@@ -249,11 +377,26 @@ def test_active_bundles_are_content_addressed_and_root_disjoint() -> None:
     assert public["protocol_readiness"] == private["protocol_readiness"] == (
         "PILOT_NO_GO"
     )
+    assert public["contract_implementation_status"] == (
+        private["contract_implementation_status"]
+    ) == "FULL_FLOW_CONTRACT_IMPLEMENTED"
+    assert public["real_execution_status"] == private["real_execution_status"] == (
+        "NOT_RUN"
+    )
+    assert public["semantic_reasoning_policy"] == (
+        private["semantic_reasoning_policy"]
+    ) == "MODEL_NATIVE_ONLY_LOCAL_SEMANTIC_MODEL_PROHIBITED"
     assert public["schema_version"] == (
-        "flatband-research-public-protocol-bundle-v1"
+        "flatband-research-public-protocol-bundle-v2"
+    )
+    assert public["$id"] == (
+        "urn:materials-screening-agent:flatband-research-public-protocol:v2"
     )
     assert private["schema_version"] == (
-        "flatband-research-private-custody-bundle-v1"
+        "flatband-research-private-custody-bundle-v3"
+    )
+    assert private["$id"] == (
+        "urn:materials-screening-agent:flatband-research-private-custody:v3"
     )
     assert public["instance_release_policy"] == (
         "PUBLIC_INSTANCES_REQUIRE_PHASE_APPROPRIATE_RELEASE_AUTHORIZATION"
@@ -266,6 +409,8 @@ def test_active_bundles_are_content_addressed_and_root_disjoint() -> None:
     )
     assert set(public["models"]) == PUBLIC_PROTOCOL_ROOT_NAMES
     assert set(private["models"]) == PRIVATE_CUSTODY_ROOT_NAMES
+    assert len(public["models"]) == 16
+    assert len(private["models"]) == 73
     assert set(public["root_allowlist"]) == PUBLIC_PROTOCOL_ROOT_NAMES
     assert set(private["root_allowlist"]) == PRIVATE_CUSTODY_ROOT_NAMES
     assert public["root_allowlist"] == sorted(PUBLIC_PROTOCOL_ROOT_NAMES)
@@ -285,7 +430,16 @@ def test_public_bundle_excludes_sensitive_fields_private_roots_and_legacy() -> N
     assert not (PUBLIC_FORBIDDEN_PROPERTIES & public_properties)
     assert PRIVATE_CUSTODY_ROOT_NAMES.isdisjoint(public_titles)
     assert RETIRED_LEGACY_ROOT_NAMES.isdisjoint(public_titles)
-    assert PENDING_NO_GO_ROOT_NAMES.isdisjoint(public_titles)
+    assert NON_ACTIVE_ROOT_NAMES.isdisjoint(public_titles)
+    sensitive_looking_names = {
+        name
+        for name in public_properties
+        if any(
+            fragment in name.casefold()
+            for fragment in ("private", "signature", "key", "raw", "hmac")
+        )
+    }
+    assert sensitive_looking_names == PUBLIC_SAFE_SENSITIVE_NAME_EXCEPTIONS
 
 
 def test_private_bundle_carries_custody_fields_without_authorizing_release() -> None:
@@ -293,8 +447,13 @@ def test_private_bundle_carries_custody_fields_without_authorizing_release() -> 
     private_properties = _property_names(private["models"])
     private_titles = _schema_titles(private["models"])
     assert PRIVATE_REQUIRED_SENSITIVE_PROPERTIES <= private_properties
-    assert RETIRED_LEGACY_ROOT_NAMES.isdisjoint(private_titles)
-    assert PENDING_NO_GO_ROOT_NAMES.isdisjoint(private_titles)
+    assert RETIRED_LEGACY_ROOT_NAMES.isdisjoint(private["models"])
+    assert RETIRED_LEGACY_ROOT_NAMES & private_titles == (
+        PRIVATE_REQUIRED_NESTED_LEGACY_ROOT_NAMES
+    )
+    assert NON_ACTIVE_ROOT_NAMES.isdisjoint(private["models"])
+    assert PRIVATE_NESTED_ONLY_ROOT_NAMES <= private_titles
+    assert "AnalysisInputReleaseV1" not in private_titles
     reviewer_manifest = private["models"]["ReviewerManifestV2"]
     release_flag_schemas = [
         node["properties"]["public_repository_release_allowed"]
@@ -305,6 +464,32 @@ def test_private_bundle_carries_custody_fields_without_authorizing_release() -> 
     ]
     assert release_flag_schemas
     assert all(item.get("const") is False for item in release_flag_schemas)
+
+    derivative = private["models"]["DerivativeScreeningReleaseV3"]["properties"]
+    assert derivative["private_custody_required"]["const"] is True
+    assert derivative["public_release_allowed"]["const"] is False
+    assert derivative["human_screening_not_automated_truth"]["const"] is True
+    assert derivative["scientific_conclusion"]["const"] is False
+
+    for root_name in (
+        "StructureGroupingPrivateEvidenceReleaseV2",
+        "StructureGroupingUnionReplayReleaseV2",
+    ):
+        properties = private["models"][root_name]["properties"]
+        assert properties["private_custody"]["const"] is True
+        assert properties["scientific_conclusion"]["const"] is False
+
+    structure_root = private["models"]["StructureGroupingPrivateEvidenceReleaseV2"]
+    raw_artifact_schemas = [
+        node
+        for node in _walk(structure_root)
+        if isinstance(node, dict) and node.get("title") == "RawStructureArtifactV2"
+    ]
+    assert len(raw_artifact_schemas) == 1
+    raw_properties = raw_artifact_schemas[0]["properties"]
+    assert raw_properties["private_custody"]["const"] is True
+    assert raw_properties["public_release_allowed"]["const"] is False
+    assert raw_properties["scientific_conclusion"]["const"] is False
 
 
 def test_public_expert_identity_is_pseudonymous_by_contract() -> None:
@@ -318,6 +503,121 @@ def test_public_expert_identity_is_pseudonymous_by_contract() -> None:
     ]
     assert len(identity_schemas) == 1
     assert identity_schemas[0]["properties"]["pseudonymous"]["const"] is True
+    properties = public_model["properties"]
+    assert properties["externally_trusted_signature_present"]["const"] is False
+
+
+def test_public_full_flow_surface_is_aggregate_and_discloses_evidence_ceiling() -> None:
+    public_models = _load(PUBLIC_SCHEMA_PATH)["models"]
+    source_checkpoint = public_models["SourceCatalogCheckpointReleaseV1"][
+        "properties"
+    ]
+    assert source_checkpoint["source_audit_sha256"]["const"] == SOURCE_AUDIT_SHA256
+    assert source_checkpoint["public_protocol_artifact"]["const"] is True
+    assert source_checkpoint["scientific_conclusion"]["const"] is False
+
+    projection = public_models["PublicBenchmarkProjectionV1"]["properties"]
+    assert projection["aggregate_only"]["const"] is True
+    assert projection["restricted_text_included"]["const"] is False
+    assert projection["expert_identity_mapping_included"]["const"] is False
+    assert projection["scientific_conclusion"]["const"] is False
+
+    result = public_models["PublicBenchmarkResultReleaseV1"]["properties"]
+    assert result["sanitized_aggregate_only"]["const"] is True
+    assert result["novelty_claim_permitted"]["const"] is False
+    assert result["real_material_discovery_claim_permitted"]["const"] is False
+    assert result["dft_proof_claim_permitted"]["const"] is False
+    assert result["authorization_scope"]["const"] == (
+        "INTERNAL_PRECOMMITTED_HMAC_POLICY"
+    )
+    assert result["external_authority_identity_attestation"]["const"] == (
+        "NOT_PROVIDED"
+    )
+    assert result["external_key_custody_attestation"]["const"] == "NOT_PROVIDED"
+    assert result["external_publication_permission_claimed"]["const"] is False
+    assert result["scientific_conclusion"]["const"] is False
+
+
+def test_private_full_flow_roots_fail_closed_without_external_authority() -> None:
+    private_models = _load(PRIVATE_SCHEMA_PATH)["models"]
+
+    pilot_round = _root_properties(private_models["PilotRoundArtifactsV3"])
+    assert pilot_round["private_custody_required"]["const"] is True
+    assert pilot_round["public_repository_release_allowed"]["const"] is False
+    assert pilot_round["blind_key_embedded"]["const"] is False
+    assert pilot_round["hidden_reasoning_persisted"]["const"] is False
+
+    local_not_run = _root_properties(
+        private_models["LocalSensitivityNotRunReleaseV1"]
+    )
+    assert local_not_run["decision"]["const"] == "NOT_RUN_USER_PROHIBITED"
+    assert local_not_run["execution_release_count"]["const"] == 0
+    assert local_not_run["output_artifact_count"]["const"] == 0
+    assert local_not_run["local_model_invocation_count"]["const"] == 0
+    assert local_not_run["promotion_or_locked_use_allowed"]["const"] is False
+
+    main_execution = _root_properties(
+        private_models["MainPhaseExecutionReleaseV1"]
+    )
+    assert main_execution["e1_local_formal_alias_allowed"]["const"] is False
+    assert main_execution["legacy_terminal_llm_path_allowed"]["const"] is False
+    assert main_execution["local_semantic_model_allowed"]["const"] is False
+    assert main_execution["chain_of_thought_consumed"]["const"] is False
+
+    analysis = _root_properties(private_models["AnalysisInputReleaseV2"])
+    assert analysis["caller_supplied_case_metrics_allowed"]["const"] is False
+    assert analysis["local_semantic_model_used_for_analysis"]["const"] is False
+    assert analysis["chain_of_thought_consumed"]["const"] is False
+
+    campaign = _root_properties(private_models["FlatBandCampaignReleaseV1"])
+    assert campaign["private_custody_required"]["const"] is True
+    assert campaign["public_repository_release_allowed"]["const"] is False
+    assert campaign["ephemeral_key_material_embedded"]["const"] is False
+    assert campaign["local_semantic_model_campaign_path_allowed"]["const"] is False
+    assert campaign["external_execution_attestation"]["const"] == "NOT_PROVIDED"
+    assert campaign["external_expert_identity_attestation"]["const"] == (
+        "NOT_PROVIDED"
+    )
+    assert campaign["external_annotation_key_custody_attestation"]["const"] == (
+        "NOT_PROVIDED"
+    )
+    assert campaign["external_publication_permission_claimed"]["const"] is False
+    assert campaign["real_main_structure_output_executed"]["const"] is False
+    assert campaign["benchmark_performance_claimed"]["const"] is False
+    assert campaign["scientific_conclusion"]["const"] is False
+
+
+def test_private_hmac_roots_store_signatures_but_never_signing_keys() -> None:
+    private_models = _load(PRIVATE_SCHEMA_PATH)["models"]
+    signature_models = (
+        ("MainRawLabelV1", "annotation_signature_algorithm"),
+        ("MainLabelAdjudicationV1", "annotation_signature_algorithm"),
+        ("MainRawDuplicatePartitionV1", "annotation_signature_algorithm"),
+        ("MainDuplicateAdjudicationV1", "annotation_signature_algorithm"),
+        ("ScientificReviewerIdentityAttestationV1", "signature_algorithm"),
+        ("ScientificReviewerAttestationV1", "review_signature_algorithm"),
+        ("ReleaseControlAttestationV1", "signature_algorithm"),
+    )
+    for model_name, algorithm_field in signature_models:
+        properties = private_models[model_name]["properties"]
+        assert properties[algorithm_field]["const"] == "HMAC-SHA256-PRECOMMITTED"
+        key_flags = {
+            key: schema["const"]
+            for key, schema in properties.items()
+            if key.endswith("key_material_included")
+        }
+        assert key_flags
+        assert set(key_flags.values()) == {False}
+
+    gold = private_models["MainGoldReleaseV1"]["properties"]
+    assert gold["annotation_authentication_scope"]["const"] == (
+        "INTERNAL_PRECOMMITTED_HMAC_POLICY"
+    )
+    assert gold["key_material_included"]["const"] is False
+    assert gold["external_expert_identity_attestation"]["const"] == "NOT_PROVIDED"
+    assert gold["external_annotation_key_custody_attestation"]["const"] == (
+        "NOT_PROVIDED"
+    )
 
 
 def test_legacy_v0_bundle_is_immutable_and_not_an_active_output() -> None:
@@ -383,14 +683,41 @@ def test_source_catalog_identity_and_decisions_are_frozen() -> None:
     )
 
 
-def test_preregistration_and_annotation_guide_drafts_are_content_addressed() -> None:
+def test_protocol_documents_are_content_addressed() -> None:
     preregistration = PREREGISTRATION_PATH.read_bytes()
     annotation_guide = ANNOTATION_GUIDE_PATH.read_bytes()
+    source_audit = SOURCE_AUDIT_PATH.read_bytes()
+    plan = PLAN_PATH.read_bytes()
+    readiness_review = READINESS_REVIEW_PATH.read_bytes()
     assert hashlib.sha256(preregistration).hexdigest() == PREREGISTRATION_SHA256
     assert hashlib.sha256(annotation_guide).hexdigest() == ANNOTATION_GUIDE_SHA256
+    assert hashlib.sha256(source_audit).hexdigest() == SOURCE_AUDIT_SHA256
+    assert SOURCE_AUDIT_V1_SHA256 == SOURCE_AUDIT_SHA256
+    assert hashlib.sha256(plan).hexdigest() == PLAN_SHA256
+    assert hashlib.sha256(readiness_review).hexdigest() == READINESS_REVIEW_SHA256
     assert PREREGISTRATION_PATH.with_suffix(".sha256").read_text(
         encoding="utf-8"
     ) == f"{PREREGISTRATION_SHA256}  {PREREGISTRATION_PATH.name}\n"
     assert ANNOTATION_GUIDE_PATH.with_suffix(".sha256").read_text(
         encoding="utf-8"
     ) == f"{ANNOTATION_GUIDE_SHA256}  {ANNOTATION_GUIDE_PATH.name}\n"
+    assert SOURCE_AUDIT_PATH.with_suffix(".sha256").read_text(
+        encoding="utf-8"
+    ) == f"{SOURCE_AUDIT_SHA256}  {SOURCE_AUDIT_PATH.name}\n"
+    assert PLAN_PATH.with_suffix(".sha256").read_text(
+        encoding="utf-8"
+    ) == f"{PLAN_SHA256}  {PLAN_PATH.name}\n"
+    assert READINESS_REVIEW_PATH.with_suffix(".sha256").read_text(
+        encoding="utf-8"
+    ) == f"{READINESS_REVIEW_SHA256}  {READINESS_REVIEW_PATH.name}\n"
+    "key_material_included",
+    "private_identity_evidence_included",
+    "private_identity_evidence_sha256",
+    "release_control_attestations",
+    "review_signature_hmac_sha256",
+    "reviewer_decision_key_commitment_sha256",
+    "reviewer_decision_key_material_included",
+    "signature_hmac_sha256",
+    "private_identity_evidence_sha256",
+    "review_signature_hmac_sha256",
+    "signature_hmac_sha256",

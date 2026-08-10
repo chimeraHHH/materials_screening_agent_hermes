@@ -1,14 +1,23 @@
 # 平带/窄带灵感生成 Benchmark 预注册草案
 
-状态：`DRAFT / PILOT_NO_GO_PENDING_SCHEMA_FREEZE_AND_INDEPENDENT_REDTEAM`
+状态：`DRAFT / FULL_FLOW_CONTRACT_IMPLEMENTED / REAL_EXECUTION_NOT_RUN / PILOT_NO_GO`
 
-版本：v0.2，2026-08-10（Asia/Shanghai）
+版本：v0.5，2026-08-10（Asia/Shanghai）
+
+v0.5 变更：采纳 2026-08-10 用户评审（AI 代行分析、用户批准采纳）的修订——专家工作量
+预算与校准计时试点（§7.1）、Fusion 组合算子按组件子集冻结（§6）、COI 操作化与替补校准
+前置（§2/§7）、near-Fermi/带宽操作定义与 ±1.0 eV 窗口理由（§3）、companion alpha 与
+`(0,0)` 占比预声明（§8）、OOD holdout 约束感知回退序（§5.4）、R2 后唯一一次 binary-gain
+降级模式（§8）、专家公开描述模板（§13）。该评审是被用户采纳的分析证据，不构成独立红队、
+外部 authority 或专家实例证据。
 
 本文件冻结拟采用的科研问题、实验单元、标签、指标、统计检验、预算、盲法和停止规则。
-它尚未完成外部注册，也不是科研结果。当前 formal V2/V3 链只是本地候选实现；
-终稿 Schema/文档哈希与独立红队尚未闭合。在全部 Gate 通过前，不得启动 30-case Pilot、
-查看系统间性能差异或把任何输出描述为已验证材料。
-相邻 `PREREGISTRATION.sha256` 只标识本次 v0.2 draft checkpoint，不表示外部注册或
+它尚未完成外部注册，也不是科研结果。代码已经实现从 Pilot custody、Main120 冻结、模型原生
+Arm receipt、Execution、双专家 Gold、Analysis V2、development promotion、locked 单次解封，
+到内部签名审查和 sanitized public result 的 formal 全流程；这只是可重放合同能力。没有创建真实
+private Main 结构/union/人工标注/Campaign 实例，没有发起真实模型调用，也没有运行真实 benchmark。
+当前阶段不以性能或 benchmark 数值作为实现 Gate；不得把 schema、合成测试或空流程描述为材料发现、
+科学结果或 Pilot GO。相邻 `PREREGISTRATION.sha256` 只标识本次 v0.5 draft checkpoint，不表示外部注册或
 Pilot GO；后续正文改动必须生成新内容身份。
 
 ## 1. 研究问题与证据边界
@@ -30,11 +39,13 @@ development 组件选择；不是额外的锁定主假设。
 |---|---|
 | source catalog v1 | `57c24de8f0cf616205b03ef16231def711f2dfa9fcac86d94beede9c01b0bb1f` |
 | source catalog schema | `a796757159679a02146ad00f306f8bc6db2642fdd3fc51c82b25aba36936efc7` |
-| public protocol bundle | `89023a4d07531b598a563e78b0c2b225876981ca9e1d5aea884a493f6aa7be81`；`protocol_readiness=PILOT_NO_GO` |
-| private custody schema bundle | `97e95c079c82d41afda7cc5deca1229406dc69387a896da6a9c6686c312b194c`；Schema 定义可公开，私有实例不得发布 |
+| public protocol bundle v2 | 身份见 `research_public_protocol.schema.sha256`；16 个 explicit public roots，含 source-catalog checkpoint 与 aggregate result；`protocol_readiness=PILOT_NO_GO` |
+| private custody schema bundle v3 | 身份见 `research_private_custody.schema.sha256`；73 个 explicit custody roots，含完整 Pilot-round bundle；Schema 定义可公开，私有实例不得发布 |
 | legacy v0 bundle | `research_contracts.schema.json`，历史只读，不是 active formal 输出 |
 | production Inspiration V1 | 保持原冻结契约；本研究模块不得修改它 |
-| formal benchmark chain | private lineage curation → `CandidatePoolReleaseV3` → `CandidateEligibilityAssignmentReleaseV3` → `PreRunEligibilityReleaseV3` → `BenchmarkSplitManifestV2`/`LeakageComponentReleaseV3`/`ExpertStudyRegistryV2` → `FrozenCaseReleaseV3` → `PilotPreBudgetClosureReleaseV3` → `BudgetManifestV2`/`ExecutionReleaseV3` |
+| formal Pilot chain | raw private structures → structure computation/private evidence → private lineage curation → `CandidatePoolReleaseV3` → eligibility/split/freeze → fresh full-pool union → `PilotPreBudgetClosureReleaseV3` → budget/execution → expert Gold/agreement |
+| formal Main chain | Pilot Gate → sampling/candidate/eligibility/frozen/pre-budget custody → five phase authorizations → seven formal phase executions + one E1-local `NOT_RUN` closure → three Gold/verifier/Analysis releases → promotion/Fusion Gate → locked seal/plan/authorization/ledger/unseal → claim support/review/release control → sanitized result → `FlatBandCampaignReleaseV1` |
+| formal calibration chain | exact calibration cases → two-reviewer `DerivativeScreeningReleaseV3` + `StructureGroupingPrivateEvidenceReleaseV2` → `CalibrationSetManifestV2` → `ExpertStudyRegistryV2` |
 | formal expert chain | `ExpertStudyRegistryV2` + reviewer-specific `ReviewerManifestV2`/`PrivateIdentityMapV2` → sealed raw annotations → `FinalGoldReleaseV2` / pre-adjudication `FormalPilotAgreementReleaseV1` |
 
 上表的 formal 类型名表示当前唯一允许的研究路径，不表示已注册或 Pilot GO。
@@ -42,14 +53,21 @@ development 组件选择；不是额外的锁定主假设。
 
 1. 本预注册终稿和标注指南终稿；
 2. 与 Pilot/Main 均不重叠的专家校准集；
-3. 两位独立 reviewer 和一位 distinct adjudicator 的 pseudonymous registry；
+3. 两位独立 reviewer、一位 distinct adjudicator 与至少一位替补专家的 pseudonymous
+   registry，含第 7 节 COI 取消资格/披露审查、work/case-level COI map 与 recusal 政策；
+   替补在承担任何 assignment 前必须完成同一指南 SHA 的校准；
 4. Pilot R1 split manifest；如触发，另建不重叠的 Pilot R2 manifest；
 5. Main 的抽样 frame/配额、Pilot–Main 不重叠规则、`LeakageComponentReleaseV3` 独立性边政策、
    OOD taxonomy/holdout 选择算法与固定 seed；此时不冻结 Main 120 个具体 case ID；
 6. B0/E1/E2-A/E2-B/E3 的 system config、查询模板、TagGraph、代码 Git SHA；
 7. LLM provider/model/revision、tokenizer、prompt 和结构化输出 schema；
-8. 若运行本地语义模型敏感性实验，其离线 bundle、tokenizer、model card 和许可证；
-9. 每个来源的 exact API/snapshot/retrieval identity 和缓存 manifest。
+8. E1-local 只冻结一个 `NOT_RUN_USER_PROHIBITED` 授权关闭记录；本研究不加载其 bundle、
+   tokenizer 或 model card，不产生 local-model invocation/output，也不允许 promotion 或 locked 使用；
+9. 每个来源的 exact API/snapshot/retrieval identity 和缓存 manifest；
+10. structure grouping 参数、代码/依赖/native `libsymspg` identity、私有 raw artifact manifest、
+    calibration/R1/R2 full-pool member releases 与 fresh union replay；
+11. derivative screening policy、两位独立自然人 reviewer、一位 distinct adjudicator、逐 case
+    assignment、两份 raw review、必要 adjudication 与全部 `NOT` Gate。
 
 任何一项缺失均为 `NOT_STARTED`，不能用运行时“latest”、模型别名、网页当前内容或人工记忆补齐。
 
@@ -57,7 +75,28 @@ Main 的 exact 120 case IDs（development 60 / locked IID 30 / locked OOD 30）�
 通过后、任何 Main 检索或系统执行前生成并冻结。该生成只能重放 Pilot 前已冻结的
 抽样、不重叠与 OOD 政策/固定 seed；不得根据 Pilot 的系统效果、难例或标签选择个别 Main case。
 
-### 2.1 旧 V1 红队整改与当前 Pilot NO-GO 项
+### 2.1 当前 formal 全流程边界
+
+语义判断、跨领域机制映射、排序解释和证据综合只允许由冻结身份的大模型原生调用产生，并以
+`ModelNativeReasoningWorkItemV1`、`ResponseV1` 和 `ReceiptV1` 保留可见 request/response、字节数、
+token usage 与 provider identity；不存 chain of thought。本地代码只执行 schema 校验、哈希、解析、
+exact replay、固定指标和时序检查，不承担语义推理。旧 terminal LLM accounting 与本地语义模型都
+不是 formal Main 路径。
+
+七个 formal execution releases 是 development ablation、development Fusion、locked Fusion
+components、locked primary 和三个 locked Fusion-minus。locked component 的 240 个 cells 只为
+Fusion 父 Arm 提供 exact derivation preimage，`component_derivation_only=true`，不作为 Gold/Analysis
+比较 Arm，也不进入其分母。E1-local 另以零 execution/output/invocation 的内容寻址 `NOT_RUN` release
+关闭，不属于这七个 execution releases。
+
+每个成功或失败的授权 case-role 都必须保留固定 Top-5 分母。FAILED cell 没有 Arm trace、review unit
+或人工 label；Gold/Analysis 唯一派生五个 `SYSTEM_PACKET_INVALID/RUN_FAILED`、gain=0 的位置，禁止
+complete-case 删除。Main raw label、label adjudication、raw duplicate partition 与 duplicate adjudication
+以及科研 reviewer decision 使用预承诺 HMAC-SHA256 签名；密钥只作为 exact-replay 的临时输入，
+不进入 artifact。该机制只闭合仓库内部真实性；真实外部 authority 身份、外部 key custody、外部
+publication permission 和 provider execution attestation 均为 `NOT_PROVIDED`/false。
+
+### 2.2 旧 V1 红队整改与当前 Pilot NO-GO 项
 
 2026-08-09 的统计/标注/契约红队提出的旧 V1 结构缺口，已在当前本地候选链中改为：
 private definition/assignment curation 先固定细粒度 mechanism lineage；
@@ -65,7 +104,8 @@ private definition/assignment curation 先固定细粒度 mechanism lineage；
 候选、双 reviewer 资格审查与 distinct adjudicator；`PreRunEligibilityReleaseV3` 唯一派生
 active selection；`BenchmarkSplitManifestV2` 和 `LeakageComponentReleaseV3` 决定 split/component；
 `FrozenCaseReleaseV3` 绑定实际 case、专家 registry 与上游资格；
-`PilotPreBudgetClosureReleaseV3` 在任何 budget 前重放 calibration/current/prior-round 不重叠；
+`PilotPreBudgetClosureReleaseV3` 在任何 budget 前以 fresh raw-structure union 重放
+calibration/current full candidate pool，以及 R2 的 prior-R1 full candidate pool 不重叠；
 `ExecutionReleaseV3` 给出 exact `case × system × rank` 终态；
 `ReviewerManifestV2` 与 reviewer-specific `PrivateIdentityMapV2` 物理分离审阅投影和私有位置映射；
 `FinalGoldReleaseV2` 闭合 raw/adjudication/duplicate；`FormalPilotAgreementReleaseV1` 只从裁决前
@@ -85,10 +125,10 @@ bridge 不是 formal 研究路径。
    JSON Schema validation 单独不构成科研验证；
 6. 将 Pilot R1 的 30 个 `INCLUDED` case、完整 system matrix、reviewer assignment 和私有 custody
    身份全部内容寻址，且证明所有 case/source 均满足 `INCLUDE`-only 政策。
-7. 完成 structure grouping 的 compute/finalize 与跨 release 联合重放：当前仅有私有原始结构
-   解析、规范化与 2D/3D 真空轴证据；layer-group、3D 多容差并图、近重复 component、
-   final-case 投影以及 CandidatePool/Calibration/PreBudget 的 exact binding 尚未实现，因此保持
-   `PILOT_NO_GO`。
+7. formal 全流程已有本地实现和合成反例测试；但尚无真实私有结构/人工 derivative、Main Gold、
+   external authority、release-control evidence 或 Campaign 实例，也没有真实模型执行和 benchmark 结果。
+   是否开始 Pilot 需要在这些真实 custody/身份输入就绪后另作决定；当前不以性能 benchmark 作为
+   本轮合同实现的完成条件。
 
 ## 3. 目标定义
 
@@ -98,7 +138,15 @@ bridge 不是 formal 研究路径。
 - `NB300`：`0.10 < W <= 0.30 eV`；
 - `BORDER500`：`0.30 < W <= 0.50 eV`，只进入边界/误差分析；
 - `OUT_OF_SCOPE`：`W > 0.50 eV`；
-- 主 near-Fermi 条件：目标能带距 Fermi level 的绝对距离 `<= 1.0 eV`。
+- 主 near-Fermi 条件：`min_k |E(k) - E_F| <= 1.0 eV`，min 在该带所记录覆盖范围
+  （full-BZ/Wannier grid/路径）的 k 点集合上取；不得以带中心或带边平均距离替代该 min 定义。
+
+`W` 只对可唯一追踪的单条能带定义，为该带在所记录覆盖范围内的能量极差。与其他带存在
+接触点或简并的目标带不因接触改变 `W` 的定义，但隔离隙字段必须如实记录为零/负；给定
+band-tracking 方法不能唯一分辨目标带（如宽范围简并流形）时，该 case 不得进入 FB100/
+NB300 正类抽样，只能进入 BORDER500/覆盖受限分层或被排除。±1.0 eV 窗口有意宽于关联
+平带文献常用的 ±0.2--0.5 eV：它只是 case 抽样资格窗口（宽进），电子活跃性与物理相关性
+由专家在 packet 证据层判断（严判），其边界效应由 near-Fermi 距离分层报告吸收。
 
 带宽覆盖范围必须区分 full-BZ grid、Wannier grid、完整高对称路径、局部路径、结构先验和
 source-only label。SOC、磁序/自旋通道、Hubbard U、隔离隙、band tracking 方法和 k sampling
@@ -147,6 +195,14 @@ duplicate。两位 reviewer 先独立密封作答，再与 adjudicator 讨论手
 新的指南 SHA。完成后才可将 `calibration_completed=true` 写入 expert registry。
 校准分数不进入任何性能或一致性指标。
 
+每个校准 case 还必须经过独立的人工 derivative screening：冻结 policy 后，由两位自然人 reviewer
+独立检查 exact、非空的 case source-record evidence 子集，分类为 `NOT`、`VACANCY`、
+`INTERCALATION`、`NON_STOICHIOMETRIC` 或 `ORDERED_DEFECT`。只有两份 raw class 不一致时，
+才由与两位 reviewer 均不同的自然人 adjudicator 裁决。校准 Gate 采用保守规则：任一 raw review
+或 final judgment 非 `NOT` 均排除该 case；adjudication 保留为审计证据，但不得把 raw derivative
+风险洗回校准集。该人工判断不称为自动真值、材料身份真值或实验/DFT 结论。它不同于候选资格链
+中字段名为 `NOT_A_DERIVATIVE` 的 sibling taxonomy，不得跨 Schema 值混用。
+
 ### 5.3 Pilot
 
 Pilot R1 恰为 30 个 case，目标边际为 15 个 FB100、15 个 NB300，以及 15 个 2D、15 个
@@ -158,6 +214,11 @@ seed 下做可复现的约束选择；至少保留 10 个独立 component。正�
 `CONDITIONAL`/`EXCLUDE` 不得通过事后例外进入运行分母。Pilot 使用 B0、E1、E2-B、E3 的冻结输出，
 Top-5 exact pooling 后由两位 reviewer 全量独立标注。Pilot 只校验手册可用性和一致性，
 不用于选择效果最好的系统或调阈值。
+
+结构不重叠不是只比较 30 个 active cases 或 caller 提供的 group key；R1 必须将完整 calibration
+和完整 R1 candidate pool 的 raw structures fresh-union，R2 另加入完整 prior-R1 candidate pool，
+包括所有 replacement candidates。任一 cross-owner prototype/fingerprint component 都使 PreBudget
+closure 失败。
 
 ### 5.4 Main 120
 
@@ -176,6 +237,37 @@ development case 的 family holdout，不声称 LLM 预训练或数据库历史�
 合法 sampling frame 构建且 Pilot Gate 通过后、任何 Main 系统运行前写入 Main manifest；
 本草案不伪造尚不存在的 family inventory。Pilot R1/R2 与 Main 在 case 和全部
 `LeakageComponentReleaseV3` component 上严格不重叠。
+
+holdout 选择算法必须是约束感知的，并与 seed 一同在 Pilot 前冻结：在满足 development/IID
+零命中、全部边际配额与 component 下限约束的可行 holdout 集合内，按可支持的 locked OOD
+独立 component 数降序排序，数目相同时按冻结的 family 枚举序决胜，取第一个可行 holdout；
+仅当可行集合为空时才宣告不建立 confirmatory split。不得在看到任何系统输出后重新排序或
+更换 holdout。
+
+### 5.5 冻结结构与 derivative 泄漏轴
+
+结构轴只处理 ordered occupancy。2D 输入必须恰有一个 geometric vacuum axis，source cyclic gap
+至少 8 Å；规范化使用 15 Å padding，并在 `symprec=[0.05,0.10] Å` 重放 layer group。3D 使用
+`symprec=[0.01,0.05,0.10] Å` 并对阈值签名取保守并图。anonymous `StructureMatcher` 采用双向
+fit 的 conservative OR、`attempt_supercell=true`；supercell site-ratio 上限为 2D 9、3D 8，
+每个结构最多 128 sites/6 species。Pilot V0 单次 compute 最多 96 candidates、union 最多 32
+member releases；PreBudget 再限制 raw owner projection 最多 84 candidates。该 96 上限只覆盖
+calibration `<=12` 与 Pilot R1/R2 各 `<=36`；Main 必须另建版本化 capacity decision 和真实 dry-run，
+不得静默复用 Pilot 上限。runtime identity 必须绑定 platform/Python、`requirements.lock`、
+pymatgen/spglib/numpy/scipy、spglib extension、resolved `libsymspg` 与 grouping module hash；formal
+native-library replay 当前只支持 Darwin/Linux。
+
+正式时序为：member `input seal < run start <= completion <= computation creation < final-case
+declaration <= private-release creation`，且 monotonic clock 同样要求 `seal < start <= completion`；
+private structure release 创建不晚于 calibration freeze，derivative release 必须严格早于 calibration
+freeze。union 要求每个 member release `< union input seal < run start <= completion <= computation
+creation < verification < PreBudget seal < every budget`。这些是本地 UTC 与 monotonic replay；
+`external_timestamp_attestation=false`，不构成第三方可信时间戳。
+
+这些轴是确定性、内容寻址的泄漏启发式，不是晶体学或物理等价真值。8 Å 规则可能误判多孔或
+大真空 cell；ordered/disordered occupancy 边界不在当前模型内；跨阈值并图和 anonymous
+supercell match 可能保守过合并；parent/transformation derivative 也可能逃逸人工证据。
+“zero cross-owner component”只表示冻结算法、参数和运行环境下未找到边，不表示真正科学独立。
 
 ## 6. 系统、预算和可比性
 
@@ -201,14 +293,24 @@ IDs、来源和局部 citation/concept 字段；不给正文、PDF、专家标�
 target mapping、transferable control、required/breaking conditions、supporting span IDs、
 contradictions、falsifier 和 confidence。解析失败不自由重试，按冻结失败规则记入 underfill。
 
-本地语义 embedding 只能作为另行标识的 `E1-local` 敏感性实验：模型 bundle 必须可离线加载、
-许可证允许、维度/tokenizer/model-card 哈希固定。它不能与 E1 主干混合后仍沿用同一 system ID。
+`E1-local` 在本次研究中明确为 `NOT_RUN_USER_PROHIBITED`：不加载本地语义模型，不产生 invocation、
+output 或 execution release，不允许进入 promotion、Fusion 或 locked analysis。E1 的语义推理只能
+使用上述大模型原生 receipt 路径。
 
 E2-A 与 E2-B 都相对 B0 运行同一 development Gate。若仅一个通过，选该版本；若二者都通过，
 只有当 E2-B 的 `aNDCG@5` 至少比 E2-A 高 0.01 且仍满足全部 guardrail 时才选 E2-B，否则选
 信息源更少的 E2-A；都不通过则 Fusion 不含 E2。E1/E3 独立按同一规则入选。Fusion 是 B0 加
 全部通过的 E1、选定 E2 和 E3 的固定组合，不搜索任意子集；组合本身也须在 development 相对
 B0 通过 Gate，否则不解封 locked labels。
+
+Fusion 的组合算子在 Pilot 前对全部 `2^3` 个组件子集逐一冻结，消除 development 结果揭晓后
+的配置自由度。算子按固定三层定义：检索层——E2 入选时采用选定 E2 变体的冻结请求分配
+（E2-A `3/3/2`，E2-B `2/2/2/2`），否则用 B0 的 Crossref 8；候选生成层——E3 入选时使用 B0
+词法路径与 E3 冻结 TagGraph 转移路线的并集并保留各自 lineage，否则仅 B0 路径；排序层——
+E1 入选时在同一 2 调用/12,000 token 预算内对候选 bounded metadata packets 应用 E1 的冻结
+语义重排，否则用 B0 词法排序。Top-5 选择统一使用与 B0 相同的冻结去重/多样性选择器。每个
+子集组合的 exact system config（请求分配、TagGraph hash、prompt identity、选择器参数）在
+Pilot 前内容寻址冻结；空子集时 Fusion 不成立，locked labels 不解封。
 
 E3 Tag 是机制转移约束，不是关键词堆叠。每条 route 必须显式表达 source mechanism、shared
 invariant、target mapping、可控变量、成立条件、破坏条件与反证。候选领域可含 photonic、
@@ -249,6 +351,33 @@ grade >=2 必须 `evidence_valid=true` 且至少一条 `VALID_SUPPORT`；grade 3
 引用、execution packet 和 case；跨 unit/case alias 必须 fail closed。duplicate partition 在同一 case 的
 全部匿名 packet 标注完成后单独密封并裁决，不能由 unit 内自由字符串或系统 proposal 决定。
 
+COI 与独立性按以下操作化规则执行：参与过本项目系统实现、TagGraph/prompt 设计或看过任何
+系统输出与配置的人不得担任 reviewer 或 adjudicator；adjudicator 与任一 reviewer 之间不得
+存在指导/被指导或直接上下级关系；reviewer 不得标注引用了本人署名文献的 packet，该情形走
+work/case-level recusal 并由已完成校准的替补接手，替补机制不得静默缩小任何系统的分母。
+与项目负责人的合著或机构隶属关系记录为披露项而非取消项，按第 13 节的预冻结聚合模板在
+最终报告如实披露。COI map、recusal 与替补指派必须在任何系统结果生成前冻结。
+
+### 7.1 专家资源与工作量预算
+
+Pilot R1 的标注上限为 30 case × 4 系统 × Top-5 = 600 个 pooled unit（exact-packet pooling
+只合并字节级相同 packet，实际 unique unit 数在 execution 后由 pooling 决定并记录）。冻结
+的预算假设为每 unit 5--10 分钟，加上每 case 的 pre-run audit 与约 20 个匿名 packet 的
+duplicate partition（每 case 10--20 分钟），每位 reviewer 的 R1 预算区间为 30--75 小时，
+另加校准集 5--10 小时；触发 R2 则近似翻倍。Main 的审阅规模约为 Pilot 的 4--5 倍；Main
+capacity decision 必须以 Pilot 实测 unit 用时重算 Main 预算，预算超过专家书面时间承诺时
+不得启动 Main。
+
+校准集兼作计时试点：每位专家的 calibration completion record 必须记录每 unit 实际用时。
+若两位 reviewer 的校准中位用时超过 8 分钟/unit，必须在 Pilot R1 开始前完成一次预声明的
+scope 缩减修订（注册前修订，产生新协议 SHA），缩减顺序预先冻结为：首先从 Pilot 系统集
+移除 E2-B（其 packet 信息风格与 B0 最接近，且 Pilot 目的是手册可用性与一致性、不是系统
+比较）；仍超载时再移除 E1 或 E3 之一，但 Pilot 必须始终保留至少一个非词法系统；不得缩减
+case 数（30 是 alpha 精度下限）或 Top-5 深度（评价端点）。
+
+专家的时间承诺、报酬或致谢安排记录在 `ExpertStudyRegistryV2` 的私有字段，不进入公开包；
+无偿承诺同样必须显式记录，不得默认。
+
 ## 8. Pilot 一致性 Gate
 
 一致性主量为裁决前两位 reviewer 原始 0--3 relevance grade 的 ordinal Krippendorff alpha，
@@ -270,10 +399,26 @@ bootstrap，固定 seed 为 `20260809`。minimum exact agreement 只作描述统
 - `0.667 <= alpha < 0.80`：只能修改标注手册，不得修改系统、case 定义或已密封 R1 标签；
   随后在完全不重叠的 30-case R2 重新独立标注，R2 必须 `>=0.80`；
 - `alpha < 0.667`：停止扩展，重新评估判断任务；
-- R2 `<0.80`：停止，不构建 Main 120。
+- R2 `<0.80`：除下述唯一一次 binary 降级分支适用外，停止，不构建 Main 120。
 
 无论总体 alpha 是否通过，都报告 grade confusion、证据有效性一致率、bridge overall 一致率、
 各 mechanism/2D-3D/FB-NB 子组和 undefined bootstrap 比例。不得以裁决后的标签计算 alpha。
+
+另行预声明一个 companion 描述统计：在双方 assessability 均为 `ASSESSABLE` 的 unit 子集上
+计算同一 ordinal alpha，并报告双方 `SYSTEM_PACKET_INVALID` 即 `(0,0)` unit 的数量与占比。
+companion alpha 不是 Gate；但 Gate alpha 通过而 companion alpha 低于 0.667 时，必须在
+agreement 报告中显式量化机械一致对 Gate alpha 的贡献，并完成数据完整性审查后才可继续。
+
+预声明唯一一次 endpoint 降级模式，只在 R2 之后作为最后的确定性分支求值：仅当 R2 的
+graded alpha 落在 `[0.667, 0.80)`，且同一批裁决前 raw 标签二值化（grade `>=2` 记 1，其余
+含 `SYSTEM_PACKET_INVALID` 记 0）后的 binary Krippendorff alpha `>= 0.80` 时，改用
+binary-gain benchmark 继续，否则停止。binary 模式下 gain 为二值，固定分母为五个位置均为
+1 的 DCG 值 `2.9484591189`；development promotion 主阈值换算为 `delta >= 0.045`、locked
+primary 换算为 `delta >= 0.075`（按最坏情形——全部增益来自 grade 2——与 graded 门槛等效的
+保守 1.5 倍放大；增益来自 grade 3 时该换算更严），不依赖 grade 粒度的 guardrail 保持原值。
+降级必须公开记录为 endpoint downgrade，此后全部结论只能以 binary utility 表述，不再保留
+graded 主假设，不得事后在两种端点间择优；R1 或 R2 的 graded alpha `< 0.667` 时不允许
+降级，直接停止。
 
 ## 9. 指标
 
@@ -347,6 +492,8 @@ assignments 少于 100,000，则精确枚举；否则固定 seed Monte Carlo。
 - 唯一 release assembler 必须输出全部预期 `case × system` 行；system underfill、解析失败、
   deadline、检索失败和无 ranking 保留在分母，缺失排名位置按 0 gain、evidence-invalid、
   completion 缺失处理；
+- Main FAILED cell 不生成 review unit 或人工 label；Gold 与 Analysis 固定派生五个
+  `SYSTEM_PACKET_INVALID/RUN_FAILED` 零位置，并保留其授权 case-role 分母；
 - 两位 reviewer 必须完成每个 pooled unit 后才计算 Pilot/Main 指标，不做 label imputation；
 - 若 case 经独立裁决为 `CASE_INVALID`，所有系统在该 case 上对称排除并单列原因，不按系统选择；
 - locked 阶段发现 invalid case 不补样。invalid case 超过 locked 60 的 5% 时不发布主通过结论；
@@ -378,11 +525,25 @@ split、预算或 promotion Gate。
 公开协议层可包含 Schema、verifier、抽样/统计算法、字段说明、空或合成示例及其 SHA；
 这不授权公开任何在进行中的 custody instance。活跃 `ReviewerManifestV2`、
 `PrivateIdentityMapV2`、专家 assignment/COI、raw annotation、未发布 Gold 与裁决前 Agreement 实例、
-私有 metadata preimage、blinding key 与运行数据库必须分离、最小权限保管，不进入 GitHub。
+raw structure bytes/private artifact URI、structure member/union instances、derivative roster/assignment/
+raw review/adjudication/rationale、私有 metadata preimage、blinding key 与运行数据库必须分离、
+最小权限保管，不进入 GitHub。
+活跃 private root 应在 Git 外通过 0600 `PrivateArtifactEnvelopeV1` 操作包装封存；该通用 payload
+wrapper 不是 research-schema root，不能替代被包装的 73-root 类型校验。
 公开包只含许可证允许的结构/事实字段、source IDs、查询、manifest、prompt/schema、项目自有
 标签、派生指标和 provenance。原始受限 abstracts、文章正文/PDF、ICSD/AFLOW/S2 数据、API key
 和 provider transcript 不公开。全部标签密封、locked analysis 解封且许可/隐私复核通过后，
 只可发布不含专家顺序/密钥/受限文本的 sanitized mapping 或派生 release，以支持结果复核。
+
+内部 annotation/review/release-control HMAC 只证明相对于预承诺 key commitment
+的 exact replay；它们不是外部机构身份、外部密钥托管或外部发布许可。公开结果必须显式保留这些
+`NOT_PROVIDED`/false 证据上限，且只能嵌 aggregate projection 与授权/审查引用，不嵌 raw label、
+签名值、key commitment、私有 identity map、受限文本或 provider transcript。
+
+专家的公开描述采用预冻结的聚合模板：只公布 reviewer/adjudicator 人数、学科方向、职业阶段
+区间（如"博士生/博士后/研究员"）、与平带/窄带主题相关发表经历的有无，以及披露的与项目
+负责人关系类别；不公布姓名、机构、可反推身份的字段组合或 pseudonym 与真实身份的映射。
+该模板在专家 registry 冻结时一同冻结，揭盲后不得临时改写。
 
 最终报告必须同时给出所有 case 的 outcome/underfill denominator、组件失败、IID/OOD 差异、
 专家一致性和协议偏差。`scientific_conclusion=false` 保持到独立科研审查；即使 primary 通过，

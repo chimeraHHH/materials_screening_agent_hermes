@@ -1903,8 +1903,8 @@ def test_phase_matrix_rejects_missing_b0_or_unregistered_arm_subset() -> None:
         ),
         (
             ExecutionPhase.DEVELOPMENT_FUSION,
-            (ResearchSystemId.FUSION,),
-            60,
+            (ResearchSystemId.B0, ResearchSystemId.FUSION),
+            120,
             {BenchmarkSplit.DEVELOPMENT},
         ),
         (
@@ -1918,6 +1918,30 @@ def test_phase_matrix_rejects_missing_b0_or_unregistered_arm_subset() -> None:
             (ResearchSystemId.B0, ResearchSystemId.FUSION),
             120,
             {BenchmarkSplit.LOCKED_IID, BenchmarkSplit.LOCKED_OOD},
+        ),
+        (
+            ExecutionPhase.LOCKED_FUSION_COMPONENTS,
+            (
+                ResearchSystemId.E1,
+                ResearchSystemId.E2_A,
+                ResearchSystemId.E2_B,
+                ResearchSystemId.E3,
+            ),
+            240,
+            {BenchmarkSplit.LOCKED_IID, BenchmarkSplit.LOCKED_OOD},
+        ),
+        *(
+            (
+                phase,
+                (ResearchSystemId.FUSION,),
+                60,
+                {BenchmarkSplit.LOCKED_IID, BenchmarkSplit.LOCKED_OOD},
+            )
+            for phase in (
+                ExecutionPhase.LOCKED_FUSION_MINUS_E1,
+                ExecutionPhase.LOCKED_FUSION_MINUS_E2,
+                ExecutionPhase.LOCKED_FUSION_MINUS_E3,
+            )
         ),
     ],
 )

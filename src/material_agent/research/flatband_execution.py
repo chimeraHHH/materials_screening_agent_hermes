@@ -81,7 +81,11 @@ class ExecutionPhase(StrEnum):
     DEVELOPMENT_ABLATIONS = "DEVELOPMENT_ABLATIONS"
     DEVELOPMENT_LOCAL_SENSITIVITY = "DEVELOPMENT_LOCAL_SENSITIVITY"
     DEVELOPMENT_FUSION = "DEVELOPMENT_FUSION"
+    LOCKED_FUSION_COMPONENTS = "LOCKED_FUSION_COMPONENTS"
     LOCKED_PRIMARY = "LOCKED_PRIMARY"
+    LOCKED_FUSION_MINUS_E1 = "LOCKED_FUSION_MINUS_E1"
+    LOCKED_FUSION_MINUS_E2 = "LOCKED_FUSION_MINUS_E2"
+    LOCKED_FUSION_MINUS_E3 = "LOCKED_FUSION_MINUS_E3"
 
 
 class MissingPositionReason(StrEnum):
@@ -823,11 +827,32 @@ def _phase_design(
         systems = (ResearchSystemId.E1_LOCAL,)
         splits = frozenset({BenchmarkSplit.DEVELOPMENT})
     elif phase is ExecutionPhase.DEVELOPMENT_FUSION:
-        systems = (ResearchSystemId.FUSION,)
+        systems = (ResearchSystemId.B0, ResearchSystemId.FUSION)
         splits = frozenset({BenchmarkSplit.DEVELOPMENT})
-    else:
+    elif phase is ExecutionPhase.LOCKED_FUSION_COMPONENTS:
+        # Private derivation-only cells.  Both E2 variants are frozen so the
+        # development-selected variant can be exact-joined later without
+        # reopening the locked execution policy.  These cells are never
+        # analysis arms or public comparison rows.
+        systems = (
+            ResearchSystemId.E1,
+            ResearchSystemId.E2_A,
+            ResearchSystemId.E2_B,
+            ResearchSystemId.E3,
+        )
+        splits = frozenset({BenchmarkSplit.LOCKED_IID, BenchmarkSplit.LOCKED_OOD})
+    elif phase is ExecutionPhase.LOCKED_PRIMARY:
         systems = (ResearchSystemId.B0, ResearchSystemId.FUSION)
         splits = frozenset({BenchmarkSplit.LOCKED_IID, BenchmarkSplit.LOCKED_OOD})
+    elif phase in {
+        ExecutionPhase.LOCKED_FUSION_MINUS_E1,
+        ExecutionPhase.LOCKED_FUSION_MINUS_E2,
+        ExecutionPhase.LOCKED_FUSION_MINUS_E3,
+    }:
+        systems = (ResearchSystemId.FUSION,)
+        splits = frozenset({BenchmarkSplit.LOCKED_IID, BenchmarkSplit.LOCKED_OOD})
+    else:  # pragma: no cover - exhaustive over the frozen enum
+        raise ValueError("execution phase is not registered")
     manifest_splits = {case.split for case in manifest.cases}
     if not splits <= manifest_splits:
         raise ValueError("execution phase is incompatible with the split manifest")

@@ -1,25 +1,26 @@
 # Flat/Narrow-Band Inspiration Benchmark Plan
 
-Status: preregistration protocol draft; **not yet registered and not a scientific result**
+Status: full-flow contract draft implemented; **real execution not run, not registered, not a scientific result**
 
-Date: 2026-08-09 (Asia/Shanghai)
+Date: 2026-08-10 (Asia/Shanghai)
 
 Scope: flat-band and narrow-band materials inspiration only
 
 Explicit exclusion: novelty, prior-art, patentability, and validated-property claims
 
-Source audit v1 is frozen in [`SOURCE_AUDIT.md`](SOURCE_AUDIT.md). Its
+Source/custody audit v3 is recorded in [`SOURCE_AUDIT.md`](SOURCE_AUDIT.md). Its
 machine-readable catalog SHA-256 is
 `57c24de8f0cf616205b03ef16231def711f2dfa9fcac86d94beede9c01b0bb1f`.
 
-The audience-split public-protocol/private-custody bundles, preregistration, and
-annotation guide are content-addressed drafts; their current digests are recorded
-in adjacent `.sha256` files.  The V3 candidate/eligibility/execution chain and
-reviewer-to-Gold/Pilot-agreement closure have local adversarial tests, but the
-formal 2D/3D structure-group computation, final projection, and cross-release
-near-duplicate union are not implemented.  These draft hashes are not an
-assertion that the schemas are frozen, registration has occurred, or Pilot may
-start.
+The audience-split public-protocol v2/private-custody v3 bundles and all five protocol
+documents are content-addressed drafts; current digests are recorded in adjacent
+`.sha256` files. The code now implements the formal path from Pilot custody through
+Main sampling/freeze, model-native Arms, Execution, signed Gold, Analysis V2,
+development promotion, locked seal/authorization/unseal, claim support, signed review
+and release controls, to a sanitized public result and one private Campaign root.
+This is contract/replay capability with synthetic adversarial evidence. It is not a
+real structure/annotation/Campaign instance, model call, benchmark release, schema
+registration, or authorization to start Pilot.
 
 ## Objective
 
@@ -43,18 +44,28 @@ are recorded in [`READINESS_REVIEW.md`](READINESS_REVIEW.md).
    web. Record license, redistribution, access, version, fields, update cadence,
    and inclusion decision before downloading bulk data.
 3. Freeze a preregistration, case schema, annotation manual, source manifest,
-   model/prompt identity, token/request budget, and statistical analysis plan.
-4. Build and double-annotate a 30-case pilot; use a distinct adjudicator for
-   disagreements and revise only the manual, not the hidden test labels.
+   structure runtime/parameters, derivative policy/roster, model/prompt identity,
+   token/request budget, and statistical analysis plan.
+4. Build the disjoint calibration set; require two independent raw derivative
+   reviews and a distinct adjudicator only on class disagreement, while rejecting
+   calibration if any raw or final class is not `NOT`. Then double-annotate a
+   30-case pilot and revise only the manual, not hidden test labels.
 5. Require pilot ordinal Krippendorff's alpha >= 0.80 before scaling. An alpha
    in `[0.667, 0.80)` permits one annotation-manual-only revision followed by a
    new, non-overlapping 30-case Pilot R2; R2 must reach 0.80. Alpha below 0.667,
    or a failed R2, stops scaling.
-6. Freeze a 120-case benchmark: 60 development, 30 locked IID test, and 30 locked
-   OOD test cases, split by material and mechanism family.
-7. Run B0, then isolated E1/E2/E3 ablations under matched budgets.
-8. Promote only passing components into a fusion system; run the locked test once,
-   followed by robustness/error analysis and independent scientific review.
+6. Freeze a 120-case design: 60 development, 30 locked IID test, and 30 locked
+   OOD test cases, split by the full leakage graph. Main structure capacity must
+   have a separately versioned decision and dry-run; Pilot caps cannot be reused.
+   The OOD holdout selection algorithm is constraint-aware with a frozen
+   deterministic fallback order (see preregistration section 5.4).
+7. When separately authorized in the future, run development B0/E1/E2/E3 through
+   model-native receipts, then development Fusion. `E1-local` is formally closed as
+   `NOT_RUN_USER_PROHIBITED` and cannot be promoted.
+8. Freeze locked component derivations, B0/Fusion and three Fusion-minus roles before
+   unseal; run locked labels through Gold/Analysis once, then require internally signed
+   scientific review and license/privacy/custody release controls. No such real run is
+   part of the present implementation checkpoint.
 
 ## Systems under comparison
 
@@ -62,10 +73,10 @@ are recorded in [`READINESS_REVIEW.md`](READINESS_REVIEW.md).
   and deduplication, at most eight physical search attempts, title/abstract/
   keywords only, no full-text/PDF, top-5 output.
 - **E1 semantic reasoning**: the language model receives only bounded metadata
-  packets, reasons locally, and returns a strict structured mechanism mapping.
-  No external embedding API or trainable model is introduced in the first pass.
-  A separately identified, local-only semantic embedding is an isolated
-  sensitivity variant and cannot be silently folded into E1.
+  packets, uses the frozen large-model native reasoning path, and returns a strict
+  structured mechanism mapping with exact visible request/response receipts.
+  No external embedding API, local semantic model, or trainable model is part of
+  formal E1. The separately identified E1-local branch is not run.
 - **E2 multi-source retrieval**: add only sources that pass the license/access
   audit, while retaining the same total physical-request budget as B0. The
   frozen E2-A sources are Crossref + OpenAlex + arXiv; E2-B adds OpenAIRE.
@@ -96,11 +107,54 @@ tracking method, and Brillouin-zone coverage are recorded as orthogonal axes.
 A high-symmetry-line bandwidth is not relabelled as a full-BZ bandwidth, and a
 source database tag is a sampling stratum rather than benchmark truth.
 
+## Structure and derivative leakage Gate
+
+Private raw structures are content-addressed before computation. Ordered 2D inputs
+must have exactly one geometric vacuum axis with source gap at least 8 A, are
+normalized to 15 A padding, and use layer-group symprec 0.05/0.10 A. Ordered 3D
+inputs use symprec 0.01/0.05/0.10 A with a conservative cross-threshold union.
+Anonymous `StructureMatcher` fitting is a bidirectional conservative OR with
+`attempt_supercell=true`, bounded ratios 9 for 2D and 8 for 3D, at most 128 sites
+and six species per structure. Pilot V0 allows at most 96 compute candidates,
+32 union members, and 84 PreBudget owner rows. The 96 cap covers calibration at
+most 12 plus Pilot R1/R2 at most 36 each; it does not authorize Main. Runtime
+identity binds the platform/Python, lockfile, scientific packages, native spglib
+extension/resolved `libsymspg`, and grouping-module hashes; formal native replay
+currently supports Darwin and Linux only.
+
+R1 recomputes one fresh raw-structure union over the full calibration and current
+candidate pools. R2 adds the full prior-R1 candidate pool; replacements remain in
+scope even when not selected. Caller group keys and selected-case-only checks are
+not evidence of independence. A zero cross-owner count means only no edge under
+the frozen algorithm/runtime, not physical or crystallographic independence.
+
+Calibration derivative screening uses two independent natural-person raw reviews
+per exact case and one distinct adjudicator if and only if their classes disagree.
+The taxonomy is `NOT`, `VACANCY`, `INTERCALATION`, `NON_STOICHIOMETRIC`, and
+`ORDERED_DEFECT`; evidence is an exact nonempty subset of that case's source
+records. Any raw or final non-`NOT` class excludes the case. Adjudication remains
+auditable but cannot wash a raw risk back into calibration. Human screening is not
+automated truth, experimental validation, or DFT validation.
+
+Formal structure chronology is `input seal < start <= completion <= computation
+creation < final-case declaration <= private release`; union chronology requires
+all members before its seal and `seal < start <= completion <= computation creation
+< verification < PreBudget < every budget`. UTC and monotonic clocks are local and
+carry no external timestamp attestation. Known limitations include porous/large-
+vacuum false classification, unsupported disordered occupancy, threshold bridging,
+conservative supercell false positives, and derivative relations that evade the
+frozen evidence axes.
+
 ## LLM and local-compute boundary
 
-- Local deterministic work first: DOI/title normalization, exact deduplication,
-  BM25/TF-IDF features, graph features, metric computation, and bootstrap tests.
-- The LLM may inspect at most the top 20 bounded metadata packets per case and
+- Semantic judgment, mechanism transfer, evidence synthesis, and structured ranking
+  are performed only by the frozen large-model native path. Work-item, response, and
+  receipt artifacts bind exact visible JSON bytes, model/revision, usage, and time;
+  chain of thought is neither requested nor stored.
+- Local deterministic code is limited to DOI/title normalization, exact deduplication,
+  bounded retrieval/projection, schema parsing, hashing, exact replay, fixed metric
+  computation, and preregistered statistical procedures. It is not a semantic reasoner.
+- The large model may inspect at most the top 20 bounded metadata packets per case and
   must emit strict JSON containing mechanism ID, source domain, transfer
   principle, conditions, supporting span IDs, contradictions, mechanism
   signature, and confidence.
@@ -109,6 +163,15 @@ source database tag is a sampling stratum rather than benchmark truth.
   annotation is provided to the model.
 - Research calls are isolated from the production policy, whose internal model
   call budget remains zero until a later explicit production release decision.
+- E1-local has a content-addressed `NOT_RUN_USER_PROHIBITED` release with zero
+  execution, output, and local-model invocation counts and no promotion/locked use.
+
+Seven formal Main execution releases cover development ablation/Fusion, locked
+component derivation, locked B0/Fusion, and the three Fusion-minus roles. The 240
+locked component cells are complete derivation preimages only, never Gold/Analysis
+comparison arms or denominator entries. Every other authorized case-role, including a
+FAILED cell, retains five positions. FAILED produces no reviewer task or raw label;
+Gold/Analysis deterministically assign five `SYSTEM_PACKET_INVALID/RUN_FAILED` zeros.
 
 ## Metrics and promotion Gates
 
@@ -154,6 +217,24 @@ stricter: `aNDCG@5` delta at least 0.03, EvidenceValid@5 decrease no more than
 0.03, duplicate-rate increase no more than 0.02, and Success@5 decrease no more
 than 0.02. No threshold may be changed after viewing locked-test annotations.
 
+The Fusion combination operator is frozen per component subset before Pilot: the
+retrieval layer uses the selected E2 variant's frozen request allocation when E2
+is promoted (otherwise B0's Crossref 8); the candidate layer unions B0 lexical
+routes with the frozen E3 TagGraph routes when E3 is promoted; the ranking layer
+applies E1's frozen semantic rerank within the same 2-call/12,000-token budget
+when E1 is promoted; top-5 selection always uses B0's frozen dedup/diversity
+selector. All `2^3` subset configurations are content-addressed before Pilot.
+
+A companion descriptive alpha restricted to double-`ASSESSABLE` units, with the
+count and share of `(0,0)` invalid-pair units, is always reported and is not a
+Gate. A single pre-declared endpoint downgrade exists and is evaluated only after
+Pilot R2: only when R2's graded alpha lands in `[0.667, 0.80)` while the binary
+alpha (grade `>=2` versus rest) reaches `0.80`, the benchmark continues with
+binary gain (fixed denominator `2.9484591189`), promotion delta `>= 0.045`, and
+locked primary delta `>= 0.075`; grade-independent guardrails keep their values.
+The downgrade is recorded publicly, all conclusions are stated as binary utility,
+and no post-hoc choice between endpoints is permitted.
+
 ## Candidate mechanism families
 
 The initial frozen candidate vocabulary covers kagome, Lieb, line-graph and
@@ -166,18 +247,38 @@ acoustic, mechanical, circuit, and cold-atom systems.
 These are query and annotation strata, not accepted scientific truths. The
 formal Tag release requires expert decisions and a versioned graph hash.
 
+## Expert resources and workload budget
+
+Pilot R1 has an upper bound of 30 cases x 4 systems x top-5 = 600 pooled units;
+exact-packet pooling merges only byte-identical packets, and the realized unique
+unit count is recorded after execution. The frozen planning assumption is 5-10
+minutes per unit plus a 10-20 minute per-case duplicate partition and the
+pre-run case audit, giving an R1 budget of 30-75 hours per reviewer plus 5-10
+calibration hours; a triggered R2 approximately doubles it. Main review volume
+is roughly 4-5x Pilot. The Main capacity decision must recompute the Main budget
+from measured Pilot per-unit times, and Main must not start if that budget
+exceeds the experts' written time commitments.
+
+The calibration set doubles as a timing pilot: every calibration completion
+record stores actual per-unit time. If the reviewers' median calibration time
+exceeds 8 minutes per unit, a pre-registered scope-reduction revision (new
+protocol SHA, before Pilot R1) is mandatory, with the frozen reduction order:
+drop E2-B from the Pilot system set first; if still overloaded, drop one of
+E1/E3 while always keeping at least one non-lexical system. Case count (30) and
+top-5 depth are never reduced. Expert time commitments and compensation or
+acknowledgement terms are recorded in private `ExpertStudyRegistryV2` fields,
+including explicit unpaid commitments.
+
 ## Current blockers and stop rules
 
-- The repository currently contains metric/review/semantic engineering schemas
-  and synthetic tests, but no real adjudicated benchmark. No scientific score is
-  claimed before the expert Gate.
-- Independent preregistration review remains `Pilot NO-GO`.  The current first
-  blocker is structure leakage: raw structures and dimensionality evidence can be
-  replayed locally, but layer-group/3D multi-tolerance components, final-case
-  projection, and calibration/R1/R2 cross-release union are still absent.  The
-  V3 reviewer, failure-denominator, raw/adjudication/Gold, and agreement closures
-  do not compensate for an invalid independence graph, and the draft contract
-  bundles are not a completed schema freeze.
+- The full formal contract path and its audience-split schemas exist, but no real
+  private Main structure/union, human annotation, signed Campaign, provider model
+  call, adjudicated benchmark, or scientific score exists.
+- Independent preregistration status remains `Pilot NO-GO`. The remaining blockers
+  are real source/structure/expert/authority custody inputs, externally verifiable
+  identities and permissions, and a fresh user decision after those inputs exist.
+  Performance and benchmark measurement are intentionally deferred and are not a
+  blocker for this contract-implementation checkpoint.
 - Public production remains NO-GO. In particular, a hard-killed parent worker can
   leave its independently-sessioned action child alive until the child's own
   deadline; the parent-death cleanup contract is not yet closed.
@@ -194,21 +295,19 @@ formal Tag release requires expert decisions and a versioned graph hash.
 ## Decision checkpoint: repair before Pilot
 
 - **Verdict:** `PILOT_NO_GO`; canonical action `iterate`.
-- **Decisive evidence:** independent annotation/contract red-team findings in
-  [`READINESS_REVIEW.md`](READINESS_REVIEW.md), plus executable counterexamples
-  showing identity leakage, incomplete denominator closure, one-sided invalid
-  labels disappearing from grade alpha, and caller-controlled duplicate groups.
-- **Action:** preserve the current draft and source audit, implement the bounded
-  reviewer projection, leakage connected components, execution matrix, one-way
-  budget/ranking/terminal chain, and raw-review/final-gold/duplicate closure; then
-  obtain a fresh independent Pilot-readiness review.
+- **Decisive evidence:** the invariant red team accepts the implemented formal chain,
+  including exact execution preimages, HMAC-authenticated Main annotations/reviews,
+  FAILED denominator closure, derivation-only locked components, one-shot unseal
+  custody, and sanitized public projection. This is implementation evidence only.
+- **Action:** freeze the 16-root public and 73-root private schema/document identities;
+  later create real private source/structure/expert/authority inputs and obtain a fresh
+  independent Pilot-readiness decision. Do not run performance or benchmark work now.
 - **Rejected alternative:** starting source adapters, LLM calls, or expert Pilot
   now would create outputs whose denominator, masking, independence unit, and gold
   provenance cannot be reconstructed; those outputs would be scientifically
   unusable even if their processes completed successfully.
-- **Next direction:** only a fresh `PILOT_GO` decision may activate the frozen
-  30-case R1 manifest. Until then, no real case construction or performance
-  comparison is authorized by this research plan.
+- **Next direction:** only a fresh `PILOT_GO` decision may activate the frozen 30-case
+  R1 system run. Until then, no model call or performance comparison is authorized.
 
 ### 2026-08-09 provenance-closure checkpoint
 
@@ -239,11 +338,70 @@ formal Tag release requires expert decisions and a versioned graph hash.
   AnalysisInput remain stopped until an honest Main120 positive fixture and
   adversarial lineage/holdout tests pass.
 
+### 2026-08-10 structure/derivative closure checkpoint
+
+- **Invariant result:** structure chronology, warm-cache replay, union owner/clock/
+  fully-readdressed attacks, calibration exact/foreign/late/raw-wash attacks, and
+  the shared R1 matrix semantics passed independent review.
+- **Historical result:** this checkpoint retained `PILOT_NO_GO` while the full Main
+  path was incomplete. Its resource observations are not an active Gate for the
+  present user-directed full-flow implementation pass.
+- **Historical schema decision:** public v1/private v2 was superseded by the full-flow
+  audience split below; legacy bundle files remain immutable history.
+
+### 2026-08-10 full-flow contract checkpoint
+
+- **Implementation result:** Main candidate/eligibility/freeze/pre-budget custody,
+  model-native work/response/receipt/Arm traces, seven formal execution releases,
+  signed Main Gold and exact Analysis V2 adapters, promotion/Fusion, locked seal/plan/
+  authorization/ledger/unseal, claim support, signed reviewer/control decisions,
+  sanitized public result, and complete private Campaign assembly are implemented.
+- **Semantic-compute boundary:** large-model native calls are the only formal semantic
+  reasoner. Deterministic local code only validates, hashes, parses, replays, and
+  computes fixed metrics. E1-local is `NOT_RUN_USER_PROHIBITED` with zero artifacts.
+- **Denominator boundary:** locked components are derivation-only. Every comparison
+  case-role keeps five positions; FAILED cells generate five fixed zeros and no human
+  review task.
+- **Authenticity boundary:** annotation, scientific-review, and release-control HMACs
+  are exact internal replay against precommitted ephemeral keys. External authority
+  identity, external key custody, provider execution, and publication permission are
+  not provided; no signing key or chain of thought is stored.
+- **Audience/schema decision:** public protocol v2 has 16 active roots, including the
+  source-catalog checkpoint and aggregate projection/result. Private custody v3 has 73
+  roots, including one complete Pilot-round bundle and independently transferred Main/
+  lifecycle artifacts. Leaf rows/refs remain nested. `PrivateArtifactEnvelopeV1` is an
+  operational 0600 storage wrapper, not a research-schema root; active private instances
+  should be sealed in that envelope outside Git.
+- **Evidence ceiling:** no real private Campaign, model execution, benchmark value,
+  scientific finding, novelty, DFT validation, or material discovery is claimed.
+
+### 2026-08-10 user-review adoption checkpoint
+
+- **Scope:** the user-directed manual review required by `READINESS_REVIEW.md`
+  step 1 (scientific definitions, Pilot workload, alpha thresholds, E2 selection,
+  OOD meaning, safety guardrails, expert COI policy) was performed by an AI
+  assistant and its findings were adopted by the user on 2026-08-10.
+- **Adopted changes:** an expert workload budget and calibration timing pilot
+  with a frozen scope-reduction order; a per-subset frozen Fusion operator;
+  operational COI rules, a backup-expert calibration precondition, and a frozen
+  aggregate expert-description template; `min_k |E(k)-E_F|` and
+  single-tracked-band `W` definitions with the 1.0 eV window rationale; a
+  companion double-`ASSESSABLE` alpha and `(0,0)` share report; a
+  constraint-aware OOD holdout fallback order; and a single pre-declared
+  binary-gain endpoint downgrade evaluated only after R2.
+- **Boundary:** this review is analysis evidence adopted by the user; it is not
+  an independent red team, external authority, or expert instance. `PILOT_NO_GO`
+  and the remaining real-custody blockers are unchanged. The revised protocol
+  drafts (preregistration v0.5, annotation guide v0.6, this plan) require a
+  fresh independent red-team pass before any `PILOT_GO` decision.
+
 ## Reproducibility and publication boundary
 
 Version only schemas, source IDs/manifests, licenses, prompts, splits, hashes,
 annotations that may legally be redistributed, evaluation code, and aggregate
-results. Do not commit API keys, raw runtime databases/logs, licensed structures,
-bulk snapshots, article bodies/PDFs, or model weights. Every result must bind the
+results. Do not commit API keys, raw runtime databases/logs, raw structure bytes or
+private URIs, active structure member/union releases, derivative identity/roster/
+raw-review/adjudication instances, licensed structures, bulk snapshots, article
+bodies/PDFs, or model weights. Every result must bind the
 Git SHA, source-catalog SHA, split SHA, annotation-release SHA, and model/prompt
 identity.

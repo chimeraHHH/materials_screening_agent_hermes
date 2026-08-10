@@ -5,6 +5,7 @@ from typing import Any, TypeVar
 
 import pytest
 from pydantic import ValidationError
+from pymatgen.core import Composition, Lattice, Structure
 
 from material_agent.inspiration.models import StrictModel, canonical_sha256, deterministic_id
 from material_agent.research.flatband_contracts import (
@@ -50,6 +51,17 @@ from material_agent.research.flatband_experts import (
     build_private_expert_identity_attestation_v2,
     build_public_expert_identity_release_v2,
 )
+from material_agent.research.flatband_derivative_screening import (
+    DerivativeClass,
+    DerivativeScreeningReleaseV3,
+    build_derivative_screening_adjudication_v3,
+    build_derivative_screening_assignment_v3,
+    build_derivative_screening_policy_v3,
+    build_derivative_screening_raw_review_v3,
+    build_derivative_screening_release_v3,
+    build_derivative_screening_reviewer_roster_v3,
+    build_derivative_source_evidence_ref_v3,
+)
 from material_agent.research.flatband_execution import (
     BudgetManifestV1,
     ResearchSystemId,
@@ -58,11 +70,26 @@ from material_agent.research.flatband_execution import (
     SystemConfigV1,
     source_policy_values,
 )
+from material_agent.research.flatband_source_policy import (
+    SourceUseRole,
+    build_case_source_policy_attestation_v2,
+)
+from material_agent.research.flatband_structure_grouping import (
+    PreGroupCandidatePreimageV2,
+    StructureDimensionalityV2,
+    build_raw_structure_artifact_v2,
+    build_structure_grouping_case_input_v2,
+    finalize_structure_grouping_release_v2,
+    normalize_raw_structure_artifact_v2,
+    run_structure_grouping_computation_v2,
+    seal_structure_grouping_input_manifest_v2,
+)
 from material_agent.research.flatband_leakage import (
     LeakageAxis,
     LeakageAxisV3,
     LeakageComponentReleaseV3,
     MechanismLineageAssignmentV3,
+    MechanismLineageCuratorDeclarationV3,
     MechanismLineageDefinitionV3,
     MechanismLineageEvidenceRefV3,
     MechanismLineageRegistryV3,
@@ -702,29 +729,331 @@ def _v2_grouping_artifacts(
     return runs, assignments
 
 
+DERIVATIVE_SCREENING_CRITERIA = (
+    "check-composition-ratio",
+    "check-intercalant-sites",
+    "check-ordered-defect-pattern",
+    "check-vacancy-parent",
+)
+
+
+def _derivative_screening_person(
+    index: int,
+) -> MechanismLineageCuratorDeclarationV3:
+    return MechanismLineageCuratorDeclarationV3(
+        curator_id=f"calibration-derivative-human-{index}",
+        opaque_natural_person_ref=f"opaque-calibration-person-{index}",
+        natural_person_commitment_sha256=canonical_sha256(
+            ("calibration-derivative-person", index)
+        ),
+        identity_evidence_uri=(
+            f"artifact://private/calibration-derivative/person-{index}"
+        ),
+        identity_evidence_sha256=canonical_sha256(
+            ("calibration-derivative-identity", index)
+        ),
+        institutional_unit=f"independent-calibration-unit-{index}",
+        conflict_declaration="No conflict declared for calibration screening.",
+    )
+
+
+def _calibration_derivative_screening_release(
+    cases: tuple[FlatBandBenchmarkCaseV1, ...],
+) -> DerivativeScreeningReleaseV3:
+    policy = build_derivative_screening_policy_v3(
+        review_criteria=DERIVATIVE_SCREENING_CRITERIA,
+        sealed_at="2026-08-09T07:41:00+08:00",
+    )
+    roster = build_derivative_screening_reviewer_roster_v3(
+        policy=policy,
+        reviewers=(
+            _derivative_screening_person(1),
+            _derivative_screening_person(2),
+        ),
+        adjudicator=_derivative_screening_person(3),
+        independence_review=(
+            "Three injective private natural-person bindings were verified."
+        ),
+        sealed_at="2026-08-09T07:42:00+08:00",
+    )
+    assignments = tuple(
+        build_derivative_screening_assignment_v3(
+            policy=policy,
+            roster=roster,
+            case=case,
+            evidence_refs=(
+                build_derivative_source_evidence_ref_v3(
+                    case=case,
+                    source_id=case.source_records[0].source_id,
+                    source_record_id=case.source_records[0].source_record_id,
+                ),
+            ),
+            assigned_at="2026-08-09T07:43:00+08:00",
+        )
+        for case in cases
+    )
+    reviews = tuple(
+        build_derivative_screening_raw_review_v3(
+            policy=policy,
+            roster=roster,
+            assignment=assignment,
+            reviewer_id=reviewer.curator_id,
+            derivative_class=DerivativeClass.NOT,
+            criterion_findings=DERIVATIVE_SCREENING_CRITERIA,
+            rationale=(
+                "The human reviewer found no registered derivative class in the supplied sources."
+            ),
+            reviewed_at=(
+                "2026-08-09T07:44:00+08:00"
+                if reviewer == roster.reviewers[0]
+                else "2026-08-09T07:45:00+08:00"
+            ),
+        )
+        for assignment in assignments
+        for reviewer in roster.reviewers
+    )
+    return build_derivative_screening_release_v3(
+        policy=policy,
+        roster=roster,
+        cases=cases,
+        assignments=assignments,
+        raw_reviews=reviews,
+        assembled_at="2026-08-09T07:46:00+08:00",
+    )
+
+
 def _calibration_manifest_v2(
     *,
     registry: MechanismLineageRegistryV3 | None = None,
     algorithms: tuple[StructureGroupingAlgorithmV2, ...] | None = None,
 ) -> CalibrationSetManifestV2:
     registry = registry or _global_lineage_registry_v3()
-    algorithms = algorithms or tuple(
-        _v2_algorithm(axis)
-        for axis in sorted(
-            (
-                LeakageAxis.STRUCTURE_FINGERPRINT,
-                LeakageAxis.STRUCTURE_PROTOTYPE,
-            ),
-            key=lambda item: item.value,
+    del algorithms
+    formulas = ("XeF2", "KrF2", "NeF2", "ArF2")
+    lineages = _calibration_lineages_v3(registry)
+    inputs = []
+    artifacts = []
+    for index, formula in enumerate(formulas):
+        label = f"calibration-{index:02d}"
+        cod = SourceRecordRefV1(
+            source_id="cod",
+            source_record_id=f"cod-{label}",
+            canonical_url=f"https://www.crystallography.net/cod/{9900000 + index}.html",
+            source_version="svn-2026-08-09",
+            license_expression="CC0-1.0",
+            accessed_at="2026-08-09T07:00:00+08:00",
+            raw_sha256=canonical_sha256({"calibration-cod": index}),
+            public_redistribution_allowed=True,
         )
+        crossref = SourceRecordRefV1(
+            source_id="crossref",
+            source_record_id=f"calibration-work-{index:02d}",
+            canonical_url=f"https://doi.org/10.9999/calibration-{index:02d}",
+            source_version="2026-08-09",
+            license_expression="CC0-1.0",
+            accessed_at="2026-08-09T07:00:00+08:00",
+            raw_sha256=canonical_sha256({"calibration-source": index}),
+            public_redistribution_allowed=True,
+        )
+        materials_project = SourceRecordRefV1(
+            source_id="materials_project_core",
+            source_record_id=f"mp-{label}",
+            canonical_url=f"https://materialsproject.org/materials/mp-{9900 + index}",
+            source_version="api-2026-08-09",
+            license_expression="CC-BY-4.0",
+            accessed_at="2026-08-09T07:00:00+08:00",
+            raw_sha256=canonical_sha256({"calibration-mp": index}),
+            public_redistribution_allowed=True,
+        )
+        dimensionality = (
+            StructureDimensionalityV2.TWO_D
+            if index % 2 == 0
+            else StructureDimensionalityV2.THREE_D
+        )
+        composition = Composition(formula)
+        species = tuple(
+            symbol
+            for symbol, amount in sorted(composition.get_el_amt_dict().items())
+            for _ in range(int(amount))
+        )
+        coordinates = tuple(
+            (
+                (0.117 + 0.191 * site + 0.023 * index) % 1.0,
+                (0.229 + 0.167 * site + 0.031 * index) % 1.0,
+                (
+                    0.48 + 0.013 * site
+                    if dimensionality is StructureDimensionalityV2.TWO_D
+                    else (0.151 + 0.271 * site + 0.019 * index) % 1.0
+                ),
+            )
+            for site in range(len(species))
+        )
+        lattice = Lattice.from_parameters(
+            3.4 + 0.2 * index,
+            4.1 + 0.1 * index,
+            21.0 if dimensionality is StructureDimensionalityV2.TWO_D else 5.7,
+            81.0,
+            87.0,
+            73.0,
+        )
+        structure = Structure(lattice, species, coordinates, to_unit_cell=True)
+        raw = build_raw_structure_artifact_v2(
+            private_artifact_uri=f"artifact://private/calibration/{label}",
+            source_id=cod.source_id,
+            source_record_id=cod.source_record_id,
+            source_record_raw_sha256=cod.raw_sha256,
+            artifact_format="PYMATGEN_JSON",
+            raw_bytes=json.dumps(
+                structure.as_dict(), sort_keys=True, separators=(",", ":")
+            ).encode("utf-8"),
+        )
+        artifact = normalize_raw_structure_artifact_v2(
+            raw_artifact=raw,
+            dimensionality=dimensionality,
+        )
+        evidence = artifact.provenance.aperiodic_axis_evidence
+        request = f"Calibrate bounded packet judgment {index}"
+        inputs.append(
+            build_structure_grouping_case_input_v2(
+                preimage=PreGroupCandidatePreimageV2(
+                    study_phase="CALIBRATION",
+                    slot_index=index,
+                    priority=0,
+                    parent_label=f"calibration parent {index}",
+                    formula=formula,
+                    structure_artifact_id=artifact.artifact_id,
+                    structure_artifact_sha256=artifact.artifact_sha256,
+                    structure_sha256=artifact.structure_sha256,
+                    source_records=(cod, crossref, materials_project),
+                    target_class=(
+                        TargetBandClass.FB100
+                        if index < 2
+                        else TargetBandClass.NB300
+                    ),
+                    dimensionality=dimensionality,
+                    aperiodic_axis=evidence.chosen_axis,
+                    aperiodic_axis_evidence=evidence,
+                    frozen_request=request,
+                    frozen_requirement_sha256=canonical_sha256(
+                        {"calibration-requirement": index}
+                    ),
+                    hard_constraints=("preserve dimensionality",),
+                    forbidden_transformations=("delete_parent_sites",),
+                    primary_mechanism_stratum=MechanismFamily.OTHER_OR_UNKNOWN,
+                    public_release_allowed=True,
+                )
+            )
+        )
+        artifacts.append(artifact)
+    input_manifest = seal_structure_grouping_input_manifest_v2(
+        case_inputs=tuple(inputs),
+        structure_artifacts=tuple(artifacts),
+        sealed_at="2026-08-09T07:20:00+08:00",
+        sealed_monotonic_ns=1,
     )
-    cases, group_keys, lineage_by_case = _v2_calibration_cases(
-        algorithms, registry
+    computation = run_structure_grouping_computation_v2(
+        input_manifest=input_manifest,
+        started_at="2026-08-09T07:21:00+08:00",
+        completed_at="2026-08-09T07:22:00+08:00",
+        started_monotonic_ns=2,
+        completed_monotonic_ns=3,
+        created_at="2026-08-09T07:23:00+08:00",
     )
-    runs, assignments = _v2_grouping_artifacts(
-        cases=cases,
-        algorithms=algorithms,
-        group_keys=group_keys,
+    group_by_axis = {
+        LeakageAxis.STRUCTURE_PROTOTYPE: {
+            key: component.canonical_group_key
+            for component in computation.prototype_components
+            for key in component.candidate_keys
+        },
+        LeakageAxis.STRUCTURE_FINGERPRINT: {
+            key: component.canonical_group_key
+            for component in computation.fingerprint_components
+            for key in component.candidate_keys
+        },
+    }
+    cases = []
+    lineage_by_case: dict[str, MechanismLineageDefinitionV3] = {}
+    for case_input in input_manifest.case_inputs:
+        preimage = case_input.preimage
+        lineage = lineages[preimage.slot_index]
+        groups = derive_leakage_group_ids_v3(
+            formula=preimage.formula,
+            primary_mechanism_stratum=preimage.primary_mechanism_stratum,
+            source_records=preimage.source_records,
+            structure_groups=tuple(
+                (
+                    algorithm,
+                    group_by_axis[algorithm.axis][case_input.candidate_key],
+                )
+                for algorithm in computation.grouping_algorithms
+            ),
+            mechanism_lineage_registry=registry,
+            mechanism_lineage_id=lineage.lineage_id,
+        )
+        case = _identified(
+            FlatBandBenchmarkCaseV1,
+            id_field="case_id",
+            sha_field="case_sha256",
+            prefix="flatband-case",
+            values={
+                "parent_label": preimage.parent_label,
+                "formula": preimage.formula,
+                "structure_sha256": preimage.structure_sha256,
+                "source_records": preimage.source_records,
+                "target_class": preimage.target_class,
+                "dimensionality": Dimensionality(preimage.dimensionality.value),
+                "frozen_request": preimage.frozen_request,
+                "frozen_requirement_sha256": (
+                    preimage.frozen_requirement_sha256
+                ),
+                "hard_constraints": preimage.hard_constraints,
+                "soft_preferences": preimage.soft_preferences,
+                "forbidden_transformations": preimage.forbidden_transformations,
+                "seed_evidence": preimage.seed_evidence,
+                "primary_mechanism_stratum": (
+                    preimage.primary_mechanism_stratum
+                ),
+                "leakage_group_ids": groups,
+                "public_release_allowed": True,
+            },
+        )
+        cases.append(case)
+        lineage_by_case[case.case_id] = lineage
+    policies = tuple(
+        build_case_source_policy_attestation_v2(
+            case=case,
+            source_id=record.source_id,
+            source_record_id=record.source_record_id,
+            usage_roles=(
+                (SourceUseRole.CASE_SEED, SourceUseRole.STRUCTURE)
+                if record.source_id == "cod"
+                else (
+                    (SourceUseRole.CASE_SEED,)
+                    if record.source_id == "materials_project_core"
+                    else (
+                        SourceUseRole.IDENTIFIER_RESOLUTION,
+                        SourceUseRole.LITERATURE_RETRIEVAL,
+                    )
+                )
+            ),
+            record_license_compatibility_sha256=canonical_sha256(
+                (case.case_id, record.source_id, "license")
+            ),
+            record_provenance_token_sha256=canonical_sha256(
+                (case.case_id, record.source_id, "provenance")
+            ),
+            public_fields_release_allowed=True,
+            structure_payload_release_allowed=record.source_id == "cod",
+        )
+        for case in cases
+        for record in case.source_records
+    )
+    structure_release = finalize_structure_grouping_release_v2(
+        computation=computation,
+        final_cases=tuple(cases),
+        source_policy_attestations=policies,
+        final_cases_declared_at="2026-08-09T07:30:00+08:00",
+        created_at="2026-08-09T07:31:00+08:00",
     )
     lineage_assignments = tuple(
         build_mechanism_lineage_assignment_v3(
@@ -742,6 +1071,9 @@ def _calibration_manifest_v2(
         )
         for case in cases
     )
+    derivative_screening = _calibration_derivative_screening_release(
+        tuple(cases)
+    )
     return build_calibration_set_manifest_v2(
         cases=tuple(reversed(cases)),
         annotation_guide_version=GUIDE_VERSION_V2,
@@ -749,9 +1081,16 @@ def _calibration_manifest_v2(
         case_freeze_policy_sha256=canonical_sha256(
             {"calibration-freeze-policy": "v2"}
         ),
-        grouping_algorithms=tuple(reversed(algorithms)),
-        grouping_runs=tuple(reversed(runs)),
-        grouping_assignments=tuple(reversed(assignments)),
+        structure_grouping_release=structure_release,
+        derivative_screening_release=derivative_screening,
+        source_policy_attestations=policies,
+        grouping_algorithms=tuple(
+            reversed(structure_release.grouping_algorithms)
+        ),
+        grouping_runs=tuple(reversed(structure_release.grouping_runs)),
+        grouping_assignments=tuple(
+            reversed(structure_release.grouping_assignments)
+        ),
         mechanism_lineage_registry=registry,
         mechanism_lineage_assignments=tuple(reversed(lineage_assignments)),
         frozen_at="2026-08-09T08:00:00+08:00",
@@ -1015,6 +1354,7 @@ def _disjoint_v3_fixture(
         registry=registry,
         algorithms=algorithms,
     )
+    algorithms = calibration.grouping_algorithms
     benchmark = _benchmark_v3_fixture(
         registry=registry,
         algorithms=algorithms,
@@ -1205,11 +1545,162 @@ def _budget_v2(*, frozen_at: str) -> BudgetManifestV1:
     )
 
 
+def _rebuild_calibration_with_derivative_screening(
+    manifest: CalibrationSetManifestV2,
+    screening: DerivativeScreeningReleaseV3,
+) -> CalibrationSetManifestV2:
+    return build_calibration_set_manifest_v2(
+        cases=manifest.cases,
+        annotation_guide_version=manifest.annotation_guide_version,
+        annotation_guide_sha256=manifest.annotation_guide_sha256,
+        case_freeze_policy_sha256=manifest.case_freeze_policy_sha256,
+        structure_grouping_release=manifest.structure_grouping_release,
+        derivative_screening_release=screening,
+        source_policy_attestations=manifest.source_policy_attestations,
+        grouping_algorithms=manifest.grouping_algorithms,
+        grouping_runs=manifest.grouping_runs,
+        grouping_assignments=manifest.grouping_assignments,
+        mechanism_lineage_registry=manifest.mechanism_lineage_registry,
+        mechanism_lineage_assignments=manifest.mechanism_lineage_assignments,
+        frozen_at=manifest.frozen_at,
+    )
+
+
+def test_v2_calibration_manifest_rejects_foreign_derivative_screening() -> None:
+    manifest = _calibration_manifest_v2()
+    foreign = _calibration_manifest_v2(
+        registry=_global_lineage_registry_v3(
+            taxonomy_version="foreign-calibration-screening-v3"
+        )
+    )
+
+    with pytest.raises(
+        ValidationError, match="differs from the exact case universe"
+    ):
+        _rebuild_calibration_with_derivative_screening(
+            manifest,
+            foreign.derivative_screening_release,
+        )
+
+
+def test_v2_calibration_manifest_rejects_late_derivative_screening() -> None:
+    manifest = _calibration_manifest_v2()
+    screening = manifest.derivative_screening_release
+    late = build_derivative_screening_release_v3(
+        policy=screening.policy,
+        roster=screening.roster,
+        cases=screening.cases,
+        assignments=screening.assignments,
+        raw_reviews=screening.raw_reviews,
+        adjudications=screening.adjudications,
+        assembled_at="2026-08-09T08:00:01+08:00",
+    )
+
+    with pytest.raises(
+        ValidationError, match="not assembled before manifest seal"
+    ):
+        _rebuild_calibration_with_derivative_screening(manifest, late)
+
+
+def test_v2_calibration_manifest_rejects_structure_release_at_equal_seal_time() -> None:
+    manifest = _calibration_manifest_v2()
+    structure = manifest.structure_grouping_release
+    equal_time_release = finalize_structure_grouping_release_v2(
+        computation=structure.computation,
+        final_cases=structure.final_cases,
+        source_policy_attestations=structure.source_policy_attestations,
+        final_cases_declared_at=structure.final_cases_declared_at,
+        created_at=manifest.frozen_at,
+    )
+
+    with pytest.raises(
+        ValidationError,
+        match="structure release was not created before manifest seal",
+    ):
+        build_calibration_set_manifest_v2(
+            cases=manifest.cases,
+            annotation_guide_version=manifest.annotation_guide_version,
+            annotation_guide_sha256=manifest.annotation_guide_sha256,
+            case_freeze_policy_sha256=manifest.case_freeze_policy_sha256,
+            structure_grouping_release=equal_time_release,
+            derivative_screening_release=manifest.derivative_screening_release,
+            source_policy_attestations=equal_time_release.source_policy_attestations,
+            grouping_algorithms=equal_time_release.grouping_algorithms,
+            grouping_runs=equal_time_release.grouping_runs,
+            grouping_assignments=equal_time_release.grouping_assignments,
+            mechanism_lineage_registry=manifest.mechanism_lineage_registry,
+            mechanism_lineage_assignments=manifest.mechanism_lineage_assignments,
+            frozen_at=manifest.frozen_at,
+        )
+
+
+def test_v2_calibration_manifest_rejects_raw_derivative_adjudicated_to_not() -> None:
+    manifest = _calibration_manifest_v2()
+    screening = manifest.derivative_screening_release
+    assignment = screening.assignments[0]
+    target_reviews = tuple(
+        item
+        for item in screening.raw_reviews
+        if item.case_id == assignment.case_id
+    )
+    assert len(target_reviews) == 2
+    vacancy_review = build_derivative_screening_raw_review_v3(
+        policy=screening.policy,
+        roster=screening.roster,
+        assignment=assignment,
+        reviewer_id=target_reviews[1].reviewer_id,
+        derivative_class=DerivativeClass.VACANCY,
+        criterion_findings=DERIVATIVE_SCREENING_CRITERIA,
+        rationale=(
+            "The human reviewer identified a possible vacancy-parent derivative."
+        ),
+        reviewed_at=target_reviews[1].reviewed_at,
+    )
+    changed_reviews = tuple(
+        vacancy_review if item.review_id == target_reviews[1].review_id else item
+        for item in screening.raw_reviews
+    )
+    disagreement = tuple(
+        item for item in changed_reviews if item.case_id == assignment.case_id
+    )
+    adjudication = build_derivative_screening_adjudication_v3(
+        policy=screening.policy,
+        roster=screening.roster,
+        assignment=assignment,
+        reviews=disagreement,
+        final_derivative_class=DerivativeClass.NOT,
+        rationale=(
+            "The distinct adjudicator resolved the evidence to NOT while preserving "
+            "the raw vacancy-risk observation."
+        ),
+        adjudicated_at="2026-08-09T07:45:30+08:00",
+    )
+    adjudicated_to_not = build_derivative_screening_release_v3(
+        policy=screening.policy,
+        roster=screening.roster,
+        cases=screening.cases,
+        assignments=screening.assignments,
+        raw_reviews=changed_reviews,
+        adjudications=(adjudication,),
+        assembled_at="2026-08-09T07:47:00+08:00",
+    )
+    assert all(
+        item.final_derivative_class is DerivativeClass.NOT
+        for item in adjudicated_to_not.final_judgments
+    )
+
+    with pytest.raises(ValueError, match="contains derivative risk"):
+        _rebuild_calibration_with_derivative_screening(
+            manifest,
+            adjudicated_to_not,
+        )
+
+
 def test_v2_calibration_manifest_replays_full_cases_sources_and_groups() -> None:
     manifest = _calibration_manifest_v2()
 
     assert len(manifest.cases) == 4
-    assert len(manifest.source_records) == 4
+    assert len(manifest.source_records) == 12
     assert len(manifest.grouping_assignments) == 8
     assert {
         item.axis for item in manifest.memberships
@@ -1236,6 +1727,132 @@ def test_v2_calibration_manifest_replays_full_cases_sources_and_groups() -> None
         )
 
 
+def test_v2_calibration_manifest_rejects_foreign_private_structure_release() -> None:
+    manifest = _calibration_manifest_v2()
+    foreign = _calibration_manifest_v2(
+        registry=_global_lineage_registry_v3(
+            taxonomy_version="foreign-calibration-lineage-v3"
+        )
+    )
+    payload = manifest.model_dump(
+        mode="python", exclude={"manifest_id", "manifest_sha256"}
+    )
+    payload["structure_grouping_release"] = (
+        foreign.structure_grouping_release.model_dump(
+            mode="python", round_trip=True
+        )
+    )
+    digest = canonical_sha256(payload)
+    with pytest.raises(
+        ValidationError, match="differ from the private structure release projection"
+    ):
+        CalibrationSetManifestV2.model_validate(
+            {
+                **payload,
+                "manifest_sha256": digest,
+                "manifest_id": deterministic_id(
+                    "calibration-set-manifest-v2",
+                    {"manifest_sha256": digest},
+                ),
+            }
+        )
+
+
+def test_v2_calibration_manifest_rejects_compatibility_projection_drift() -> None:
+    manifest = _calibration_manifest_v2()
+    first = manifest.grouping_assignments[0]
+    values = first.model_dump(
+        mode="python", exclude={"assignment_id", "assignment_sha256"}
+    )
+    values["canonical_group_key"] = "foreign-compatibility-group"
+    forged_assignment = _identified(
+        StructureGroupingAssignmentV2,
+        id_field="assignment_id",
+        sha_field="assignment_sha256",
+        prefix="structure-group-assignment",
+        values=values,
+    )
+    payload = manifest.model_dump(
+        mode="python", exclude={"manifest_id", "manifest_sha256"}
+    )
+    payload["grouping_assignments"] = (
+        forged_assignment.model_dump(mode="python", round_trip=True),
+        *payload["grouping_assignments"][1:],
+    )
+    digest = canonical_sha256(payload)
+    with pytest.raises(
+        ValidationError, match="differ from the private structure release projection"
+    ):
+        CalibrationSetManifestV2.model_validate(
+            {
+                **payload,
+                "manifest_sha256": digest,
+                "manifest_id": deterministic_id(
+                    "calibration-set-manifest-v2",
+                    {"manifest_sha256": digest},
+                ),
+            }
+        )
+
+
+def test_v2_calibration_rejects_structure_role_on_wrong_source_record() -> None:
+    manifest = _calibration_manifest_v2()
+    case = manifest.cases[0]
+    changed = []
+    for policy in manifest.source_policy_attestations:
+        if policy.case_id != case.case_id:
+            changed.append(policy)
+            continue
+        record = next(
+            item
+            for item in case.source_records
+            if (
+                item.source_id,
+                item.source_record_id,
+            ) == (policy.source_id, policy.source_record_id)
+        )
+        if record.source_id == "cod":
+            roles = (SourceUseRole.CASE_SEED,)
+            payload_allowed = False
+        elif record.source_id == "materials_project_core":
+            roles = (SourceUseRole.CASE_SEED, SourceUseRole.STRUCTURE)
+            payload_allowed = True
+        else:
+            roles = (
+                SourceUseRole.IDENTIFIER_RESOLUTION,
+                SourceUseRole.LITERATURE_RETRIEVAL,
+            )
+            payload_allowed = False
+        changed.append(
+            build_case_source_policy_attestation_v2(
+                case=case,
+                source_id=record.source_id,
+                source_record_id=record.source_record_id,
+                usage_roles=roles,
+                record_license_compatibility_sha256=canonical_sha256(
+                    (case.case_id, record.source_id, "wrong-role-license")
+                ),
+                record_provenance_token_sha256=canonical_sha256(
+                    (case.case_id, record.source_id, "wrong-role-provenance")
+                ),
+                public_fields_release_allowed=True,
+                structure_payload_release_allowed=payload_allowed,
+            )
+        )
+    with pytest.raises(
+        (ValidationError, ValueError), match="raw structure provenance lacks a STRUCTURE"
+    ):
+        finalize_structure_grouping_release_v2(
+            computation=manifest.structure_grouping_release.computation,
+            final_cases=manifest.cases,
+            source_policy_attestations=tuple(changed),
+            final_cases_declared_at=(
+                manifest.structure_grouping_release.final_cases_declared_at
+            ),
+            created_at=manifest.structure_grouping_release.created_at,
+        )
+
+
 def test_v2_calibration_manifest_rejects_missing_structure_run_output_and_fake_group() -> None:
     manifest = _calibration_manifest_v2()
     missing = manifest.model_dump(
@@ -1243,7 +1860,9 @@ def test_v2_calibration_manifest_rejects_missing_structure_run_output_and_fake_g
     )
     missing["grouping_assignments"] = missing["grouping_assignments"][:-1]
     missing_digest = canonical_sha256(missing)
-    with pytest.raises(ValidationError, match="do not exactly cover cases and axes"):
+    with pytest.raises(
+        ValidationError, match="differ from the private structure release projection"
+    ):
         CalibrationSetManifestV2.model_validate(
             {
                 **missing,

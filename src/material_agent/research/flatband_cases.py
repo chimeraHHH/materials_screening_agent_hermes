@@ -59,6 +59,12 @@ from material_agent.research.flatband_source_policy import (
     assert_case_source_policy_v2,
     build_case_source_policy_attestation_v2,
 )
+from material_agent.research.flatband_structure_grouping import (
+    StructureGroupingPrivateEvidenceReleaseV2,
+    StructureGroupingUnionReplayReleaseV2,
+    assert_structure_grouping_release_exact_replay_v2,
+    assert_structure_grouping_union_replay_release_exact_v2,
+)
 from material_agent.research.flatband_experts import (
     CalibrationCompletionV2,
     CalibrationSetManifestV2,
@@ -96,6 +102,11 @@ from material_agent.research.flatband_leakage import (
 
 
 ModelT = TypeVar("ModelT", bound=StrictModel)
+
+STRUCTURE_UNION_OWNER_CALIBRATION_V3 = "CALIBRATION"
+STRUCTURE_UNION_OWNER_CURRENT_R1_FULL_POOL_V3 = "CURRENT_R1_FULL_POOL"
+STRUCTURE_UNION_OWNER_PRIOR_R1_FULL_POOL_V3 = "PRIOR_R1_FULL_POOL"
+STRUCTURE_UNION_OWNER_CURRENT_R2_FULL_POOL_V3 = "CURRENT_R2_FULL_POOL"
 
 
 def _timestamp(value: str) -> datetime:
@@ -208,6 +219,14 @@ class CaseEligibilityStatus(StrEnum):
     EXCLUDED = "EXCLUDED"
 
 
+class DerivativeEligibilityClassV3(StrEnum):
+    NOT_A_DERIVATIVE = "NOT_A_DERIVATIVE"
+    VACANCY = "VACANCY"
+    INTERCALATION = "INTERCALATION"
+    NON_STOICHIOMETRIC = "NON_STOICHIOMETRIC"
+    ORDERED_DEFECT = "ORDERED_DEFECT"
+
+
 class CaseEligibilityReasonCode(StrEnum):
     MEETS_ALL_PREREGISTERED_CRITERIA = "MEETS_ALL_PREREGISTERED_CRITERIA"
     SOURCE_PROVENANCE_INCOMPLETE = "SOURCE_PROVENANCE_INCOMPLETE"
@@ -223,6 +242,9 @@ class CaseEligibilityReasonCode(StrEnum):
         "EXPERT_CONFLICT_OR_ASSIGNMENT_INCOMPLETE"
     )
     DUPLICATE_OR_DEPENDENT_CASE = "DUPLICATE_OR_DEPENDENT_CASE"
+    UNSUPPORTED_DERIVATIVE_WITHOUT_PARENT_TRANSFORMATION_LINEAGE = (
+        "UNSUPPORTED_DERIVATIVE_WITHOUT_PARENT_TRANSFORMATION_LINEAGE"
+    )
     OTHER_PREREGISTERED_FAILURE = "OTHER_PREREGISTERED_FAILURE"
 
 
@@ -330,6 +352,52 @@ def build_frozen_case_candidate(
             ),
             "declared_at": declared_at,
         },
+    )
+
+
+def build_frozen_case_candidate_v3(
+    *,
+    structure_grouping_release: StructureGroupingPrivateEvidenceReleaseV2,
+    candidate_key: str,
+    declared_at: str,
+) -> FrozenCaseCandidateV1:
+    """Derive a V3 candidate only from an exact post-compute projection."""
+
+    release = _revalidate(
+        structure_grouping_release, StructureGroupingPrivateEvidenceReleaseV2
+    )
+    assert_structure_grouping_release_exact_replay_v2(release)
+    projection = {
+        item.candidate_key: item for item in release.final_case_projections
+    }.get(candidate_key)
+    if projection is None:
+        raise ValueError("V3 candidate key is absent from the private structure release")
+    case = {item.case_id: item for item in release.final_cases}.get(
+        projection.final_case_id
+    )
+    case_input = {
+        item.candidate_key: item
+        for item in release.computation.input_manifest.case_inputs
+    }.get(candidate_key)
+    if case is None or case_input is None or (
+        projection.final_case_sha256,
+        projection.pre_group_slot_key,
+        projection.input_id,
+        projection.input_sha256,
+    ) != (
+        case.case_sha256,
+        case_input.pre_group_slot_key,
+        case_input.input_id,
+        case_input.input_sha256,
+    ):
+        raise ValueError("V3 candidate projection crosswires case, slot, or input")
+    if _timestamp(declared_at) < _timestamp(release.created_at):
+        raise ValueError("V3 candidate declaration predates the structure release")
+    return build_frozen_case_candidate(
+        case=case,
+        slot_id=projection.pre_group_slot_key,
+        priority=case_input.preimage.priority,
+        declared_at=declared_at,
     )
 
 
@@ -623,6 +691,7 @@ def _candidate_pool_sha256_v3(
     candidates: tuple[FrozenCaseCandidateV1, ...],
     lineage_assignments: tuple[MechanismLineageAssignmentV3, ...],
     source_policy_attestations: tuple[CaseSourcePolicyAttestationV2, ...],
+    structure_grouping_release: StructureGroupingPrivateEvidenceReleaseV2,
     grouping_algorithms: tuple[StructureGroupingAlgorithmV2, ...],
     grouping_runs: tuple[StructureGroupingRunV2, ...],
     grouping_assignments: tuple[StructureGroupingAssignmentV2, ...],
@@ -641,6 +710,9 @@ def _candidate_pool_sha256_v3(
             "source_policy_attestations": tuple(
                 item.model_dump(mode="python", round_trip=True)
                 for item in source_policy_attestations
+            ),
+            "structure_grouping_release": structure_grouping_release.model_dump(
+                mode="python", round_trip=True
             ),
             "grouping_algorithms": tuple(
                 item.model_dump(mode="python", round_trip=True)
@@ -725,7 +797,6 @@ class FrozenCaseReleaseV2(StrictModel):
             _revalidate(item, CaseSourcePolicyAttestationV2)
             for item in self.source_policy_attestations
         )
-
         candidate_order = tuple(
             (item.slot_id, item.priority, item.case.case_id) for item in candidates
         )
@@ -1759,12 +1830,13 @@ class CandidatePoolReleaseV3(StrictModel):
     )
     candidate_pool_sha256: Sha256
     candidates: Annotated[
-        tuple[FrozenCaseCandidateV1, ...], Field(min_length=30, max_length=2_040)
+        tuple[FrozenCaseCandidateV1, ...], Field(min_length=30, max_length=36)
     ]
     candidate_lineage_assignments: Annotated[
         tuple[MechanismLineageAssignmentV3, ...],
-        Field(min_length=30, max_length=2_040),
+        Field(min_length=30, max_length=36),
     ]
+    structure_grouping_release: StructureGroupingPrivateEvidenceReleaseV2
     grouping_algorithms: Annotated[
         tuple[StructureGroupingAlgorithmV2, ...], Field(min_length=2, max_length=2)
     ]
@@ -1773,17 +1845,22 @@ class CandidatePoolReleaseV3(StrictModel):
     ]
     grouping_assignments: Annotated[
         tuple[StructureGroupingAssignmentV2, ...],
-        Field(min_length=60, max_length=4_080),
+        Field(min_length=60, max_length=72),
     ]
     source_policy_attestations: Annotated[
         tuple[CaseSourcePolicyAttestationV2, ...],
-        Field(min_length=30, max_length=32_640),
+        Field(min_length=30, max_length=576),
     ]
     sealed_at: Annotated[str, Field(min_length=20, max_length=40)]
     replacement_selection_rule: Literal["LOWEST_PRIORITY_ELIGIBLE_V3"] = (
         "LOWEST_PRIORITY_ELIGIBLE_V3"
     )
     include_only_source_policy: Literal[True] = True
+    parent_transformation_lineage_axis_available: Literal[False] = False
+    unsupported_derivative_eligibility_inclusion_allowed: Literal[False] = False
+    unsupported_derivative_exclusion_reason_code: Literal[
+        "UNSUPPORTED_DERIVATIVE_WITHOUT_PARENT_TRANSFORMATION_LINEAGE"
+    ] = "UNSUPPORTED_DERIVATIVE_WITHOUT_PARENT_TRANSFORMATION_LINEAGE"
     post_hoc_candidate_allowed: Literal[False] = False
     private_custody_required: Literal[True] = True
     public_release_allowed: Literal[False] = False
@@ -1823,6 +1900,11 @@ class CandidatePoolReleaseV3(StrictModel):
             _revalidate(item, CaseSourcePolicyAttestationV2)
             for item in self.source_policy_attestations
         )
+        structure_release = _revalidate(
+            self.structure_grouping_release,
+            StructureGroupingPrivateEvidenceReleaseV2,
+        )
+        assert_structure_grouping_release_exact_replay_v2(structure_release)
         algorithms = tuple(
             _revalidate(item, StructureGroupingAlgorithmV2)
             for item in self.grouping_algorithms
@@ -1835,6 +1917,20 @@ class CandidatePoolReleaseV3(StrictModel):
             _revalidate(item, StructureGroupingAssignmentV2)
             for item in self.grouping_assignments
         )
+        if (
+            algorithms,
+            runs,
+            grouping_assignments,
+            source_policies,
+        ) != (
+            structure_release.grouping_algorithms,
+            structure_release.grouping_runs,
+            structure_release.grouping_assignments,
+            structure_release.source_policy_attestations,
+        ):
+            raise ValueError(
+                "V3 grouping/source artifacts differ from the private structure release projection"
+            )
 
         candidate_order = tuple(
             (item.slot_id, item.priority, item.case.case_id) for item in candidates
@@ -1888,9 +1984,56 @@ class CandidatePoolReleaseV3(StrictModel):
                 raise ValueError(f"V3 {label} identities must be one-to-one")
 
         candidate_by_case = {item.case.case_id: item for item in candidates}
+        release_case_by_id = {
+            item.case_id: item for item in structure_release.final_cases
+        }
+        projection_by_case = {
+            item.final_case_id: item
+            for item in structure_release.final_case_projections
+        }
+        input_by_key = {
+            item.candidate_key: item
+            for item in structure_release.computation.input_manifest.case_inputs
+        }
+        if set(candidate_by_case) != set(release_case_by_id) or set(
+            candidate_by_case
+        ) != set(projection_by_case):
+            raise ValueError(
+                "V3 candidates do not exactly cover the private structure release"
+            )
         by_slot: dict[str, list[FrozenCaseCandidateV1]] = defaultdict(list)
         for candidate in candidates:
             by_slot[candidate.slot_id].append(candidate)
+            projection = projection_by_case[candidate.case.case_id]
+            case_input = input_by_key.get(projection.candidate_key)
+            if case_input is None or (
+                candidate.case,
+                candidate.slot_id,
+                candidate.priority,
+                projection.final_case_sha256,
+                projection.pre_group_slot_key,
+                projection.input_id,
+                projection.input_sha256,
+                case_input.preimage.study_phase,
+            ) != (
+                release_case_by_id[candidate.case.case_id],
+                case_input.pre_group_slot_key,
+                case_input.preimage.priority,
+                candidate.case.case_sha256,
+                case_input.pre_group_slot_key,
+                case_input.input_id,
+                case_input.input_sha256,
+                self.study_phase,
+            ):
+                raise ValueError(
+                    "V3 candidate crosswires private final-case, slot, priority, input, or phase"
+                )
+            if _timestamp(candidate.declared_at) < _timestamp(
+                structure_release.created_at
+            ):
+                raise ValueError(
+                    "V3 candidate declaration predates the private structure release"
+                )
             if candidate.case.source_catalog_sha256 != self.source_catalog_sha256:
                 raise ValueError("V3 candidate uses a foreign source catalog")
             if any(
@@ -1902,9 +2045,9 @@ class CandidatePoolReleaseV3(StrictModel):
             priorities = tuple(item.priority for item in slot_candidates)
             if priorities != tuple(range(len(slot_candidates))):
                 raise ValueError("V3 candidate priorities must be contiguous from zero")
+            if priorities not in ((0,), (0, 1)):
+                raise ValueError("formal Pilot V3 permits at most one replacement per slot")
             primary = slot_candidates[0]
-            if slot_id != frozen_case_slot_id(primary.case):
-                raise ValueError("V3 slot differs from its priority-zero primary")
             primary_strata = (
                 primary.case.target_class,
                 primary.case.dimensionality,
@@ -1924,6 +2067,8 @@ class CandidatePoolReleaseV3(StrictModel):
                 )
         if len(by_slot) != self.expected_slot_count:
             raise ValueError("formal Pilot V3 requires exactly 30 predeclared slots")
+        if len(candidates) - self.expected_slot_count > 6:
+            raise ValueError("formal Pilot V3 permits at most six replacements per round")
         primaries = tuple(items[0].case for items in by_slot.values())
         target_counts = {
             value: sum(item.target_class is value for item in primaries)
@@ -2174,6 +2319,7 @@ class CandidatePoolReleaseV3(StrictModel):
             candidates,
             lineages,
             source_policies,
+            structure_release,
             algorithms,
             runs,
             grouping_assignments,
@@ -2193,15 +2339,6 @@ class CandidatePoolReleaseV3(StrictModel):
             raise ValueError(
                 "formal lineage registry/curations were not before candidate-pool seal"
             )
-        latest_declared = max(
-            _timestamp(item.declared_at) for item in candidates
-        )
-        if any(_timestamp(item.started_at) <= latest_declared for item in runs):
-            raise ValueError(
-                "V3 structure grouping run must follow all candidate declarations"
-            )
-        if any(_timestamp(item.completed_at) >= pool_sealed for item in runs):
-            raise ValueError("V3 structure grouping run was not before pool seal")
         for candidate in candidates:
             declared = _timestamp(candidate.declared_at)
             assigned = _timestamp(
@@ -2211,8 +2348,10 @@ class CandidatePoolReleaseV3(StrictModel):
                 raise ValueError(
                     "global lineage registry was not sealed before V3 candidates"
                 )
-            if assigned < declared:
-                raise ValueError("V3 lineage assignment predates its candidate")
+            if assigned <= declared:
+                raise ValueError(
+                    "V3 lineage assignment does not strictly follow its candidate"
+                )
             if assigned >= pool_sealed or declared >= pool_sealed:
                 raise ValueError(
                     "V3 candidate or lineage assignment was not before pool seal"
@@ -2236,6 +2375,7 @@ def build_candidate_pool_release_v3(
         MechanismLineageAssignmentCurationReleaseV3
     ),
     candidate_lineage_assignments: tuple[MechanismLineageAssignmentV3, ...],
+    structure_grouping_release: StructureGroupingPrivateEvidenceReleaseV2,
     grouping_algorithms: tuple[StructureGroupingAlgorithmV2, ...],
     grouping_runs: tuple[StructureGroupingRunV2, ...],
     grouping_assignments: tuple[StructureGroupingAssignmentV2, ...],
@@ -2257,6 +2397,10 @@ def build_candidate_pool_release_v3(
         mechanism_lineage_assignment_curation_release,
         MechanismLineageAssignmentCurationReleaseV3,
     )
+    structure_release = _revalidate(
+        structure_grouping_release, StructureGroupingPrivateEvidenceReleaseV2
+    )
+    assert_structure_grouping_release_exact_replay_v2(structure_release)
     ordered_candidates = tuple(
         sorted(
             (_revalidate(item, FrozenCaseCandidateV1) for item in candidates),
@@ -2333,12 +2477,14 @@ def build_candidate_pool_release_v3(
                 ordered_candidates,
                 ordered_lineages,
                 ordered_policies,
+                structure_release,
                 ordered_algorithms,
                 ordered_runs,
                 ordered_grouping_assignments,
             ),
             "candidates": ordered_candidates,
             "candidate_lineage_assignments": ordered_lineages,
+            "structure_grouping_release": structure_release,
             "grouping_algorithms": ordered_algorithms,
             "grouping_runs": ordered_runs,
             "grouping_assignments": ordered_grouping_assignments,
@@ -2787,6 +2933,62 @@ def _validate_eligibility_outcome_v3(
         raise ValueError("excluded V3 candidate cannot claim all criteria were met")
 
 
+def _validate_derivative_exclusion_v3(
+    *,
+    derivative_class: DerivativeEligibilityClassV3,
+    status: CaseEligibilityStatus,
+    reason_codes: tuple[CaseEligibilityReasonCode, ...],
+) -> None:
+    reason = (
+        CaseEligibilityReasonCode
+        .UNSUPPORTED_DERIVATIVE_WITHOUT_PARENT_TRANSFORMATION_LINEAGE
+    )
+    if derivative_class is DerivativeEligibilityClassV3.NOT_A_DERIVATIVE:
+        if reason in reason_codes:
+            raise ValueError("non-derivative audit cannot use the derivative exclusion")
+        return
+    if status is not CaseEligibilityStatus.EXCLUDED or reason not in reason_codes:
+        raise ValueError(
+            "v0 derivative candidate must fail closed without a parent/transformation lineage axis"
+        )
+
+
+class DerivativeEvidenceRefV3(StrictModel):
+    """Private reviewer evidence joined to one frozen candidate source record."""
+
+    source_id: Identifier
+    source_record_id: Identifier
+    source_record_raw_sha256: Sha256
+    private_assessment_artifact_sha256: Sha256
+    private_assessment_locator_sha256: Sha256
+
+
+def _validate_final_derivative_class_v3(
+    *,
+    raw_classes: tuple[DerivativeEligibilityClassV3, ...],
+    final_class: DerivativeEligibilityClassV3,
+    status: CaseEligibilityStatus,
+    reason_codes: tuple[CaseEligibilityReasonCode, ...],
+) -> None:
+    derivative_classes = {
+        item
+        for item in raw_classes
+        if item is not DerivativeEligibilityClassV3.NOT_A_DERIVATIVE
+    }
+    if derivative_classes:
+        if final_class not in derivative_classes:
+            raise ValueError(
+                "V3 final derivative class must preserve a raw derivative finding"
+            )
+    elif final_class is not DerivativeEligibilityClassV3.NOT_A_DERIVATIVE:
+        raise ValueError("V3 final derivative class is absent from both raw audits")
+    _validate_derivative_exclusion_v3(
+        derivative_class=final_class,
+        status=status,
+        reason_codes=reason_codes,
+    )
+
+
 class EligibilityRawAuditV3(StrictModel):
     """One assigned reviewer's independent, immutable eligibility audit."""
 
@@ -2805,6 +3007,10 @@ class EligibilityRawAuditV3(StrictModel):
     case_id: Identifier
     case_sha256: Sha256
     reviewer_id: Identifier
+    derivative_class: DerivativeEligibilityClassV3
+    derivative_evidence_refs: Annotated[
+        tuple[DerivativeEvidenceRefV3, ...], Field(min_length=1, max_length=16)
+    ]
     status: CaseEligibilityStatus
     reason_codes: Annotated[
         tuple[CaseEligibilityReasonCode, ...], Field(min_length=1, max_length=16)
@@ -2824,7 +3030,44 @@ class EligibilityRawAuditV3(StrictModel):
 
     @model_validator(mode="after")
     def validate_audit(self) -> "EligibilityRawAuditV3":
+        evidence_keys = tuple(
+            (
+                item.source_id,
+                item.source_record_id,
+                item.source_record_raw_sha256,
+                item.private_assessment_artifact_sha256,
+                item.private_assessment_locator_sha256,
+            )
+            for item in self.derivative_evidence_refs
+        )
+        if evidence_keys != tuple(sorted(set(evidence_keys))):
+            raise ValueError(
+                "V3 derivative evidence refs must be sorted and unique"
+            )
+        for values, label in (
+            (
+                tuple(item[:3] for item in evidence_keys),
+                "candidate source triple",
+            ),
+            (
+                tuple(item[3] for item in evidence_keys),
+                "private assessment artifact SHA-256",
+            ),
+            (
+                tuple(item[4] for item in evidence_keys),
+                "private assessment locator SHA-256",
+            ),
+        ):
+            if len(values) != len(set(values)):
+                raise ValueError(
+                    f"V3 derivative evidence {label} values must be one-to-one"
+                )
         _validate_eligibility_outcome_v3(
+            status=self.status,
+            reason_codes=self.reason_codes,
+        )
+        _validate_derivative_exclusion_v3(
+            derivative_class=self.derivative_class,
             status=self.status,
             reason_codes=self.reason_codes,
         )
@@ -2842,6 +3085,8 @@ def build_eligibility_raw_audit_v3(
     assignment_release: CandidateEligibilityAssignmentReleaseV3,
     candidate_id: str,
     reviewer_id: str,
+    derivative_class: DerivativeEligibilityClassV3,
+    derivative_evidence_refs: tuple[DerivativeEvidenceRefV3, ...],
     status: CaseEligibilityStatus,
     reason_codes: tuple[CaseEligibilityReasonCode, ...],
     rationale_sha256: str,
@@ -2853,11 +3098,42 @@ def build_eligibility_raw_audit_v3(
     assignment_by_candidate = {
         item.candidate_id: item for item in release.assignments
     }
+    candidate_by_id = {
+        item.candidate_id: item
+        for item in release.candidate_pool_release.candidates
+    }
     assignment = assignment_by_candidate.get(candidate_id)
     if assignment is None:
         raise ValueError("raw eligibility audit references a foreign candidate")
     if reviewer_id not in assignment.reviewer_ids:
         raise ValueError("raw eligibility audit reviewer is not assigned")
+    candidate = candidate_by_id[candidate_id]
+    ordered_evidence = tuple(
+        sorted(
+            (
+                _revalidate(item, DerivativeEvidenceRefV3)
+                for item in derivative_evidence_refs
+            ),
+            key=lambda item: (
+                item.source_id,
+                item.source_record_id,
+                item.source_record_raw_sha256,
+                item.private_assessment_artifact_sha256,
+                item.private_assessment_locator_sha256,
+            ),
+        )
+    )
+    candidate_source_keys = {
+        (item.source_id, item.source_record_id, item.raw_sha256)
+        for item in candidate.case.source_records
+    }
+    if not ordered_evidence or not {
+        (item.source_id, item.source_record_id, item.source_record_raw_sha256)
+        for item in ordered_evidence
+    } <= candidate_source_keys:
+        raise ValueError(
+            "V3 derivative evidence must be a nonempty exact subset of candidate sources"
+        )
     ordered_reasons = tuple(sorted(reason_codes, key=lambda item: item.value))
     return _build_identified(
         EligibilityRawAuditV3,
@@ -2875,6 +3151,8 @@ def build_eligibility_raw_audit_v3(
             "case_id": assignment.case_id,
             "case_sha256": assignment.case_sha256,
             "reviewer_id": reviewer_id,
+            "derivative_class": derivative_class,
+            "derivative_evidence_refs": ordered_evidence,
             "status": status,
             "reason_codes": ordered_reasons,
             "assessment_protocol_sha256": (
@@ -2890,6 +3168,7 @@ class EligibilityAuditRefV3(StrictModel):
     reviewer_id: Identifier
     audit_id: Identifier
     audit_sha256: Sha256
+    derivative_class: DerivativeEligibilityClassV3
     status: CaseEligibilityStatus
     reason_codes: Annotated[
         tuple[CaseEligibilityReasonCode, ...], Field(min_length=1, max_length=16)
@@ -2901,6 +3180,11 @@ class EligibilityAuditRefV3(StrictModel):
             status=self.status,
             reason_codes=self.reason_codes,
         )
+        _validate_derivative_exclusion_v3(
+            derivative_class=self.derivative_class,
+            status=self.status,
+            reason_codes=self.reason_codes,
+        )
         return self
 
 
@@ -2909,6 +3193,7 @@ def _audit_ref_v3(audit: EligibilityRawAuditV3) -> EligibilityAuditRefV3:
         reviewer_id=audit.reviewer_id,
         audit_id=audit.audit_id,
         audit_sha256=audit.audit_sha256,
+        derivative_class=audit.derivative_class,
         status=audit.status,
         reason_codes=audit.reason_codes,
     )
@@ -2935,6 +3220,7 @@ class EligibilityAdjudicationV3(StrictModel):
     raw_audit_refs: Annotated[
         tuple[EligibilityAuditRefV3, ...], Field(min_length=2, max_length=2)
     ]
+    final_derivative_class: DerivativeEligibilityClassV3
     final_status: CaseEligibilityStatus
     final_reason_codes: Annotated[
         tuple[CaseEligibilityReasonCode, ...], Field(min_length=1, max_length=16)
@@ -2959,10 +3245,19 @@ class EligibilityAdjudicationV3(StrictModel):
         reviewer_ids = tuple(item.reviewer_id for item in refs)
         if reviewer_ids != tuple(sorted(set(reviewer_ids))):
             raise ValueError("adjudication raw-audit refs must be reviewer sorted")
-        outcomes = tuple((item.status, item.reason_codes) for item in refs)
+        outcomes = tuple(
+            (item.derivative_class, item.status, item.reason_codes)
+            for item in refs
+        )
         if outcomes[0] == outcomes[1]:
             raise ValueError("consensus raw audits cannot be adjudicated")
         _validate_eligibility_outcome_v3(
+            status=self.final_status,
+            reason_codes=self.final_reason_codes,
+        )
+        _validate_final_derivative_class_v3(
+            raw_classes=tuple(item.derivative_class for item in refs),
+            final_class=self.final_derivative_class,
             status=self.final_status,
             reason_codes=self.final_reason_codes,
         )
@@ -2979,6 +3274,7 @@ def build_eligibility_adjudication_v3(
     *,
     assignment_release: CandidateEligibilityAssignmentReleaseV3,
     raw_audits: tuple[EligibilityRawAuditV3, EligibilityRawAuditV3],
+    final_derivative_class: DerivativeEligibilityClassV3,
     final_status: CaseEligibilityStatus,
     final_reason_codes: tuple[CaseEligibilityReasonCode, ...],
     rationale_sha256: str,
@@ -3021,6 +3317,7 @@ def build_eligibility_adjudication_v3(
             "case_sha256": assignment.case_sha256,
             "adjudicator_id": assignment.adjudicator_id,
             "raw_audit_refs": tuple(_audit_ref_v3(item) for item in audits),
+            "final_derivative_class": final_derivative_class,
             "final_status": final_status,
             "final_reason_codes": ordered_reasons,
             "assessment_protocol_sha256": (
@@ -3052,6 +3349,7 @@ class EligibilityDecisionV3(StrictModel):
     ]
     adjudication_id: Identifier | None = None
     adjudication_sha256: Sha256 | None = None
+    derivative_class: DerivativeEligibilityClassV3
     status: CaseEligibilityStatus
     reason_codes: Annotated[
         tuple[CaseEligibilityReasonCode, ...], Field(min_length=1, max_length=16)
@@ -3084,6 +3382,12 @@ class EligibilityDecisionV3(StrictModel):
             status=self.status,
             reason_codes=self.reason_codes,
         )
+        _validate_final_derivative_class_v3(
+            raw_classes=tuple(item.derivative_class for item in refs),
+            final_class=self.derivative_class,
+            status=self.status,
+            reason_codes=self.reason_codes,
+        )
         _assert_identity(
             self,
             id_field="decision_id",
@@ -3111,6 +3415,10 @@ def _derive_decisions_v3(
     )
     assignment_by_candidate = {
         item.candidate_id: item for item in release.assignments
+    }
+    candidate_by_id = {
+        item.candidate_id: item
+        for item in release.candidate_pool_release.candidates
     }
     expected_audit_keys = {
         (assignment.candidate_id, reviewer_id)
@@ -3162,13 +3470,32 @@ def _derive_decisions_v3(
                 release.candidate_pool_release.eligibility_policy_sha256,
             ):
                 raise ValueError("V3 raw audit crosswires assignment or candidate")
+            candidate_source_keys = {
+                (item.source_id, item.source_record_id, item.raw_sha256)
+                for item in candidate_by_id[candidate_id].case.source_records
+            }
+            evidence_source_keys = {
+                (
+                    item.source_id,
+                    item.source_record_id,
+                    item.source_record_raw_sha256,
+                )
+                for item in audit.derivative_evidence_refs
+            }
+            if not evidence_source_keys or not (
+                evidence_source_keys <= candidate_source_keys
+            ):
+                raise ValueError(
+                    "V3 derivative evidence does not join an exact candidate source subset"
+                )
             audited = _timestamp(audit.audited_at)
             if audited <= assignment_sealed or audited >= eligibility_sealed:
                 raise ValueError(
                     "V3 raw audit must follow assignment seal and precede eligibility seal"
                 )
         outcomes = {
-            (item.status, item.reason_codes) for item in candidate_audits
+            (item.derivative_class, item.status, item.reason_codes)
+            for item in candidate_audits
         }
         if len(outcomes) != 1:
             disagreement_candidates.add(candidate_id)
@@ -3197,6 +3524,7 @@ def _derive_decisions_v3(
         refs = tuple(_audit_ref_v3(item) for item in candidate_audits)
         adjudication = adjudication_by_candidate.get(candidate_id)
         if adjudication is None:
+            derivative_class = candidate_audits[0].derivative_class
             status = candidate_audits[0].status
             reasons = candidate_audits[0].reason_codes
             decided_at = max(
@@ -3240,6 +3568,7 @@ def _derive_decisions_v3(
                 )
             status = adjudication.final_status
             reasons = adjudication.final_reason_codes
+            derivative_class = adjudication.final_derivative_class
             decided_at = adjudication.adjudicated_at
             adjudication_id = adjudication.adjudication_id
             adjudication_sha256 = adjudication.adjudication_sha256
@@ -3260,6 +3589,7 @@ def _derive_decisions_v3(
                     "raw_audit_refs": refs,
                     "adjudication_id": adjudication_id,
                     "adjudication_sha256": adjudication_sha256,
+                    "derivative_class": derivative_class,
                     "status": status,
                     "reason_codes": reasons,
                     "decided_at": decided_at,
@@ -3333,6 +3663,9 @@ class PreRunEligibilityReleaseV3(StrictModel):
     decisions: Annotated[
         tuple[EligibilityDecisionV3, ...], Field(min_length=30, max_length=2_040)
     ]
+    unsupported_derivative_exclusion_candidate_ids: Annotated[
+        tuple[Identifier, ...], Field(max_length=36)
+    ]
     active_selections: Annotated[
         tuple[ActiveCaseSelectionV1, ...], Field(min_length=30, max_length=30)
     ]
@@ -3381,6 +3714,22 @@ class PreRunEligibilityReleaseV3(StrictModel):
         )
         if decisions != expected_decisions:
             raise ValueError("V3 decisions do not uniquely replay from raw audits")
+        derivative_exclusion_candidate_ids = tuple(
+            sorted(
+                {
+                    decision.candidate_id
+                    for decision in decisions
+                    if decision.derivative_class
+                    is not DerivativeEligibilityClassV3.NOT_A_DERIVATIVE
+                }
+            )
+        )
+        if self.unsupported_derivative_exclusion_candidate_ids != (
+            derivative_exclusion_candidate_ids
+        ):
+            raise ValueError(
+                "V3 derivative exclusion ledger does not exactly replay from raw audits"
+            )
         pool = assignments.candidate_pool_release
         selections = tuple(
             ActiveCaseSelectionV1.model_validate(
@@ -3446,6 +3795,16 @@ def build_pre_run_eligibility_release_v3(
         candidate_pool=assignments.candidate_pool_release,
         decisions=decisions,
     )
+    derivative_exclusion_candidate_ids = tuple(
+        sorted(
+            {
+                decision.candidate_id
+                for decision in decisions
+                if decision.derivative_class
+                is not DerivativeEligibilityClassV3.NOT_A_DERIVATIVE
+            }
+        )
+    )
     authorized = (
         len(selections) == assignments.candidate_pool_release.expected_slot_count
         and all(item.selected_candidate_id is not None for item in selections)
@@ -3460,6 +3819,9 @@ def build_pre_run_eligibility_release_v3(
             "raw_audits": audits,
             "adjudications": ordered_adjudications,
             "decisions": decisions,
+            "unsupported_derivative_exclusion_candidate_ids": (
+                derivative_exclusion_candidate_ids
+            ),
             "active_selections": selections,
             "execution_authorized": authorized,
             "sealed_at": sealed_at,
@@ -3793,6 +4155,43 @@ def build_calibration_leakage_context_v3(
     )
 
 
+def _structure_union_members_v3(
+    *,
+    pool: CandidatePoolReleaseV3,
+    calibration: CalibrationSetManifestV2,
+    prior_r1_pool: CandidatePoolReleaseV3 | None,
+) -> tuple[tuple[str, StructureGroupingPrivateEvidenceReleaseV2], ...]:
+    if pool.study_phase == "PILOT_R1":
+        if prior_r1_pool is not None:
+            raise ValueError("R1 structure union cannot carry a prior pool")
+        return (
+            (
+                STRUCTURE_UNION_OWNER_CALIBRATION_V3,
+                calibration.structure_grouping_release,
+            ),
+            (
+                STRUCTURE_UNION_OWNER_CURRENT_R1_FULL_POOL_V3,
+                pool.structure_grouping_release,
+            ),
+        )
+    if prior_r1_pool is None or prior_r1_pool.study_phase != "PILOT_R1":
+        raise ValueError("R2 structure union requires the exact prior R1 pool")
+    return (
+        (
+            STRUCTURE_UNION_OWNER_CALIBRATION_V3,
+            calibration.structure_grouping_release,
+        ),
+        (
+            STRUCTURE_UNION_OWNER_PRIOR_R1_FULL_POOL_V3,
+            prior_r1_pool.structure_grouping_release,
+        ),
+        (
+            STRUCTURE_UNION_OWNER_CURRENT_R2_FULL_POOL_V3,
+            pool.structure_grouping_release,
+        ),
+    )
+
+
 class PilotPreBudgetClosureReleaseV3(StrictModel):
     """Leakage-union authorization sealed before any Pilot execution budget.
 
@@ -3810,6 +4209,13 @@ class PilotPreBudgetClosureReleaseV3(StrictModel):
     current_leakage_context: LeakageRoundClosureContextV3
     current_candidate_pool_context: LeakageUnsplitCaseUniverseContextV3
     calibration_context: LeakageUnsplitCaseUniverseContextV3
+    structure_union_replay_release: StructureGroupingUnionReplayReleaseV2
+    structure_union_release_id: Identifier
+    structure_union_release_sha256: Sha256
+    structure_union_member_set_sha256: Sha256
+    structure_union_owner_projection_sha256: Sha256
+    structure_union_merged_input_root_sha256: Sha256
+    structure_union_merged_output_root_sha256: Sha256
     lineage_curation_release: MechanismLineageCurationReleaseV3
     lineage_assignment_curation_release_id: Identifier
     lineage_assignment_curation_release_sha256: Sha256
@@ -3858,6 +4264,45 @@ class PilotPreBudgetClosureReleaseV3(StrictModel):
             frozen.pre_run_eligibility_release.assignment_release
             .calibration_manifest
         )
+        prior_pool_value = (
+            None
+            if self.prior_r1_candidate_pool_release is None
+            else _revalidate(
+                self.prior_r1_candidate_pool_release,
+                CandidatePoolReleaseV3,
+            )
+        )
+        union = _revalidate(
+            self.structure_union_replay_release,
+            StructureGroupingUnionReplayReleaseV2,
+        )
+        union_members = _structure_union_members_v3(
+            pool=pool,
+            calibration=calibration,
+            prior_r1_pool=prior_pool_value,
+        )
+        assert_structure_grouping_union_replay_release_exact_v2(
+            release=union,
+            members=union_members,
+        )
+        if (
+            self.structure_union_release_id,
+            self.structure_union_release_sha256,
+            self.structure_union_member_set_sha256,
+            self.structure_union_owner_projection_sha256,
+            self.structure_union_merged_input_root_sha256,
+            self.structure_union_merged_output_root_sha256,
+        ) != (
+            union.union_release_id,
+            union.union_release_sha256,
+            union.member_release_set_sha256,
+            union.candidate_owner_projection_sha256,
+            union.merged_input_root_sha256,
+            union.merged_output_root_sha256,
+        ):
+            raise ValueError("pre-budget closure crosswires structure union roots")
+        if len(union.candidate_owner_projection) > 84:
+            raise ValueError("formal Pilot raw structure union exceeds 84 candidates")
         if self.study_phase != pool.study_phase:
             raise ValueError("pre-budget closure phase differs from candidate pool")
         if curation != pool.mechanism_lineage_curation_release:
@@ -3914,6 +4359,19 @@ class PilotPreBudgetClosureReleaseV3(StrictModel):
         sealed_at = _timestamp(self.sealed_at)
         if sealed_at <= _timestamp(frozen.frozen_at):
             raise ValueError("pre-budget closure was not sealed after FrozenCaseV3")
+        owner_seals = [
+            _timestamp(pool.sealed_at),
+            _timestamp(calibration.frozen_at),
+            _timestamp(frozen.frozen_at),
+        ]
+        if prior_pool_value is not None:
+            owner_seals.append(_timestamp(prior_pool_value.sealed_at))
+        if _timestamp(union.union_input_sealed_at) <= max(owner_seals):
+            raise ValueError(
+                "structure union input was not sealed after every owner context"
+            )
+        if _timestamp(union.verified_at) >= sealed_at:
+            raise ValueError("structure union was not verified before pre-budget seal")
         if self.study_phase == "PILOT_R1":
             if any(
                 item is not None
@@ -4017,6 +4475,7 @@ def build_pilot_pre_budget_closure_release_v3(
     current_leakage_context: LeakageRoundClosureContextV3,
     current_candidate_pool_context: LeakageUnsplitCaseUniverseContextV3,
     calibration_context: LeakageUnsplitCaseUniverseContextV3,
+    structure_union_replay_release: StructureGroupingUnionReplayReleaseV2,
     sealed_at: str,
     prior_r1_leakage_context: LeakageRoundClosureContextV3 | None = None,
     prior_r1_candidate_pool_release: CandidatePoolReleaseV3 | None = None,
@@ -4062,6 +4521,23 @@ def build_pilot_pre_budget_closure_release_v3(
         frozen.pre_run_eligibility_release.assignment_release
         .candidate_pool_release
     )
+    calibration = (
+        frozen.pre_run_eligibility_release.assignment_release
+        .calibration_manifest
+    )
+    union = _revalidate(
+        structure_union_replay_release,
+        StructureGroupingUnionReplayReleaseV2,
+    )
+    members = _structure_union_members_v3(
+        pool=pool,
+        calibration=calibration,
+        prior_r1_pool=prior_pool,
+    )
+    assert_structure_grouping_union_replay_release_exact_v2(
+        release=union,
+        members=members,
+    )
     return _build_identified(
         PilotPreBudgetClosureReleaseV3,
         id_field="release_id",
@@ -4073,6 +4549,21 @@ def build_pilot_pre_budget_closure_release_v3(
             "current_leakage_context": context,
             "current_candidate_pool_context": pool_context,
             "calibration_context": calibration_value,
+            "structure_union_replay_release": union,
+            "structure_union_release_id": union.union_release_id,
+            "structure_union_release_sha256": union.union_release_sha256,
+            "structure_union_member_set_sha256": (
+                union.member_release_set_sha256
+            ),
+            "structure_union_owner_projection_sha256": (
+                union.candidate_owner_projection_sha256
+            ),
+            "structure_union_merged_input_root_sha256": (
+                union.merged_input_root_sha256
+            ),
+            "structure_union_merged_output_root_sha256": (
+                union.merged_output_root_sha256
+            ),
             "lineage_curation_release": (
                 pool.mechanism_lineage_curation_release
             ),
@@ -4137,6 +4628,8 @@ __all__ = [
     "CaseSourcePolicyAttestationV2",
     "CaseEligibilityReasonCode",
     "CaseEligibilityStatus",
+    "DerivativeEvidenceRefV3",
+    "DerivativeEligibilityClassV3",
     "EligibilityDecisionV1",
     "EligibilityDecisionV3",
     "EligibilityAdjudicationV3",
@@ -4153,6 +4646,10 @@ __all__ = [
     "PreRunEligibilityReleaseV3",
     "SourceCatalogDecision",
     "SourceUseRole",
+    "STRUCTURE_UNION_OWNER_CALIBRATION_V3",
+    "STRUCTURE_UNION_OWNER_CURRENT_R1_FULL_POOL_V3",
+    "STRUCTURE_UNION_OWNER_CURRENT_R2_FULL_POOL_V3",
+    "STRUCTURE_UNION_OWNER_PRIOR_R1_FULL_POOL_V3",
     "_RECORD_LEVEL_COMPATIBLE_LICENSES",
     "_SOURCE_CATALOG_POLICY_V1",
     "assert_case_source_policy_v2",
@@ -4174,6 +4671,7 @@ __all__ = [
     "build_eligibility_adjudication_v3",
     "build_eligibility_raw_audit_v3",
     "build_frozen_case_candidate",
+    "build_frozen_case_candidate_v3",
     "build_frozen_case_release",
     "build_frozen_case_release_v2",
     "build_frozen_case_release_v3",

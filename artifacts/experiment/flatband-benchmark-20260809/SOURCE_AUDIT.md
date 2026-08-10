@@ -1,8 +1,12 @@
 # Flat/Narrow-Band Open-Source Data Audit
 
-Status: frozen source-policy audit v1; **not a scientific benchmark result**
+Status: source-policy and full-flow custody audit v3 draft checkpoint;
+**not a scientific benchmark result**
 
-Audit date: 2026-08-09 (Asia/Shanghai)
+Audit date: 2026-08-10 (Asia/Shanghai). The 20 catalog rows and their decisions
+remain unchanged from the 2026-08-09 source audit; v3 retains the formal structure
+and human derivative-screening boundary and adds Main execution, model-native
+receipt, signed annotation, analysis, locked-unseal, and release-control custody.
 
 Scope: open or publicly reachable sources useful for flat/narrow-band case
 construction, local electronic-structure checks, mechanism strata, and bounded
@@ -19,6 +23,8 @@ are outside scope.
   `a796757159679a02146ad00f306f8bc6db2642fdd3fc51c82b25aba36936efc7`
 - Content-address sidecars: `source_catalog.sha256` and
   `source_catalog.schema.sha256`
+- This report is separately content-addressed by adjacent `SOURCE_AUDIT.sha256`;
+  the sidecar identifies this draft checkpoint and is not external registration.
 - Rows: 20 unique sources
 - Decisions: 12 `INCLUDE`, 5 `CONDITIONAL`, 3 `EXCLUDE`
 
@@ -159,6 +165,31 @@ not merely element substitutions; the corresponding fine lineages and
 structure groups must also remain disjoint. Source weak labels, source ranks,
 and hidden expert labels are unavailable to the systems under test.
 
+Structure independence is recomputed from private raw structures rather than
+caller-supplied group strings. For Pilot R1, the fresh union contains the full
+calibration and full R1 candidate pools; R2 additionally contains the full prior
+R1 candidate pool, including replacements. A zero cross-owner component count
+means only that no edge was found under the frozen code, parameters, and runtime;
+it is not proof of crystallographic or physical independence.
+
+The ordered-occupancy V2 structure policy requires exactly one geometric vacuum
+axis and at least an 8 A source gap for 2D, normalizes to 15 A padding, and uses
+layer-group symprec 0.05/0.10 A. Three-dimensional signatures use symprec
+0.01/0.05/0.10 A and a conservative threshold union. Anonymous matching uses a
+bidirectional conservative OR with bounded supercell ratios (2D 9; 3D 8), at
+most 128 sites and six species per structure. Pilot computation is capped at 96
+candidates and 32 union members; PreBudget owner projection is capped at 84.
+Main requires a separately versioned capacity decision and dry-run.
+
+These choices may conservatively overmerge or miss relations: the 8 A rule can
+misclassify porous or large-vacuum cells, disordered occupancy is unsupported,
+threshold bridging and supercell matching can create false positives, and
+parent/transformation derivatives can evade structure axes. Calibration therefore
+also requires two independent natural-person raw derivative reviews and a distinct
+adjudicator only on class disagreement. Any raw or final class other than `NOT`
+excludes the case; adjudication cannot erase a raw derivative-risk observation.
+This human screening is not automated truth or experimental/DFT validation.
+
 ## Public/private data boundary
 
 The public benchmark may contain:
@@ -169,6 +200,13 @@ The public benchmark may contain:
 - project-authored expert labels, blinded system outputs, prompts, schemas,
   split manifests, code, and aggregate results;
 - derived numeric features only when their upstream license permits publication.
+- after exact internal review and release authorization, only the sanitized aggregate
+  `PublicBenchmarkProjectionV1`/`PublicBenchmarkResultReleaseV1`; these contain refs
+  to authorization/review but not their HMAC signatures, key commitments, raw labels,
+  private identity evidence, restricted source text, or provider transcripts.
+
+Public Schema definitions, verifier code, frozen parameters, and empty or synthetic
+examples do not authorize publication of an active private-custody instance.
 
 The public benchmark must not contain by default:
 
@@ -180,12 +218,47 @@ The public benchmark must not contain by default:
   are not explicitly compatible;
 - article bodies, PDFs, bulk snapshots, API keys, runtime databases, or model
   provider transcripts.
+- raw structure bytes/base64 payloads, private artifact URIs, active structure
+  member/union releases, or native runtime-path evidence;
+- derivative reviewer identity evidence, roster/assignment, raw reviews,
+  adjudications, rationales, and active screening releases.
+- Main candidate/eligibility/frozen/structure-union/pre-budget instances; phase
+  authorizations and execution receipts; model-native visible request/response;
+  reviewer manifests/private maps; raw labels and duplicate partitions; Gold and
+  Analysis before authorization; locked seals/ledgers/unseal artifacts; authority
+  policies, HMAC signatures/key commitments, scientific-review attestations, release
+  controls, and the private Campaign root.
 
 Raw responses used internally are isolated from public artifacts. Every selected
 record must carry source, record ID, canonical URL, accessed time, exact release
 or revision, license, redistribution class, upstream provenance, fields used,
 and raw-response/file hash. Unknown license, noncommercial restriction, ICSD
 origin, private/embargo status, or unknown upstream origin fails closed.
+Structure and derivative artifacts remain private even when their upstream source
+would permit redistribution: this prevents premature release of candidate ownership,
+replacement lineage, reviewer identity, and pre-registration screening decisions.
+Their clocks are locally replayed UTC plus monotonic observations with
+`external_timestamp_attestation=false`; they are not third-party timestamps.
+Active private instances should be sealed outside Git with the operational
+`PrivateArtifactEnvelopeV1` 0600 wrapper. The wrapper carries a generic payload map and
+is deliberately not an active research-schema root; the enclosed artifact must still
+validate as one of the 73 private custody roots.
+
+Semantic reasoning in the formal Main path is supplied only by the frozen large-model
+native receipt chain. Local code is deterministic custody/replay machinery, not a
+semantic reasoner. `E1-local` is closed as `NOT_RUN_USER_PROHIBITED`: zero local-model
+invocations, outputs, or execution releases, with no promotion or locked use. The
+locked component execution is derivation-only and never an Analysis/Gold comparison
+arm. FAILED case-role cells remain in the fixed five-position denominator as
+`SYSTEM_PACKET_INVALID/RUN_FAILED` zeros without creating review tasks.
+
+Annotation and release-control HMACs prove exact replay only against internally
+precommitted ephemeral keys; key material is not persisted. External natural-person/
+institution authority identity, external key custody, provider execution attestation,
+and external publication permission are `NOT_PROVIDED` or false. No real private Main
+structure/union/annotation/Campaign instance, model call, benchmark score, scientific
+finding, novelty claim, DFT validation, or material-discovery result exists in this
+repository checkpoint.
 
 ## Source-specific notes
 

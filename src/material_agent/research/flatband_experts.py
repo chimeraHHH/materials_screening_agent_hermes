@@ -26,6 +26,11 @@ from material_agent.research.flatband_contracts import (
     SplitManifestKind,
     _require_rfc3339,
 )
+from material_agent.research.flatband_derivative_screening import (
+    DerivativeScreeningReleaseV3,
+    assert_calibration_derivative_screening_all_not_derivative_v3,
+    assert_derivative_screening_release_exact_replay_v3,
+)
 from material_agent.research.flatband_leakage import (
     LeakageComponentV1,
     LeakageComponentReleaseV2,
@@ -43,6 +48,13 @@ from material_agent.research.flatband_leakage import (
     _validate_structure_grouping_v2,
     assert_leakage_split_closure_v3,
     structure_grouping_case_universe_sha256_v2,
+)
+from material_agent.research.flatband_source_policy import (
+    CaseSourcePolicyAttestationV2,
+)
+from material_agent.research.flatband_structure_grouping import (
+    StructureGroupingPrivateEvidenceReleaseV2,
+    assert_structure_grouping_release_exact_replay_v2,
 )
 
 
@@ -462,11 +474,18 @@ class CalibrationSetManifestV2(StrictModel):
     case_freeze_policy_sha256: Sha256
     full_case_universe_sha256: Sha256
     cases: Annotated[
-        tuple[FlatBandBenchmarkCaseV1, ...], Field(min_length=1, max_length=120)
+        tuple[FlatBandBenchmarkCaseV1, ...], Field(min_length=1, max_length=12)
     ]
     source_records: Annotated[
-        tuple[CalibrationSourceRecordV2, ...], Field(min_length=1, max_length=1_920)
+        tuple[CalibrationSourceRecordV2, ...], Field(min_length=1, max_length=192)
     ]
+    source_policy_attestations: Annotated[
+        tuple[CaseSourcePolicyAttestationV2, ...],
+        Field(min_length=1, max_length=192),
+    ]
+    structure_grouping_release: StructureGroupingPrivateEvidenceReleaseV2
+    structure_study_phase: Literal["CALIBRATION"] = "CALIBRATION"
+    derivative_screening_release: DerivativeScreeningReleaseV3
     grouping_algorithms: Annotated[
         tuple[StructureGroupingAlgorithmV2, ...], Field(min_length=2, max_length=2)
     ]
@@ -474,11 +493,11 @@ class CalibrationSetManifestV2(StrictModel):
         tuple[StructureGroupingRunV2, ...], Field(min_length=2, max_length=2)
     ]
     grouping_assignments: Annotated[
-        tuple[StructureGroupingAssignmentV2, ...], Field(min_length=2, max_length=240)
+        tuple[StructureGroupingAssignmentV2, ...], Field(min_length=2, max_length=24)
     ]
     mechanism_lineage_registry: MechanismLineageRegistryV3
     mechanism_lineage_assignments: Annotated[
-        tuple[MechanismLineageAssignmentV3, ...], Field(min_length=1, max_length=120)
+        tuple[MechanismLineageAssignmentV3, ...], Field(min_length=1, max_length=12)
     ]
     group_definitions: Annotated[
         tuple[LeakageGroupDefinitionV3, ...], Field(min_length=1, max_length=20_000)
@@ -487,7 +506,7 @@ class CalibrationSetManifestV2(StrictModel):
         tuple[LeakageMembershipV3, ...], Field(min_length=1, max_length=20_000)
     ]
     components: Annotated[
-        tuple[LeakageComponentV1, ...], Field(min_length=1, max_length=120)
+        tuple[LeakageComponentV1, ...], Field(min_length=1, max_length=12)
     ]
     frozen_at: Annotated[str, Field(min_length=20, max_length=40)]
     benchmark_split_identity_allowed: Literal[False] = False
@@ -502,6 +521,63 @@ class CalibrationSetManifestV2(StrictModel):
     @model_validator(mode="after")
     def validate_manifest(self) -> "CalibrationSetManifestV2":
         cases = _validated_calibration_cases_v2(self.cases)
+        structure_release = _revalidate_v2(
+            self.structure_grouping_release,
+            StructureGroupingPrivateEvidenceReleaseV2,
+        )
+        assert_structure_grouping_release_exact_replay_v2(structure_release)
+        if {
+            item.preimage.study_phase
+            for item in structure_release.computation.input_manifest.case_inputs
+        } != {self.structure_study_phase}:
+            raise ValueError(
+                "calibration structure inputs require the frozen CALIBRATION phase"
+            )
+        derivative_screening = _revalidate_v2(
+            self.derivative_screening_release,
+            DerivativeScreeningReleaseV3,
+        )
+        assert_derivative_screening_release_exact_replay_v3(
+            derivative_screening
+        )
+        assert_calibration_derivative_screening_all_not_derivative_v3(
+            derivative_screening
+        )
+        if derivative_screening.cases != cases or (
+            derivative_screening.case_universe_sha256
+            != canonical_sha256(cases)
+        ):
+            raise ValueError(
+                "calibration derivative screening differs from the exact case universe"
+            )
+        source_policies = tuple(
+            _revalidate_v2(item, CaseSourcePolicyAttestationV2)
+            for item in self.source_policy_attestations
+        )
+        policy_order = tuple(
+            (item.case_id, item.source_id, item.source_record_id)
+            for item in source_policies
+        )
+        if policy_order != tuple(sorted(set(policy_order))):
+            raise ValueError(
+                "calibration source policies must be case/source sorted and unique"
+            )
+        if (
+            structure_release.final_cases,
+            structure_release.source_policy_attestations,
+            structure_release.grouping_algorithms,
+            structure_release.grouping_runs,
+            structure_release.grouping_assignments,
+        ) != (
+            cases,
+            source_policies,
+            self.grouping_algorithms,
+            self.grouping_runs,
+            self.grouping_assignments,
+        ):
+            raise ValueError(
+                "calibration cases/source/grouping differ from the private structure release projection"
+            )
         if self.full_case_universe_sha256 != (
             structure_grouping_case_universe_sha256_v2(cases)
         ):
@@ -577,6 +653,18 @@ class CalibrationSetManifestV2(StrictModel):
             for run in runs
         ):
             raise ValueError("calibration manifest predates a grouping run")
+        if _timestamp_v2(structure_release.created_at) >= _timestamp_v2(
+            self.frozen_at
+        ):
+            raise ValueError(
+                "calibration structure release was not created before manifest seal"
+            )
+        if _timestamp_v2(derivative_screening.assembled_at) >= _timestamp_v2(
+            self.frozen_at
+        ):
+            raise ValueError(
+                "calibration derivative screening was not assembled before manifest seal"
+            )
         if _timestamp_v2(lineage_registry.sealed_at) > _timestamp_v2(
             self.frozen_at
         ) or any(
@@ -599,6 +687,9 @@ def build_calibration_set_manifest_v2(
     annotation_guide_version: str,
     annotation_guide_sha256: str,
     case_freeze_policy_sha256: str,
+    structure_grouping_release: StructureGroupingPrivateEvidenceReleaseV2,
+    derivative_screening_release: DerivativeScreeningReleaseV3,
+    source_policy_attestations: tuple[CaseSourcePolicyAttestationV2, ...],
     grouping_algorithms: tuple[StructureGroupingAlgorithmV2, ...],
     grouping_runs: tuple[StructureGroupingRunV2, ...],
     grouping_assignments: tuple[StructureGroupingAssignmentV2, ...],
@@ -618,6 +709,30 @@ def build_calibration_set_manifest_v2(
         )
     )
     full_cases = _validated_calibration_cases_v2(full_cases)
+    structure_release = _revalidate_v2(
+        structure_grouping_release, StructureGroupingPrivateEvidenceReleaseV2
+    )
+    assert_structure_grouping_release_exact_replay_v2(structure_release)
+    derivative_screening = _revalidate_v2(
+        derivative_screening_release, DerivativeScreeningReleaseV3
+    )
+    assert_derivative_screening_release_exact_replay_v3(derivative_screening)
+    assert_calibration_derivative_screening_all_not_derivative_v3(
+        derivative_screening
+    )
+    ordered_source_policies = tuple(
+        sorted(
+            (
+                _revalidate_v2(item, CaseSourcePolicyAttestationV2)
+                for item in source_policy_attestations
+            ),
+            key=lambda item: (
+                item.case_id,
+                item.source_id,
+                item.source_record_id,
+            ),
+        )
+    )
     algorithms, runs, assignments, assignment_by_key = (
         _validate_structure_grouping_v2(
             cases=full_cases,
@@ -655,6 +770,9 @@ def build_calibration_set_manifest_v2(
         ),
         "cases": full_cases,
         "source_records": _calibration_source_records_v2(full_cases),
+        "source_policy_attestations": ordered_source_policies,
+        "structure_grouping_release": structure_release,
+        "derivative_screening_release": derivative_screening,
         "grouping_algorithms": algorithms,
         "grouping_runs": runs,
         "grouping_assignments": assignments,
