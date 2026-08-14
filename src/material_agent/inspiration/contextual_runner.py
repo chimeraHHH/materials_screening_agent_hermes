@@ -10,6 +10,7 @@ structure-generation pipeline.
 from __future__ import annotations
 
 import hashlib
+import os
 import time
 from collections.abc import Callable, Mapping
 from pathlib import Path
@@ -55,6 +56,7 @@ from material_agent.inspiration.runner import (
     TransformationEngine,
 )
 from material_agent.inspiration.search import (
+    BoundedHttpTransport,
     ParsedSearchPage,
     RawSearchPage,
     SearchAdapterError,
@@ -545,4 +547,32 @@ def _remap_hit(hit: SearchHitV1, query_id: str) -> SearchHitV1:
             ),
             "query_ids": (query_id,),
         }
+    )
+
+
+def semantic_scholar_contextual_runner_from_environment(
+    *,
+    store: LocalArtifactStore,
+    transformation_engine: TransformationEngine,
+    environment: Mapping[str, str] | None = None,
+    transport: BoundedHttpTransport | None = None,
+    document_fetcher: DocumentFetcher | None = None,
+    monotonic_clock: Callable[[], float] = time.monotonic,
+) -> SemanticScholarContextualInspirationRunnerV3:
+    """Build the explicit V3 public runner without persisting API secrets."""
+
+    selected_environment = os.environ if environment is None else environment
+    provider = SemanticScholarPublicAdapter(
+        api_key_resolver=lambda: selected_environment.get(
+            "SEMANTIC_SCHOLAR_API_KEY", ""
+        ),
+        transport=transport,
+        monotonic_clock=monotonic_clock,
+    )
+    return SemanticScholarContextualInspirationRunnerV3(
+        store=store,
+        semantic_scholar_adapter=provider,
+        transformation_engine=transformation_engine,
+        document_fetcher=document_fetcher,
+        monotonic_clock=monotonic_clock,
     )

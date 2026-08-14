@@ -13,6 +13,15 @@ from material_agent.orchestrator.inspiration_composite import (
     InspirationCompositeStatus,
     build_inspiration_composite_v2,
 )
+from material_agent.orchestrator.inspiration_query_composite import (
+    InspirationQueryCompositeGraphV3,
+    InspirationQueryCompositeLaunchV3,
+    InspirationQueryCompositeRequestV3,
+    InspirationQueryCompositeResultV3,
+    InspirationQueryCompositeRuntimeV3,
+    InspirationQueryCompositeStatus,
+    build_inspiration_query_composite_v3,
+)
 from material_agent.orchestrator.models import (
     ApprovalStatus,
     ControlStageOutcome,
@@ -28,8 +37,8 @@ from material_agent.orchestrator.models import (
     StageStatus,
     effective_stage_approval,
 )
-from material_agent.orchestrator.runtime import OrchestratorRuntime
 from material_agent.orchestrator.runners import StageRunnerRegistry
+from material_agent.orchestrator.runtime import OrchestratorRuntime
 
 __all__ = [
     "ApprovalStatus",
@@ -37,13 +46,19 @@ __all__ = [
     "DeterministicIdFactory",
     "ExecutionPlan",
     "FixedClock",
-    "InteractionType",
     "InspirationCompositeGraphV2",
     "InspirationCompositeLaunchV2",
     "InspirationCompositeRequestV2",
     "InspirationCompositeResultV2",
     "InspirationCompositeRuntimeV2",
     "InspirationCompositeStatus",
+    "InspirationQueryCompositeGraphV3",
+    "InspirationQueryCompositeLaunchV3",
+    "InspirationQueryCompositeRequestV3",
+    "InspirationQueryCompositeResultV3",
+    "InspirationQueryCompositeRuntimeV3",
+    "InspirationQueryCompositeStatus",
+    "InteractionType",
     "OrchestratorRuntime",
     "OrchestratorState",
     "PreparedStagePlan",
@@ -55,5 +70,6 @@ __all__ = [
     "StageRunnerRegistry",
     "StageStatus",
     "build_inspiration_composite_v2",
+    "build_inspiration_query_composite_v3",
     "effective_stage_approval",
 ]

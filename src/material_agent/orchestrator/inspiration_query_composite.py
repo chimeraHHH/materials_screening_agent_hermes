@@ -10,7 +10,8 @@ cannot silently ignore its new retrieval artifacts.
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Any, Literal, Protocol, TypedDict
+from pathlib import Path
+from typing import Any, Literal, Protocol, Self, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 from pydantic import Field
@@ -52,7 +53,9 @@ from material_agent.inspiration.semantic_scholar import (
 from material_agent.inspiration.tag_graph import plan_tag_queries
 from material_agent.orchestrator.inspiration_composite import (
     InspirationCompositeGraphV2,
+    InspirationCompositeLaunchV2,
     InspirationCompositeRequestV2,
+    InspirationCompositeRuntimeV2,
     InspirationCompositeStatus,
     InspirationRunnerProtocol,
 )
@@ -88,6 +91,18 @@ class InspirationQueryCompositeRequestV3(StrictModel):
     @property
     def request_id(self) -> str:
         return self.base_request.request_id
+
+
+class InspirationQueryCompositeLaunchV3(StrictModel):
+    """Workspace-resolved launch input for the opt-in V3 runtime."""
+
+    schema_version: Literal["orchestrator-inspiration-query-v3"] = (
+        INSPIRATION_QUERY_COMPOSITE_VERSION
+    )
+    base_launch: InspirationCompositeLaunchV2
+    raw_request: str = Field(min_length=3, max_length=4_000)
+    semantic_scholar_max_results: int = Field(default=10, ge=1, le=100)
+    max_literature_queries: int = Field(default=12, ge=10, le=64)
 
 
 class InspirationQueryHandoffV3(StrictModel):
@@ -470,6 +485,73 @@ def build_inspiration_query_composite_v3(
         runner=runner,
         memory_store=memory_store,
     ).build()
+
+
+class InspirationQueryCompositeRuntimeV3:
+    """Resolve an Agent01 run and execute the explicit contextual V3 graph."""
+
+    def __init__(
+        self,
+        project_root: Path | str,
+        *,
+        runner: ContextualInspirationRunnerV3,
+        memory_store: InspirationMemoryStore | None = None,
+    ) -> None:
+        self._base_runtime = InspirationCompositeRuntimeV2(
+            project_root,
+            runner=runner,
+        )
+        self.store = self._base_runtime.store
+        self.project_id = self._base_runtime.project_id
+        self.runner = runner
+        self.graph = build_inspiration_query_composite_v3(
+            store=self.store,
+            runner=runner,
+            memory_store=memory_store,
+        ).compile()
+
+    def __enter__(self) -> Self:
+        return self
+
+    def __exit__(self, *_args: object) -> None:
+        self.close()
+
+    def close(self) -> None:
+        self._base_runtime.close()
+
+    @classmethod
+    def from_workspace(
+        cls,
+        workspace_root: Path | str,
+        project_id: str,
+        *,
+        runner: ContextualInspirationRunnerV3,
+        memory_store: InspirationMemoryStore | None = None,
+    ) -> InspirationQueryCompositeRuntimeV3:
+        workspace = Path(workspace_root).resolve()
+        project_root = (workspace / project_id).resolve()
+        if workspace not in project_root.parents:
+            raise ValueError("project path escapes workspace root")
+        return cls(
+            project_root,
+            runner=runner,
+            memory_store=memory_store,
+        )
+
+    def execute(
+        self,
+        launch: InspirationQueryCompositeLaunchV3 | dict[str, Any],
+    ) -> InspirationQueryCompositeResultV3:
+        selected = InspirationQueryCompositeLaunchV3.model_validate(launch)
+        base_request = self._base_runtime.resolve_request(selected.base_launch)
+        request = InspirationQueryCompositeRequestV3(
+            base_request=base_request,
+            raw_request=selected.raw_request,
+            semantic_scholar_max_results=selected.semantic_scholar_max_results,
+            max_literature_queries=selected.max_literature_queries,
+        )
+        state = self.graph.invoke({"request": request.model_dump(mode="json")})
+        return InspirationQueryCompositeResultV3.model_validate(state["result"])
 
 
 def _compile_v3_literature_candidates(
