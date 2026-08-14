@@ -631,9 +631,11 @@ def build_production_semantic_adapter(
 ) -> LocalSemanticEmbeddingAdapter:
     """Build production mode only from an explicitly supplied real provider.
 
-    The repository intentionally registers no built-in provider or bundle.  A
-    missing provider is therefore a stable, explicit unavailable state rather
-    than a download, remote API fallback, or substitution of signed hashing.
+    The repository intentionally registers no default bundle. A missing
+    provider is therefore a stable, explicit unavailable state rather than a
+    download, remote API fallback, or substitution of signed hashing. The
+    optional SHA-pinned Sentence Transformers implementation is constructed
+    explicitly by ``sentence_transformers_provider``.
     """
 
     if provider is None:
