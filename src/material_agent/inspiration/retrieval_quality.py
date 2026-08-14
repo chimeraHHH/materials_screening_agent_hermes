@@ -33,7 +33,6 @@ from material_agent.inspiration.models import (
     deterministic_id,
 )
 
-
 QUERY_CANDIDATE_POOL_SCHEMA_VERSION = "inspiration-query-candidate-pool-v1"
 QUERY_ALLOCATION_SCHEMA_VERSION = "inspiration-query-allocation-v1"
 METADATA_QUALITY_SCHEMA_VERSION = "inspiration-metadata-quality-v1"
@@ -53,6 +52,7 @@ class QueryCandidateOrigin(StrEnum):
     """Reviewable origin of one candidate; no runtime-generated class exists."""
 
     CURATED_TAG_TERMS = "CURATED_TAG_TERMS"
+    FROZEN_CONTEXT_COMPILER = "FROZEN_CONTEXT_COMPILER"
     REVIEWED_BRIDGE_TEMPLATE = "REVIEWED_BRIDGE_TEMPLATE"
     REVIEWED_BREAKING_CONDITION = "REVIEWED_BREAKING_CONDITION"
 
@@ -77,8 +77,13 @@ class QueryCandidateV1(StrictModel):
         if self.kind is SearchQueryKind.DIRECT:
             if self.bridge_rule_id is not None:
                 raise ValueError("direct candidates cannot reference a bridge rule")
-            if self.origin is not QueryCandidateOrigin.CURATED_TAG_TERMS:
-                raise ValueError("direct candidates must use curated tag terms")
+            if self.origin not in {
+                QueryCandidateOrigin.CURATED_TAG_TERMS,
+                QueryCandidateOrigin.FROZEN_CONTEXT_COMPILER,
+            }:
+                raise ValueError(
+                    "direct candidates must use curated terms or a frozen context compiler"
+                )
         else:
             if self.bridge_rule_id is None:
                 raise ValueError("bridge and counter candidates require a bridge rule")

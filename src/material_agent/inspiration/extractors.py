@@ -19,7 +19,6 @@ from xml.etree import ElementTree
 
 from material_agent.inspiration.models import PassageLocatorKind
 
-
 _TOKEN_RE = re.compile(
     r"[\u3400-\u9fff]|[A-Za-z0-9]+(?:[-'][A-Za-z0-9]+)*|[^\W\d_]+",
     re.UNICODE,
@@ -289,6 +288,85 @@ def extract_crossref_metadata(
             ),
         )
 
+    sufficient = abstract is not None and _is_sufficient_abstract(
+        abstract,
+        title=title,
+        keywords=keywords,
+        target_terms=target_terms,
+        min_tokens=selected_limits.min_abstract_tokens,
+    )
+    return ExtractionResult(
+        title=title,
+        keywords=keywords,
+        drafts=drafts,
+        decision=(
+            ExtractionDecision.SKIP_BODY_ABSTRACT_SUFFICIENT
+            if sufficient
+            else ExtractionDecision.FETCH_BODY_METADATA_INSUFFICIENT
+        ),
+        media_type="application/json",
+    )
+
+
+def extract_semantic_scholar_metadata(
+    payload: bytes | str | Mapping[str, Any],
+    *,
+    target_terms: Iterable[str] = (),
+    limits: ExtractionLimits | None = None,
+    result_index: int = 0,
+) -> ExtractionResult:
+    """Extract one bounded Semantic Scholar abstract without body retrieval."""
+
+    selected_limits = limits or ExtractionLimits()
+    if type(result_index) is not int or result_index < 0:
+        raise ValueError("result_index must be a non-negative integer")
+    try:
+        value = _load_json_value(payload, limits=selected_limits)
+    except ExtractionLimitError:
+        raise
+    except (UnicodeDecodeError, json.JSONDecodeError, TypeError, ValueError):
+        return _unextractable("application/json", "INVALID_METADATA_JSON")
+    if not isinstance(value, Mapping):
+        return _unextractable("application/json", "INVALID_SEMANTIC_SCHOLAR_METADATA")
+    collection_name = (
+        "recommendedPapers" if isinstance(value.get("recommendedPapers"), list) else "data"
+    )
+    records = value.get(collection_name)
+    if not isinstance(records, list) or result_index >= len(records):
+        return _unextractable("application/json", "METADATA_WORK_NOT_FOUND")
+    work = records[result_index]
+    if not isinstance(work, Mapping):
+        return _unextractable("application/json", "INVALID_SEMANTIC_SCHOLAR_METADATA")
+    nested_name = None
+    for candidate in ("citedPaper", "citingPaper"):
+        if candidate in work:
+            nested_name = candidate
+            work = work.get(candidate)
+            break
+    if not isinstance(work, Mapping):
+        return _unextractable("application/json", "METADATA_WORK_NOT_FOUND")
+    base_selector = f"$.{collection_name}[{result_index}]"
+    if nested_name is not None:
+        base_selector = f"{base_selector}.{nested_name}"
+    title = _first_text(work.get("title"))
+    fields = work.get("fieldsOfStudy")
+    keywords = (
+        _unique_texts(item for item in fields if isinstance(item, str))
+        if isinstance(fields, list)
+        else ()
+    )
+    abstract = _first_text(work.get("abstract"))
+    drafts: tuple[ExtractedTextDraft, ...] = ()
+    if abstract:
+        drafts = (
+            ExtractedTextDraft(
+                text=abstract,
+                locator_kind=PassageLocatorKind.JSON_PATH,
+                selector=f"{base_selector}.abstract",
+                section_heading="Abstract",
+                source_tier=ExtractionTier.METADATA_API,
+            ),
+        )
     sufficient = abstract is not None and _is_sufficient_abstract(
         abstract,
         title=title,

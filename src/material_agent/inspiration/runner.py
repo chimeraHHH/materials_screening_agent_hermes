@@ -27,9 +27,10 @@ from material_agent.inspiration.extractors import (
     ExtractionDecision,
     ExtractionLimits,
     ExtractionTier,
-    extract_document,
     extract_crossref_metadata,
+    extract_document,
     extract_openalex_metadata,
+    extract_semantic_scholar_metadata,
 )
 from material_agent.inspiration.feedback import (
     FEEDBACK_COMPILER_SNAPSHOT,
@@ -40,9 +41,9 @@ from material_agent.inspiration.feedback import (
 )
 from material_agent.inspiration.fetch import (
     DisabledDocumentFetcher,
+    DocumentFetcher,
     DocumentFetchError,
     DocumentFetchErrorCategory,
-    DocumentFetcher,
     DocumentFetchRequest,
     FetchAllowance,
     FetchAttemptRecord,
@@ -89,8 +90,8 @@ from material_agent.inspiration.retrieval_quality import (
     audit_metadata_hits,
 )
 from material_agent.inspiration.search import (
-    DocumentHitGroup,
     BoundedHttpTransport,
+    DocumentHitGroup,
     ParsedSearchPage,
     RawSearchPage,
     SearchAdapter,
@@ -106,7 +107,7 @@ from material_agent.inspiration.selection import (
     MechanismQuotaStatus,
     select_diverse_candidates_with_audit,
 )
-from material_agent.inspiration.tag_graph import plan_tag_queries
+from material_agent.inspiration.tag_graph import QueryPlan, plan_tag_queries
 from material_agent.inspiration.vectorizer import (
     SIGNED_HASHING_SNAPSHOT,
     VECTOR_ARTIFACT_MEDIA_TYPE,
@@ -114,7 +115,6 @@ from material_agent.inspiration.vectorizer import (
     vectorize_selected_passages,
 )
 from material_agent.retrieval.storage import LocalArtifactStore
-
 
 MAX_SEARCH_RESPONSE_BYTES = 1_000_000
 STRUCTURE_MEDIA_TYPE = "chemical/x-cif"
@@ -410,6 +410,7 @@ class InspirationRunner:
         policy: InspirationPolicyV1,
         tag_graph: TagGraphV1,
         target_tag_ids: Sequence[str],
+        query_plan_override: QueryPlan | None = None,
     ) -> InspirationRunResult:
         deadline = _RunDeadline.start(
             clock=self.monotonic_clock,
@@ -434,11 +435,41 @@ class InspirationRunner:
         )
         deadline.remaining("query planning")
 
-        query_plan = plan_tag_queries(
+        query_plan = query_plan_override or plan_tag_queries(
             tag_graph,
             target_tag_ids=tuple(target_tag_ids),
             budget=policy.search,
         )
+        if query_plan_override is not None:
+            if query_plan.candidate_pool is None:
+                raise InspirationRunnerError(
+                    "QUERY_CANDIDATE_POOL_MISSING",
+                    "the contextual query plan has no candidate pool",
+                )
+            if (
+                query_plan.candidate_pool.graph_id != tag_graph.graph_id
+                or query_plan.candidate_pool.graph_version != tag_graph.graph_version
+                or query_plan.candidate_pool.target_tag_ids
+                != tuple(target_tag_ids)
+            ):
+                raise InspirationRunnerError(
+                    "CONTEXTUAL_QUERY_GRAPH_MISMATCH",
+                    "the contextual query plan is not bound to the frozen tag graph",
+                )
+            if len(query_plan.queries) > policy.search.max_queries:
+                raise InspirationRunnerError(
+                    "QUERY_BUDGET_EXCEEDED",
+                    "the contextual query plan exceeds the frozen logical-query budget",
+                )
+            if (
+                query_plan.allocation_audit is None
+                or query_plan.allocation_audit.max_physical_requests
+                > policy.search.max_physical_requests
+            ):
+                raise InspirationRunnerError(
+                    "SEARCH_REQUEST_BUDGET_EXCEEDED",
+                    "the contextual query plan exceeds the frozen physical-request budget",
+                )
         if query_plan.allocation_audit is None:
             raise InspirationRunnerError(
                 "QUERY_ALLOCATION_AUDIT_MISSING",
@@ -1289,7 +1320,11 @@ class InspirationRunner:
                     "SEARCH_FIXTURE_FORBIDDEN",
                     "public metadata responses cannot use fixture bindings",
                 )
-            if page.provider not in {"crossref", "openalex", "multi-source-v1"}:
+            if page.provider not in {
+                "crossref",
+                "openalex",
+                "multi-source-v1",
+            } and not callable(getattr(self.search_adapter, "parse_page", None)):
                 raise InspirationRunnerError(
                     "UNSUPPORTED_PUBLIC_METADATA_PROVIDER",
                     "public metadata mode received an unregistered provider",
@@ -1323,8 +1358,8 @@ class InspirationRunner:
                 "search response bytes differ from the frozen fixture artifact",
             )
 
-    @staticmethod
     def _parse_search_page(
+        self,
         *,
         query: SearchQueryV1,
         page: RawSearchPage,
@@ -1333,6 +1368,14 @@ class InspirationRunner:
         publication_year_from: int | None,
         publication_year_to: int | None,
     ) -> ParsedSearchPage:
+        contextual_parser = getattr(self.search_adapter, "parse_page", None)
+        if callable(contextual_parser):
+            return contextual_parser(
+                query=query,
+                page=page,
+                raw_response_artifact=raw_response_artifact,
+                max_hits=max_hits,
+            )
         if page.provider == "crossref":
             return parse_crossref_page(
                 query=query,
@@ -1480,6 +1523,16 @@ class InspirationRunner:
                 and page.provider == "openalex-fixture"
             ):
                 extraction = extract_openalex_metadata(
+                    page.payload,
+                    target_terms=target_terms,
+                    limits=metadata_limits,
+                    result_index=hit.provider_rank - 1,
+                )
+            elif (
+                hit.provider == "semantic-scholar"
+                and page.provider == "semantic-scholar-contextual-v3"
+            ):
+                extraction = extract_semantic_scholar_metadata(
                     page.payload,
                     target_terms=target_terms,
                     limits=metadata_limits,
