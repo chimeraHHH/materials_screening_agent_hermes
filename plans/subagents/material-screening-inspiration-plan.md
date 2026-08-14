@@ -1052,3 +1052,23 @@ parent hard-kill 后独立 action child 的清理仍是 public production P0。
   documents，三个 provider 均命中。非 DFT research entry 将物理请求预算扩为 16，本地 ignored
   launcher 默认启用三源；排除暂停 flatband 轨的完整离线 Gate 为
   `1104 passed, 17 skipped`（135.36s）。本任务完成，全文/PDF 与科学结论边界不变。
+
+### 2026-08-14：accuracy-first 文献检索 profile（完成）
+
+- 用户明确本地科研测试不考虑 API/计算成本，以检索准确性与召回率优先；仍保留外部服务
+  协议、证据闭包和“文献支持不等于物性验证”的科学边界。
+- 计划：公共 provider 每 query 从 5 条扩到 20 条；非 DFT research entry 默认启用
+  Crossref+arXiv+OSTI，有 OpenAlex key 时自动加入 OpenAlex；原始 hit/document/passage 上限
+  分别扩至覆盖四源最坏情况，并将 passage 处理顺序从 document hash 改为 metadata quality
+  排名优先，再把最多 64 条闭合 evidence/passages 交给 DeepSeek grounded rerank。
+- 验收：新增 max-results 配置与非法值测试、质量优先 passage 回归、三/四源 budget 回归；
+  运行定向 Inspiration/research tests、真实三源高召回 smoke、排除暂停 flatband 轨的完整离线
+  Gate，随后独立提交并推送。OpenAlex 无 key 时不得伪装已调用。
+- 实际完成：research entry 默认每 provider/query 20 条，最多 320 unique documents、128
+  passages、64 条 closed passage/evidence 进入一次 DeepSeek grounded rerank；document passage
+  消费顺序改为 metadata eligibility/quality 优先，跨源数量只作为稳定 tie-break。无显式模式时
+  使用 Crossref+arXiv+OSTI，只有真实 `OPENALEX_API_KEY` 存在才自动加入 OpenAlex。
+- 真实三源 ×20 smoke：`60 hits`、`57 unique documents`、`59` 有摘要、`48` 有 DOI，
+  envelope `235136` bytes、3 physical attempts；未调用 OpenAlex。定向 Gate `345 passed`，排除
+  暂停 flatband 轨的完整离线 Gate `1109 passed, 17 skipped`（130.83s），依赖/diff/secret
+  checks 通过。canonical implementation revision 升为 `research-pipeline-20260814-r5`。

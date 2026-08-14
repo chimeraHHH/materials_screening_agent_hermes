@@ -1574,7 +1574,8 @@ def test_public_search_factory_supports_crossref_arxiv_osti() -> None:
             max_counter_queries=0,
         ),
         environment={
-            "MATERIAL_AGENT_INSPIRATION_SEARCH_PROVIDER": "crossref+arxiv+osti"
+            "MATERIAL_AGENT_INSPIRATION_SEARCH_PROVIDER": "crossref+arxiv+osti",
+            "MATERIAL_AGENT_INSPIRATION_SEARCH_MAX_RESULTS": "20",
         },
         crossref_transport=_RecordingTransport(crossref_response_bytes()),
         arxiv_transport=_RecordingTransport(arxiv_response_bytes()),
@@ -1586,6 +1587,7 @@ def test_public_search_factory_supports_crossref_arxiv_osti() -> None:
         "arxiv-public-adapter",
         "osti-public-adapter",
     ]
+    assert all(item.max_results == 20 for item in multi.adapters)
     page = multi.search(
         query(),
         max_response_bytes=1_000_000,
@@ -1598,6 +1600,17 @@ def test_public_search_factory_supports_crossref_arxiv_osti() -> None:
         max_hits=10,
     )
     assert {hit.provider for hit in parsed.hits} == {"arxiv", "crossref", "osti"}
+
+
+@pytest.mark.parametrize("value", ["0", "21", "many"])
+def test_public_search_factory_rejects_invalid_max_results(value: str) -> None:
+    with pytest.raises(ValueError, match="must be an integer from 1 to 20"):
+        public_search_adapter_from_environment(
+            budget=SearchBudgetV1(),
+            environment={
+                "MATERIAL_AGENT_INSPIRATION_SEARCH_MAX_RESULTS": value,
+            },
+        )
 
 
 def test_openalex_missing_secret_fails_before_network() -> None:

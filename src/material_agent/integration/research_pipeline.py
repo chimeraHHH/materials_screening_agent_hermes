@@ -16,6 +16,7 @@ import os
 import subprocess
 import threading
 import warnings
+from collections.abc import Mapping
 from contextlib import contextmanager
 from enum import StrEnum
 from pathlib import Path
@@ -46,6 +47,11 @@ from material_agent.inspiration.models import (
 )
 from material_agent.inspiration.runner import (
     public_inspiration_runner_from_environment,
+)
+from material_agent.inspiration.search import (
+    OPENALEX_API_KEY_ENV,
+    PUBLIC_SEARCH_MAX_RESULTS_ENV,
+    PUBLIC_SEARCH_PROVIDER_ENV,
 )
 from material_agent.inspiration.semantic_rag import (
     LocalRAGCandidateV1,
@@ -98,7 +104,23 @@ from material_agent.softchem import (
 
 RESEARCH_PIPELINE_SCHEMA_VERSION = "materials-research-pipeline-v1"
 RESEARCH_PIPELINE_TOOL_NAME = "materials_research_pipeline_run"
-RESEARCH_PIPELINE_IMPLEMENTATION_REVISION = "research-pipeline-20260814-r4"
+RESEARCH_PIPELINE_IMPLEMENTATION_REVISION = "research-pipeline-20260814-r5"
+
+
+def accuracy_search_environment(
+    environment: Mapping[str, str] | None = None,
+) -> dict[str, str]:
+    """Return the explicit high-recall provider configuration for research runs."""
+
+    selected = dict(os.environ if environment is None else environment)
+    if PUBLIC_SEARCH_PROVIDER_ENV not in selected:
+        selected[PUBLIC_SEARCH_PROVIDER_ENV] = (
+            "crossref+openalex+arxiv+osti"
+            if selected.get(OPENALEX_API_KEY_ENV, "").strip()
+            else "crossref+arxiv+osti"
+        )
+    selected.setdefault(PUBLIC_SEARCH_MAX_RESULTS_ENV, "20")
+    return selected
 
 
 class ResearchStageStatus(StrEnum):
@@ -183,6 +205,7 @@ class ResearchPipelineResultV1(StrictModel):
         "research-pipeline-20260814-r2",
         "research-pipeline-20260814-r3",
         "research-pipeline-20260814-r4",
+        "research-pipeline-20260814-r5",
     ] = "research-pipeline-unversioned-legacy-v1"
     status: ResearchPipelineStatus
     source_run_id: str | None = None
@@ -727,6 +750,7 @@ class ResearchPipelineService:
         tuple[ArtifactPointerV1, ...],
         InspirationCompositeStatus,
     ]:
+        search_environment = accuracy_search_environment()
         gateway_request = InspirationRunRequestV1(
             submission_id=request.submission_id,
             goal=request.goal,
@@ -740,10 +764,10 @@ class ResearchPipelineService:
                 require_diverse_routes=request.top_k >= 2,
                 budget=InspirationBudgetV1(
                     max_search_requests=16,
-                    max_unique_documents=8,
-                    max_passages=12,
+                    max_unique_documents=320,
+                    max_passages=128,
                     max_model_calls=0,
-                    max_walltime_seconds=600,
+                    max_walltime_seconds=1_800,
                 ),
             ),
         )
@@ -778,6 +802,7 @@ class ResearchPipelineService:
             store=self.store,
             policy=policy,
             transformation_engine=PymatgenTransformationEngine(),
+            environment=search_environment,
         )
         launch = InspirationCompositeLaunchV2(
             request_id=request.submission_id,
@@ -905,11 +930,18 @@ class ResearchPipelineService:
         rag_request = SemanticRAGRequestV1(
             request_id=f"rag-{inspiration_run_id}",
             query=request.goal,
-            passages=selected_passages[:16],
-            evidence_cards=selected_cards[:16],
+            passages=selected_passages[:64],
+            evidence_cards=selected_cards[:64],
             candidates=candidates,
         )
-        result = judge.rerank(rag_request, budget=SemanticRAGBudgetV1())
+        result = judge.rerank(
+            rag_request,
+            budget=SemanticRAGBudgetV1(
+                max_input_tokens=100_000,
+                max_passages=64,
+                max_evidence_cards=64,
+            ),
+        )
         ref = self.store.write_json(
             f"stages/inspiration/{inspiration_run_id}/semantic_rag.deepseek.json",
             result.model_dump(mode="json"),

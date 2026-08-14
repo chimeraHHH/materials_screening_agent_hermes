@@ -1490,7 +1490,12 @@ class InspirationRunner:
                 "METADATA_QUALITY_AUDIT_MISMATCH",
                 "metadata quality audit does not exactly cover parsed hits",
             )
-        for group in groups:
+        ordered_groups = _order_document_groups_for_extraction(
+            groups,
+            hit_index=hit_index,
+            quality_rank_by_hit_id=quality_rank_by_hit_id,
+        )
+        for group in ordered_groups:
             deadline.remaining(f"passage extraction for {group.document_id}")
             member_hits = tuple(hit_index[hit_id] for hit_id in group.member_hit_ids)
             hit = _select_document_processing_hit(
@@ -2260,6 +2265,38 @@ class InspirationRunner:
         pointer = _artifact_pointer(reference)
         verify_artifact_pointer(self.store, pointer)
         return pointer
+
+
+def _order_document_groups_for_extraction(
+    groups: Sequence[DocumentHitGroup],
+    *,
+    hit_index: Mapping[str, SearchHitV1],
+    quality_rank_by_hit_id: Mapping[str, tuple[bool, int]],
+) -> tuple[DocumentHitGroup, ...]:
+    """Prioritize eligible high-quality metadata before a finite passage budget."""
+
+    return tuple(
+        sorted(
+            groups,
+            key=lambda group: (
+                not any(
+                    quality_rank_by_hit_id[hit_id][0]
+                    for hit_id in group.member_hit_ids
+                ),
+                min(
+                    quality_rank_by_hit_id[hit_id][1]
+                    for hit_id in group.member_hit_ids
+                ),
+                -len(
+                    {
+                        hit_index[hit_id].provider
+                        for hit_id in group.member_hit_ids
+                    }
+                ),
+                group.document_id,
+            ),
+        )
+    )
 
 
 def _select_document_processing_hit(

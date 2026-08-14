@@ -109,11 +109,15 @@ Search policies may freeze `publication_year_from/to`. The public search factory
 supports Crossref, OpenAlex, the official arXiv Atom Query API, and OSTI.GOV v1,
 preserves each provider's exact response bytes and provenance, and locally
 rejects records outside the year window. Crossref remains the library default;
-the standard local research launcher selects `crossref+arxiv+osti` so recent
-preprints and historical DOE/laboratory records complement formal publication
-metadata. OpenAlex remains optional because it requires its own API key. Every
-multi-source logical query must reserve one physical request per selected
-provider; PDF and full-document retrieval remain disabled.
+the standard local research launcher uses an accuracy-first profile with 20
+records per provider and selects `crossref+arxiv+osti`, adding OpenAlex
+automatically when `OPENALEX_API_KEY` is available. This lets recent preprints
+and historical DOE/laboratory records complement formal publication metadata.
+The non-DFT research entry can retain up to 320 unique documents and 128
+passages, processes documents by metadata quality before the finite passage
+budget, and may send up to 64 closed passages/evidence cards to DeepSeek for
+grounded reranking. Every multi-source logical query still reserves one physical
+request per selected provider; PDF and full-document retrieval remain disabled.
 
 Real embeddings use an isolated, local-only Sentence Transformers bundle whose
 complete file set, tokenizer, config, dependency lock, model revision, license

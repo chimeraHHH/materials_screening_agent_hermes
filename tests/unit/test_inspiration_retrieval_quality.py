@@ -11,6 +11,8 @@ from material_agent.inspiration.retrieval_quality import (
     audit_metadata_hits,
     evaluate_metadata_quality_fixture,
 )
+from material_agent.inspiration.runner import _order_document_groups_for_extraction
+from material_agent.inspiration.search import DocumentHitGroup
 from material_agent.inspiration.tag_graph import (
     curated_flat_band_tag_graph,
     plan_tag_queries,
@@ -71,7 +73,6 @@ def test_curated_candidate_pool_is_versioned_bounded_and_graph_derived() -> None
             max_unique_documents=5,
         ),
     )
-
     assert plan.candidate_pool is not None
     assert plan.allocation_audit is not None
     pool = plan.candidate_pool
@@ -103,6 +104,46 @@ def test_curated_candidate_pool_is_versioned_bounded_and_graph_derived() -> None
             max_raw_hits=10,
             max_unique_documents=5,
         ),
+    )
+
+
+def test_passage_budget_processes_metadata_quality_before_document_hash() -> None:
+    lower = _hit(
+        "hit-lower",
+        rank=2,
+        digest="a",
+        doi="10.1000/lower",
+        canonical_url="https://example.org/lower",
+        abstract="short abstract",
+    )
+    higher = _hit(
+        "hit-higher",
+        rank=1,
+        digest="b",
+        doi="10.1000/higher",
+        canonical_url="https://example.org/higher",
+        abstract="complete mechanism abstract",
+    )
+    lower_group = DocumentHitGroup(
+        document_id=lower.document_id,
+        representative_hit_id=lower.hit_id,
+        member_hit_ids=(lower.hit_id,),
+    )
+    higher_group = DocumentHitGroup(
+        document_id=higher.document_id,
+        representative_hit_id=higher.hit_id,
+        member_hit_ids=(higher.hit_id,),
+    )
+
+    ordered = _order_document_groups_for_extraction(
+        (lower_group, higher_group),
+        hit_index={lower.hit_id: lower, higher.hit_id: higher},
+        quality_rank_by_hit_id={lower.hit_id: (True, 2), higher.hit_id: (True, 1)},
+    )
+
+    assert tuple(item.document_id for item in ordered) == (
+        higher.document_id,
+        lower.document_id,
     )
 
 

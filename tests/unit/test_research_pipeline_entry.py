@@ -12,6 +12,7 @@ from material_agent.integration.research_pipeline import (
     ResearchPipelineStatus,
     ResearchStageRecordV1,
     ResearchStageStatus,
+    accuracy_search_environment,
     research_pipeline_tool_manifest,
 )
 from material_agent.integration.research_pipeline_mcp import (
@@ -77,6 +78,26 @@ def test_automatic_submission_identity_is_stable_and_revision_bound(tmp_path) ->
     assert first[0].submission_id is not None
     assert first[0].submission_id.startswith("auto-")
     assert first[2].startswith("research-")
+
+
+def test_accuracy_search_environment_uses_all_available_sources() -> None:
+    without_openalex = accuracy_search_environment({})
+    with_openalex = accuracy_search_environment({"OPENALEX_API_KEY": "test-key"})
+    explicit = accuracy_search_environment(
+        {"MATERIAL_AGENT_INSPIRATION_SEARCH_PROVIDER": "osti"}
+    )
+
+    assert without_openalex["MATERIAL_AGENT_INSPIRATION_SEARCH_PROVIDER"] == (
+        "crossref+arxiv+osti"
+    )
+    assert with_openalex["MATERIAL_AGENT_INSPIRATION_SEARCH_PROVIDER"] == (
+        "crossref+openalex+arxiv+osti"
+    )
+    assert explicit["MATERIAL_AGENT_INSPIRATION_SEARCH_PROVIDER"] == "osti"
+    assert all(
+        item["MATERIAL_AGENT_INSPIRATION_SEARCH_MAX_RESULTS"] == "20"
+        for item in (without_openalex, with_openalex, explicit)
+    )
 
 
 def test_dispatcher_validates_and_routes_direct_request() -> None:

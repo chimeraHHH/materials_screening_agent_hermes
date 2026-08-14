@@ -168,6 +168,12 @@ case 自报唯一 mechanism group，因为两者都会制造虚假的独立样�
   documents。非 DFT 科研入口预留 16 次物理请求，ignored 本地一键启动器默认选择三源；
   PDF/全文仍不读取，检索结果仍只支持灵感假说。排除已暂停 flatband 轨的完整离线 Gate
   `1104 passed, 17 skipped`（135.36s），`pip check`/diff check 通过。
+- **2026-08-14 accuracy-first 检索 checkpoint：** 非 DFT research entry 将公共检索扩为每源
+  20 条、最多 320 unique documents/128 passages，并按 metadata eligibility/quality 优先消费
+  passage budget；DeepSeek grounded rerank 闭合窗口扩至 64。无 OpenAlex key 时默认三源，
+  有真实 key 才自动启用四源。真实三源 ×20 smoke 得到 60 hits/57 unique、59 abstracts、
+  48 DOI；完整非 flatband Gate `1109 passed, 17 skipped`（130.83s）。科研 evidence ceiling、
+  PDF 禁用和真实 DFT/多体 blocker 均未改变。
 
 public production 仍为 NO-GO：queued production 与 worker lifecycle 已激活，但 parent
 worker 被 hard-kill 后独立 action child 的清理/回收契约仍未闭合；真实 provider 全链、

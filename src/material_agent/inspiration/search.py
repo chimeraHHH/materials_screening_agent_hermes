@@ -51,6 +51,7 @@ _METADATA_REDIRECT_STATUSES = frozenset({301, 302, 303, 307, 308})
 _MAX_METADATA_REDIRECTS = 5
 _MAX_REDIRECT_LOCATION_LENGTH = 2_048
 PUBLIC_SEARCH_PROVIDER_ENV = "MATERIAL_AGENT_INSPIRATION_SEARCH_PROVIDER"
+PUBLIC_SEARCH_MAX_RESULTS_ENV = "MATERIAL_AGENT_INSPIRATION_SEARCH_MAX_RESULTS"
 OPENALEX_API_KEY_ENV = "OPENALEX_API_KEY"
 CROSSREF_CONTACT_EMAIL_ENV = "MATERIALS_CROSSREF_CONTACT_EMAIL"
 
@@ -2046,6 +2047,17 @@ def public_search_adapter_from_environment(
     if not isinstance(budget, SearchBudgetV1):
         raise TypeError("budget must be SearchBudgetV1")
     selected = environment if environment is not None else os.environ
+    raw_max_results = selected.get(PUBLIC_SEARCH_MAX_RESULTS_ENV, "5").strip()
+    try:
+        max_results = int(raw_max_results)
+    except ValueError as error:
+        raise ValueError(
+            f"{PUBLIC_SEARCH_MAX_RESULTS_ENV} must be an integer from 1 to 20"
+        ) from error
+    if not 1 <= max_results <= 20:
+        raise ValueError(
+            f"{PUBLIC_SEARCH_MAX_RESULTS_ENV} must be an integer from 1 to 20"
+        )
     mode = selected.get(PUBLIC_SEARCH_PROVIDER_ENV, "crossref").strip().casefold()
     if not mode:
         mode = "crossref"
@@ -2077,6 +2089,7 @@ def public_search_adapter_from_environment(
             adapters.append(
                 CrossrefPublicAdapter(
                     contact_email=selected.get(CROSSREF_CONTACT_EMAIL_ENV) or None,
+                    max_results=max_results,
                     max_retries=0 if len(provider_ids) > 1 else 2,
                     publication_year_from=budget.publication_year_from,
                     publication_year_to=budget.publication_year_to,
@@ -2087,6 +2100,7 @@ def public_search_adapter_from_environment(
             adapters.append(
                 OpenAlexPublicAdapter(
                     api_key_resolver=lambda: selected.get(OPENALEX_API_KEY_ENV, ""),
+                    max_results=max_results,
                     publication_year_from=budget.publication_year_from,
                     publication_year_to=budget.publication_year_to,
                     transport=openalex_transport,
@@ -2095,6 +2109,7 @@ def public_search_adapter_from_environment(
         elif provider == "arxiv":
             adapters.append(
                 ArxivPublicAdapter(
+                    max_results=max_results,
                     publication_year_from=budget.publication_year_from,
                     publication_year_to=budget.publication_year_to,
                     transport=arxiv_transport,
@@ -2103,6 +2118,7 @@ def public_search_adapter_from_environment(
         else:
             adapters.append(
                 OstiPublicAdapter(
+                    max_results=max_results,
                     publication_year_from=budget.publication_year_from,
                     publication_year_to=budget.publication_year_to,
                     transport=osti_transport,

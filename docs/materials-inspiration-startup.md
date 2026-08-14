@@ -49,6 +49,7 @@ export API_SERVER_KEY='<at-least-32-random-characters>'
 export DEEPSEEK_API_KEY='<research-api-key>'
 export MATERIALS_CROSSREF_CONTACT_EMAIL='<contact-email>'
 export MATERIAL_AGENT_INSPIRATION_SEARCH_PROVIDER='crossref+arxiv+osti'
+export MATERIAL_AGENT_INSPIRATION_SEARCH_MAX_RESULTS='20'
 export MATERIAL_AGENT_INSPIRATION_RAG_PROVIDER=deepseek
 export MATERIAL_AGENT_LLM_MODEL=deepseek-v4-pro
 export MATERIAL_AGENT_LLM_API_KEY="$DEEPSEEK_API_KEY"
@@ -118,7 +119,9 @@ Hermes 的 npm 构建在部分 npm 版本下会只改写 `package-lock.json` 元
 默认部署把 Crossref 视为外部依赖；其瞬时不可用不会掩盖本地 worker、数据库和 MCP
 闭包状态。科研入口推荐的 `crossref+arxiv+osti` 模式还会访问官方 arXiv Atom Query API
 和 OSTI.GOV v1 JSON API；三者的原始响应分别进入同一 hash/provenance envelope，且不会
-跟随 PDF 或全文链接。若只需单源排障，可把该变量临时改为 `crossref`、`arxiv` 或 `osti`。
+跟随 PDF 或全文链接。accuracy-first profile 为每个 provider/query 保留最多 20 条结果；若
+环境中存在 `OPENALEX_API_KEY` 且没有显式覆盖 provider 变量，科研入口还会自动加入
+OpenAlex。若只需单源排障，可把 provider 临时改为 `crossref`、`arxiv` 或 `osti`。
 
 ## 5. 验证与访问
 
