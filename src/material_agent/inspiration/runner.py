@@ -16,7 +16,7 @@ import json
 import math
 import time
 from collections import Counter
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import asdict, dataclass
 from typing import Protocol
 
@@ -90,6 +90,7 @@ from material_agent.inspiration.retrieval_quality import (
 )
 from material_agent.inspiration.search import (
     DocumentHitGroup,
+    BoundedHttpTransport,
     ParsedSearchPage,
     RawSearchPage,
     SearchAdapter,
@@ -97,7 +98,9 @@ from material_agent.inspiration.search import (
     SearchAttemptRecord,
     group_document_hits,
     parse_crossref_page,
+    parse_multi_source_page,
     parse_openalex_page,
+    public_search_adapter_from_environment,
 )
 from material_agent.inspiration.selection import (
     MechanismQuotaStatus,
@@ -575,6 +578,8 @@ class InspirationRunner:
                     page=page,
                     raw_response_artifact=raw_pointer,
                     max_hits=remaining_hits,
+                    publication_year_from=policy.search.publication_year_from,
+                    publication_year_to=policy.search.publication_year_to,
                 )
             except (InspirationRunnerError, SearchAdapterError):
                 # A provider response that later fails contract/schema checks is
@@ -1284,10 +1289,10 @@ class InspirationRunner:
                     "SEARCH_FIXTURE_FORBIDDEN",
                     "public metadata responses cannot use fixture bindings",
                 )
-            if page.provider != "crossref":
+            if page.provider not in {"crossref", "openalex", "multi-source-v1"}:
                 raise InspirationRunnerError(
                     "UNSUPPORTED_PUBLIC_METADATA_PROVIDER",
-                    "public metadata mode currently accepts only Crossref responses",
+                    "public metadata mode received an unregistered provider",
                 )
             return
         if binding is None:
@@ -1325,6 +1330,8 @@ class InspirationRunner:
         page: RawSearchPage,
         raw_response_artifact: ArtifactPointerV1,
         max_hits: int,
+        publication_year_from: int | None,
+        publication_year_to: int | None,
     ) -> ParsedSearchPage:
         if page.provider == "crossref":
             return parse_crossref_page(
@@ -1332,6 +1339,27 @@ class InspirationRunner:
                 payload=page.payload,
                 raw_response_artifact=raw_response_artifact,
                 max_hits=max_hits,
+                publication_year_from=publication_year_from,
+                publication_year_to=publication_year_to,
+            )
+        if page.provider == "openalex":
+            return parse_openalex_page(
+                query=query,
+                payload=page.payload,
+                raw_response_artifact=raw_response_artifact,
+                provider="openalex",
+                max_hits=max_hits,
+                publication_year_from=publication_year_from,
+                publication_year_to=publication_year_to,
+            )
+        if page.provider == "multi-source-v1":
+            return parse_multi_source_page(
+                query=query,
+                payload=page.payload,
+                raw_response_artifact=raw_response_artifact,
+                max_hits=max_hits,
+                publication_year_from=publication_year_from,
+                publication_year_to=publication_year_to,
             )
         if page.provider == "openalex-fixture":
             return parse_openalex_page(
@@ -1340,6 +1368,8 @@ class InspirationRunner:
                 raw_response_artifact=raw_response_artifact,
                 provider=page.provider,
                 max_hits=max_hits,
+                publication_year_from=publication_year_from,
+                publication_year_to=publication_year_to,
             )
         raise InspirationRunnerError(
             "UNSUPPORTED_SEARCH_PROVIDER",
@@ -2278,3 +2308,40 @@ def _bounded_warnings(warnings: Sequence[str]) -> tuple[str, ...]:
     if len(unique) <= 64:
         return unique
     return (*unique[:63], "WARNINGS_TRUNCATED")
+
+
+def public_inspiration_runner_from_environment(
+    *,
+    store: LocalArtifactStore,
+    policy: InspirationPolicyV1,
+    transformation_engine: TransformationEngine,
+    environment: Mapping[str, str] | None = None,
+    crossref_transport: BoundedHttpTransport | None = None,
+    openalex_transport: BoundedHttpTransport | None = None,
+    document_fetcher: DocumentFetcher | None = None,
+    monotonic_clock: Callable[[], float] = time.monotonic,
+) -> InspirationRunner:
+    """Explicit public-search runner factory; default search remains Crossref.
+
+    Multi-source construction is possible only through the opt-in environment
+    switch enforced by ``public_search_adapter_from_environment``.  The same
+    frozen policy supplies both the query/request budget and publication-year
+    range, preventing adapter configuration from silently diverging from the
+    runner input.
+    """
+
+    if policy.search_mode is not SearchExecutionMode.PUBLIC_METADATA_API:
+        raise ValueError("public runner factory requires PUBLIC_METADATA_API policy")
+    adapter = public_search_adapter_from_environment(
+        budget=policy.search,
+        environment=environment,
+        crossref_transport=crossref_transport,
+        openalex_transport=openalex_transport,
+    )
+    return InspirationRunner(
+        store=store,
+        search_adapter=adapter,
+        transformation_engine=transformation_engine,
+        document_fetcher=document_fetcher,
+        monotonic_clock=monotonic_clock,
+    )

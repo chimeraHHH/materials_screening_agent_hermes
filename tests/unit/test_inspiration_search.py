@@ -11,20 +11,32 @@ import pytest
 from material_agent.inspiration import search as inspiration_search
 from material_agent.inspiration import (
     ArtifactPointerV1,
+    ComponentSnapshotV1,
     SearchQueryKind,
     SearchQueryV1,
 )
 from material_agent.inspiration.search import (
     CrossrefPublicAdapter,
     FixtureSearchAdapter,
+    MultiSourceSearchAdapter,
+    OpenAlexPublicAdapter,
     SearchAdapterError,
     UrlLibBoundedTransport,
     document_id_for,
     group_document_hits,
     normalize_doi,
     parse_crossref_page,
+    parse_multi_source_page,
     parse_openalex_page,
+    public_search_adapter_from_environment,
 )
+from material_agent.inspiration.policy import (
+    InspirationPolicyV1,
+    SearchBudgetV1,
+    SearchExecutionMode,
+)
+from material_agent.inspiration.runner import public_inspiration_runner_from_environment
+from material_agent.retrieval.storage import LocalArtifactStore
 
 
 def query(query_id: str = "query-1") -> SearchQueryV1:
@@ -129,6 +141,18 @@ class _RecordingTransport:
             }
         )
         return self.payload  # type: ignore[return-value]
+
+
+class _NoopTransformationEngine:
+    component = ComponentSnapshotV1(
+        component_id="noop-transformation-engine",
+        version="1",
+        implementation_sha256="f" * 64,
+    )
+
+    def generate(self, context):
+        del context
+        return ()
 
 
 class _FailingTransport:
@@ -1218,3 +1242,227 @@ def test_hit_budget_is_applied_before_model_construction() -> None:
     )
 
     assert [hit.title for hit in parsed.hits] == ["first"]
+
+
+def test_crossref_request_encodes_frozen_publication_year_range() -> None:
+    transport = _RecordingTransport(crossref_response_bytes())
+    adapter = CrossrefPublicAdapter(
+        transport=transport,
+        max_retries=0,
+        publication_year_from=1960,
+        publication_year_to=1990,
+    )
+
+    adapter.search(query(), max_response_bytes=100_000, max_physical_requests=1)
+
+    parameters = parse_qs(urlsplit(str(transport.calls[0]["url"])).query)
+    assert parameters["filter"] == [
+        "has-abstract:true,from-pub-date:1960-01-01,until-pub-date:1990-12-31"
+    ]
+    assert adapter.component != CrossrefPublicAdapter(
+        transport=transport,
+        max_retries=0,
+    ).component
+
+
+def test_openalex_request_is_bounded_year_filtered_and_secret_is_lazy() -> None:
+    transport = _RecordingTransport(response_bytes())
+    calls = 0
+
+    def resolve_key() -> str:
+        nonlocal calls
+        calls += 1
+        return "offline-test-key"
+
+    adapter = OpenAlexPublicAdapter(
+        transport=transport,
+        api_key_resolver=resolve_key,
+        publication_year_from=1960,
+        publication_year_to=1990,
+    )
+    assert calls == 0
+
+    page = adapter.search(
+        query(),
+        max_response_bytes=100_000,
+        max_physical_requests=1,
+    )
+
+    assert calls == 1
+    assert page.provider == "openalex"
+    assert len(page.attempts) == 1
+    parameters = parse_qs(urlsplit(str(transport.calls[0]["url"])).query)
+    assert parameters["filter"] == [
+        "from_publication_date:1960-01-01,to_publication_date:1990-12-31"
+    ]
+    assert parameters["api_key"] == ["offline-test-key"]
+    assert "offline-test-key" not in repr(page)
+    assert "offline-test-key" not in adapter.component.model_dump_json()
+
+
+def test_openalex_missing_secret_fails_before_network() -> None:
+    transport = _RecordingTransport(response_bytes())
+    adapter = OpenAlexPublicAdapter(
+        transport=transport,
+        api_key_resolver=lambda: "",
+    )
+
+    with pytest.raises(SearchAdapterError) as error:
+        adapter.search(query(), max_response_bytes=100_000)
+
+    assert error.value.code == "OPENALEX_CREDENTIAL_UNAVAILABLE"
+    assert transport.calls == []
+
+
+def test_multi_source_adapter_preserves_exact_child_payloads_and_parses_both() -> None:
+    crossref_payload = crossref_response_bytes()
+    openalex_payload = response_bytes()
+    adapter = MultiSourceSearchAdapter(
+        (
+            CrossrefPublicAdapter(
+                transport=_RecordingTransport(crossref_payload),
+                max_retries=0,
+            ),
+            OpenAlexPublicAdapter(
+                transport=_RecordingTransport(openalex_payload),
+                api_key_resolver=lambda: "offline-test-key",
+            ),
+        )
+    )
+
+    page = adapter.search(
+        query(),
+        max_response_bytes=1_000_000,
+        max_physical_requests=2,
+    )
+    parsed = parse_multi_source_page(
+        query=query(),
+        payload=page.payload,
+        raw_response_artifact=artifact(),
+        max_hits=10,
+    )
+
+    assert page.provider == "multi-source-v1"
+    assert [attempt.attempt_number for attempt in page.attempts] == [1, 2]
+    assert {hit.provider for hit in parsed.hits} == {"crossref", "openalex"}
+    assert len(parsed.hits) == 2
+
+    historical_only = parse_multi_source_page(
+        query=query(),
+        payload=page.payload,
+        raw_response_artifact=artifact(),
+        max_hits=10,
+        publication_year_from=1960,
+        publication_year_to=1990,
+    )
+    assert historical_only.hits == ()
+    assert len(historical_only.warnings) == 2
+    assert all(
+        warning.startswith("PUBLICATION_YEAR_REJECTED:")
+        for warning in historical_only.warnings
+    )
+
+
+@pytest.mark.parametrize(
+    ("year_from", "year_to"),
+    ((1599, None), (None, 2201), (1991, 1990)),
+)
+def test_public_search_adapters_reject_invalid_year_ranges(
+    year_from: int | None,
+    year_to: int | None,
+) -> None:
+    with pytest.raises(ValueError):
+        CrossrefPublicAdapter(
+            publication_year_from=year_from,
+            publication_year_to=year_to,
+        )
+    with pytest.raises(ValueError):
+        OpenAlexPublicAdapter(
+            publication_year_from=year_from,
+            publication_year_to=year_to,
+        )
+
+
+def test_public_search_factory_is_crossref_by_default_and_multi_source_is_opt_in() -> None:
+    default = public_search_adapter_from_environment(
+        budget=SearchBudgetV1(
+            publication_year_from=1960,
+            publication_year_to=1990,
+        ),
+        environment={},
+        crossref_transport=_RecordingTransport(crossref_response_bytes()),
+    )
+    assert isinstance(default, CrossrefPublicAdapter)
+    assert default.publication_year_from == 1960
+    assert default.publication_year_to == 1990
+
+    multi = public_search_adapter_from_environment(
+        budget=SearchBudgetV1(
+            max_queries=2,
+            max_physical_requests=4,
+            max_direct_queries=2,
+            max_bridge_queries=0,
+            max_counter_queries=0,
+            publication_year_from=1960,
+            publication_year_to=1990,
+        ),
+        environment={
+            "MATERIAL_AGENT_INSPIRATION_SEARCH_PROVIDER": "crossref+openalex",
+            "OPENALEX_API_KEY": "offline-test-key",
+        },
+        crossref_transport=_RecordingTransport(crossref_response_bytes()),
+        openalex_transport=_RecordingTransport(response_bytes()),
+    )
+    assert isinstance(multi, MultiSourceSearchAdapter)
+    assert {adapter.component.component_id for adapter in multi.adapters} == {
+        "crossref-public-adapter",
+        "openalex-public-adapter",
+    }
+
+    with pytest.raises(ValueError, match="two physical requests"):
+        public_search_adapter_from_environment(
+            budget=SearchBudgetV1(
+                max_queries=2,
+                max_physical_requests=2,
+                max_direct_queries=2,
+                max_bridge_queries=0,
+                max_counter_queries=0,
+            ),
+            environment={
+                "MATERIAL_AGENT_INSPIRATION_SEARCH_PROVIDER": "crossref+openalex"
+            },
+        )
+
+
+def test_public_runner_factory_binds_opt_in_multi_source_policy(tmp_path) -> None:
+    policy = InspirationPolicyV1(
+        search_mode=SearchExecutionMode.PUBLIC_METADATA_API,
+        network_access=True,
+        search=SearchBudgetV1(
+            max_queries=2,
+            max_physical_requests=4,
+            max_direct_queries=2,
+            max_bridge_queries=0,
+            max_counter_queries=0,
+            publication_year_from=1960,
+            publication_year_to=1990,
+        ),
+    )
+    runner = public_inspiration_runner_from_environment(
+        store=LocalArtifactStore(tmp_path),
+        policy=policy,
+        transformation_engine=_NoopTransformationEngine(),
+        environment={
+            "MATERIAL_AGENT_INSPIRATION_SEARCH_PROVIDER": "crossref+openalex",
+            "OPENALEX_API_KEY": "offline-test-key",
+        },
+        crossref_transport=_RecordingTransport(crossref_response_bytes()),
+        openalex_transport=_RecordingTransport(response_bytes()),
+    )
+
+    assert isinstance(runner.search_adapter, MultiSourceSearchAdapter)
+    assert all(
+        getattr(adapter, "publication_year_from") == 1960
+        and getattr(adapter, "publication_year_to") == 1990
+        for adapter in runner.search_adapter.adapters
+    )

@@ -7,14 +7,16 @@ has no PDF or full-document interface.
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import html
 import json
 import math
+import os
 import socket
 import threading
 import time
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import timezone
 from email.utils import parsedate_to_datetime
@@ -30,6 +32,8 @@ from material_agent.inspiration.models import (
     ComponentSnapshotV1,
     SearchHitV1,
     SearchQueryV1,
+    canonical_json_bytes,
+    canonical_sha256,
     deterministic_id,
 )
 
@@ -43,6 +47,9 @@ _CROSSREF_POLITE_MIN_INTERVAL_SECONDS = 1.0 / 3.0
 _METADATA_REDIRECT_STATUSES = frozenset({301, 302, 303, 307, 308})
 _MAX_METADATA_REDIRECTS = 5
 _MAX_REDIRECT_LOCATION_LENGTH = 2_048
+PUBLIC_SEARCH_PROVIDER_ENV = "MATERIAL_AGENT_INSPIRATION_SEARCH_PROVIDER"
+OPENALEX_API_KEY_ENV = "OPENALEX_API_KEY"
+CROSSREF_CONTACT_EMAIL_ENV = "MATERIALS_CROSSREF_CONTACT_EMAIL"
 
 
 class _RejectRedirectHandler(HTTPRedirectHandler):
@@ -361,10 +368,18 @@ class UrlLibBoundedTransport:
         self,
         *,
         monotonic_clock: Callable[[], float] = time.monotonic,
+        allowed_hosts: frozenset[str] | None = None,
     ) -> None:
         if not callable(monotonic_clock):
             raise ValueError("monotonic_clock must be callable")
         self.monotonic_clock = monotonic_clock
+        if allowed_hosts is not None:
+            if not allowed_hosts or any(
+                not isinstance(host, str) or not host.strip()
+                for host in allowed_hosts
+            ):
+                raise ValueError("allowed_hosts must contain bounded host names")
+            self.allowed_hosts = frozenset(host.casefold() for host in allowed_hosts)
 
     def get(
         self,
@@ -736,6 +751,26 @@ def _attempt_records_from_physical_hops(
     )
 
 
+def _validate_publication_year_range(
+    publication_year_from: int | None,
+    publication_year_to: int | None,
+) -> None:
+    for label, value in (
+        ("publication_year_from", publication_year_from),
+        ("publication_year_to", publication_year_to),
+    ):
+        if value is not None and (
+            type(value) is not int or not 1600 <= value <= 2200
+        ):
+            raise ValueError(f"{label} must be an integer between 1600 and 2200")
+    if (
+        publication_year_from is not None
+        and publication_year_to is not None
+        and publication_year_from > publication_year_to
+    ):
+        raise ValueError("publication_year_from exceeds publication_year_to")
+
+
 def _crossref_component_snapshot(
     *,
     max_results: int,
@@ -746,6 +781,8 @@ def _crossref_component_snapshot(
     max_total_wait_seconds: float,
     min_request_interval_seconds: float,
     polite_pool: bool,
+    publication_year_from: int | None,
+    publication_year_to: int | None,
 ) -> ComponentSnapshotV1:
     """Bind behavior-affecting public-search configuration without the email."""
 
@@ -761,6 +798,10 @@ def _crossref_component_snapshot(
         "rate_limit": {
             "min_request_interval_seconds": min_request_interval_seconds,
             "polite_pool": polite_pool,
+        },
+        "publication_year": {
+            "from": publication_year_from,
+            "to": publication_year_to,
         },
     }
     fingerprint = json.dumps(
@@ -811,6 +852,8 @@ class CrossrefPublicAdapter:
         sleeper: Callable[[float], None] = time.sleep,
         wall_clock: Callable[[], float] = time.time,
         monotonic_clock: Callable[[], float] = time.monotonic,
+        publication_year_from: int | None = None,
+        publication_year_to: int | None = None,
     ) -> None:
         if not 1 <= max_results <= 20:
             raise ValueError("max_results must be between 1 and 20")
@@ -864,6 +907,10 @@ class CrossrefPublicAdapter:
             raise ValueError("wall_clock must be callable")
         if not callable(monotonic_clock):
             raise ValueError("monotonic_clock must be callable")
+        _validate_publication_year_range(
+            publication_year_from,
+            publication_year_to,
+        )
         self.max_results = max_results
         self.timeout_seconds = timeout_seconds
         self.contact_email = contact_email
@@ -878,6 +925,8 @@ class CrossrefPublicAdapter:
         self.sleeper = sleeper
         self.wall_clock = wall_clock
         self.monotonic_clock = monotonic_clock
+        self.publication_year_from = publication_year_from
+        self.publication_year_to = publication_year_to
         self._pacing_lock = threading.Lock()
         self._last_request_started: float | None = None
         self.component = _crossref_component_snapshot(
@@ -889,6 +938,8 @@ class CrossrefPublicAdapter:
             max_total_wait_seconds=self.max_total_wait_seconds,
             min_request_interval_seconds=self.min_request_interval_seconds,
             polite_pool=contact_email is not None,
+            publication_year_from=publication_year_from,
+            publication_year_to=publication_year_to,
         )
 
     def search(
@@ -939,8 +990,13 @@ class CrossrefPublicAdapter:
                 "SEARCH_REQUEST_BUDGET_EXCEEDED",
                 "no physical metadata request remains",
             )
+        filters = ["has-abstract:true"]
+        if self.publication_year_from is not None:
+            filters.append(f"from-pub-date:{self.publication_year_from}-01-01")
+        if self.publication_year_to is not None:
+            filters.append(f"until-pub-date:{self.publication_year_to}-12-31")
         parameters = {
-            "filter": "has-abstract:true",
+            "filter": ",".join(filters),
             "query.bibliographic": query.text,
             "rows": str(self.max_results),
             "select": "DOI,title,author,published,URL,abstract,subject",
@@ -1200,6 +1256,406 @@ class CrossrefPublicAdapter:
         return min(retry_after, self.max_retry_delay_seconds)
 
 
+class OpenAlexPublicAdapter:
+    """OpenAlex Works metadata adapter with an explicit key and one-call budget.
+
+    OpenAlex credentials are resolved only when ``search`` is invoked.  They are
+    never included in component identity, attempt records, exceptions, or raw
+    response Artifacts.  Callers can inject a resolver for a secret store; the
+    default reads ``OPENALEX_API_KEY`` from the process environment.
+    """
+
+    network_access = True
+
+    def __init__(
+        self,
+        *,
+        max_results: int = 5,
+        timeout_seconds: int = 20,
+        publication_year_from: int | None = None,
+        publication_year_to: int | None = None,
+        api_key_resolver: Callable[[], str] | None = None,
+        transport: BoundedHttpTransport | None = None,
+        monotonic_clock: Callable[[], float] = time.monotonic,
+    ) -> None:
+        if not 1 <= max_results <= 20:
+            raise ValueError("max_results must be between 1 and 20")
+        if not 1 <= timeout_seconds <= 120:
+            raise ValueError("timeout_seconds must be between 1 and 120")
+        _validate_publication_year_range(
+            publication_year_from,
+            publication_year_to,
+        )
+        if api_key_resolver is not None and not callable(api_key_resolver):
+            raise ValueError("api_key_resolver must be callable")
+        if not callable(monotonic_clock):
+            raise ValueError("monotonic_clock must be callable")
+        self.max_results = max_results
+        self.timeout_seconds = timeout_seconds
+        self.publication_year_from = publication_year_from
+        self.publication_year_to = publication_year_to
+        self.api_key_resolver = api_key_resolver or (
+            lambda: os.environ.get("OPENALEX_API_KEY", "")
+        )
+        self.transport = transport or UrlLibBoundedTransport(
+            monotonic_clock=monotonic_clock,
+            allowed_hosts=frozenset({"api.openalex.org"}),
+        )
+        self.monotonic_clock = monotonic_clock
+        fingerprint = canonical_json_bytes(
+            {
+                "max_results": max_results,
+                "publication_year_from": publication_year_from,
+                "publication_year_to": publication_year_to,
+                "source_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+                "timeout_seconds": timeout_seconds,
+            }
+        )
+        self.component = ComponentSnapshotV1(
+            component_id="openalex-public-adapter",
+            version="works-api-v1",
+            implementation_sha256=hashlib.sha256(fingerprint).hexdigest(),
+        )
+
+    def search(
+        self,
+        query: SearchQueryV1,
+        *,
+        max_response_bytes: int,
+        remaining_walltime_seconds: float | None = None,
+        max_physical_requests: int | None = None,
+    ) -> RawSearchPage:
+        if not isinstance(query, SearchQueryV1):
+            raise SearchAdapterError("INVALID_QUERY", "query must be SearchQueryV1")
+        if not 1 <= max_response_bytes <= 10_000_000:
+            raise SearchAdapterError(
+                "INVALID_RESPONSE_BUDGET",
+                "max_response_bytes must be between 1 and 10000000",
+            )
+        if max_physical_requests is not None and (
+            type(max_physical_requests) is not int
+            or not 0 <= max_physical_requests <= 64
+        ):
+            raise SearchAdapterError(
+                "INVALID_PHYSICAL_REQUEST_BUDGET",
+                "max_physical_requests must be between 0 and 64",
+            )
+        if max_physical_requests == 0:
+            raise SearchAdapterError(
+                "SEARCH_REQUEST_BUDGET_EXCEEDED",
+                "no physical OpenAlex request remains",
+            )
+        try:
+            resolved_key = self.api_key_resolver()
+        except (OSError, RuntimeError, ValueError) as error:
+            raise SearchAdapterError(
+                "OPENALEX_CREDENTIAL_UNAVAILABLE",
+                "OpenAlex API key is unavailable from the configured secret source",
+            ) from error
+        api_key = resolved_key.strip() if isinstance(resolved_key, str) else ""
+        if not api_key or len(api_key) > 512 or any(ord(char) < 33 for char in api_key):
+            raise SearchAdapterError(
+                "OPENALEX_CREDENTIAL_UNAVAILABLE",
+                "OpenAlex API key is unavailable from the configured secret source",
+            )
+        deadline = None
+        if remaining_walltime_seconds is not None:
+            if (
+                isinstance(remaining_walltime_seconds, bool)
+                or not isinstance(remaining_walltime_seconds, (int, float))
+                or not math.isfinite(remaining_walltime_seconds)
+                or remaining_walltime_seconds <= 0
+            ):
+                raise SearchAdapterError(
+                    "WALLTIME_BUDGET_EXCEEDED",
+                    "remaining walltime must be finite and positive",
+                )
+            deadline = _read_finite_clock(
+                self.monotonic_clock,
+                "monotonic_clock",
+            ) + float(remaining_walltime_seconds)
+        filters: list[str] = []
+        if self.publication_year_from is not None:
+            filters.append(f"from_publication_date:{self.publication_year_from}-01-01")
+        if self.publication_year_to is not None:
+            filters.append(f"to_publication_date:{self.publication_year_to}-12-31")
+        parameters = {
+            "api_key": api_key,
+            "per_page": str(self.max_results),
+            "search": query.text,
+            "select": (
+                "id,doi,title,publication_year,primary_location,authorships,"
+                "keywords,abstract_inverted_index"
+            ),
+        }
+        if filters:
+            parameters["filter"] = ",".join(filters)
+        url = f"https://api.openalex.org/works?{urlencode(parameters)}"
+        try:
+            result = self.transport.get(
+                url,
+                headers={
+                    "Accept": "application/json",
+                    "Accept-Encoding": "identity",
+                    "User-Agent": "materials-screening-agent/0.1 (metadata-only)",
+                },
+                timeout_seconds=float(self.timeout_seconds),
+                max_response_bytes=max_response_bytes,
+                deadline_monotonic=deadline,
+                max_physical_requests=max_physical_requests,
+            )
+        except SearchAdapterError as error:
+            hops = error.physical_hops or (
+                PhysicalSearchHop(
+                    outcome="error",
+                    error_code=error.code,
+                    http_status=error.http_status,
+                    response_bytes=error.response_bytes,
+                ),
+            )
+            attempts = _attempt_records_from_physical_hops(
+                query_id=query.query_id,
+                first_attempt_number=1,
+                physical_hops=hops,
+                pacing_delay_seconds=0.0,
+            )
+            raise error.with_attempts(attempts) from error
+        if isinstance(result, bytes):
+            payload = result
+            hops = (
+                PhysicalSearchHop(
+                    outcome="success",
+                    error_code=None,
+                    http_status=200,
+                    response_bytes=len(payload),
+                ),
+            )
+        elif isinstance(result, BoundedHttpResult):
+            payload = result.payload
+            hops = result.physical_hops
+        else:
+            raise SearchAdapterError(
+                "INVALID_NETWORK_PAYLOAD",
+                "metadata transport must return bytes or BoundedHttpResult",
+            )
+        attempts = _attempt_records_from_physical_hops(
+            query_id=query.query_id,
+            first_attempt_number=1,
+            physical_hops=hops,
+            pacing_delay_seconds=0.0,
+        )
+        return RawSearchPage(
+            provider="openalex",
+            query_id=query.query_id,
+            payload=payload,
+            attempts=attempts,
+        )
+
+
+class MultiSourceSearchAdapter:
+    """Execute the same bounded query against an explicit provider set.
+
+    The returned payload is a canonical envelope containing each provider's
+    exact response bytes as base64 plus its SHA-256.  This keeps one existing
+    ``SearchAdapter`` call boundary while preserving byte-level provenance.
+    Any provider failure fails the logical query closed.
+    """
+
+    network_access = True
+
+    def __init__(self, adapters: Sequence[SearchAdapter]) -> None:
+        selected = tuple(adapters)
+        if len(selected) < 2 or len(selected) > 4:
+            raise ValueError("multi-source search requires two to four adapters")
+        if any(not adapter.network_access for adapter in selected):
+            raise ValueError("multi-source public search requires networked adapters")
+        provider_ids = tuple(adapter.component.component_id for adapter in selected)
+        if len(set(provider_ids)) != len(provider_ids):
+            raise ValueError("multi-source adapter component IDs must be unique")
+        self.adapters = selected
+        self.component = ComponentSnapshotV1(
+            component_id="multi-source-public-search-adapter",
+            version="v1",
+            implementation_sha256=canonical_sha256(
+                {
+                    "children": tuple(
+                        (component.component_id, component.version, component.implementation_sha256)
+                        for component in (adapter.component for adapter in selected)
+                    ),
+                    "source_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+                }
+            ),
+        )
+
+    def search(
+        self,
+        query: SearchQueryV1,
+        *,
+        max_response_bytes: int,
+        remaining_walltime_seconds: float | None = None,
+        max_physical_requests: int | None = None,
+    ) -> RawSearchPage:
+        if not isinstance(query, SearchQueryV1):
+            raise SearchAdapterError("INVALID_QUERY", "query must be SearchQueryV1")
+        if not 1 <= max_response_bytes <= 10_000_000:
+            raise SearchAdapterError(
+                "INVALID_RESPONSE_BUDGET",
+                "max_response_bytes must be between 1 and 10000000",
+            )
+        if max_physical_requests is not None and (
+            type(max_physical_requests) is not int
+            or not 0 <= max_physical_requests <= 64
+        ):
+            raise SearchAdapterError(
+                "INVALID_PHYSICAL_REQUEST_BUDGET",
+                "max_physical_requests must be between 0 and 64",
+            )
+        if (
+            remaining_walltime_seconds is not None
+            and (
+                isinstance(remaining_walltime_seconds, bool)
+                or not isinstance(remaining_walltime_seconds, (int, float))
+                or not math.isfinite(remaining_walltime_seconds)
+                or remaining_walltime_seconds <= 0
+            )
+        ):
+            raise SearchAdapterError(
+                "WALLTIME_BUDGET_EXCEEDED",
+                "remaining walltime must be finite and positive",
+            )
+        if max_physical_requests is not None and max_physical_requests < len(self.adapters):
+            raise SearchAdapterError(
+                "SEARCH_REQUEST_BUDGET_EXCEEDED",
+                "multi-source query budget cannot cover every configured provider",
+            )
+        pages: list[dict[str, str]] = []
+        attempts: list[SearchAttemptRecord] = []
+        remaining_bytes = max_response_bytes
+        for adapter in self.adapters:
+            child_budget = (
+                None
+                if max_physical_requests is None
+                else max_physical_requests - len(attempts)
+            )
+            try:
+                page = adapter.search(
+                    query,
+                    max_response_bytes=remaining_bytes,
+                    remaining_walltime_seconds=(
+                        None
+                        if remaining_walltime_seconds is None
+                        else remaining_walltime_seconds / len(self.adapters)
+                    ),
+                    max_physical_requests=child_budget,
+                )
+            except SearchAdapterError as error:
+                combined = (*attempts, *error.attempts)
+                raise error.with_attempts(
+                    _renumber_attempts(query.query_id, combined)
+                ) from error
+            attempts.extend(page.attempts)
+            encoded = base64.b64encode(page.payload).decode("ascii")
+            pages.append(
+                {
+                    "payload_base64": encoded,
+                    "payload_sha256": hashlib.sha256(page.payload).hexdigest(),
+                    "provider": page.provider,
+                }
+            )
+            remaining_bytes -= len(page.payload)
+            if remaining_bytes < 1:
+                raise SearchAdapterError(
+                    "RESPONSE_BUDGET_EXCEEDED",
+                    "multi-source responses exhausted the aggregate byte budget",
+                    attempts=_renumber_attempts(query.query_id, tuple(attempts)),
+                )
+        payload = canonical_json_bytes(
+            {
+                "pages": pages,
+                "schema_version": "inspiration-multi-source-page-v1",
+            }
+        )
+        if len(payload) > max_response_bytes:
+            raise SearchAdapterError(
+                "RESPONSE_BUDGET_EXCEEDED",
+                "encoded multi-source response exceeds the aggregate byte budget",
+                attempts=_renumber_attempts(query.query_id, tuple(attempts)),
+            )
+        return RawSearchPage(
+            provider="multi-source-v1",
+            query_id=query.query_id,
+            payload=payload,
+            attempts=_renumber_attempts(query.query_id, tuple(attempts)),
+        )
+
+
+def _renumber_attempts(
+    query_id: str,
+    attempts: Sequence[SearchAttemptRecord],
+) -> tuple[SearchAttemptRecord, ...]:
+    return tuple(
+        replace(item, query_id=query_id, attempt_number=index)
+        for index, item in enumerate(attempts, start=1)
+    )
+
+
+def public_search_adapter_from_environment(
+    *,
+    budget: "SearchBudgetV1",
+    environment: Mapping[str, str] | None = None,
+    crossref_transport: BoundedHttpTransport | None = None,
+    openalex_transport: BoundedHttpTransport | None = None,
+) -> SearchAdapter:
+    """Build Crossref by default or an explicitly opted-in two-source adapter.
+
+    This factory binds the policy year window to both provider requests.  The
+    OpenAlex key remains lazy: constructing the adapter does not resolve or
+    persist the secret.  Multi-source mode reserves two physical requests per
+    logical query and disables Crossref retries so every provider is covered by
+    the frozen request budget.
+    """
+
+    from material_agent.inspiration.policy import SearchBudgetV1
+
+    if not isinstance(budget, SearchBudgetV1):
+        raise TypeError("budget must be SearchBudgetV1")
+    selected = environment if environment is not None else os.environ
+    mode = selected.get(PUBLIC_SEARCH_PROVIDER_ENV, "crossref").strip().casefold()
+    if mode in {"", "crossref"}:
+        return CrossrefPublicAdapter(
+            contact_email=selected.get(CROSSREF_CONTACT_EMAIL_ENV) or None,
+            publication_year_from=budget.publication_year_from,
+            publication_year_to=budget.publication_year_to,
+            transport=crossref_transport,
+        )
+    if mode != "crossref+openalex":
+        raise ValueError(
+            f"{PUBLIC_SEARCH_PROVIDER_ENV} must be 'crossref' or 'crossref+openalex'"
+        )
+    required_requests = budget.max_queries * 2
+    if budget.max_physical_requests < required_requests:
+        raise ValueError(
+            "crossref+openalex requires at least two physical requests per query"
+        )
+    return MultiSourceSearchAdapter(
+        (
+            CrossrefPublicAdapter(
+                contact_email=selected.get(CROSSREF_CONTACT_EMAIL_ENV) or None,
+                max_retries=0,
+                publication_year_from=budget.publication_year_from,
+                publication_year_to=budget.publication_year_to,
+                transport=crossref_transport,
+            ),
+            OpenAlexPublicAdapter(
+                api_key_resolver=lambda: selected.get(OPENALEX_API_KEY_ENV, ""),
+                publication_year_from=budget.publication_year_from,
+                publication_year_to=budget.publication_year_to,
+                transport=openalex_transport,
+            ),
+        )
+    )
+
+
 class FixtureSearchAdapter:
     """Deterministic, network-free adapter backed by committed response bytes."""
 
@@ -1336,11 +1792,14 @@ def parse_openalex_page(
     raw_response_artifact: ArtifactPointerV1,
     provider: str = "openalex",
     max_hits: int,
+    publication_year_from: int | None = None,
+    publication_year_to: int | None = None,
 ) -> ParsedSearchPage:
     """Parse bounded OpenAlex-style JSON metadata without fetching any work page."""
 
     if max_hits < 1:
         raise SearchAdapterError("INVALID_HIT_BUDGET", "max_hits must be positive")
+    _validate_publication_year_range(publication_year_from, publication_year_to)
     try:
         decoded = json.loads(payload.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as error:
@@ -1351,10 +1810,12 @@ def parse_openalex_page(
             "OpenAlex response must contain a results array",
         )
 
-    raw_results = decoded["results"][:max_hits]
+    raw_results = decoded["results"]
     hits: list[SearchHitV1] = []
     warnings: list[str] = []
     for rank, record in enumerate(raw_results, start=1):
+        if len(hits) >= max_hits:
+            break
         if not isinstance(record, dict):
             raise SearchAdapterError("SCHEMA_DRIFT", "OpenAlex result is not an object")
         record_id = _required_text(record, "id")
@@ -1373,6 +1834,13 @@ def parse_openalex_page(
                 "SCHEMA_DRIFT",
                 f"publication_year for {record_id!r} is not an integer",
             )
+        if not _publication_year_allowed(
+            published_year,
+            publication_year_from=publication_year_from,
+            publication_year_to=publication_year_to,
+        ):
+            warnings.append(f"PUBLICATION_YEAR_REJECTED:{record_id}")
+            continue
         document_id = document_id_for(
             provider=provider,
             provider_record_id=record_id,
@@ -1416,11 +1884,14 @@ def parse_crossref_page(
     payload: bytes,
     raw_response_artifact: ArtifactPointerV1,
     max_hits: int,
+    publication_year_from: int | None = None,
+    publication_year_to: int | None = None,
 ) -> ParsedSearchPage:
     """Parse a bounded Crossref v1 response without following full-text links."""
 
     if max_hits < 1:
         raise SearchAdapterError("INVALID_HIT_BUDGET", "max_hits must be positive")
+    _validate_publication_year_range(publication_year_from, publication_year_to)
     try:
         decoded = json.loads(payload.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as error:
@@ -1436,7 +1907,9 @@ def parse_crossref_page(
 
     hits: list[SearchHitV1] = []
     warnings: list[str] = []
-    for rank, record in enumerate(message["items"][:max_hits], start=1):
+    for rank, record in enumerate(message["items"], start=1):
+        if len(hits) >= max_hits:
+            break
         if not isinstance(record, dict):
             raise SearchAdapterError("SCHEMA_DRIFT", "Crossref item is not an object")
         doi = normalize_doi(_optional_text(record.get("DOI")))
@@ -1453,6 +1926,13 @@ def parse_crossref_page(
         authors = _crossref_authors(record.get("author"))
         keywords = _crossref_subjects(record.get("subject"))
         published_year = _crossref_year(record.get("published"))
+        if not _publication_year_allowed(
+            published_year,
+            publication_year_from=publication_year_from,
+            publication_year_to=publication_year_to,
+        ):
+            warnings.append(f"PUBLICATION_YEAR_REJECTED:{doi}")
+            continue
         document_id = document_id_for(
             provider="crossref",
             provider_record_id=doi,
@@ -1488,6 +1968,105 @@ def parse_crossref_page(
             )
         )
     return ParsedSearchPage(hits=tuple(hits), warnings=tuple(warnings))
+
+
+def parse_multi_source_page(
+    *,
+    query: SearchQueryV1,
+    payload: bytes,
+    raw_response_artifact: ArtifactPointerV1,
+    max_hits: int,
+    publication_year_from: int | None = None,
+    publication_year_to: int | None = None,
+) -> ParsedSearchPage:
+    """Parse an exact-response envelope emitted by ``MultiSourceSearchAdapter``."""
+
+    try:
+        decoded = json.loads(payload.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise SearchAdapterError(
+            "INVALID_JSON",
+            "multi-source response is not UTF-8 JSON",
+        ) from error
+    if (
+        not isinstance(decoded, dict)
+        or decoded.get("schema_version") != "inspiration-multi-source-page-v1"
+        or not isinstance(decoded.get("pages"), list)
+        or not decoded["pages"]
+    ):
+        raise SearchAdapterError(
+            "SCHEMA_DRIFT",
+            "multi-source response envelope is invalid",
+        )
+    hits: list[SearchHitV1] = []
+    warnings: list[str] = []
+    seen_providers: set[str] = set()
+    for page in decoded["pages"]:
+        if not isinstance(page, dict) or set(page) != {
+            "payload_base64",
+            "payload_sha256",
+            "provider",
+        }:
+            raise SearchAdapterError("SCHEMA_DRIFT", "multi-source page is invalid")
+        provider = page["provider"]
+        if provider not in {"crossref", "openalex"} or provider in seen_providers:
+            raise SearchAdapterError(
+                "SCHEMA_DRIFT",
+                "multi-source provider set is unsupported or duplicated",
+            )
+        seen_providers.add(provider)
+        try:
+            child_payload = base64.b64decode(page["payload_base64"], validate=True)
+        except (TypeError, ValueError) as error:
+            raise SearchAdapterError(
+                "SCHEMA_DRIFT",
+                "multi-source payload encoding is invalid",
+            ) from error
+        if hashlib.sha256(child_payload).hexdigest() != page["payload_sha256"]:
+            raise SearchAdapterError(
+                "RAW_RESPONSE_HASH_MISMATCH",
+                "multi-source child response hash does not match",
+            )
+        remaining = max_hits - len(hits)
+        if remaining <= 0:
+            break
+        if provider == "crossref":
+            parsed = parse_crossref_page(
+                query=query,
+                payload=child_payload,
+                raw_response_artifact=raw_response_artifact,
+                max_hits=remaining,
+                publication_year_from=publication_year_from,
+                publication_year_to=publication_year_to,
+            )
+        else:
+            parsed = parse_openalex_page(
+                query=query,
+                payload=child_payload,
+                raw_response_artifact=raw_response_artifact,
+                provider="openalex",
+                max_hits=remaining,
+                publication_year_from=publication_year_from,
+                publication_year_to=publication_year_to,
+            )
+        hits.extend(parsed.hits)
+        warnings.extend(parsed.warnings)
+    return ParsedSearchPage(hits=tuple(hits), warnings=tuple(warnings))
+
+
+def _publication_year_allowed(
+    published_year: int | None,
+    *,
+    publication_year_from: int | None,
+    publication_year_to: int | None,
+) -> bool:
+    if publication_year_from is None and publication_year_to is None:
+        return True
+    if published_year is None:
+        return False
+    if publication_year_from is not None and published_year < publication_year_from:
+        return False
+    return publication_year_to is None or published_year <= publication_year_to
 
 
 def group_document_hits(hits: tuple[SearchHitV1, ...]) -> tuple[DocumentHitGroup, ...]:
