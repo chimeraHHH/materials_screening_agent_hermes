@@ -1045,3 +1045,10 @@ parent hard-kill 后独立 action child 的清理仍是 public production P0。
   DOI/arXiv identity、单源/多源 factory 与 provider-neutral 摘要抽取；真实 adapter live gate
   返回 `1` hit（`3278` bytes，arXiv `2602.01354`），runner 纵切进入 evidence/变换且 PDF/body
   请求为 `0`。Inspiration unit/contract/public integration 共 `328 passed`；OSTI 子步待完成。
+- OSTI 子步已完成：新增官方 records API adapter、publication-date request/local 双重年代过滤、
+  JSON schema parser、DOE report/abstract/author/subject 映射及 DOI 跨源 identity；真实 adapter
+  live gate 返回 `1` hit（OSTI `3030169`，`6933` bytes、abstract `1637` chars）。真实三源
+  `crossref+arxiv+osti` 单 query envelope 为 `64184` bytes、3 attempts、12 hits/12 unique
+  documents，三个 provider 均命中。非 DFT research entry 将物理请求预算扩为 16，本地 ignored
+  launcher 默认启用三源；排除暂停 flatband 轨的完整离线 Gate 为
+  `1104 passed, 17 skipped`（135.36s）。本任务完成，全文/PDF 与科学结论边界不变。

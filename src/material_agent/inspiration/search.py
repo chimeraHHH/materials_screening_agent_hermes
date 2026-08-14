@@ -1702,6 +1702,180 @@ class OpenAlexPublicAdapter:
         )
 
 
+class OstiPublicAdapter:
+    """Official OSTI.GOV v1 adapter for bounded DOE research metadata."""
+
+    network_access = True
+
+    def __init__(
+        self,
+        *,
+        max_results: int = 5,
+        timeout_seconds: int = 20,
+        publication_year_from: int | None = None,
+        publication_year_to: int | None = None,
+        transport: BoundedHttpTransport | None = None,
+        monotonic_clock: Callable[[], float] = time.monotonic,
+    ) -> None:
+        if not 1 <= max_results <= 20:
+            raise ValueError("max_results must be between 1 and 20")
+        if not 1 <= timeout_seconds <= 120:
+            raise ValueError("timeout_seconds must be between 1 and 120")
+        _validate_publication_year_range(
+            publication_year_from,
+            publication_year_to,
+        )
+        if not callable(monotonic_clock):
+            raise ValueError("monotonic_clock must be callable")
+        self.max_results = max_results
+        self.timeout_seconds = timeout_seconds
+        self.publication_year_from = publication_year_from
+        self.publication_year_to = publication_year_to
+        self.transport = transport or UrlLibBoundedTransport(
+            monotonic_clock=monotonic_clock,
+            allowed_hosts=frozenset({"www.osti.gov"}),
+        )
+        self.monotonic_clock = monotonic_clock
+        fingerprint = canonical_json_bytes(
+            {
+                "max_results": max_results,
+                "publication_year_from": publication_year_from,
+                "publication_year_to": publication_year_to,
+                "source_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+                "timeout_seconds": timeout_seconds,
+            }
+        )
+        self.component = ComponentSnapshotV1(
+            component_id="osti-public-adapter",
+            version="records-api-v1",
+            implementation_sha256=hashlib.sha256(fingerprint).hexdigest(),
+        )
+
+    def search(
+        self,
+        query: SearchQueryV1,
+        *,
+        max_response_bytes: int,
+        remaining_walltime_seconds: float | None = None,
+        max_physical_requests: int | None = None,
+    ) -> RawSearchPage:
+        if not isinstance(query, SearchQueryV1):
+            raise SearchAdapterError("INVALID_QUERY", "query must be SearchQueryV1")
+        if not 1 <= max_response_bytes <= 10_000_000:
+            raise SearchAdapterError(
+                "INVALID_RESPONSE_BUDGET",
+                "max_response_bytes must be between 1 and 10000000",
+            )
+        if max_physical_requests is not None and (
+            type(max_physical_requests) is not int
+            or not 0 <= max_physical_requests <= 64
+        ):
+            raise SearchAdapterError(
+                "INVALID_PHYSICAL_REQUEST_BUDGET",
+                "max_physical_requests must be between 0 and 64",
+            )
+        if max_physical_requests == 0:
+            raise SearchAdapterError(
+                "SEARCH_REQUEST_BUDGET_EXCEEDED",
+                "no physical OSTI request remains",
+            )
+        deadline = None
+        if remaining_walltime_seconds is not None:
+            if (
+                isinstance(remaining_walltime_seconds, bool)
+                or not isinstance(remaining_walltime_seconds, (int, float))
+                or not math.isfinite(remaining_walltime_seconds)
+                or remaining_walltime_seconds <= 0
+            ):
+                raise SearchAdapterError(
+                    "WALLTIME_BUDGET_EXCEEDED",
+                    "remaining walltime must be finite and positive",
+                )
+            deadline = _read_finite_clock(
+                self.monotonic_clock,
+                "monotonic_clock",
+            ) + float(remaining_walltime_seconds)
+        parameters = {
+            "page": "1",
+            "q": query.text,
+            "rows": str(self.max_results),
+        }
+        if self.publication_year_from is not None:
+            parameters["publication_date_start"] = (
+                f"01/01/{self.publication_year_from:04d}"
+            )
+        if self.publication_year_to is not None:
+            parameters["publication_date_end"] = (
+                f"12/31/{self.publication_year_to:04d}"
+            )
+        url = "https://www.osti.gov/api/v1/records?" + urlencode(parameters)
+        try:
+            result = self.transport.get(
+                url,
+                headers={
+                    "Accept": "application/json",
+                    "Accept-Encoding": "identity",
+                    "User-Agent": "materials-screening-agent/0.1 (metadata-only)",
+                },
+                timeout_seconds=float(self.timeout_seconds),
+                max_response_bytes=max_response_bytes,
+                deadline_monotonic=deadline,
+                max_physical_requests=max_physical_requests,
+            )
+        except SearchAdapterError as error:
+            hops = error.physical_hops or (
+                PhysicalSearchHop(
+                    outcome="error",
+                    error_code=error.code,
+                    http_status=error.http_status,
+                    response_bytes=error.response_bytes,
+                ),
+            )
+            attempts = _attempt_records_from_physical_hops(
+                query_id=query.query_id,
+                first_attempt_number=1,
+                physical_hops=hops,
+                pacing_delay_seconds=0.0,
+            )
+            raise error.with_attempts(attempts) from error
+        if isinstance(result, bytes):
+            payload = result
+            hops = (
+                PhysicalSearchHop(
+                    outcome="success",
+                    error_code=None,
+                    http_status=200,
+                    response_bytes=len(payload),
+                ),
+            )
+        elif isinstance(result, BoundedHttpResult):
+            payload = result.payload
+            hops = result.physical_hops
+        else:
+            raise SearchAdapterError(
+                "INVALID_NETWORK_PAYLOAD",
+                "metadata transport must return bytes or BoundedHttpResult",
+            )
+        if len(payload) > max_response_bytes:
+            raise SearchAdapterError(
+                "RESPONSE_BUDGET_EXCEEDED",
+                "metadata transport returned more than the declared byte budget",
+                response_bytes=len(payload),
+            )
+        attempts = _attempt_records_from_physical_hops(
+            query_id=query.query_id,
+            first_attempt_number=1,
+            physical_hops=hops,
+            pacing_delay_seconds=0.0,
+        )
+        return RawSearchPage(
+            provider="osti",
+            query_id=query.query_id,
+            payload=payload,
+            attempts=attempts,
+        )
+
+
 class MultiSourceSearchAdapter:
     """Execute the same bounded query against an explicit provider set.
 
@@ -1856,6 +2030,7 @@ def public_search_adapter_from_environment(
     crossref_transport: BoundedHttpTransport | None = None,
     openalex_transport: BoundedHttpTransport | None = None,
     arxiv_transport: BoundedHttpTransport | None = None,
+    osti_transport: BoundedHttpTransport | None = None,
 ) -> SearchAdapter:
     """Build Crossref by default or an explicitly opted-in provider set.
 
@@ -1875,7 +2050,7 @@ def public_search_adapter_from_environment(
     if not mode:
         mode = "crossref"
     requested = tuple(part.strip() for part in mode.split("+") if part.strip())
-    supported = ("crossref", "openalex", "arxiv")
+    supported = ("crossref", "openalex", "arxiv", "osti")
     if (
         not requested
         or len(requested) != len(set(requested))
@@ -1883,7 +2058,7 @@ def public_search_adapter_from_environment(
     ):
         raise ValueError(
             f"{PUBLIC_SEARCH_PROVIDER_ENV} must contain unique providers from "
-            "'crossref', 'openalex', and 'arxiv'"
+            "'crossref', 'openalex', 'arxiv', and 'osti'"
         )
     provider_ids = tuple(provider for provider in supported if provider in requested)
     required_requests = budget.max_queries * len(provider_ids)
@@ -1917,12 +2092,20 @@ def public_search_adapter_from_environment(
                     transport=openalex_transport,
                 )
             )
-        else:
+        elif provider == "arxiv":
             adapters.append(
                 ArxivPublicAdapter(
                     publication_year_from=budget.publication_year_from,
                     publication_year_to=budget.publication_year_to,
                     transport=arxiv_transport,
+                )
+            )
+        else:
+            adapters.append(
+                OstiPublicAdapter(
+                    publication_year_from=budget.publication_year_from,
+                    publication_year_to=budget.publication_year_to,
+                    transport=osti_transport,
                 )
             )
     if len(adapters) == 1:
@@ -2235,6 +2418,151 @@ def _atom_required_text(entry: ElementTree.Element, local_name: str) -> str:
     return value
 
 
+def parse_osti_page(
+    *,
+    query: SearchQueryV1,
+    payload: bytes,
+    raw_response_artifact: ArtifactPointerV1,
+    max_hits: int,
+    publication_year_from: int | None = None,
+    publication_year_to: int | None = None,
+) -> ParsedSearchPage:
+    """Parse one bounded OSTI.GOV records response without following links."""
+
+    if max_hits < 1:
+        raise SearchAdapterError("INVALID_HIT_BUDGET", "max_hits must be positive")
+    _validate_publication_year_range(publication_year_from, publication_year_to)
+    try:
+        decoded = json.loads(payload.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise SearchAdapterError(
+            "INVALID_JSON",
+            "OSTI response is not UTF-8 JSON",
+        ) from error
+    if not isinstance(decoded, list):
+        raise SearchAdapterError(
+            "SCHEMA_DRIFT",
+            "OSTI response must be a records array",
+        )
+
+    hits: list[SearchHitV1] = []
+    warnings: list[str] = []
+    for rank, record in enumerate(decoded, start=1):
+        if len(hits) >= max_hits:
+            break
+        if not isinstance(record, dict):
+            raise SearchAdapterError("SCHEMA_DRIFT", "OSTI record is not an object")
+        record_id = _required_text(record, "osti_id")
+        raw_title = _required_text(record, "title")
+        title = _crossref_abstract(raw_title)
+        if title is None:
+            raise SearchAdapterError("SCHEMA_DRIFT", "OSTI record title is empty")
+        publication_date = record.get("publication_date")
+        published_year: int | None = None
+        if publication_date is not None:
+            if not isinstance(publication_date, str) or len(publication_date) < 4:
+                raise SearchAdapterError(
+                    "SCHEMA_DRIFT",
+                    f"OSTI publication date for {record_id!r} is invalid",
+                )
+            try:
+                published_year = int(publication_date[:4])
+            except ValueError as error:
+                raise SearchAdapterError(
+                    "SCHEMA_DRIFT",
+                    f"OSTI publication date for {record_id!r} is invalid",
+                ) from error
+            if not 1600 <= published_year <= 2200:
+                raise SearchAdapterError(
+                    "SCHEMA_DRIFT",
+                    f"OSTI publication year for {record_id!r} is invalid",
+                )
+        if not _publication_year_allowed(
+            published_year,
+            publication_year_from=publication_year_from,
+            publication_year_to=publication_year_to,
+        ):
+            warnings.append(f"PUBLICATION_YEAR_REJECTED:{record_id}")
+            continue
+        authors_value = record.get("authors")
+        if authors_value is None:
+            authors = ()
+        elif isinstance(authors_value, list):
+            authors = tuple(
+                dict.fromkeys(
+                    cleaned[:512]
+                    for item in authors_value[:256]
+                    if isinstance(item, str)
+                    if (cleaned := " ".join(html.unescape(item).split()))
+                )
+            )
+        else:
+            raise SearchAdapterError(
+                "SCHEMA_DRIFT",
+                f"OSTI authors for {record_id!r} are not an array",
+            )
+        subjects_value = record.get("subjects")
+        if subjects_value is None:
+            subjects: tuple[str, ...] = ()
+        elif isinstance(subjects_value, list):
+            subjects = tuple(
+                dict.fromkeys(
+                    cleaned[:512]
+                    for item in subjects_value[:128]
+                    if isinstance(item, str)
+                    if (cleaned := " ".join(html.unescape(item).split()))
+                )
+            )
+        else:
+            raise SearchAdapterError(
+                "SCHEMA_DRIFT",
+                f"OSTI subjects for {record_id!r} are not an array",
+            )
+        product_type = _optional_text(record.get("product_type"))
+        keywords = tuple(dict.fromkeys((*subjects, *((product_type,) if product_type else ()))))
+        abstract = _crossref_abstract(record.get("description"))
+        if abstract is not None and len(abstract) > 20_000:
+            abstract = abstract[:20_000]
+            warnings.append(f"ABSTRACT_TRUNCATED:{record_id}")
+        doi = normalize_doi(_optional_text(record.get("doi")))
+        canonical_url = f"https://www.osti.gov/biblio/{record_id}"
+        document_id = document_id_for(
+            provider="osti",
+            provider_record_id=record_id,
+            doi=doi,
+            arxiv_id=None,
+            canonical_url=canonical_url,
+        )
+        hit_id = deterministic_id(
+            "hit",
+            {
+                "provider": "osti",
+                "provider_record_id": record_id,
+                "query_id": query.query_id,
+                "raw_response_sha256": raw_response_artifact.sha256,
+            },
+        )
+        hits.append(
+            SearchHitV1(
+                hit_id=hit_id,
+                document_id=document_id,
+                provider="osti",
+                provider_record_id=record_id,
+                query_ids=(query.query_id,),
+                provider_rank=rank,
+                title=title,
+                authors=authors,
+                published_year=published_year,
+                doi=doi,
+                canonical_url=canonical_url,
+                abstract=abstract,
+                keywords=keywords,
+                raw_response_artifact=raw_response_artifact,
+            )
+        )
+    return ParsedSearchPage(hits=tuple(hits), warnings=tuple(warnings))
+
+
 def parse_openalex_page(
     *,
     query: SearchQueryV1,
@@ -2459,7 +2787,7 @@ def parse_multi_source_page(
         }:
             raise SearchAdapterError("SCHEMA_DRIFT", "multi-source page is invalid")
         provider = page["provider"]
-        if provider not in {"arxiv", "crossref", "openalex"} or provider in seen_providers:
+        if provider not in {"arxiv", "crossref", "openalex", "osti"} or provider in seen_providers:
             raise SearchAdapterError(
                 "SCHEMA_DRIFT",
                 "multi-source provider set is unsupported or duplicated",
@@ -2499,8 +2827,17 @@ def parse_multi_source_page(
                 publication_year_from=publication_year_from,
                 publication_year_to=publication_year_to,
             )
-        else:
+        elif provider == "arxiv":
             parsed = parse_arxiv_page(
+                query=query,
+                payload=child_payload,
+                raw_response_artifact=raw_response_artifact,
+                max_hits=remaining,
+                publication_year_from=publication_year_from,
+                publication_year_to=publication_year_to,
+            )
+        else:
+            parsed = parse_osti_page(
                 query=query,
                 payload=child_payload,
                 raw_response_artifact=raw_response_artifact,

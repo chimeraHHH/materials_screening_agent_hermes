@@ -161,6 +161,13 @@ case 自报唯一 mechanism group，因为两者都会制造虚假的独立样�
   通过。当前未完成 OpenAlex live Gate、材料领域 embedding
   gold/准确率 Gate、Ti/Se CHGNet 适用域扩展、真实 DeepH/DFT 计算和 composite 独立
   checkpoint/CLI，因此不得写成科研全链完成。
+- **2026-08-14 arXiv/OSTI 文献源 checkpoint：** Inspiration 公共检索新增官方 arXiv
+  Atom Query API 与 OSTI.GOV v1 JSON adapter，均进入现有原始响应 Artifact/SHA、年代复核、
+  DOI/arXiv identity 和 provider-neutral passage/evidence 链；组合模式
+  `crossref+arxiv+osti` 真实单 query smoke 完成 3 次物理请求，解析 12 hits/12 unique
+  documents。非 DFT 科研入口预留 16 次物理请求，ignored 本地一键启动器默认选择三源；
+  PDF/全文仍不读取，检索结果仍只支持灵感假说。排除已暂停 flatband 轨的完整离线 Gate
+  `1104 passed, 17 skipped`（135.36s），`pip check`/diff check 通过。
 
 public production 仍为 NO-GO：queued production 与 worker lifecycle 已激活，但 parent
 worker 被 hard-kill 后独立 action child 的清理/回收契约仍未闭合；真实 provider 全链、

@@ -25,7 +25,11 @@ from material_agent.inspiration.policy import (
     TransformationBudgetV1,
 )
 from material_agent.inspiration.runner import STRUCTURE_MEDIA_TYPE, InspirationRunner
-from material_agent.inspiration.search import ArxivPublicAdapter, CrossrefPublicAdapter
+from material_agent.inspiration.search import (
+    ArxivPublicAdapter,
+    CrossrefPublicAdapter,
+    OstiPublicAdapter,
+)
 from material_agent.inspiration.tag_graph import curated_flat_band_tag_graph
 from material_agent.inspiration.transformations import (
     DEFAULT_SUBSTITUTION_REGISTRY_V1,
@@ -131,6 +135,34 @@ def _arxiv_response_bytes() -> bytes:
     <arxiv:doi>10.5555/material-agent.arxiv.1</arxiv:doi>
   </entry>
 </feed>""".encode("utf-8")
+
+
+def _osti_response_bytes() -> bytes:
+    abstract = (
+        "Local resonance in an acoustic metamaterial produces a weakly dispersive "
+        "mode because a resonator couples weakly to an extended lattice. The local "
+        "resonance mechanism preserves spectral separation and suppresses dispersion, "
+        "which can guide electronic flat band hypotheses when connectivity and "
+        "equivalent site chemistry remain controlled. Strong hybridization breaks "
+        "localization and broadens the mode, providing a direct falsification condition."
+    )
+    return json.dumps(
+        [
+            {
+                "osti_id": "7654321",
+                "title": "Local resonance as a bounded cross-domain mechanism",
+                "publication_date": "1987-06-01T00:00:00Z",
+                "doi": "10.5555/material-agent.osti.1",
+                "authors": ["Fixture Author [National Laboratory]"],
+                "description": f"<p>{abstract}</p>",
+                "subjects": ["Materials Science", "Condensed Matter Physics"],
+                "product_type": "Technical Report",
+            }
+        ],
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
 
 
 def _policy() -> InspirationPolicyV1:
@@ -390,5 +422,36 @@ def test_public_arxiv_vertical_slice_reaches_evidence_and_transformation(
     assert len(passages) == 1
     assert passages[0]["locator"]["kind"] == "API_FIELD"
     assert "provider=arxiv" in passages[0]["locator"]["selector"]
+    assert result.bundle.cost_ledger.fetch_requests == 0
+    runner.verify_stage_result(result.stage_result)
+
+
+def test_public_osti_vertical_slice_reaches_evidence_and_transformation(
+    tmp_path: Path,
+) -> None:
+    payload = _osti_response_bytes()
+    transport = StaticCrossrefTransport(payload)
+    adapter = OstiPublicAdapter(
+        max_results=1,
+        timeout_seconds=7,
+        transport=transport,
+    )
+
+    store, runner, result, _input, returned_transport = _run_public(
+        tmp_path / "osti",
+        adapter=adapter,
+    )
+
+    assert returned_transport is transport
+    assert result.stage_result.outcome is InspirationOutcome.SUCCEEDED
+    assert len(result.bundle.selected_candidates) == 1
+    prefix = "stages/inspiration/run-public-crossref"
+    hits = store.read_jsonl(f"{prefix}/search_hits.jsonl")
+    passages = store.read_jsonl(f"{prefix}/passages.jsonl")
+    assert {record["provider"] for record in hits} == {"osti"}
+    assert {record["provider_record_id"] for record in hits} == {"7654321"}
+    assert len(passages) == 1
+    assert passages[0]["locator"]["kind"] == "API_FIELD"
+    assert "provider=osti" in passages[0]["locator"]["selector"]
     assert result.bundle.cost_ledger.fetch_requests == 0
     runner.verify_stage_result(result.stage_result)

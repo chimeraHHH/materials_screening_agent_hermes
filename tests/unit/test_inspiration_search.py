@@ -21,6 +21,7 @@ from material_agent.inspiration.search import (
     FixtureSearchAdapter,
     MultiSourceSearchAdapter,
     OpenAlexPublicAdapter,
+    OstiPublicAdapter,
     SearchAdapterError,
     UrlLibBoundedTransport,
     document_id_for,
@@ -31,6 +32,7 @@ from material_agent.inspiration.search import (
     parse_crossref_page,
     parse_multi_source_page,
     parse_openalex_page,
+    parse_osti_page,
     public_search_adapter_from_environment,
 )
 from material_agent.inspiration.policy import (
@@ -138,6 +140,36 @@ def arxiv_response_bytes(*, published_year: int = 2024) -> bytes:
     <arxiv:doi>10.1000/ABC</arxiv:doi>
   </entry>
 </feed>""".encode("utf-8")
+
+
+def osti_response_bytes(*, published_year: int = 1987) -> bytes:
+    return json.dumps(
+        [
+            {
+                "osti_id": "1234567",
+                "title": "Flat-band behavior in layered <sub>Ti</sub> compounds",
+                "publication_date": f"{published_year}-06-01T00:00:00Z",
+                "doi": "10.1000/CROSSREF",
+                "authors": [
+                    "Ada Example [National Laboratory]",
+                    "Ada Example [National Laboratory]",
+                ],
+                "description": (
+                    "<p>Destructive interference suppresses hopping and produces "
+                    "a narrow electronic band in a layered inorganic lattice.</p>"
+                ),
+                "subjects": ["Materials Science", "Condensed Matter Physics"],
+                "product_type": "Technical Report",
+                "links": [
+                    {
+                        "rel": "citation",
+                        "href": "https://www.osti.gov/biblio/1234567",
+                    }
+                ],
+            }
+        ],
+        sort_keys=True,
+    ).encode("utf-8")
 
 
 class _RecordingTransport:
@@ -1447,6 +1479,125 @@ def test_public_search_factory_supports_arxiv_single_and_multi_source() -> None:
         "arxiv-public-adapter",
         "crossref-public-adapter",
     }
+
+
+def test_osti_adapter_builds_bounded_historical_query() -> None:
+    payload = osti_response_bytes()
+    transport = _RecordingTransport(payload)
+    adapter = OstiPublicAdapter(
+        max_results=7,
+        timeout_seconds=9,
+        publication_year_from=1960,
+        publication_year_to=1990,
+        transport=transport,
+    )
+
+    page = adapter.search(
+        query(),
+        max_response_bytes=len(payload),
+        max_physical_requests=1,
+    )
+
+    assert page.provider == "osti"
+    parameters = parse_qs(urlsplit(str(transport.calls[0]["url"])).query)
+    assert parameters == {
+        "page": ["1"],
+        "publication_date_end": ["12/31/1990"],
+        "publication_date_start": ["01/01/1960"],
+        "q": [query().text],
+        "rows": ["7"],
+    }
+    assert page.attempts[0].response_bytes == len(payload)
+
+
+def test_parse_osti_page_strips_markup_and_deduplicates_by_doi() -> None:
+    parsed = parse_osti_page(
+        query=query(),
+        payload=osti_response_bytes(),
+        raw_response_artifact=artifact(),
+        max_hits=5,
+        publication_year_from=1960,
+        publication_year_to=1990,
+    )
+    crossref = parse_crossref_page(
+        query=query(),
+        payload=crossref_response_bytes(),
+        raw_response_artifact=artifact(),
+        max_hits=5,
+    )
+
+    assert len(parsed.hits) == 1
+    hit = parsed.hits[0]
+    assert hit.provider == "osti"
+    assert hit.provider_record_id == "1234567"
+    assert hit.title == "Flat-band behavior in layered Ti compounds"
+    assert hit.published_year == 1987
+    assert hit.doi == "10.1000/crossref"
+    assert hit.authors == ("Ada Example [National Laboratory]",)
+    assert hit.keywords == (
+        "Materials Science",
+        "Condensed Matter Physics",
+        "Technical Report",
+    )
+    assert hit.document_id == crossref.hits[0].document_id
+
+
+def test_parse_osti_page_rechecks_year_and_schema() -> None:
+    filtered = parse_osti_page(
+        query=query(),
+        payload=osti_response_bytes(published_year=1987),
+        raw_response_artifact=artifact(),
+        max_hits=5,
+        publication_year_from=2000,
+        publication_year_to=2026,
+    )
+    assert filtered.hits == ()
+    assert filtered.warnings == ("PUBLICATION_YEAR_REJECTED:1234567",)
+
+    with pytest.raises(SearchAdapterError) as error:
+        parse_osti_page(
+            query=query(),
+            payload=b'{"records": []}',
+            raw_response_artifact=artifact(),
+            max_hits=5,
+        )
+    assert error.value.code == "SCHEMA_DRIFT"
+
+
+def test_public_search_factory_supports_crossref_arxiv_osti() -> None:
+    multi = public_search_adapter_from_environment(
+        budget=SearchBudgetV1(
+            max_queries=2,
+            max_physical_requests=6,
+            max_direct_queries=2,
+            max_bridge_queries=0,
+            max_counter_queries=0,
+        ),
+        environment={
+            "MATERIAL_AGENT_INSPIRATION_SEARCH_PROVIDER": "crossref+arxiv+osti"
+        },
+        crossref_transport=_RecordingTransport(crossref_response_bytes()),
+        arxiv_transport=_RecordingTransport(arxiv_response_bytes()),
+        osti_transport=_RecordingTransport(osti_response_bytes()),
+    )
+    assert isinstance(multi, MultiSourceSearchAdapter)
+    assert [item.component.component_id for item in multi.adapters] == [
+        "crossref-public-adapter",
+        "arxiv-public-adapter",
+        "osti-public-adapter",
+    ]
+    page = multi.search(
+        query(),
+        max_response_bytes=1_000_000,
+        max_physical_requests=3,
+    )
+    parsed = parse_multi_source_page(
+        query=query(),
+        payload=page.payload,
+        raw_response_artifact=artifact(),
+        max_hits=10,
+    )
+    assert {hit.provider for hit in parsed.hits} == {"arxiv", "crossref", "osti"}
 
 
 def test_openalex_missing_secret_fails_before_network() -> None:

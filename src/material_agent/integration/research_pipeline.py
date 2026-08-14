@@ -739,7 +739,7 @@ class ResearchPipelineService:
                 top_k=request.top_k,
                 require_diverse_routes=request.top_k >= 2,
                 budget=InspirationBudgetV1(
-                    max_search_requests=8,
+                    max_search_requests=16,
                     max_unique_documents=8,
                     max_passages=12,
                     max_model_calls=0,
@@ -750,6 +750,9 @@ class ResearchPipelineService:
         compiled = HermesInspirationRequestCompiler().compile(gateway_request)
         search = compiled.policy.search.model_copy(
             update={
+                "max_physical_requests": (
+                    gateway_request.constraints.budget.max_search_requests
+                ),
                 "publication_year_from": request.publication_year_from,
                 "publication_year_to": request.publication_year_to,
             }

@@ -105,11 +105,15 @@ checkpoint/recovery layer.
 
 ### Semantic and historical-literature RAG
 
-Search policies may freeze `publication_year_from/to`. The opt-in public search
-factory can execute both Crossref and OpenAlex, preserve each provider's exact
-response bytes and provenance, and locally reject records outside the year
-window. Crossref remains the default; OpenAlex requires its own API key and
-explicit multi-source configuration.
+Search policies may freeze `publication_year_from/to`. The public search factory
+supports Crossref, OpenAlex, the official arXiv Atom Query API, and OSTI.GOV v1,
+preserves each provider's exact response bytes and provenance, and locally
+rejects records outside the year window. Crossref remains the library default;
+the standard local research launcher selects `crossref+arxiv+osti` so recent
+preprints and historical DOE/laboratory records complement formal publication
+metadata. OpenAlex remains optional because it requires its own API key. Every
+multi-source logical query must reserve one physical request per selected
+provider; PDF and full-document retrieval remain disabled.
 
 Real embeddings use an isolated, local-only Sentence Transformers bundle whose
 complete file set, tokenizer, config, dependency lock, model revision, license

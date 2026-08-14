@@ -48,6 +48,7 @@ export MATERIALS_HERMES_MODEL=deepseek-v4-flash
 export API_SERVER_KEY='<at-least-32-random-characters>'
 export DEEPSEEK_API_KEY='<research-api-key>'
 export MATERIALS_CROSSREF_CONTACT_EMAIL='<contact-email>'
+export MATERIAL_AGENT_INSPIRATION_SEARCH_PROVIDER='crossref+arxiv+osti'
 export MATERIAL_AGENT_INSPIRATION_RAG_PROVIDER=deepseek
 export MATERIAL_AGENT_LLM_MODEL=deepseek-v4-pro
 export MATERIAL_AGENT_LLM_API_KEY="$DEEPSEEK_API_KEY"
@@ -115,7 +116,9 @@ Hermes 的 npm 构建在部分 npm 版本下会只改写 `package-lock.json` 元
 ```
 
 默认部署把 Crossref 视为外部依赖；其瞬时不可用不会掩盖本地 worker、数据库和 MCP
-闭包状态。
+闭包状态。科研入口推荐的 `crossref+arxiv+osti` 模式还会访问官方 arXiv Atom Query API
+和 OSTI.GOV v1 JSON API；三者的原始响应分别进入同一 hash/provenance envelope，且不会
+跟随 PDF 或全文链接。若只需单源排障，可把该变量临时改为 `crossref`、`arxiv` 或 `osti`。
 
 ## 5. 验证与访问
 
@@ -154,7 +157,7 @@ DeepSeek grounded RAG、SMACT、软化学变换、CHGNet 和 DeepH。请按阶�
 这一入口在程序内部冻结 Agent01 结构化需求并继续执行，不使用
 `operator_approval`，也不调用 `materials_run_act`。当前科研状态必须按返回值理解：
 
-- C2DB、Crossref、LangGraph Inspiration、DeepSeek grounded RAG、SMACT 与软化学
+- C2DB、Crossref/arXiv/OSTI 元数据检索、LangGraph Inspiration、DeepSeek grounded RAG、SMACT 与软化学
   operator 可以真实执行；
 - 若 TiS2 原始 CIF 没有氧化态，入口只接受“其余结构检查均通过、仅
   `charge_or_oxidation=UNKNOWN`”的方案，先做 Ti⁴⁺/S²⁻ 显式价态标注并交给 SMACT；

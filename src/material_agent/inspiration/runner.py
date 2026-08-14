@@ -103,6 +103,7 @@ from material_agent.inspiration.search import (
     parse_crossref_page,
     parse_multi_source_page,
     parse_openalex_page,
+    parse_osti_page,
     public_search_adapter_from_environment,
 )
 from material_agent.inspiration.selection import (
@@ -1327,6 +1328,7 @@ class InspirationRunner:
                 "arxiv",
                 "crossref",
                 "openalex",
+                "osti",
                 "multi-source-v1",
             } and not callable(getattr(self.search_adapter, "parse_page", None)):
                 raise InspirationRunnerError(
@@ -1391,6 +1393,15 @@ class InspirationRunner:
             )
         if page.provider == "arxiv":
             return parse_arxiv_page(
+                query=query,
+                payload=page.payload,
+                raw_response_artifact=raw_response_artifact,
+                max_hits=max_hits,
+                publication_year_from=publication_year_from,
+                publication_year_to=publication_year_to,
+            )
+        if page.provider == "osti":
+            return parse_osti_page(
                 query=query,
                 payload=page.payload,
                 raw_response_artifact=raw_response_artifact,
@@ -1552,10 +1563,13 @@ class InspirationRunner:
                     result_index=hit.provider_rank - 1,
                 )
             elif (
-                (page.provider == hit.provider and hit.provider in {"arxiv", "openalex"})
+                (
+                    page.provider == hit.provider
+                    and hit.provider in {"arxiv", "openalex", "osti"}
+                )
                 or (
                     page.provider == "multi-source-v1"
-                    and hit.provider in {"arxiv", "crossref", "openalex"}
+                    and hit.provider in {"arxiv", "crossref", "openalex", "osti"}
                 )
             ):
                 extraction = extract_search_hit_metadata(
@@ -2397,6 +2411,7 @@ def public_inspiration_runner_from_environment(
     crossref_transport: BoundedHttpTransport | None = None,
     openalex_transport: BoundedHttpTransport | None = None,
     arxiv_transport: BoundedHttpTransport | None = None,
+    osti_transport: BoundedHttpTransport | None = None,
     document_fetcher: DocumentFetcher | None = None,
     monotonic_clock: Callable[[], float] = time.monotonic,
 ) -> InspirationRunner:
@@ -2417,6 +2432,7 @@ def public_inspiration_runner_from_environment(
         crossref_transport=crossref_transport,
         openalex_transport=openalex_transport,
         arxiv_transport=arxiv_transport,
+        osti_transport=osti_transport,
     )
     return InspirationRunner(
         store=store,
