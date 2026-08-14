@@ -57,6 +57,11 @@ from material_agent.inspiration.policy import (
     SelectionPolicyV1,
     TransformationBudgetV1,
 )
+from material_agent.inspiration.query_context import (
+    QUERY_CONTEXT_SCHEMA_VERSION,
+    QueryContextError,
+    compile_query_context_v2,
+)
 from material_agent.inspiration.validation import (
     InspirationIntegrityError,
     validate_search_supported_bridge,
@@ -93,6 +98,8 @@ __all__ = [
     "PassageVectorV1",
     "REQUIRED_STRUCTURE_NONFAIL_CHECK_IDS",
     "REQUIRED_STRUCTURE_PASS_CHECK_IDS",
+    "QUERY_CONTEXT_SCHEMA_VERSION",
+    "QueryContextError",
     "RuntimeBudgetV1",
     "SearchBudgetV1",
     "SearchExecutionMode",
@@ -114,6 +121,7 @@ __all__ = [
     "ValidationStatus",
     "canonical_json_bytes",
     "canonical_sha256",
+    "compile_query_context_v2",
     "deterministic_id",
     "hypothesis_signature_sha256_for",
     "transformation_route_sha256",
