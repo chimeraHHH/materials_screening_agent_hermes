@@ -20,14 +20,15 @@ engine's `.venv`.
 ## Profile bundle
 
 `profiles/materials-inspiration/` is the source-controlled profile distribution.
-Its platform configuration names the raw `materials` server; Hermes v0.20.0 then
+Its platform configuration points both reviewed toolsets at one loopback
+Streamable HTTP MCP Hub; Hermes v0.20.0 then
 registers the dynamic `mcp-materials` toolset and `mcp__materials__*` tools. The
 MCP server exposes four coarse tools and disables server resources and prompts.
 The profile pins the repository-owned
-`material_agent.integration.queued_gateway:create_queued_hermes_inspiration_service`
+`shared-loopback-mcp-http-hub-v1`
 factory; neither the model nor a tool caller can replace it or supply paths.
 
-The pinned factory is asynchronous. Grant consumption and job enqueue share one
+The pinned Hub is asynchronous. Grant consumption and job enqueue share one
 SQLite transaction; successful `materials_run_act` returns `RUNNING` after durable
 enqueue.
 It does not execute Crossref or the inspiration runner on the MCP request thread.
@@ -50,6 +51,46 @@ worker is healthy, actions remain durably `RUNNING`; Hermes must poll
 The versioned `SKILL.md` is mirrored into `SOUL.md` so its policy is loaded on
 every API-server run without enabling Hermes's inseparable `skill_manage` tool.
 Run `verify_bundle.py` after changing either file; drift fails the release gate.
+
+## Controlled agent evolution
+
+`profiles/materials-inspiration-evolution/` is a separate, source-controlled
+learning profile. It reuses Hermes 0.20.0's native memory, skill management,
+background review, curator, and flat delegation instead of implementing a
+second agent-learning subsystem in `material_agent`.
+
+The split is an authority boundary, not a second scientific workflow:
+
+- the production profile can create and control bounded scientific runs, but
+  has Hermes memory, skills, and delegation disabled;
+- the evolution profile can only read `materials_run_get` and
+  `materials_result_get` for an existing run and cannot start, approve, retry,
+  cancel, or mutate scientific execution;
+- delegated evolution children do not inherit Materials MCP tools;
+- every native memory or skill write is staged behind Hermes's human approval
+  gate, and automatic LLM curator consolidation is disabled;
+- approved runtime lessons are still drafts. Production promotion requires a
+  human-reviewed repository diff, both Hermes bundle verifiers, relevant tests,
+  and the affected scientific evaluation gate.
+
+Validate and install the profile with the pinned runtime:
+
+```bash
+.venv/bin/python integrations/hermes/scripts/verify_evolution_bundle.py
+
+HERMES_HOME=/absolute/path/to/an/isolated/evolution-home \
+API_SERVER_KEY=... \
+MATERIAL_AGENT_PYTHON=/absolute/path/to/.venv-gateway/bin/python \
+MATERIAL_AGENT_WORKSPACE=/absolute/path/to/a/bounded/workspace \
+MATERIAL_AGENT_PROJECT_ID=materials-inspiration \
+.venv-hermes/bin/hermes profile install \
+  integrations/hermes/profiles/materials-inspiration-evolution \
+  --name materials-inspiration-evolution --force --yes
+```
+
+Use `/memory pending` and `/skills pending` to review proposed learning writes.
+The production profile remains the only Hermes profile allowed to call
+`materials_inspiration_run` or `materials_run_act`.
 
 At runtime, set these non-secret variables in the profile environment:
 
@@ -238,6 +279,9 @@ path guards, size limits, hash verification, and human-approval checks.
 
 ## Production lifecycle and release E2E
 
+面向操作者的完整标准流程（前置条件、DeepSeek 模型规范化、部署、验收、批准、重启和
+排障）见 [Materials Inspiration 标准部署与启动](../../docs/materials-inspiration-startup.md)。
+
 The checked-in lifecycle wrapper owns one isolated Hermes home, the source
 profile install, dashboard build, process identities, health endpoints, and
 secret-safe operational counters. It requires `uv`, Git, and Node.js
@@ -297,7 +341,7 @@ correspondingly supervised worker pool and a new queue-capacity test.
 
 The local preflight fails closed on the Node/Python/Hermes pin, profile or
 model/provider drift, missing provider credentials, either SQLite database,
-and the exact four-tool MCP stdio handshake. The profile check compares the
+and the exact four-tool MCP Streamable HTTP handshake. The profile check compares the
 installed configuration semantically against the
 source profile after only the approved provider/model substitution, and verifies
 the installed SOUL and complete Skill tree byte-for-byte; enabling another tool,

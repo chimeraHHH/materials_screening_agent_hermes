@@ -167,10 +167,22 @@ Gateway 必须满足：
 - Hermes 与主项目使用独立 Python 环境；当前 release record 记录并由 bundle verifier
   校验 profile/Skill/Tool Schema hash，自动绑定到每个 execution manifest 属于 production
   加固项；
-- 当前 SQLite/单项目锁只允许本机单用户、单 Hermes 实例试点。
+- production profile 的所有 dashboard/TUI session 通过一个 loopback Streamable HTTP MCP
+  Hub 复用 Gateway 与 research-pipeline server，不再各自生成 stdio watchdog/MCP 进程；
+- 标准生命周期只拥有 dashboard、Hub/queued-worker 与 monitor 三个顶层进程，停止时按
+  捕获的精确进程身份回收 dashboard 的跨进程组后代；
+- 当前 SQLite/单项目锁只允许本机单用户试点，但同一主机上的多个 Hermes session 可共享
+  单一 Hub，并由 canonical 锁串行化同一科研请求。
 
 Hermes Session、Memory 或自改 Skill 不能保存正式 EvidenceCard、阈值、已接受机制或科学
 结论。正式状态必须写入可校验的材料 Artifact。
+
+受控进化使用独立的 `materials-inspiration-evolution` profile，而不是放宽 production
+profile。该 profile 复用 Hermes 原生 memory、skills、background review、curator 与 flat
+delegation，但 Materials MCP 只开放 `materials_run_get` / `materials_result_get`；所有学习写入
+进入人工审批队列，子 agent 不继承 MCP，runtime lesson 也不能直接修改 source-controlled
+production Skill。晋升必须经过人工 source diff、双 bundle verifier、相关离线测试和受影响的
+科学 Gate；完整决策见 ADR 0003。
 
 ## 4. Orchestrator、状态机与阶段状态
 
@@ -310,6 +322,13 @@ Inspiration 与 read-only Research Advisor 不同：它会创建新的 proposal 
 属于冻结的 `StageId`，也不拥有 Orchestrator checkpoint。其输入必须显式引用已确认
 Requirement、parent candidate/structure 和冻结 policy 的 URI/hash。
 
+`orchestrator-composite-inspiration-v2` 提供一个**显式 opt-in** 的 LangGraph 与 runtime
+API：它从同一 project workspace 的业务库读取既有 Agent01 run，校验 Requirement revision、
+Agent01 control result 和 `candidate_manifest`，再逐个校验动态 parent structure 的 URI/SHA，
+冻结 `InspirationInputV1` 后调用注入的 `InspirationRunner`。该 API 不修改默认
+`OrchestratorRuntime`、四阶段 `ExecutionPlan`/`StageId`、业务 schema 或 checkpoint；当前也
+没有 CLI 自动串联、独立持久 checkpoint 或跨进程恢复语义，因此不能表述为默认五阶段主链。
+
 内部顺序固定为：
 
 ```text
@@ -319,6 +338,7 @@ GoalSeed / curated TagGraph
 → located Passage
 → EvidenceCard
 → validated BridgePacket
+→ pinned SMACT inorganic-composition prior Gate
 → registered deterministic transformation
 → structure validation
 → internal identity resolution
@@ -332,6 +352,16 @@ vectorizer/LLM，且每段必须保存 locator 与原始响应 hash。
 LLM 只能提出严格 `BridgePacket` 和 registry operator 参数；代码负责结构变换、硬约束、
 identity 与 selection。输出固定说明本阶段未执行 novelty/prior-art 判定，proposal 也不继承
 parent 的性质 evidence。
+
+软化学执行路径在 operator registry 之前固定运行
+`smact-inorganic-prior-policy-v1`。SMACT 及其 ASE 硬依赖只安装在独立 `.venv-smact`，主环境
+通过无 shell、限时/限 stdout 的严格 JSON 子进程调用；worker Python 必须由绝对路径显式配置，
+源码路径、依赖 lock 和返回 Schema/identity 均复核。其 SMACT 4.0.0、pymatgen 2025.10.7、
+ICSD24 过滤参数、Pauling、电中性、混合价态和资源上限进入 policy hash；只有携带受审 worker-lock
+SHA 的 `PASS` 可以 dispatch registry。`REJECT` 不生成结构，
+缺数据、全金属体系、版本漂移或组合空间越界均 `REQUIRES_REVIEW`。下游 plan 还会复核 operator
+结果中存在唯一的 `smact_prior_gate=PASS`，防止绕过。该启发式先验固定为 evidence `NONE`，
+不代表热力学稳定、动力学可合成或 DFT 验证。
 
 ### 5.3 Agent 01：公开数据库检索与确定性筛选
 
@@ -738,18 +768,28 @@ CLI 规则：
 
 ### 10.1 Hermes Tool 与 beta/pilot 入口
 
-Hermes source-controlled production profile 只允许四个粗粒度工具：
+Hermes source-controlled production profile 允许四个审计工具和一个独立的 DFT 外科研入口：
 
 ```text
 materials_inspiration_run
 materials_run_get
 materials_run_act
 materials_result_get
+materials_research_pipeline_run
 ```
 
 `materials_run_act` 使用严格 discriminated union，一次调用最多完成一次澄清、批准、拒绝、
 恢复、重试或取消转换。Tool list 中不得出现任意 Artifact read、shell、自由路径或直接
 DFT/ML/many-body submit。
+
+`materials_research_pipeline_run` 不改变四工具审计合同。它提交一个固定的非 DFT 研究流，
+立即返回 `RUNNING`。公开输入只要求自然语言 `goal`；`submission_id` 可省略并由服务端从
+规范化科学请求派生。canonical identity 同时绑定内部 implementation revision，使修复后的
+部署自动进入新代际，而不会命中修复前的终态失败。后台执行跨进程持有 run lock；Hub
+重启后若终态 Artifact 尚不存在，则从同一 Orchestrator checkpoint 调用 `resume()`。若异常
+越过 LangGraph outcome-recording 边界，Orchestrator 在 research `FAILED` 写入前以一个事务
+将 run、活动 stage 和 attempt 一并封口为失败；启动时还会核对历史 terminal Artifact 并修复
+旧的 RUNNING 投影。终态结果仍以 immutable Artifact 幂等返回。
 
 Requirement-freeze 交互同时显式返回 `execution_manifest_sha256` 和兼容字段
 `input_sha256`，两者必须完全相同。manifest v2 绑定冻结输入、policy、TagGraph、目标 Tag、

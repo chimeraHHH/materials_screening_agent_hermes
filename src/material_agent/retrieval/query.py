@@ -338,7 +338,7 @@ def retrieval_policy_for_source(
             5000,
         ),
         SourceDatabase.C2DB: (
-            "retrieval-policy-c2db-v1",
+            "retrieval-policy-c2db-v2",
             "/table",
             25,
             200,
@@ -388,6 +388,7 @@ def _build_multi_source_query_plan(
 
     hard = requirement.hard_constraints
     filters: dict[str, Any] = {}
+    predownload_filters: dict[str, Any] = {}
     local_only: list[str] = []
     local_only.extend(
         f"unmapped:{item.constraint_id}"
@@ -396,6 +397,8 @@ def _build_multi_source_query_plan(
     source = policy.source_database
     if hard.exact_formula is not None:
         local_only.append("exact_formula")
+        if policy.source_database is SourceDatabase.C2DB:
+            predownload_filters["exact_formula"] = hard.exact_formula
     local_only.extend(
         f"source.{source.value}.{name}"
         for name in (
@@ -449,6 +452,7 @@ def _build_multi_source_query_plan(
         "client_version": metadata.client_version,
         "endpoint": policy.endpoint,
         "filters": _jsonable(filters),
+        "predownload_filters": _jsonable(predownload_filters),
         "fields": MULTI_SOURCE_REQUIRED_FIELDS,
         "chunk_size": policy.chunk_size,
         "num_chunks": num_chunks,
@@ -468,6 +472,7 @@ def _build_multi_source_query_plan(
         database_version=metadata.database_version,
         requirement_hash=requirement_hash,
         pushdown_filters=filters,
+        predownload_filters=predownload_filters,
         local_only_constraints=sorted(set(local_only)),
         requested_fields=MULTI_SOURCE_REQUIRED_FIELDS,
         chunk_size=policy.chunk_size,

@@ -311,6 +311,10 @@ class RetrievalQueryPlan(StrictModel):
     requirement_hash: str
     raw_request: str | None = None
     pushdown_filters: dict[str, Any]
+    # Filters evaluated from a source's cheap listing response before any
+    # per-record structure download.  They are intentionally separate from
+    # pushdown_filters because the remote service did not apply them.
+    predownload_filters: dict[str, Any] = Field(default_factory=dict)
     local_only_constraints: list[str]
     requested_fields: list[str]
     chunk_size: int

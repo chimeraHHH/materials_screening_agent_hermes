@@ -1,0 +1,281 @@
+% !TEX program = xelatex
+% Visual contract
+% Artifact: detailed system architecture mind map
+% Source: docs/architecture.md, plans/master.md, source contracts, current tests
+% Core claim: engineering control/evidence closure is separated from scientific validation
+% Reading order: center -> clockwise branches; solid=default, dashed=opt-in, dotted=evidence
+% Status vocabulary: implemented / opt-in real / mock-control / blocked / paused research
+% Output: editable TikZ source and vector PDF; no fabricated scientific result
+\documentclass{article}
+\usepackage[a1paper,landscape,margin=0pt]{geometry}
+\usepackage{ctex}
+\usepackage{tikz}
+\usepackage{xcolor}
+\usepackage{amsmath,amssymb}
+\usetikzlibrary{
+  arrows.meta,
+  backgrounds,
+  calc,
+  fit,
+  positioning
+}
+
+\definecolor{Control}{HTML}{0072B2}
+\definecolor{Retrieval}{HTML}{009E73}
+\definecolor{Inspiration}{HTML}{E69F00}
+\definecolor{SoftChem}{HTML}{D55E00}
+\definecolor{Evidence}{HTML}{CC79A7}
+\definecolor{Hermes}{HTML}{56B4E9}
+\definecolor{Neutral}{HTML}{666666}
+\definecolor{Dark}{HTML}{222222}
+\definecolor{Paper}{HTML}{FAFAF8}
+\definecolor{Blocked}{HTML}{A33A2B}
+\definecolor{Paused}{HTML}{7E6148}
+
+\newcommand{\implemented}{\textcolor{Retrieval}{\bfseries[工程已实现]}}
+\newcommand{\optionalreal}{\textcolor{Control}{\bfseries[受控可选真实]}}
+\newcommand{\mockcontrol}{\textcolor{Inspiration}{\bfseries[Mock 控制链]}}
+\newcommand{\blocked}{\textcolor{Blocked}{\bfseries[未闭环/阻塞]}}
+\newcommand{\paused}{\textcolor{Paused}{\bfseries[科研轨暂停]}}
+\newcommand{\unknown}{\textcolor{Neutral}{\bfseries[性质未知]}}
+
+\tikzset{
+  card/.style={
+    rounded corners=4mm,
+    line width=1.2pt,
+    fill=white,
+    align=left,
+    inner sep=8mm,
+    font=\fontsize{10.8}{13.4}\selectfont,
+    text=Dark
+  },
+  core/.style={
+    rounded corners=5mm,
+    draw=Dark,
+    fill=Dark!94,
+    text=white,
+    line width=2pt,
+    align=center,
+    inner sep=9mm,
+    font=\fontsize{13}{16}\selectfont
+  },
+  branchtitle/.style={font=\fontsize{16}{19}\selectfont\bfseries,align=center},
+  controlflow/.style={-{Stealth[length=5mm,width=3.6mm]},draw=Control,line width=2.2pt},
+  dataflow/.style={-{Stealth[length=5mm,width=3.6mm]},draw=Dark,line width=2.2pt},
+  optionalflow/.style={-{Stealth[length=5mm,width=3.6mm]},draw=Inspiration,line width=2.0pt,dashed,dash pattern=on 7pt off 5pt},
+  evidenceflow/.style={-{Stealth[length=4.5mm,width=3.2mm]},draw=Evidence,line width=1.8pt,densely dotted},
+  feedbackflow/.style={{Stealth[length=4mm]}-{Stealth[length=4mm]},draw=Neutral,line width=1.5pt,dash dot},
+  edgecaption/.style={fill=Paper,inner sep=2.5pt,font=\fontsize{9}{11}\selectfont\bfseries,text=Dark}
+}
+
+\begin{document}
+\pagestyle{empty}
+\centering
+\begin{tikzpicture}[x=1cm,y=1cm]
+  % The A1 page itself is the light background. Keeping it outside the
+  % background layer ensures that routed edges remain visible behind cards.
+  \path[use as bounding box] (-41,-28.5) rectangle (41,29.5);
+
+  \node[font=\fontsize{25}{30}\selectfont\bfseries,text=Dark] at (0,27.5)
+    {Materials Screening Agent：当前系统架构详细思维导图};
+  \node[font=\fontsize{11}{14}\selectfont,text=Neutral] at (0,25.3)
+    {状态口径：工程控制闭环与科研证据等级分离；默认主链、opt-in companion 与未来能力不混写};
+
+  % ------------------------------------------------------------------
+  % Center
+  % ------------------------------------------------------------------
+  \node[core,text width=14.5cm] (core) at (0,2.5) {%
+    {\fontsize{19}{23}\selectfont\bfseries Materials Screening Agent}\\[3mm]
+    Hermes 交互层 + LangGraph 控制层\\
+    Agent 原生科学执行层 + Artifact 证据层\\[3mm]
+    \rule{12.2cm}{0.6pt}\\[2mm]
+    默认业务路由：\\
+    \textbf{retrieval $\rightarrow$ ml $\rightarrow$ dft $\rightarrow$ many\_body}\\[2mm]
+    \textbf{唯一科学事务真源：SQLite + Checkpoint + Hash-pinned Artifact}
+  };
+
+  % ------------------------------------------------------------------
+  % Top-left: entry / Hermes
+  % ------------------------------------------------------------------
+  \node[card,draw=Hermes,text width=19cm] (hermes) at (-28,18) {%
+    \begin{minipage}{18.2cm}
+    \centering\textcolor{Hermes}{\bfseries\fontsize{16}{19}\selectfont 入口、Hermes 与智能体进化}\par
+    \raggedright\vspace{2mm}
+    \implemented\ \textbf{用户入口}：CLI；Hermes TUI / dashboard；自然语言会话。\par
+    \implemented\ \textbf{Materials Gateway}：四个严格 MCP Tool；版本化 DTO；大小/字段白名单；不暴露 shell、任意 Artifact 或底层 DAG。\par
+    \implemented\ \textbf{审批语义}：run $\rightarrow$ get $\rightarrow$ act $\rightarrow$ result；一次性 grant 绑定 request、interaction、manifest 与 action，在 SQLite 中原子消费。\par
+    \implemented\ \textbf{Production profile}：queued worker + dashboard + monitor；Hermes 与材料主环境分离。\par
+    \optionalreal\ \textbf{Evolution profile}：Hermes 原生 memory、Skill、background review、curator、flat delegation；材料 MCP 只读结果，学习写入需人工审批，child 不继承 MCP。\par
+    \blocked\ Hermes memory/Skill 不能充当正式科学状态或 EvidenceCard；晋升需 source diff、双 verifier 与相关 Gate。
+    \end{minipage}
+  };
+
+  % ------------------------------------------------------------------
+  % Top-center: control plane
+  % ------------------------------------------------------------------
+  \node[card,draw=Control,text width=21cm] (control) at (0,18) {%
+    \begin{minipage}{20.2cm}
+    \centering\textcolor{Control}{\bfseries\fontsize{16}{19}\selectfont LangGraph 控制平面}\par
+    \raggedright\vspace{2mm}
+    \implemented\ \textbf{Stage 0 / Requirement}：离线解析默认；DeepSeek 显式 opt-in；歧义时 Interrupt 澄清；用户确认后冻结 revision。\par
+    \implemented\ \textbf{ExecutionPlan}：四阶段顺序固定；capability 未注册、输入缺失、审批拒绝均显式 PAUSED / BLOCKED / PARTIAL。\par
+    \implemented\ \textbf{阶段生命周期}：prepare $\rightarrow$ start $\rightarrow$ reconcile；同步结果与 ExternalJobRef 统一映射为 ControlStageOutcome。\par
+    \implemented\ \textbf{恢复与幂等}：LangGraph checkpoint、业务 SQLite、operation key、重复提交检测、取消/重试与终态报告。\par
+    \implemented\ \textbf{Human Gates}：昂贵计算、方法/资源 policy、外部网络和人工判断不能由 LLM 自行批准。\par
+    \optionalreal\ \textbf{Composite v2}：从既有 Agent01 run 校验 Requirement、control result、candidate manifest 及每个结构 URI/SHA，再调用 Inspiration；不是第五个默认 Stage。\par
+    \blocked\ Composite 尚无默认 CLI、独立 checkpoint 与跨进程恢复语义。
+    \end{minipage}
+  };
+
+  % ------------------------------------------------------------------
+  % Top-right: production / ops
+  % ------------------------------------------------------------------
+  \node[card,draw=Neutral,text width=19cm] (ops) at (28,18) {%
+    \begin{minipage}{18.2cm}
+    \centering\textcolor{Neutral}{\bfseries\fontsize{16}{19}\selectfont 部署、运行时与生产加固}\par
+    \raggedright\vspace{2mm}
+    \implemented\ \textbf{标准部署}：锁定 Hermes checkout / Node / Python；Gateway、dashboard、monitor、queued worker 同一生命周期。\par
+    \implemented\ \textbf{可观测性}：loopback health / readiness / Prometheus metrics；PID ownership、进程组、日志/事件轮转与 workspace 限定。\par
+    \implemented\ \textbf{环境隔离}：主 `.venv`；Hermes / Gateway；Agent02；semantic embedding；SMACT worker 分离。\par
+    \implemented\ \textbf{运行安全}：无 shell 子进程、绝对路径、依赖 lock、源码/模型/Artifact SHA、no-user-site、超时与输出预算。\par
+    \blocked\ \textbf{Public production NO-GO}：parent hard-kill 后 orphan child 回收未闭合；真实 provider 全链、branch protection / required checks、专家 gold / performance Gate 未完成。\par
+    \textbf{最新可信测试口径}：非 flatband 离线回归已绿；SMACT 独立 worker 实测；flatband 研究轨单独暂停，不与生产 Gate 混算。
+    \end{minipage}
+  };
+
+  % ------------------------------------------------------------------
+  % Mid-left: retrieval
+  % ------------------------------------------------------------------
+  \node[card,draw=Retrieval,text width=19cm] (retrieval) at (-28,2.0) {%
+    \begin{minipage}{18.2cm}
+    \centering\textcolor{Retrieval}{\bfseries\fontsize{16}{19}\selectfont Agent01：真实检索与确定性预筛选}\par
+    \raggedright\vspace{2mm}
+    \implemented\ \textbf{已实现数据源}：Materials Project、NOMAD、MC3D / OPTIMADE、C2DB、TQC、NIMS MDR SuperCon metadata。\par
+    \blocked\ Atomly 仍无可验证的公开接入契约；NIMS 无结构记录不能发布下游候选。\par
+    \implemented\ \textbf{Query Planner}：单一来源冻结、预算/分页/重端点限制、raw response 归档。\par
+    \implemented\ \textbf{Normalizer / Validator}：pymatgen 结构解析、元素/成分、维度、空间群、单位与数据库 provenance。\par
+    \implemented\ \textbf{Deterministic screening}：硬约束、PASS / REJECT / UNCERTAIN；缺失性质不跨库静默补齐。\par
+    \implemented\ \textbf{Identity}：candidate\_id 稳定；structure\_id 内容寻址；精确重复标注、StructureMatcher 聚类、确定性排序。\par
+    \implemented\ \textbf{发布物}：raw、Candidate ledger、CIF、manifest、报告与 SHA 闭包。\par
+    \optionalreal\ MVP 已在真实 MC3D 上形成 948 $\rightarrow$ 200 候选口径；保留可重放 run Artifact 仍需强化。
+    \end{minipage}
+  };
+
+  % ------------------------------------------------------------------
+  % Mid-right: default main chain
+  % ------------------------------------------------------------------
+  \node[card,draw=Dark,text width=19cm] (pipeline) at (28,1.5) {%
+    \begin{minipage}{18.2cm}
+    \centering\textcolor{Dark}{\bfseries\fontsize{16}{19}\selectfont 默认四阶段科学执行主链}\par
+    \raggedright\vspace{2mm}
+    \textbf{Agent01 Retrieval} \implemented\\
+    默认唯一注册的 production scientific runner；发布 hash-pinned manifest。\par
+    \vspace{1mm}\textbf{$\Downarrow$ 显式 Stage 输入 / capability Gate}\par
+    \textbf{Agent02 ML Screening} \optionalreal\\
+    Fake 仅测试；真实 CHGNet 通过独立 worker、模型/lock/health/applicability Gate 注册。当前受审科学域仅 \textbf{3D 单质 Si}；Ti/S/Se 被正确阻塞。\par
+    \vspace{1mm}\textbf{$\Downarrow$ L2 不自动升级为 DFT 证据}\par
+    \textbf{Agent03 DFT Controller} \mockcontrol\\
+    已有 request / approval / preflight / ExternalJobRef / VASPilot bridge 控制契约；默认只注册 mock。真实 VASP/POTCAR/Slurm/method policy/backend 尚未闭合。\par
+    \vspace{1mm}\textbf{$\Downarrow$ 只有真实 L3 才能支持高阶 claim}\par
+    \textbf{Agent04 Many-body Controller} \mockcontrol\\
+    模型/solver 路由、evidence ceiling 和 mock 生命周期已实现；真实有效模型、linkage、ED/DMFT/其他 solver 与专家 Gate 未完成。
+    \end{minipage}
+  };
+
+  % ------------------------------------------------------------------
+  % Bottom-left: Inspiration
+  % ------------------------------------------------------------------
+  \node[card,draw=Inspiration,text width=21cm] (inspiration) at (-28,-16) {%
+    \begin{minipage}{20.2cm}
+    \centering\textcolor{Inspiration}{\bfseries\fontsize{16}{19}\selectfont Inspiration Companion：文献挖掘与结构假设}\par
+    \raggedright\vspace{2mm}
+    \optionalreal\ \textbf{动态入口}：Composite v2 接收 Agent01 已发布 PASS / UNCERTAIN candidate 和逐结构 hash。\par
+    \implemented\ \textbf{检索合同}：Crossref 默认；Crossref + OpenAlex 显式多源；1600--2200 年份窗口；provider raw bytes、base64 与 SHA 闭包；本地再次校验年代。\par
+    \implemented\ \textbf{证据编译}：metadata / abstract $\rightarrow$ SearchHit $\rightarrow$ located Passage $\rightarrow$ EvidenceCard；PDF / body 默认关闭。\par
+    \implemented\ \textbf{机制桥}：GoalSeed、TagGraph、BridgePacket、required / breaking conditions、反证 query。\par
+    \optionalreal\ \textbf{语义层}：SHA-pinned 本地 Sentence Transformers baseline；DeepSeek 仅作 bounded grounded reranker / judge，citation 必须闭合，不是 embedding 或 novelty oracle。\par
+    \implemented\ \textbf{结构生成}：白名单等价位点替换、价态/电荷/几何检查、内部身份解析、去重与 diversity Top-K。\par
+    \unknown\ Hermes Crossref v2 已生成非空结构假设 bundle，但性质、稳定性和 novelty 均未验证。\par
+    \blocked\ OpenAlex live、多源真实网络全链、材料领域 embedding gold / 排序指标与专家复核未完成。
+    \end{minipage}
+  };
+
+  % ------------------------------------------------------------------
+  % Bottom-center: evidence/data/research
+  % ------------------------------------------------------------------
+  \node[card,draw=Evidence,text width=21cm] (evidence) at (0,-16.5) {%
+    \begin{minipage}{20.2cm}
+    \centering\textcolor{Evidence}{\bfseries\fontsize{16}{19}\selectfont 数据平面、证据等级与科研分支}\par
+    \raggedright\vspace{2mm}
+    \implemented\ \textbf{状态存储}：LangGraph checkpoint 保存控制恢复；业务 SQLite 保存 run / stage / approval / operation / queue / external job；大对象不进 state。\par
+    \implemented\ \textbf{Artifact Store}：API raw、JSON/JSONL、CIF、manifest、模型/方法 policy、轨迹、报告；URI + SHA-256 + size + media type + lineage。\par
+    \implemented\ \textbf{证据纪律}：L0 Parsed $\rightarrow$ L1 Retrieved $\rightarrow$ L2 ML-screened $\rightarrow$ L3 DFT-validated $\rightarrow$ L4 Solver-validated $\rightarrow$ L5 Expert-reviewed；逐性质晋级，mock 不升级。\par
+    \implemented\ \textbf{Claim 边界}：数据库值、SMACT prior、MLIP、submitted job、mock observables 和专家结论不可互相冒充。\par
+    \paused\ \textbf{Flatband benchmark}：契约 / schema / synthetic replay 已形成；真实 30-case Pilot、自然人专家/仲裁/custody、Main120、B0/E1/E2/E3/Fusion/locked test 未开始。\par
+    \paused\ 最新分区记录为 437 passed / 3 failed；三项 V3 对抗拒绝测试开放，用户已暂停科研轨，不影响 MVP 主链。\par
+    \blocked\ 真实科研结论仍依赖专家 gold、真实 DFT / 多体、适用域验证与独立统计 Gate。
+    \end{minipage}
+  };
+
+  % ------------------------------------------------------------------
+  % Bottom-right: softchem
+  % ------------------------------------------------------------------
+  \node[card,draw=SoftChem,text width=21cm] (softchem) at (28,-16) {%
+    \begin{minipage}{20.2cm}
+    \centering\textcolor{SoftChem}{\bfseries\fontsize{16}{19}\selectfont 无机先验与软化学下游流水线}\par
+    \raggedright\vspace{2mm}
+    \optionalreal\ \textbf{SMACT Prior Gate}：独立 `.venv-smact` JSON worker；SMACT 4.0.0 + pymatgen 2025.10.7；主环境不含 SMACT / ASE。\par
+    \implemented\ \textbf{双锁身份}：基础 `requirements.lock` + `requirements-smact.lock` 组合 SHA；绝对 worker Python、source root、policy / formula / response identity、超时与 stdout 上限。\par
+    \implemented\ \textbf{化学规则}：ICSD24 occurrence filter、charge neutrality、Pauling electronegativity、mixed valence、元素/化学计量预算。\par
+    \textbf{Gate 结果}：PASS 才 dispatch registry；REJECT 不生成结构；缺数据、合金、包/锁漂移、搜索空间越界 $\rightarrow$ REQUIRES\_REVIEW。证据固定 NONE。\par
+    \implemented\ \textbf{Operator Registry}：仅 \texttt{SUBSTITUTE\_EQUIVALENT\_SITE\_V1@1}；无动态 entry point；完整等价位点、晶格/坐标、有限值、最小距离、化学计量与 round-trip 校验。\par
+    \optionalreal\ \textbf{条件下游}：operator result $\rightarrow$ CHGNet relaxation $\rightarrow$ DeepH / DFT；每段复核 native plan、model / lock / health / approval / structure linkage。\par
+    \blocked\ 当前 Ti--S--Se 因 CHGNet 元素域未审核而停止；真实 DeepH benchmark 与 DFT backend 仍未执行，不能声称性质或稳定性。
+    \end{minipage}
+  };
+
+  % ------------------------------------------------------------------
+  % Edges: draw behind nodes
+  % ------------------------------------------------------------------
+  \begin{scope}[on background layer]
+    \draw[controlflow] (hermes.south east) to[out=-25,in=145] node[edgecaption,pos=.50]{MCP / 用户动作} (core.north west);
+    \draw[controlflow] (control.south) -- node[edgecaption,pos=.52]{计划、审批、恢复} (core.north);
+    \draw[feedbackflow] (ops.south west) to[out=-145,in=35] node[edgecaption,pos=.52]{部署 / health / metrics} (core.north east);
+
+    \draw[controlflow] (core.west) -- node[edgecaption,pos=.50]{prepare / start / reconcile} (retrieval.east);
+    \draw[dataflow] (retrieval.east) to[out=-12,in=168] node[edgecaption,pos=.52]{candidate manifest} (pipeline.west);
+    \draw[controlflow] (core.east) -- node[edgecaption,pos=.50]{四阶段路由} (pipeline.west);
+
+    \draw[optionalflow] (retrieval.south) to[out=-90,in=90] node[edgecaption,pos=.55]{动态候选 + URI/SHA} (inspiration.north);
+    \draw[optionalflow] (core.south west) to[out=-145,in=30] node[edgecaption,pos=.52]{opt-in composite} (inspiration.north east);
+    \draw[optionalflow] (inspiration.east) to[out=4,in=176] node[edgecaption,pos=.50]{结构 proposal} (softchem.west);
+    \draw[optionalflow] (softchem.north east) to[out=55,in=-70] node[edgecaption,pos=.48]{L2 / DFT 条件交接} (pipeline.south east);
+
+    \draw[evidenceflow] (retrieval.south east) to[out=-65,in=155] (evidence.north west);
+    \draw[evidenceflow] (pipeline.south west) to[out=-115,in=25] (evidence.north east);
+    \draw[evidenceflow] (inspiration.north east) to[out=35,in=200] (evidence.west);
+    \draw[evidenceflow] (softchem.north west) to[out=145,in=-20] (evidence.east);
+    \draw[feedbackflow] (evidence.north) -- node[edgecaption,pos=.48]{状态真源 / Artifact 引用} (core.south);
+  \end{scope}
+
+  % ------------------------------------------------------------------
+  % Legend
+  % ------------------------------------------------------------------
+  \node[card,draw=Neutral,text width=74cm,inner sep=5mm] (legend) at (0,-27.2) {%
+    \begin{minipage}{73.2cm}
+    \centering
+    \textbf{连线语义：}\quad
+    \tikz[baseline=-.6ex]\draw[controlflow] (0,0)--(1.4,0);\, 默认控制流 \quad
+    \tikz[baseline=-.6ex]\draw[dataflow] (0,0)--(1.4,0);\, 数据/结构流 \quad
+    \tikz[baseline=-.6ex]\draw[optionalflow] (0,0)--(1.4,0);\, opt-in / 条件路径 \quad
+    \tikz[baseline=-.6ex]\draw[evidenceflow] (0,0)--(1.4,0);\, Artifact / provenance \quad
+    \tikz[baseline=-.6ex]\draw[feedbackflow] (0,0)--(1.4,0);\, 双向状态/运维反馈\\[2mm]
+    \textbf{状态标签：}\quad \implemented\quad \optionalreal\quad \mockcontrol\quad \blocked\quad \paused\quad \unknown\\[2mm]
+    \textbf{关键解释：}“工程已实现”只说明契约、控制链或可重放 Artifact 成立；只有满足相应 evidence Gate 的真实计算、实验或专家审查，才能支持科研 claim。
+    \end{minipage}
+  };
+
+  \node[font=\fontsize{9}{11}\selectfont,text=Neutral,anchor=south east] at (40.3,-28.1)
+    {Source of truth: repository code, docs/architecture.md, plans/master.md; 2026-08-11};
+\end{tikzpicture}
+\end{document}

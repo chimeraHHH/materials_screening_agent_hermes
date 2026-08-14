@@ -115,7 +115,11 @@ def test_fresh_profile_provider_and_real_mcp_database_probes(tmp_path: Path) -> 
             "API_SERVER_KEY": "test-only-server-secret-000000000000000000000",
             "HERMES_HOME": str(profile_root),
             "MATERIAL_AGENT_PROJECT_ID": "materials-inspiration",
-            "MATERIAL_AGENT_PYTHON": str(GATEWAY_PYTHON.resolve()),
+            "MATERIAL_AGENT_MCP_BASE_URL": "http://127.0.0.1:19121",
+            "MATERIAL_AGENT_PYTHON": str(GATEWAY_PYTHON),
+            "MATERIAL_AGENT_SMACT_WORKER_PYTHON": str(
+                REPOSITORY_ROOT / ".venv-smact" / "bin" / "python"
+            ),
             "MATERIAL_AGENT_WORKSPACE": str(workspace),
             "OPENROUTER_API_KEY": secret,
         }
@@ -137,6 +141,8 @@ def test_fresh_profile_provider_and_real_mcp_database_probes(tmp_path: Path) -> 
         str(workspace),
         "--expected-project",
         "materials-inspiration",
+        "--expected-mcp-base-url",
+        "http://127.0.0.1:19121",
         "--expected-source-profile",
         str(PROFILE_SOURCE),
     ]
@@ -153,15 +159,15 @@ def test_fresh_profile_provider_and_real_mcp_database_probes(tmp_path: Path) -> 
     assert profile_payload["schema_version"] == "materials-hermes-profile-probe-v2"
     assert profile_payload["queued_actions"] is True
     assert profile_payload["profile_source_verified"] is True
-    assert profile_payload["service_factory"] == (
-        "material_agent.integration.queued_gateway:"
-        "create_queued_hermes_inspiration_service"
-    )
+    assert profile_payload["service_factory"] == "shared-loopback-mcp-http-hub-v1"
     assert tuple(profile_payload["tools"]) == (
         "materials_inspiration_run",
         "materials_run_get",
         "materials_run_act",
         "materials_result_get",
+    )
+    assert tuple(profile_payload["research_tools"]) == (
+        "materials_research_pipeline_run",
     )
     assert secret not in profile_probe.stdout + profile_probe.stderr
 

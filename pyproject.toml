@@ -51,6 +51,7 @@ markers = [
   "live_crossref: opt-in public Crossref metadata API release test requiring network",
   "live_llm: opt-in DeepSeek Stage0 release test requiring network and a secret-store API key",
   "live_semantic_rag: opt-in DeepSeek grounded semantic-RAG release test requiring network and a secret-store API key",
+  "real_smact: local independent SMACT worker integration test",
   "real_ml: opt-in Agent02 CPU test using the independent CHGNet environment",
   "slow_real_ml: opt-in Agent02 standard 200-step relaxation test",
   "mps_ml: opt-in Agent02 target-Mac MPS parity and fallback test",

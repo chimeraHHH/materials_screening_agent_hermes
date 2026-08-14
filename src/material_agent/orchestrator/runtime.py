@@ -493,6 +493,26 @@ class OrchestratorRuntime:
             response={"decision": "retry"},
         )
 
+    def seal_failed(
+        self,
+        *,
+        run_id: str,
+        category: str,
+        operation: str,
+        public_message: str,
+    ) -> RuntimeView:
+        """Seal an exception-aborted run when graph outcome recording was skipped."""
+
+        selected_run_id = _validate_id(run_id, "run_id")
+        with self._project_lock():
+            self.repository.seal_failed_run(
+                selected_run_id,
+                category=category,
+                operation=operation,
+                public_message=public_message,
+            )
+        return self.status(selected_run_id)
+
     def cancel(self, *, run_id: str, reason: str | None = None) -> RuntimeView:
         selected_run_id = _validate_id(run_id, "run_id")
         self._assert_checkpoint_compatible(selected_run_id)
@@ -544,6 +564,9 @@ class OrchestratorRuntime:
     def resume(self, *, run_id: str) -> RuntimeView:
         selected_run_id = _validate_id(run_id, "run_id")
         self._assert_checkpoint_compatible(selected_run_id)
+        current = self.status(selected_run_id)
+        if current.status in _TERMINAL_RUN_STATUSES:
+            return current
         snapshot = self.graph.get_state(self._config(selected_run_id))
         if snapshot.interrupts:
             raise ValueError(

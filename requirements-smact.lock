@@ -1,0 +1,10 @@
+# Install together with requirements.lock in the independent SMACT worker only.
+ase==3.29.0
+dill==0.4.1
+multiprocess==0.70.19
+pandarallel==1.6.5
+pathos==0.3.5
+pox==0.3.7
+ppft==1.7.8
+psutil==7.2.2
+SMACT==4.0.0

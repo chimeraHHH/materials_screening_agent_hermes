@@ -6,9 +6,12 @@
 .venv-gateway/
 .venv-hermes/
 .venv-agent02/
+.venv-smact/
 .venv-alignn/
+.venv-semantic/
 .external/
 .hermes-runtime/
+.materials-inspiration-bootstrap.lock
 __pycache__/
 *.py[cod]
 *.egg-info/

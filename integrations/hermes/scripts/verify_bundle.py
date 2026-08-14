@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import hashlib
-import importlib
 import json
 import re
 import sys
@@ -39,9 +38,8 @@ EXPECTED_TOOLS = [
     "materials_run_act",
     "materials_result_get",
 ]
-EXPECTED_SERVICE_FACTORY = (
-    "material_agent.integration.queued_gateway:create_queued_hermes_inspiration_service"
-)
+EXPECTED_RESEARCH_TOOLS = ["materials_research_pipeline_run"]
+EXPECTED_SERVICE_FACTORY = "shared-loopback-mcp-http-hub-v1"
 GATEWAY_REFERENCE_GUIDANCE = (
     "Read [the Gateway contract](references/gateway-contract.md) before the first tool\n"
     "call when tool arguments, states, or evidence boundaries are unclear."
@@ -103,7 +101,7 @@ def verify() -> None:
         raise ValueError("Hermes release lock changed without a compatibility update")
     if lock.get("node_minimum") != "22.22.0":
         raise ValueError("Hermes dashboard Node floor drifted")
-    if lock.get("uv_extras") != ["cli", "mcp", "web"]:
+    if lock.get("uv_extras") != ["cli", "mcp", "slack", "web"]:
         raise ValueError("Hermes production extras drifted")
 
     config = yaml.safe_load(
@@ -116,25 +114,17 @@ def verify() -> None:
         raise ValueError("Hermes profile compatibility pin drifted")
     if config.get("_config_version") != 33:
         raise ValueError("Hermes config schema must remain at v33 for the pinned runtime")
-    expected_platforms = {"cli": ["materials"], "api_server": ["materials"]}
+    expected_platforms = {
+        "cli": ["materials", "materials_research"],
+        "api_server": ["materials", "materials_research"],
+    }
     if config.get("platform_toolsets") != expected_platforms:
-        raise ValueError("profile must expose only the raw materials MCP toolset")
+        raise ValueError("profile must expose the reviewed materials MCP toolsets")
     if "skills" not in config.get("agent", {}).get("disabled_toolsets", []):
         raise ValueError("native skill management must remain disabled")
     server = config.get("mcp_servers", {}).get("materials", {})
-    args = server.get("args", [])
-    if "--service-factory" not in args:
-        raise ValueError("materials MCP server must pin its trusted service factory")
-    factory_index = args.index("--service-factory") + 1
-    if factory_index >= len(args) or args[factory_index] != EXPECTED_SERVICE_FACTORY:
-        raise ValueError("materials MCP service factory drifted")
-    module_name, factory_name = EXPECTED_SERVICE_FACTORY.split(":", 1)
-    try:
-        service_factory = getattr(importlib.import_module(module_name), factory_name)
-    except (AttributeError, ImportError) as exc:
-        raise ValueError("materials MCP service factory is unavailable") from exc
-    if not callable(service_factory):
-        raise ValueError("materials MCP service factory is not callable")
+    if server.get("url") != "${MATERIAL_AGENT_MCP_BASE_URL}/materials/mcp":
+        raise ValueError("materials MCP must use the shared loopback HTTP Hub")
     if server.get("tools", {}).get("include") != EXPECTED_TOOLS:
         raise ValueError("materials MCP tool allowlist drifted")
     if server.get("tools", {}).get("resources") is not False:
@@ -143,6 +133,17 @@ def verify() -> None:
         raise ValueError("MCP prompts must remain disabled")
     if server.get("supports_parallel_tool_calls") is not False:
         raise ValueError("parallel Materials Gateway calls must remain disabled")
+    research = config.get("mcp_servers", {}).get("materials_research", {})
+    if research.get("url") != "${MATERIAL_AGENT_MCP_BASE_URL}/research/mcp":
+        raise ValueError("research MCP must use the shared loopback HTTP Hub")
+    if research.get("tools", {}).get("include") != EXPECTED_RESEARCH_TOOLS:
+        raise ValueError("research MCP tool allowlist drifted")
+    if research.get("tools", {}).get("resources") is not False:
+        raise ValueError("research MCP resources must remain disabled")
+    if research.get("tools", {}).get("prompts") is not False:
+        raise ValueError("research MCP prompts must remain disabled")
+    if research.get("supports_parallel_tool_calls") is not False:
+        raise ValueError("parallel research pipeline calls must remain disabled")
     if config.get("gateway", {}).get("api_server", {}).get("host") != "127.0.0.1":
         raise ValueError("development API server must remain loopback-bound")
     if config.get("gateway", {}).get("api_server", {}).get("max_concurrent_runs") != 1:

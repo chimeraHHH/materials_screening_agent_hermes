@@ -19,9 +19,8 @@ EXPECTED_TOOLS = (
     "materials_run_act",
     "materials_result_get",
 )
-EXPECTED_FACTORY = (
-    "material_agent.integration.queued_gateway:create_queued_hermes_inspiration_service"
-)
+EXPECTED_RESEARCH_TOOLS = ("materials_research_pipeline_run",)
+EXPECTED_FACTORY = "shared-loopback-mcp-http-hub-v1"
 MAX_MANAGED_PROFILE_FILE_BYTES = 1_000_000
 MAX_MANAGED_SKILL_FILES = 64
 MAX_MANAGED_SKILL_DIRECTORIES = 64
@@ -45,6 +44,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--expected-gateway-python", type=Path, required=True)
     parser.add_argument("--expected-workspace", type=Path, required=True)
     parser.add_argument("--expected-project", required=True)
+    parser.add_argument("--expected-mcp-base-url", required=True)
     parser.add_argument("--expected-source-profile", type=Path, required=True)
     return parser
 
@@ -202,31 +202,30 @@ def main() -> int:
     materials = (config.get("mcp_servers") or {}).get("materials")
     if not isinstance(materials, dict):
         raise ProfileProbeError("Materials MCP profile entry is missing")
-    command = materials.get("command")
-    if command != "${MATERIAL_AGENT_PYTHON}":
-        raise ProfileProbeError("Materials MCP Python is not environment-bound")
-    arguments = materials.get("args")
-    if not isinstance(arguments, list):
-        raise ProfileProbeError("Materials MCP arguments are invalid")
-    expected_arguments = [
-        "-m",
-        "material_agent.integration.mcp_server",
-        "--workspace",
-        "${MATERIAL_AGENT_WORKSPACE}",
-        "--project",
-        "${MATERIAL_AGENT_PROJECT_ID}",
-        "--service-factory",
-        EXPECTED_FACTORY,
-    ]
-    if arguments != expected_arguments:
-        raise ProfileProbeError("Materials MCP arguments differ from the release profile")
+    if materials.get("url") != "${MATERIAL_AGENT_MCP_BASE_URL}/materials/mcp":
+        raise ProfileProbeError("Materials MCP URL differs from the shared Hub")
     tools = ((materials.get("tools") or {}).get("include"))
     if tuple(tools or ()) != EXPECTED_TOOLS:
         raise ProfileProbeError("Materials MCP allowlist differs")
+    research = (config.get("mcp_servers") or {}).get("materials_research")
+    if not isinstance(research, dict):
+        raise ProfileProbeError("Research MCP profile entry is missing")
+    if research.get("url") != "${MATERIAL_AGENT_MCP_BASE_URL}/research/mcp":
+        raise ProfileProbeError("Research MCP URL differs from the shared Hub")
+    research_tools = ((research.get("tools") or {}).get("include"))
+    if tuple(research_tools or ()) != EXPECTED_RESEARCH_TOOLS:
+        raise ProfileProbeError("Research MCP allowlist differs")
 
     expected_environment = {
         "MATERIAL_AGENT_PROJECT_ID": args.expected_project,
-        "MATERIAL_AGENT_PYTHON": str(args.expected_gateway_python.resolve()),
+        "MATERIAL_AGENT_MCP_BASE_URL": args.expected_mcp_base_url,
+        # The venv Python path is an execution identity, not merely a filesystem
+        # identity.  Resolving its symlink would discard the Gateway site-packages.
+        "MATERIAL_AGENT_PYTHON": str(args.expected_gateway_python.absolute()),
+        "MATERIAL_AGENT_SMACT_WORKER_PYTHON": str(
+            (Path(__file__).resolve().parents[3] / ".venv-smact" / "bin" / "python")
+            .absolute()
+        ),
         "MATERIAL_AGENT_WORKSPACE": str(args.expected_workspace.resolve()),
     }
     for name, expected in expected_environment.items():
@@ -265,6 +264,7 @@ def main() -> int:
                 "schema_version": "materials-hermes-profile-probe-v2",
                 "service_factory": EXPECTED_FACTORY,
                 "tools": EXPECTED_TOOLS,
+                "research_tools": EXPECTED_RESEARCH_TOOLS,
             },
             sort_keys=True,
             separators=(",", ":"),

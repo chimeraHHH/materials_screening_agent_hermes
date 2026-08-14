@@ -30,10 +30,7 @@ SKILL_PATH = (
 SUPPORTED_REQUEST_SHA256 = (
     "0598117ef45e17ec44f328f3effff5722166e2df589b8695ff0ff1c5a25220c6"
 )
-QUEUED_SERVICE_FACTORY = (
-    "material_agent.integration.queued_gateway:"
-    "create_queued_hermes_inspiration_service"
-)
+MATERIALS_HUB_URL = "${MATERIAL_AGENT_MCP_BASE_URL}/materials/mcp"
 
 
 def test_hermes_bundle_verifier_binds_nested_budget_guidance() -> None:
@@ -55,7 +52,7 @@ def test_hermes_bundle_verifier_binds_nested_budget_guidance() -> None:
     assert completed.stdout == "Hermes bundle valid\n"
 
 
-def test_hermes_bundle_verifier_fails_closed_on_synchronous_factory_drift(
+def test_hermes_bundle_verifier_fails_closed_on_shared_hub_url_drift(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -64,12 +61,11 @@ def test_hermes_bundle_verifier_fails_closed_on_synchronous_factory_drift(
     shutil.copytree(source, copied, ignore=shutil.ignore_patterns("__pycache__"))
     config = copied / "profiles" / "materials-inspiration" / "config.yaml"
     config_text = config.read_text(encoding="utf-8")
-    assert QUEUED_SERVICE_FACTORY in config_text
+    assert MATERIALS_HUB_URL in config_text
     config.write_text(
         config_text.replace(
-            QUEUED_SERVICE_FACTORY,
-            "material_agent.integration.hermes_service:"
-            "create_hermes_inspiration_service",
+            MATERIALS_HUB_URL,
+            "http://127.0.0.1:9999/unmanaged/mcp",
         ),
         encoding="utf-8",
     )
@@ -98,7 +94,7 @@ def test_hermes_bundle_verifier_fails_closed_on_synchronous_factory_drift(
     monkeypatch.setattr(verifier, "SOUL_PATH", profile / "SOUL.md")
     monkeypatch.setattr(verifier, "HERMES_README_PATH", copied / "README.md")
 
-    with pytest.raises(ValueError, match="service factory drifted"):
+    with pytest.raises(ValueError, match="shared loopback HTTP Hub"):
         verifier.verify()
 
 

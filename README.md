@@ -9,6 +9,13 @@ single-user local Hermes inspiration companion: metadata-first evidence,
 cross-domain mechanism bridges, one deterministic structure operator, run-local
 deduplication/diversity, and a four-tool persistent MCP Gateway.
 
+The 2026-08-11 opt-in extension adds an Agent01-to-Inspiration LangGraph
+runtime, year-bounded Crossref/OpenAlex search, a SHA-pinned local semantic
+embedding provider, a one-call DeepSeek grounded reranker, a controlled
+Hermes-native evolution profile, and a fail-closed soft-chemistry downstream
+bridge. None of these opt-in paths changes the default four-stage route or
+promotes a hypothesis to scientific evidence.
+
 The execution plan always contains the ordered
 `retrieval → ml → dft → many_body` routes. Agent 01 is the only default
 production scientific runner. Agent02 has both the P0.2 Fake path and an
@@ -70,6 +77,8 @@ until a trusted local operator records a one-time grant bound to the request,
 complete interaction, frozen execution manifest, and exact action. See
 [`integrations/hermes/README.md`](integrations/hermes/README.md) for installation,
 approval, crash recovery, and profile commands.
+标准的一键部署与启动步骤见
+[Materials Inspiration 标准部署与启动](docs/materials-inspiration-startup.md)。
 
 The source-controlled production profile pins the durable queued Gateway
 factory. A successful authorized `materials_run_act` atomically consumes the
@@ -77,6 +86,84 @@ grant, enqueues the job, and returns `RUNNING`; an independently supervised
 worker performs the bounded run and Hermes polls `materials_run_get` until a
 terminal state. The synchronous public factory remains a compatibility/testing
 entry point and is not the default profile.
+
+The separate `materials-inspiration-evolution` profile enables Hermes's native
+memory, Skill management, background review, curator, and flat delegation. It
+is read-only with respect to materials runs: only `materials_run_get` and
+`materials_result_get` are exposed, all learning writes require human approval,
+and delegated children inherit no Materials MCP tools. See
+[ADR 0003](docs/adr/0003-hermes-controlled-evolution-profile.md).
+
+### Opt-in Agent01 → Inspiration LangGraph runtime
+
+`InspirationCompositeRuntimeV2` resolves an existing Agent01 run from the same
+project workspace, verifies the Requirement, terminal retrieval control result,
+candidate manifest, and every dynamic structure URI/SHA, then executes the
+versioned Inspiration LangGraph. It is an explicit runtime API rather than a
+fifth default `StageId`; there is not yet a CLI wrapper or independent composite
+checkpoint/recovery layer.
+
+### Semantic and historical-literature RAG
+
+Search policies may freeze `publication_year_from/to`. The opt-in public search
+factory can execute both Crossref and OpenAlex, preserve each provider's exact
+response bytes and provenance, and locally reject records outside the year
+window. Crossref remains the default; OpenAlex requires its own API key and
+explicit multi-source configuration.
+
+Real embeddings use an isolated, local-only Sentence Transformers bundle whose
+complete file set, tokenizer, config, dependency lock, model revision, license
+metadata, dimension, and output bytes are SHA-bound. The engineering baseline
+is `all-MiniLM-L6-v2` at commit `1110a243...`; prepare it with
+[`integrations/semantic/bootstrap_local_bundle.py`](integrations/semantic/bootstrap_local_bundle.py).
+Signed hashing remains a lexical baseline and is never renamed as semantic.
+
+DeepSeek is separately available as a bounded grounded reranker/judge. Only
+selected `PassageV1`, `EvidenceCardV1`, and local candidate descriptions are
+sent; every returned candidate and citation must close over those inputs. It is
+not an embedding endpoint and cannot make novelty or validation claims. Enable
+it only through process environment or Keychain:
+
+```bash
+export MATERIAL_AGENT_INSPIRATION_RAG_PROVIDER=deepseek
+export MATERIAL_AGENT_LLM_PROVIDER=deepseek
+export MATERIAL_AGENT_LLM_BASE_URL=https://api.deepseek.com
+export MATERIAL_AGENT_LLM_MODEL=deepseek-v4-pro
+```
+
+### Soft-chemistry downstream bridge
+
+Every proposed output composition first passes the pinned
+`smact-inorganic-prior-policy-v1` gate (`SMACT==4.0.0`). SMACT and its required
+ASE dependency run in an independent `.venv-smact` JSON worker and are forbidden
+from the main `.venv`:
+
+```bash
+.venv/bin/python -m venv --copies .venv-smact
+.venv-smact/bin/python -m pip install -r requirements.lock -r requirements-smact.lock
+.venv-smact/bin/python -m pip install --no-deps -e .
+export MATERIAL_AGENT_SMACT_WORKER_PYTHON="$PWD/.venv-smact/bin/python"
+```
+
+The gate applies the
+ICSD24 occurrence-filtered oxidation-state set, charge neutrality, and the
+Pauling electronegativity heuristic. Missing chemical data, alloys, dependency
+drift, or bounded-search limits return `REQUIRES_REVIEW`; a failed composition
+returns `REJECT`; only `PASS` reaches `softchem-operator-registry-v1`. The prior
+decision binds the reviewed worker-lock SHA, remains evidence `NONE`, and is not
+a stability or synthesizability claim. Missing worker configuration fails closed
+as `REQUIRES_REVIEW`.
+
+The registry then allowlists the existing equivalent-site substitution
+operator and validates structure, stoichiometry, explicit oxidation state,
+charge, and registry Artifact identity. `SoftChemDownstreamRunner` refuses any
+operator result without exactly one passing SMACT check, then binds the exact
+result to optional CHGNet relaxation, DeepH, and DFT plans.
+Every native health/model/policy/approval/applicability gate is rechecked;
+unavailable capabilities return `BLOCKED` or `NOT_RUN`, mock results cannot
+promote evidence, and DFT submission alone does not claim L3. The currently
+reviewed CHGNet production domain is still only 3D elemental Si, so Ti/Se
+proposals correctly remain blocked pending a reviewed domain extension.
 
 The reproducible fixed-pilot smoke uses the actual MCP stdio subprocess. A full
 replay must use a fresh, empty ignored workspace and a fresh submission ID; an

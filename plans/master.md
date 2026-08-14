@@ -146,6 +146,21 @@ case 自报唯一 mechanism group，因为两者都会制造虚假的独立样�
   入库、不得表述为绿色 Gate。用户决定暂停科研轨道修复、优先交付 MVP（见
   `docs/MVP.md`；MVP 主链已于 2026-08-10 在真实 MC3D 上端到端验证）；三个失败不影响
   MVP 主链。
+- **2026-08-11 Inspiration/LangGraph/Hermes/语义/软化学扩展 checkpoint：** 新增显式
+  opt-in `orchestrator-composite-inspiration-v2` LangGraph/runtime，从既有 Agent01 run
+  hash-verified 解析动态 candidate manifest 与结构，不改变默认四阶段或 `StageId`；新增
+  Crossref/OpenAlex 年代窗口、多源 raw/provenance envelope 与本地年份复核，默认仍 Crossref；
+  新增 SHA-pinned local Sentence Transformers 真实 provider，并以固定 MiniLM bundle 完成
+  384 维、L2=1.0 本地 smoke；DeepSeek 仅作为 bounded grounded reranker/judge，真实单调用
+  live Gate `1 passed`，不冒充 embedding；新增独立 Hermes evolution profile，复用原生
+  memory/skills/delegation 且只读材料结果、所有学习写入人工审批，锁定 runtime 安装演练与
+  verifier `3 passed`；新增 `softchem-operator-registry-v1` 和
+  `SoftChemDownstreamRunner`，复用真实 CHGNet/DeepH/DFT native Gate，不可用时
+  `BLOCKED/NOT_RUN`，mock 不得升级证据。合并后非 flatband 全量离线 Gate 为
+  `1035 passed, 16 skipped`（114.77s），两套 Hermes verifier 与 `pip check` / diff check
+  通过。当前未完成 OpenAlex live Gate、材料领域 embedding
+  gold/准确率 Gate、Ti/Se CHGNet 适用域扩展、真实 DeepH/DFT 计算和 composite 独立
+  checkpoint/CLI，因此不得写成科研全链完成。
 
 public production 仍为 NO-GO：queued production 与 worker lifecycle 已激活，但 parent
 worker 被 hard-kill 后独立 action child 的清理/回收契约仍未闭合；真实 provider 全链、
@@ -601,6 +616,25 @@ flowchart LR
 - [ ] gold set 的维护人、来源与判定流程。
 
 这些事项不影响已完成的 P0 mock 控制链，但会阻塞真实 DFT、多体和科学验收。
+
+### 2026-08-14：Hermes 直跑超时与重复进程修复
+
+- 标准部署收敛为 dashboard、共享 MCP Hub/queued worker、monitor 三个 owned 顶层
+  进程；多 TUI session 复用同一 HTTP Hub，stop 可回收跨进程组后代。
+- C2DB 在 table listing 上先做 exact-formula 预筛，再有界并发下载结构；真实 TiS2
+  smoke 为 5 个结构、约 32 秒。
+- DFT 外科研入口改为后台 `RUNNING`/canonical poll；同一请求具备进程内去重、跨进程
+  lock、终态 Artifact 幂等和 Orchestrator `resume()` 恢复。
+- 这些改动修复工程执行与恢复，不提升 CHGNet/DeepH/DFT/多体证据等级；真实 ML
+  适用域、DFT 与多体后端的既有 blocker 不变。
+- 后续故障审计补齐三个遗漏：自然语言直跑不再要求用户提供 submission/workflow ID，
+  请求身份绑定内部实现 revision；research terminal failure 与 Orchestrator run/stage/attempt
+  以事务对齐，并迁移旧 RUNNING 投影；detached dashboard TUI 只保留 10 秒且每 2 秒回收，
+  不再让多个浏览器 token 长期留下 Node/Python 子进程。
+- 修复后标准部署健康，旧 `agent01-ed81...` 的 run/stage/attempt 已分别对齐为
+  `FAILED/PERMANENT_FAILED/PERMANENT_FAILED`；自然语言 Schema 的唯一 required field 为
+  `goal`，服务端生成 `auto-*` submission 和 revision-bound run ID。完整非 flatband 离线
+  Gate 为 `1060 passed, 17 skipped`，三个隔离环境依赖检查与 diff check 通过。
 
 ## 8. 下一步
 

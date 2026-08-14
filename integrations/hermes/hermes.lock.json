@@ -9,6 +9,7 @@
   "uv_extras": [
     "cli",
     "mcp",
+    "slack",
     "web"
   ]
 }

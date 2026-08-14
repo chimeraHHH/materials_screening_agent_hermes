@@ -62,6 +62,12 @@ def pytest_addoption(parser) -> None:
         default=False,
         help="run opt-in DeepSeek Stage0 LLM release tests",
     )
+    parser.addoption(
+        "--run-live-semantic-rag",
+        action="store_true",
+        default=False,
+        help="run opt-in DeepSeek grounded semantic-RAG release tests",
+    )
 
 
 def pytest_collection_modifyitems(config, items) -> None:
@@ -75,6 +81,9 @@ def pytest_collection_modifyitems(config, items) -> None:
     real_ml_marker = pytest.mark.skip(reason="requires explicit --run-real-ml")
     live_llm_marker = pytest.mark.skip(
         reason="requires explicit --run-live-llm"
+    )
+    live_semantic_rag_marker = pytest.mark.skip(
+        reason="requires explicit --run-live-semantic-rag"
     )
     for item in items:
         if (
@@ -102,6 +111,11 @@ def pytest_collection_modifyitems(config, items) -> None:
             and not config.getoption("--run-live-llm")
         ):
             item.add_marker(live_llm_marker)
+        if (
+            "live_semantic_rag" in item.keywords
+            and not config.getoption("--run-live-semantic-rag")
+        ):
+            item.add_marker(live_semantic_rag_marker)
 
 
 @pytest.fixture

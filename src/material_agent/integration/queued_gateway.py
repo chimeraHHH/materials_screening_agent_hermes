@@ -167,6 +167,10 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--lease-seconds", type=int, default=30)
     parser.add_argument("--heartbeat-seconds", type=float)
     parser.add_argument("--kill-grace-seconds", type=float, default=2.0)
+    parser.add_argument("--mcp-host")
+    parser.add_argument("--mcp-port", type=int)
+    parser.add_argument("--smact-worker-python")
+    parser.add_argument("--chgnet-worker-python")
     return parser
 
 
@@ -184,6 +188,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
     if not 0 < args.kill_grace_seconds <= 2:
         raise SystemExit("--kill-grace-seconds must be greater than zero and at most 2")
+    if (args.mcp_host is None) != (args.mcp_port is None):
+        raise SystemExit("--mcp-host and --mcp-port must be supplied together")
+    if args.mcp_host is not None and args.smact_worker_python is None:
+        raise SystemExit("--smact-worker-python is required with the MCP HTTP Hub")
     settings = GatewayServerSettings(args.workspace, args.project)
     service = (
         create_queued_hermes_fixture_service(settings)
@@ -198,6 +206,38 @@ def main(argv: Sequence[str] | None = None) -> int:
         heartbeat_interval_seconds=args.heartbeat_seconds,
         kill_grace_seconds=args.kill_grace_seconds,
     )
+    hub = None
+    if args.mcp_host is not None:
+        from material_agent.gateway.mcp_server import (
+            GatewayToolDispatcher,
+            create_mcp_server as create_gateway_mcp_server,
+        )
+        from material_agent.integration.mcp_http import MCPHttpHub
+        from material_agent.integration.research_pipeline import ResearchPipelineService
+        from material_agent.integration.research_pipeline_mcp import (
+            ResearchPipelineDispatcher,
+            create_mcp_server as create_research_mcp_server,
+        )
+
+        research_service = ResearchPipelineService(
+            workspace=args.workspace,
+            project_id=args.project,
+            smact_worker_python=args.smact_worker_python,
+            chgnet_worker_python=args.chgnet_worker_python,
+        )
+        hub = MCPHttpHub(
+            {
+                "materials": create_gateway_mcp_server(
+                    GatewayToolDispatcher(service)
+                ),
+                "research": create_research_mcp_server(
+                    ResearchPipelineDispatcher(research_service)
+                ),
+            },
+            host=args.mcp_host,
+            port=args.mcp_port,
+        )
+        hub.start()
     stopped = False
 
     def stop(_signum: int, _frame: object) -> None:
@@ -207,40 +247,44 @@ def main(argv: Sequence[str] | None = None) -> int:
     signal.signal(signal.SIGTERM, stop)
     signal.signal(signal.SIGINT, stop)
     worker_id = f"gateway-worker-{os.getpid()}"
-    while not stopped:
-        try:
-            job = supervisor.run_once(
-                worker_id=worker_id,
-                stop_requested=lambda: stopped,
-            )
-        except Exception as exc:
-            print(
-                json.dumps(
-                    {
-                        "error": type(exc).__name__,
-                        "status": "WORKER_ERROR",
-                    },
-                    sort_keys=True,
-                ),
-                flush=True,
-            )
-            return 1
-        if job is not None:
-            print(
-                json.dumps(
-                    {
-                        "job_id": job.job_id,
-                        "status": job.status.value,
-                    },
-                    sort_keys=True,
-                ),
-                flush=True,
-            )
-        if args.once:
-            return 0
-        if job is None:
-            time.sleep(args.poll_seconds)
-    return 0
+    try:
+        while not stopped:
+            try:
+                job = supervisor.run_once(
+                    worker_id=worker_id,
+                    stop_requested=lambda: stopped,
+                )
+            except Exception as exc:
+                print(
+                    json.dumps(
+                        {
+                            "error": type(exc).__name__,
+                            "status": "WORKER_ERROR",
+                        },
+                        sort_keys=True,
+                    ),
+                    flush=True,
+                )
+                return 1
+            if job is not None:
+                print(
+                    json.dumps(
+                        {
+                            "job_id": job.job_id,
+                            "status": job.status.value,
+                        },
+                        sort_keys=True,
+                    ),
+                    flush=True,
+                )
+            if args.once:
+                return 0
+            if job is None:
+                time.sleep(args.poll_seconds)
+        return 0
+    finally:
+        if hub is not None:
+            hub.stop()
 
 
 if __name__ == "__main__":

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from copy import deepcopy
 import json
+import threading
+import time
 from typing import Any
 
 from material_agent.retrieval.adapters import (
@@ -276,6 +278,75 @@ def test_c2db_adapter_maps_table_properties_and_ase_json(
     assert documents[0]["nsites"] == 2
     assert documents[0]["source_response"]["table_row"]["uid"] == "2SiO-1"
     assert documents[0]["source_response"]["download_json"] == atoms
+
+
+def test_c2db_filters_exact_formula_before_parallel_structure_downloads(
+    requirement,
+) -> None:
+    hard = requirement.hard_constraints.model_copy(
+        update={"exact_formula": "SiO"}
+    )
+    selected = requirement.model_copy(update={"hard_constraints": hard})
+    table = """
+    <input type="hidden" name="sid" value="9"><table><tbody>
+    <tr><th scope="row"><a href=/material/a>SiO</a></th>
+    <th scope="row">0.01</th><th scope="row">-1</th><th scope="row">1</th>
+    <th scope="row">No</th><th scope="row">p1</th></tr>
+    <tr><th scope="row"><a href=/material/b>OSi</a></th>
+    <th scope="row">0.01</th><th scope="row">-1</th><th scope="row">1</th>
+    <th scope="row">No</th><th scope="row">p1</th></tr>
+    <tr><th scope="row"><a href=/material/distractor>SiO2</a></th>
+    <th scope="row">0.01</th><th scope="row">-1</th><th scope="row">1</th>
+    <th scope="row">No</th><th scope="row">p1</th></tr>
+    </tbody></table>
+    <li class="page-item disabled"><a class="page-link"
+      hx-get="/table?sid=9&page=0" title=">">&gt;</a></li>
+    """
+    atoms = {
+        "1": {
+            "numbers": [14, 8],
+            "positions": [[0, 0, 5], [1, 1, 5]],
+            "cell": [[3, 0, 0], [0, 3, 0], [0, 0, 15]],
+        }
+    }
+
+    class ConcurrentSession:
+        def __init__(self) -> None:
+            self.downloads: list[str] = []
+            self.active = 0
+            self.max_active = 0
+            self.lock = threading.Lock()
+
+        def get(self, url: str, **_kwargs):
+            if url.endswith("/help"):
+                return FakeResponse(text="C2DB UID Band gap (PBE)")
+            if url.endswith("/"):
+                return FakeResponse(text='<form hx-get="/table?sid=9">')
+            if "/table" in url:
+                return FakeResponse(text=table)
+            with self.lock:
+                self.downloads.append(url)
+                self.active += 1
+                self.max_active = max(self.max_active, self.active)
+            time.sleep(0.03)
+            with self.lock:
+                self.active -= 1
+            return FakeResponse(atoms)
+
+    session = ConcurrentSession()
+    adapter = C2dbAdapter(session=session, max_concurrent_downloads=2)
+    plan = build_query_plan(
+        selected,
+        "d" * 64,
+        adapter.metadata(),
+        retrieval_policy_for_source(SourceDatabase.C2DB),
+    )
+
+    documents = adapter.search(plan)
+
+    assert [item["material_id"] for item in documents] == ["a", "b"]
+    assert all("distractor" not in url for url in session.downloads)
+    assert session.max_active == 2
 
 
 def test_tqc_adapter_preserves_topology_as_provenance(

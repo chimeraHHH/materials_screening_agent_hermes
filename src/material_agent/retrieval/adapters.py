@@ -14,11 +14,12 @@ import subprocess
 import time
 from collections.abc import Sequence
 from collections.abc import Callable, Mapping
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Protocol
 from urllib.parse import urljoin
 
 import requests
-from pymatgen.core import Element, Lattice, Structure
+from pymatgen.core import Composition, Element, Lattice, Structure
 
 from material_agent.retrieval.models import (
     RetrievalQueryPlan,
@@ -720,10 +721,20 @@ class C2dbAdapter:
         base_url: str = "https://c2db.fysik.dtu.dk",
         session: requests.Session | None = None,
         timeout_seconds: float = 30.0,
+        max_concurrent_downloads: int = 8,
+        download_session_factory: Callable[[], Any] | None = None,
     ) -> None:
+        if not 1 <= max_concurrent_downloads <= 32:
+            raise ValueError("C2DB max_concurrent_downloads must be between 1 and 32")
         self.base_url = base_url.rstrip("/")
         self.session = session or requests.Session()
         self.timeout_seconds = timeout_seconds
+        self.max_concurrent_downloads = max_concurrent_downloads
+        self.download_session_factory = (
+            download_session_factory
+            if download_session_factory is not None
+            else (requests.Session if session is None else None)
+        )
 
     def metadata(self) -> SourceMetadata:
         response = self.session.get(
@@ -779,18 +790,42 @@ class C2dbAdapter:
                 break
             page += 1
 
-        documents = [self._material(row) for row in rows]
+        rows = [
+            row
+            for row in rows
+            if _c2db_row_matches_predownload_filters(
+                row, plan.predownload_filters
+            )
+        ]
+        if not rows:
+            return []
+        workers = min(self.max_concurrent_downloads, len(rows))
+        with ThreadPoolExecutor(
+            max_workers=workers,
+            thread_name_prefix="c2db-download",
+        ) as executor:
+            documents = list(executor.map(self._material, rows))
         return sorted(documents, key=lambda item: str(item["material_id"]))
 
     def _material(self, row: dict[str, str]) -> dict[str, Any]:
         uid = row["uid"]
-        payload = _response_json(
-            self.session.get(
+        session = (
+            self.download_session_factory()
+            if self.download_session_factory is not None
+            else self.session
+        )
+        close_session = session is not self.session
+        try:
+            response = session.get(
                 f"{self.base_url}/material/{uid}/download/json",
                 timeout=self.timeout_seconds,
-            ),
-            f"C2DB material {uid}",
-        )
+            )
+            payload = _response_json(response, f"C2DB material {uid}")
+        finally:
+            if close_session:
+                close = getattr(session, "close", None)
+                if callable(close):
+                    close()
         atoms = payload.get("1")
         if not isinstance(atoms, dict):
             raise ValueError(f"C2DB material {uid} is missing atoms record '1'")
@@ -1603,6 +1638,25 @@ def _c2db_params(filters: dict[str, Any]) -> dict[str, str]:
         terms.append(f"natoms<={int(sites[1])}")
         params["filter"] = ",".join(terms)
     return params
+
+
+def _c2db_row_matches_predownload_filters(
+    row: Mapping[str, str], filters: Mapping[str, Any]
+) -> bool:
+    """Apply only exact, listing-derived filters before structure downloads."""
+
+    exact_formula = filters.get("exact_formula")
+    if exact_formula is None:
+        return True
+    row_formula = row.get("formula")
+    if not isinstance(exact_formula, str) or not isinstance(row_formula, str):
+        raise ValueError("C2DB exact-formula predownload filter is invalid")
+    try:
+        expected = Composition(exact_formula).reduced_composition
+        observed = Composition(row_formula).reduced_composition
+    except ValueError as exc:
+        raise ValueError("C2DB table contains an invalid formula") from exc
+    return observed == expected
 
 
 def _parse_c2db_table(

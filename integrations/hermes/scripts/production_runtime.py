@@ -20,6 +20,8 @@ from pathlib import Path
 from threading import Lock
 from typing import Any, Iterator
 
+from managed_checkout import ManagedCheckoutError, repair_generated_package_locks
+
 from production_ops import (
     PID_SCHEMA_VERSION,
     ProductionOpsError,
@@ -112,6 +114,7 @@ _PROVIDER_ENVIRONMENT_ALLOWLIST = {
             "AWS_SESSION_TOKEN",
         }
     ),
+    "deepseek": frozenset({"DEEPSEEK_API_KEY", "DEEPSEEK_BASE_URL"}),
     "google": frozenset(
         {
             "GEMINI_API_KEY",
@@ -149,6 +152,34 @@ _BOOTSTRAP_THREAD_LOCK = Lock()
 
 class ProductionRuntimeError(RuntimeError):
     pass
+
+
+_DEEPSEEK_RETIRED_MODEL_ALIASES = frozenset(
+    {
+        "deepseek-chat",
+        "deepseek-reasoner",
+    }
+)
+
+# Hermes' interactive chat and the materials research RAG deliberately use
+# different provider contracts.  The dashboard may track the current fast
+# chat model, while ``DeepSeekProvider`` in the scientific pipeline is frozen
+# to the audited JSON-mode model below.  Never derive this value from
+# ``settings.model`` or a parent shell that was configured for Hermes chat.
+MATERIALS_RESEARCH_RAG_MODEL = "deepseek-v4-pro"
+
+
+def _canonical_model(provider: str, model: str) -> str:
+    """Match the model persisted in the UI to Hermes' runtime identity."""
+
+    provider_family = provider.casefold().split(":", 1)[0]
+    bare_model = model.rsplit("/", 1)[-1].casefold()
+    if (
+        provider_family == "deepseek"
+        and bare_model in _DEEPSEEK_RETIRED_MODEL_ALIASES
+    ):
+        return "deepseek-v4-flash"
+    return model
 
 
 def parse_version(value: str) -> tuple[int, int, int]:
@@ -250,6 +281,27 @@ def _hermes_identity_check() -> dict[str, str]:
     return {"commit": resolved_commit, "version": expected_version}
 
 
+def _repair_hermes_generated_drift() -> tuple[str, ...]:
+    """Repair only npm lock metadata that the managed Hermes UI may rewrite."""
+
+    try:
+        lock = json.loads(HERMES_LOCK.read_text(encoding="utf-8"))
+        repaired = repair_generated_package_locks(
+            HERMES_SOURCE,
+            expected_commit=str(lock["resolved_commit"]),
+        )
+    except (OSError, KeyError, json.JSONDecodeError, ManagedCheckoutError) as exc:
+        raise ProductionRuntimeError(
+            "Hermes runtime left unsafe checkout drift"
+        ) from exc
+    if repaired:
+        print(
+            "Restored npm-generated Hermes lockfile drift: " + ", ".join(repaired),
+            file=sys.stderr,
+        )
+    return repaired
+
+
 @dataclass(frozen=True)
 class Settings:
     workspace: Path
@@ -306,6 +358,18 @@ class Settings:
         return self.project_root
 
     @property
+    def mcp_host(self) -> str:
+        return self.monitor_host
+
+    @property
+    def mcp_port(self) -> int:
+        return self.monitor_port + 1
+
+    @property
+    def mcp_base_url(self) -> str:
+        return f"http://{self.mcp_host}:{self.mcp_port}"
+
+    @property
     def dashboard_log(self) -> Path:
         return self.ops_dir / "dashboard.log"
 
@@ -344,13 +408,18 @@ class Settings:
             raise ProductionRuntimeError(
                 "--model or MATERIALS_HERMES_MODEL is required"
             )
+        model = _canonical_model(provider, model)
         if args.dashboard_host not in _LOOPBACK or args.monitor_host not in _LOOPBACK:
             raise ProductionRuntimeError("dashboard and monitor must remain loopback-bound")
         for port in (args.dashboard_port, args.monitor_port):
             if not 1 <= port <= 65_535:
                 raise ProductionRuntimeError("runtime port is outside the valid range")
+        if args.monitor_port == 65_535:
+            raise ProductionRuntimeError("monitor port leaves no port for the MCP Hub")
         if args.dashboard_port == args.monitor_port:
             raise ProductionRuntimeError("dashboard and monitor ports must differ")
+        if args.dashboard_port == args.monitor_port + 1:
+            raise ProductionRuntimeError("dashboard and MCP Hub ports must differ")
         hermes_home = (
             Path(args.hermes_home).expanduser().resolve()
             if args.hermes_home
@@ -459,6 +528,7 @@ def _runtime_binding(settings: Settings) -> dict[str, Any]:
         "hermes_home": str(settings.hermes_home),
         "monitor_host": settings.monitor_host,
         "monitor_port": settings.monitor_port,
+        "mcp_base_url": settings.mcp_base_url,
         "ops_dir": str(settings.ops_dir),
         "process_file": str(settings.process_file),
         "profile": settings.profile,
@@ -477,6 +547,19 @@ def _runtime_binding_sha256(settings: Settings) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
+def _runtime_binding_allows_stop(record: dict[str, Any], settings: Settings) -> bool:
+    """Allow additive binding upgrades while preserving every old state root."""
+
+    existing = record.get("runtime_binding")
+    if not isinstance(existing, dict):
+        return False
+    current = _runtime_binding(settings)
+    required = set(current) - {"mcp_base_url"}
+    return required <= set(existing) and all(
+        existing[key] == current[key] for key in required
+    )
+
+
 def _selected_environment(keys: frozenset[str] | set[str]) -> dict[str, str]:
     return {key: os.environ[key] for key in sorted(keys) if key in os.environ}
 
@@ -484,7 +567,14 @@ def _selected_environment(keys: frozenset[str] | set[str]) -> dict[str, str]:
 def _material_agent_environment(settings: Settings) -> dict[str, str]:
     return {
         "MATERIAL_AGENT_PROJECT_ID": settings.project,
-        "MATERIAL_AGENT_PYTHON": str((GATEWAY_ENV / "bin" / "python").resolve()),
+        "MATERIAL_AGENT_MCP_BASE_URL": settings.mcp_base_url,
+        # Keep the virtual-environment entrypoint.  Resolving this uv-created
+        # symlink yields the base CPython binary and drops the Gateway site-packages
+        # when Hermes starts the MCP server.
+        "MATERIAL_AGENT_PYTHON": str(GATEWAY_ENV / "bin" / "python"),
+        "MATERIAL_AGENT_SMACT_WORKER_PYTHON": str(
+            REPOSITORY_ROOT / ".venv-smact" / "bin" / "python"
+        ),
         "MATERIAL_AGENT_WORKSPACE": str(settings.workspace),
         "PYTHONDONTWRITEBYTECODE": "1",
         "PYTHONUNBUFFERED": "1",
@@ -506,6 +596,12 @@ def _runtime_env(settings: Settings) -> dict[str, str]:
             **_material_agent_environment(settings),
         }
     )
+    if (
+        provider_family == "deepseek"
+        and environment.get("DEEPSEEK_API_KEY")
+        and not environment.get("MATERIAL_AGENT_LLM_API_KEY")
+    ):
+        environment["MATERIAL_AGENT_LLM_API_KEY"] = environment["DEEPSEEK_API_KEY"]
     return environment
 
 
@@ -521,13 +617,35 @@ def _build_env(settings: Settings) -> dict[str, str]:
 
 
 def _worker_env(settings: Settings) -> dict[str, str]:
-    """Build the no-model-credential Crossref worker environment."""
+    """Build the bounded Gateway/MCP Hub worker environment."""
 
     allowed = set(_COMMON_CHILD_ENVIRONMENT_ALLOWLIST)
     allowed.update(_NETWORK_CHILD_ENVIRONMENT_ALLOWLIST)
-    allowed.add("MATERIALS_CROSSREF_CONTACT_EMAIL")
+    allowed.update(
+        {
+            "DEEPSEEK_API_KEY",
+            "DEEPSEEK_BASE_URL",
+            "MATERIALS_CROSSREF_CONTACT_EMAIL",
+            "MATERIAL_AGENT_INSPIRATION_RAG_PROVIDER",
+            "MATERIAL_AGENT_LLM_API_KEY",
+            "MATERIAL_AGENT_LLM_BASE_URL",
+            "MATERIAL_AGENT_LLM_MODEL",
+            "MATERIAL_AGENT_ML_WORKER_PYTHON",
+        }
+    )
     environment = _selected_environment(allowed)
     environment.update(_material_agent_environment(settings))
+    if (
+        environment.get("MATERIAL_AGENT_INSPIRATION_RAG_PROVIDER", "")
+        .strip()
+        .casefold()
+        == "deepseek"
+    ):
+        environment["MATERIAL_AGENT_LLM_MODEL"] = MATERIALS_RESEARCH_RAG_MODEL
+    if environment.get("DEEPSEEK_API_KEY") and not environment.get(
+        "MATERIAL_AGENT_LLM_API_KEY"
+    ):
+        environment["MATERIAL_AGENT_LLM_API_KEY"] = environment["DEEPSEEK_API_KEY"]
     return environment
 
 
@@ -621,6 +739,7 @@ def _build_dashboard(settings: Settings) -> None:
         env=environment,
         timeout=1_800,
     )
+    _repair_hermes_generated_drift()
     index = HERMES_SOURCE / "hermes_cli" / "web_dist" / "index.html"
     if not index.is_file() or index.stat().st_size == 0:
         raise ProductionRuntimeError("Hermes dashboard build did not produce index.html")
@@ -647,6 +766,8 @@ def _profile_probe(settings: Settings) -> dict[str, Any]:
             str(settings.workspace),
             "--expected-project",
             settings.project,
+            "--expected-mcp-base-url",
+            settings.mcp_base_url,
             "--expected-source-profile",
             str(PROFILE_SOURCE),
         ],
@@ -685,6 +806,7 @@ def _preflight(settings: Settings, *, live_crossref: bool) -> dict[str, Any]:
         raise ProductionRuntimeError("Gateway Python must be 3.11")
     if _python_minor(HERMES_ENV / "bin" / "python") != "3.11":
         raise ProductionRuntimeError("Hermes Python must be 3.11")
+    _repair_hermes_generated_drift()
     hermes = _hermes_identity_check()
     profile = _profile_probe(settings)
     gateway = _gateway_probe(settings, live_crossref=live_crossref)
@@ -778,28 +900,80 @@ def _terminate(
         return False
     assert record is not None
     pid = int(record["pid"])
+    descendants = _owned_descendants(pid)
+    for child in descendants:
+        _signal_owned_process(child, signal.SIGTERM)
+    _signal_owned_process(record, signal.SIGTERM)
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        if not owned_process_alive(record) and not any(
+            owned_process_alive(child) for child in descendants
+        ):
+            return True
+        time.sleep(0.1)
+    for child in descendants:
+        _signal_owned_process(child, signal.SIGKILL)
+    _signal_owned_process(record, signal.SIGKILL)
+    return not owned_process_alive(record) and not any(
+        owned_process_alive(child) for child in descendants
+    )
+
+
+def _owned_descendants(root_pid: int) -> tuple[dict[str, Any], ...]:
+    """Capture exact descendant identities before a parent can reparent them."""
+
+    try:
+        completed = subprocess.run(
+            ["ps", "-axo", "pid=,ppid="],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return ()
+    children: dict[int, list[int]] = {}
+    for line in completed.stdout.splitlines():
+        fields = line.split()
+        if len(fields) != 2:
+            continue
+        try:
+            child_pid, parent_pid = (int(value) for value in fields)
+        except ValueError:
+            continue
+        children.setdefault(parent_pid, []).append(child_pid)
+    pending: list[tuple[int, int]] = [(root_pid, 0)]
+    discovered: list[tuple[int, int]] = []
+    while pending:
+        parent, depth = pending.pop()
+        for child_pid in children.get(parent, ()):
+            discovered.append((child_pid, depth + 1))
+            pending.append((child_pid, depth + 1))
+    identities: list[tuple[int, dict[str, Any]]] = []
+    for child_pid, depth in discovered:
+        identity = process_identity(child_pid)
+        if identity is not None:
+            identities.append((depth, identity))
+    return tuple(
+        identity
+        for _, identity in sorted(
+            identities, key=lambda item: item[0], reverse=True
+        )
+    )
+
+
+def _signal_owned_process(record: dict[str, Any], signum: int) -> None:
+    if not owned_process_alive(record):
+        return
+    pid = int(record["pid"])
     try:
         process_group = os.getpgid(pid)
         if process_group == pid:
-            os.killpg(process_group, signal.SIGTERM)
+            os.killpg(process_group, signum)
         else:
-            os.kill(pid, signal.SIGTERM)
+            os.kill(pid, signum)
     except (OSError, ProcessLookupError):
-        return False
-    deadline = time.monotonic() + timeout_seconds
-    while time.monotonic() < deadline:
-        if not owned_process_alive(record):
-            return True
-        time.sleep(0.1)
-    if owned_process_alive(record):
-        try:
-            if os.getpgid(pid) == pid:
-                os.killpg(pid, signal.SIGKILL)
-            else:
-                os.kill(pid, signal.SIGKILL)
-        except (OSError, ProcessLookupError):
-            pass
-    return not owned_process_alive(record)
+        return
 
 
 def _wait_http(url: str, *, process: dict[str, Any], timeout_seconds: int) -> bool:
@@ -814,7 +988,7 @@ def _wait_http(url: str, *, process: dict[str, Any], timeout_seconds: int) -> bo
 
 
 def _worker_command(settings: Settings) -> list[str]:
-    return [
+    command = [
         str(GATEWAY_ENV / "bin" / "python"),
         "-m",
         "material_agent.integration.queued_gateway",
@@ -826,7 +1000,26 @@ def _worker_command(settings: Settings) -> list[str]:
         str(WORKER_POLL_SECONDS),
         "--lease-seconds",
         str(WORKER_LEASE_SECONDS),
+        "--mcp-host",
+        settings.mcp_host,
+        "--mcp-port",
+        str(settings.mcp_port),
+        "--smact-worker-python",
+        str(REPOSITORY_ROOT / ".venv-smact" / "bin" / "python"),
     ]
+    worker_python = os.environ.get("MATERIAL_AGENT_ML_WORKER_PYTHON", "").strip()
+    if not worker_python:
+        default_worker = REPOSITORY_ROOT / ".venv-agent02" / "bin" / "python"
+        if default_worker.is_file():
+            worker_python = str(default_worker)
+    if worker_python:
+        selected = Path(worker_python)
+        if not selected.is_absolute() or not selected.is_file():
+            raise ProductionRuntimeError(
+                "MATERIAL_AGENT_ML_WORKER_PYTHON must be an existing absolute file"
+            )
+        command.extend(("--chgnet-worker-python", str(selected)))
+    return command
 
 
 def _monitor_command(settings: Settings, *, binding_sha256: str) -> list[str]:
@@ -868,7 +1061,10 @@ def _wait_worker_ready(
         if not owned_process_alive(process):
             return False
         queue = gateway_queue_snapshot(settings.approval_database)
-        if queue["integrity"]:
+        hub = probe_http_json(
+            f"{settings.mcp_base_url}/healthz", timeout_seconds=1.0
+        )
+        if queue["integrity"] and hub["ok"]:
             consecutive_ready_checks += 1
             if consecutive_ready_checks >= 3:
                 return True
@@ -983,10 +1179,10 @@ def _start(
                 "queued Gateway worker did not become ready on the shared approval database"
             )
 
-        hermes = HERMES_ENV / "bin" / "hermes"
         dashboard = _spawn(
             [
-                str(hermes),
+                str(HERMES_ENV / "bin" / "python"),
+                str(SCRIPTS_ROOT / "managed_dashboard.py"),
                 "-p",
                 settings.profile,
                 "dashboard",
@@ -1066,7 +1262,10 @@ def _stop(settings: Settings) -> dict[str, Any]:
         }
     if record.get("schema_version") != PID_SCHEMA_VERSION:
         raise ProductionRuntimeError("runtime process file schema is unknown")
-    if record.get("runtime_binding_sha256") != _runtime_binding_sha256(settings):
+    if (
+        record.get("runtime_binding_sha256") != _runtime_binding_sha256(settings)
+        and not _runtime_binding_allows_stop(record, settings)
+    ):
         raise ProductionRuntimeError("runtime process file is bound to different state roots")
     processes = record.get("processes", {})
     dashboard = _terminate(
@@ -1092,6 +1291,9 @@ def _stop(settings: Settings) -> dict[str, Any]:
             "stopped_at": utc_now(),
         },
     )
+    # Persist the stopped ownership record before checkout cleanup so even an
+    # unsafe, non-lockfile edit cannot leave dead processes recorded as live.
+    repaired_lockfiles = _repair_hermes_generated_drift()
     append_event(
         settings.event_log,
         event="stop",
@@ -1099,6 +1301,7 @@ def _stop(settings: Settings) -> dict[str, Any]:
         details={
             "dashboard_stopped": dashboard,
             "monitor_stopped": monitor,
+            "repaired_lockfile_count": len(repaired_lockfiles),
             "worker_stopped": worker,
         },
     )
@@ -1133,12 +1336,16 @@ def _status(settings: Settings) -> dict[str, Any]:
         f"http://{settings.monitor_host}:{settings.monitor_port}/readyz",
         timeout_seconds=1.0,
     )["ok"]
+    mcp_hub_http = probe_http_json(
+        f"{settings.mcp_base_url}/healthz", timeout_seconds=1.0
+    )["ok"]
     running = bool(
         snapshot["dashboard"]["up"]
         and snapshot["monitor"]["up"]
         and snapshot["worker"]["up"]
         and dashboard_http
         and monitor_health
+        and mcp_hub_http
     )
     return {
         "dashboard_http": dashboard_http,
@@ -1148,6 +1355,7 @@ def _status(settings: Settings) -> dict[str, Any]:
         "monitor_http": monitor_health,
         "monitor_process": snapshot["monitor"]["up"],
         "monitor_ready": monitor_ready,
+        "mcp_hub_http": mcp_hub_http,
         "owned_processes_present": bool(
             snapshot["dashboard"]["up"]
             or snapshot["monitor"]["up"]

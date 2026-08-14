@@ -1,23 +1,20 @@
-name: materials-inspiration
+name: materials-inspiration-evolution
 version: 0.1.0
-description: "Bounded materials inspiration control plane"
+description: "Approval-gated Hermes-native learning plane for materials inspiration"
 hermes_requires: "==0.20.0"
 
 env_requires:
   - name: API_SERVER_KEY
-    description: "Bearer key for the loopback Hermes HTTP API"
+    description: "Bearer key for the loopback Hermes evolution API"
     required: true
   - name: MATERIAL_AGENT_PYTHON
     description: "Absolute path to the isolated Materials Gateway Python"
-    required: true
-  - name: MATERIAL_AGENT_MCP_BASE_URL
-    description: "Loopback URL of the lifecycle-owned shared Materials MCP Hub"
     required: true
   - name: MATERIAL_AGENT_WORKSPACE
     description: "Absolute path to the bounded material-agent workspace"
     required: true
   - name: MATERIAL_AGENT_PROJECT_ID
-    description: "Fixed material-agent project ID owned by this profile"
+    description: "Existing project whose completed results may be reviewed read-only"
     required: true
 
 distribution_owned:
@@ -25,4 +22,4 @@ distribution_owned:
   - config.yaml
   - SOUL.md
   - .no-bundled-skills
-  - skills/materials-inspiration
+  - skills/materials-inspiration-evolution

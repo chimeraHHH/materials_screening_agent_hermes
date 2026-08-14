@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 import hashlib
+import asyncio
+import json
 import os
+import signal
 import sqlite3
 import stat
 import subprocess
 import sys
+import types
 from dataclasses import replace
 from pathlib import Path
 
@@ -19,6 +23,8 @@ sys.path.insert(0, str(SCRIPTS_ROOT))
 import production_ops  # noqa: E402
 import production_monitor  # noqa: E402
 import production_runtime  # noqa: E402
+import managed_checkout  # noqa: E402
+import managed_dashboard  # noqa: E402
 from material_agent.gateway.job_queue import SqliteGatewayJobQueue  # noqa: E402
 
 
@@ -38,6 +44,38 @@ def _identity(pid: int) -> dict[str, object]:
         "pid": pid,
         "start_marker": "Sun Aug  9 12:00:00 2026",
     }
+
+
+def test_managed_dashboard_bounds_detached_tui_lifetime(monkeypatch) -> None:
+    observed: dict[str, float] = {}
+
+    class Registry:
+        def __init__(self, *, ttl, max_sessions, buffer_cap, read_timeout):
+            del max_sessions, buffer_cap, read_timeout
+            self._ttl = ttl
+
+    async def reaper(_registry, *, interval=60.0):
+        observed["interval"] = interval
+
+    pty_session = types.ModuleType("hermes_cli.pty_session")
+    pty_session.PtySessionRegistry = Registry
+    pty_session.run_reaper = reaper
+    hermes_cli = types.ModuleType("hermes_cli")
+    hermes_cli.pty_session = pty_session
+    monkeypatch.setitem(sys.modules, "hermes_cli", hermes_cli)
+    monkeypatch.setitem(sys.modules, "hermes_cli.pty_session", pty_session)
+
+    managed_dashboard.configure_managed_pty_lifecycle()
+    registry = pty_session.PtySessionRegistry(
+        ttl=30 * 60,
+        max_sessions=16,
+        buffer_cap=1024,
+        read_timeout=0.2,
+    )
+    asyncio.run(pty_session.run_reaper(registry))
+
+    assert registry._ttl == managed_dashboard.PTY_IDLE_TTL_SECONDS
+    assert observed["interval"] == managed_dashboard.PTY_REAPER_INTERVAL_SECONDS
 
 
 def _linux_stat_payload(start_ticks: bytes) -> bytes:
@@ -125,6 +163,8 @@ def test_worker_and_monitor_environment_excludes_model_and_server_secrets(
     monkeypatch.setenv("AWS_ACCESS_KEY_ID", "cloud-secret")
     monkeypatch.setenv("AZURE_STORAGE_CONNECTION_STRING", "cloud-connection-secret")
     monkeypatch.setenv("MATERIALS_CROSSREF_CONTACT_EMAIL", "ops@example.test")
+    monkeypatch.setenv("MATERIAL_AGENT_INSPIRATION_RAG_PROVIDER", "deepseek")
+    monkeypatch.setenv("MATERIAL_AGENT_LLM_MODEL", "deepseek-v4-flash")
 
     worker_environment = production_runtime._worker_env(settings)
     monitor_environment = production_runtime._monitor_env(settings)
@@ -137,7 +177,14 @@ def test_worker_and_monitor_environment_excludes_model_and_server_secrets(
     assert "AZURE_STORAGE_CONNECTION_STRING" not in worker_environment
     assert "HERMES_HOME" not in worker_environment
     assert worker_environment["MATERIALS_CROSSREF_CONTACT_EMAIL"] == "ops@example.test"
+    assert worker_environment["MATERIAL_AGENT_LLM_MODEL"] == "deepseek-v4-pro"
     assert worker_environment["MATERIAL_AGENT_WORKSPACE"] == str(settings.workspace)
+    assert worker_environment["MATERIAL_AGENT_PYTHON"] == str(
+        production_runtime.GATEWAY_ENV / "bin" / "python"
+    )
+    assert worker_environment["MATERIAL_AGENT_PYTHON"] != str(
+        (production_runtime.GATEWAY_ENV / "bin" / "python").resolve()
+    )
     assert "MATERIALS_CROSSREF_CONTACT_EMAIL" not in monitor_environment
     assert "HTTPS_PROXY" not in monitor_environment
     assert dashboard_environment["API_SERVER_KEY"] == "server-secret"
@@ -148,6 +195,18 @@ def test_worker_and_monitor_environment_excludes_model_and_server_secrets(
     assert "API_SERVER_KEY" not in build_environment
     assert "OPENROUTER_API_KEY" not in build_environment
     assert "AWS_ACCESS_KEY_ID" not in build_environment
+
+
+def test_stop_binding_accepts_only_additive_mcp_hub_upgrade(tmp_path: Path) -> None:
+    settings = _settings(tmp_path)
+    binding = production_runtime._runtime_binding(settings)
+    legacy = {key: value for key, value in binding.items() if key != "mcp_base_url"}
+    record = {"runtime_binding": legacy}
+
+    assert production_runtime._runtime_binding_allows_stop(record, settings)
+
+    record["runtime_binding"] = {**legacy, "workspace": str(tmp_path / "other")}
+    assert not production_runtime._runtime_binding_allows_stop(record, settings)
 
 
 def test_node_floor_accepts_the_locked_minimum(monkeypatch) -> None:
@@ -162,6 +221,126 @@ def test_node_floor_accepts_the_locked_minimum(monkeypatch) -> None:
         "node": "22.22.0",
         "npm": "10.9.4",
     }
+
+
+def test_deepseek_alias_is_canonical_in_config_and_runtime_environment(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    settings = replace(
+        _settings(tmp_path),
+        provider="deepseek",
+        model=production_runtime._canonical_model("deepseek", "deepseek-chat"),
+    )
+    monkeypatch.setenv("API_SERVER_KEY", "server-secret")
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "deepseek-secret")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "wrong-provider-secret")
+
+    environment = production_runtime._runtime_env(settings)
+
+    assert settings.model == "deepseek-v4-flash"
+    assert environment["HERMES_INFERENCE_MODEL"] == "deepseek-v4-flash"
+    assert environment["DEEPSEEK_API_KEY"] == "deepseek-secret"
+    assert "OPENROUTER_API_KEY" not in environment
+
+
+def test_model_canonicalization_is_narrow() -> None:
+    assert production_runtime._canonical_model(
+        "deepseek", "deepseek-reasoner"
+    ) == "deepseek-v4-flash"
+    assert production_runtime._canonical_model(
+        "deepseek", "deepseek-v4-pro"
+    ) == "deepseek-v4-pro"
+    assert production_runtime._canonical_model(
+        "openrouter", "deepseek/deepseek-chat"
+    ) == "deepseek/deepseek-chat"
+
+
+def _managed_git_checkout(path: Path) -> str:
+    path.mkdir()
+    subprocess.run(["git", "init", "--quiet"], cwd=path, check=True)
+    subprocess.run(
+        ["git", "config", "user.email", "test@example.invalid"],
+        cwd=path,
+        check=True,
+    )
+    subprocess.run(
+        ["git", "config", "user.name", "Managed Checkout Test"],
+        cwd=path,
+        check=True,
+    )
+    (path / "package-lock.json").write_text(
+        '{"lockfileVersion":3,"packages":{}}\n',
+        encoding="utf-8",
+    )
+    (path / "runtime.py").write_text("PINNED = True\n", encoding="utf-8")
+    subprocess.run(["git", "add", "."], cwd=path, check=True)
+    subprocess.run(["git", "commit", "--quiet", "-m", "pin"], cwd=path, check=True)
+    return subprocess.check_output(
+        ["git", "rev-parse", "HEAD"],
+        cwd=path,
+        text=True,
+    ).strip()
+
+
+def test_managed_checkout_repairs_only_unstaged_package_lock_drift(
+    tmp_path: Path,
+) -> None:
+    checkout = tmp_path / "hermes"
+    commit = _managed_git_checkout(checkout)
+    original = (checkout / "package-lock.json").read_bytes()
+    (checkout / "package-lock.json").write_text(
+        '{"lockfileVersion":3,"packages":{"npm-churn":true}}\n',
+        encoding="utf-8",
+    )
+
+    repaired = managed_checkout.repair_generated_package_locks(
+        checkout,
+        expected_commit=commit,
+    )
+
+    assert repaired == ("package-lock.json",)
+    assert (checkout / "package-lock.json").read_bytes() == original
+    assert subprocess.check_output(
+        ["git", "status", "--porcelain"],
+        cwd=checkout,
+        text=True,
+    ) == ""
+
+
+@pytest.mark.parametrize("unsafe_state", ("source", "staged_lock", "untracked"))
+def test_managed_checkout_preserves_and_rejects_unsafe_state(
+    tmp_path: Path,
+    unsafe_state: str,
+) -> None:
+    checkout = tmp_path / "hermes"
+    commit = _managed_git_checkout(checkout)
+    if unsafe_state == "source":
+        target = checkout / "runtime.py"
+        target.write_text("PINNED = False\n", encoding="utf-8")
+    elif unsafe_state == "staged_lock":
+        target = checkout / "package-lock.json"
+        target.write_text('{"staged":true}\n', encoding="utf-8")
+        subprocess.run(["git", "add", "package-lock.json"], cwd=checkout, check=True)
+    else:
+        target = checkout / "notes.txt"
+        target.write_text("do not delete\n", encoding="utf-8")
+    before = target.read_bytes()
+
+    with pytest.raises(managed_checkout.ManagedCheckoutError):
+        managed_checkout.repair_generated_package_locks(
+            checkout,
+            expected_commit=commit,
+        )
+
+    assert target.read_bytes() == before
+
+
+def test_hermes_lock_installs_slack_extra_for_api_server_aiohttp() -> None:
+    lock = (REPOSITORY_ROOT / "integrations" / "hermes" / "hermes.lock.json")
+    payload = json.loads(lock.read_text(encoding="utf-8"))
+
+    assert payload["uv_extras"] == ["cli", "mcp", "slack", "web"]
 
 
 def test_python_minor_accepts_standard_uv_venv_symlink(
@@ -338,6 +517,45 @@ def test_linux_real_process_identity_is_stable_and_exact() -> None:
         process.wait(timeout=5)
     assert identity is not None
     assert production_ops.owned_process_alive(identity) is False
+
+
+def test_terminate_reaps_descendants_that_started_new_process_groups() -> None:
+    parent = subprocess.Popen(
+        [
+            sys.executable,
+            "-c",
+            (
+                "import subprocess,sys,time; "
+                "child=subprocess.Popen([sys.executable,'-c','import time;time.sleep(60)'],"
+                "stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,"
+                "stderr=subprocess.DEVNULL,start_new_session=True); "
+                "print(child.pid,flush=True); time.sleep(60)"
+            ),
+        ],
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        text=True,
+        start_new_session=True,
+    )
+    try:
+        assert parent.stdout is not None
+        child_pid = int(parent.stdout.readline().strip())
+        parent_identity = production_ops.process_identity(parent.pid)
+        child_identity = production_ops.process_identity(child_pid)
+        assert parent_identity is not None
+        assert child_identity is not None
+
+        assert production_runtime._terminate(
+            parent_identity, timeout_seconds=5
+        )
+
+        assert production_ops.owned_process_alive(parent_identity) is False
+        assert production_ops.owned_process_alive(child_identity) is False
+    finally:
+        if parent.poll() is None:
+            os.killpg(parent.pid, signal.SIGKILL)
+        parent.wait(timeout=5)
 
 
 def test_v2_process_record_is_not_silently_accepted_by_v3(
@@ -662,6 +880,11 @@ def test_runtime_start_stop_owns_worker_and_exact_shared_binding(
         settings.workspace
     )
     assert worker_command[worker_command.index("--project") + 1] == settings.project
+    dashboard_command = spawned[1][0]
+    assert dashboard_command[:2] == [
+        str(production_runtime.HERMES_ENV / "bin" / "python"),
+        str(SCRIPTS_ROOT / "managed_dashboard.py"),
+    ]
     monitor_command = spawned[2][0]
     assert monitor_command[monitor_command.index("--queue-database") + 1] == str(
         settings.approval_database
