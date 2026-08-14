@@ -13,6 +13,7 @@ import html
 import json
 import math
 import os
+import re
 import socket
 import threading
 import time
@@ -26,6 +27,7 @@ from typing import Any, Callable, Literal, Protocol
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode, urljoin, urlsplit, urlunsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
+from xml.etree import ElementTree
 
 from material_agent.inspiration.models import (
     ArtifactPointerV1,
@@ -44,12 +46,17 @@ _MAX_RETRY_DELAY_SECONDS = 60.0
 _MAX_TOTAL_WAIT_SECONDS = 120.0
 _CROSSREF_PUBLIC_MIN_INTERVAL_SECONDS = 1.0
 _CROSSREF_POLITE_MIN_INTERVAL_SECONDS = 1.0 / 3.0
+_ARXIV_MIN_INTERVAL_SECONDS = 3.0
 _METADATA_REDIRECT_STATUSES = frozenset({301, 302, 303, 307, 308})
 _MAX_METADATA_REDIRECTS = 5
 _MAX_REDIRECT_LOCATION_LENGTH = 2_048
 PUBLIC_SEARCH_PROVIDER_ENV = "MATERIAL_AGENT_INSPIRATION_SEARCH_PROVIDER"
 OPENALEX_API_KEY_ENV = "OPENALEX_API_KEY"
 CROSSREF_CONTACT_EMAIL_ENV = "MATERIALS_CROSSREF_CONTACT_EMAIL"
+
+_ATOM_NAMESPACE = "http://www.w3.org/2005/Atom"
+_ARXIV_NAMESPACE = "http://arxiv.org/schemas/atom"
+_ARXIV_VERSION_SUFFIX = re.compile(r"v[1-9][0-9]*$")
 
 
 class _RejectRedirectHandler(HTTPRedirectHandler):
@@ -369,6 +376,7 @@ class UrlLibBoundedTransport:
         *,
         monotonic_clock: Callable[[], float] = time.monotonic,
         allowed_hosts: frozenset[str] | None = None,
+        allowed_media_types: frozenset[str] | None = None,
     ) -> None:
         if not callable(monotonic_clock):
             raise ValueError("monotonic_clock must be callable")
@@ -380,6 +388,15 @@ class UrlLibBoundedTransport:
             ):
                 raise ValueError("allowed_hosts must contain bounded host names")
             self.allowed_hosts = frozenset(host.casefold() for host in allowed_hosts)
+        self.allowed_media_types = frozenset(
+            {"application/json", "application/vnd.api+json"}
+            if allowed_media_types is None
+            else (item.casefold() for item in allowed_media_types)
+        )
+        if not self.allowed_media_types or any(
+            not item.strip() for item in self.allowed_media_types
+        ):
+            raise ValueError("allowed_media_types must contain bounded media types")
 
     def get(
         self,
@@ -479,10 +496,7 @@ class UrlLibBoundedTransport:
                                 "metadata transport followed an unvalidated redirect",
                             )
                         media_type = response.headers.get_content_type().casefold()
-                        if media_type not in {
-                            "application/json",
-                            "application/vnd.api+json",
-                        }:
+                        if media_type not in self.allowed_media_types:
                             raise SearchAdapterError(
                                 "UNEXPECTED_MEDIA_TYPE",
                                 f"metadata endpoint returned {media_type!r}",
@@ -1256,6 +1270,242 @@ class CrossrefPublicAdapter:
         return min(retry_after, self.max_retry_delay_seconds)
 
 
+class ArxivPublicAdapter:
+    """Official arXiv Query API adapter for bounded Atom metadata.
+
+    The adapter performs one request per logical query and enforces arXiv's
+    documented three-second spacing between sequential requests.  It retrieves
+    only the Atom feed; PDF links are metadata and are never followed here.
+    """
+
+    network_access = True
+
+    def __init__(
+        self,
+        *,
+        max_results: int = 5,
+        timeout_seconds: int = 20,
+        publication_year_from: int | None = None,
+        publication_year_to: int | None = None,
+        min_request_interval_seconds: float = _ARXIV_MIN_INTERVAL_SECONDS,
+        transport: BoundedHttpTransport | None = None,
+        sleeper: Callable[[float], None] = time.sleep,
+        monotonic_clock: Callable[[], float] = time.monotonic,
+    ) -> None:
+        if not 1 <= max_results <= 20:
+            raise ValueError("max_results must be between 1 and 20")
+        if not 1 <= timeout_seconds <= 120:
+            raise ValueError("timeout_seconds must be between 1 and 120")
+        _validate_publication_year_range(
+            publication_year_from,
+            publication_year_to,
+        )
+        _validate_bounded_seconds(
+            "min_request_interval_seconds",
+            min_request_interval_seconds,
+            maximum=_MAX_TOTAL_WAIT_SECONDS,
+        )
+        if min_request_interval_seconds < _ARXIV_MIN_INTERVAL_SECONDS:
+            raise ValueError(
+                "min_request_interval_seconds must be at least 3 for arXiv"
+            )
+        if not callable(sleeper):
+            raise ValueError("sleeper must be callable")
+        if not callable(monotonic_clock):
+            raise ValueError("monotonic_clock must be callable")
+        self.max_results = max_results
+        self.timeout_seconds = timeout_seconds
+        self.publication_year_from = publication_year_from
+        self.publication_year_to = publication_year_to
+        self.min_request_interval_seconds = float(min_request_interval_seconds)
+        self.transport = transport or UrlLibBoundedTransport(
+            monotonic_clock=monotonic_clock,
+            allowed_hosts=frozenset({"export.arxiv.org"}),
+            allowed_media_types=frozenset({"application/atom+xml"}),
+        )
+        self.sleeper = sleeper
+        self.monotonic_clock = monotonic_clock
+        self._pacing_lock = threading.Lock()
+        self._last_request_started: float | None = None
+        fingerprint = canonical_json_bytes(
+            {
+                "max_results": max_results,
+                "min_request_interval_seconds": self.min_request_interval_seconds,
+                "publication_year_from": publication_year_from,
+                "publication_year_to": publication_year_to,
+                "source_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+                "timeout_seconds": timeout_seconds,
+            }
+        )
+        self.component = ComponentSnapshotV1(
+            component_id="arxiv-public-adapter",
+            version="query-api-atom-v1",
+            implementation_sha256=hashlib.sha256(fingerprint).hexdigest(),
+        )
+
+    def search(
+        self,
+        query: SearchQueryV1,
+        *,
+        max_response_bytes: int,
+        remaining_walltime_seconds: float | None = None,
+        max_physical_requests: int | None = None,
+    ) -> RawSearchPage:
+        if not isinstance(query, SearchQueryV1):
+            raise SearchAdapterError("INVALID_QUERY", "query must be SearchQueryV1")
+        if not 1 <= max_response_bytes <= 10_000_000:
+            raise SearchAdapterError(
+                "INVALID_RESPONSE_BUDGET",
+                "max_response_bytes must be between 1 and 10000000",
+            )
+        if max_physical_requests is not None and (
+            type(max_physical_requests) is not int
+            or not 0 <= max_physical_requests <= 64
+        ):
+            raise SearchAdapterError(
+                "INVALID_PHYSICAL_REQUEST_BUDGET",
+                "max_physical_requests must be between 0 and 64",
+            )
+        if max_physical_requests == 0:
+            raise SearchAdapterError(
+                "SEARCH_REQUEST_BUDGET_EXCEEDED",
+                "no physical arXiv request remains",
+            )
+        deadline = None
+        if remaining_walltime_seconds is not None:
+            if (
+                isinstance(remaining_walltime_seconds, bool)
+                or not isinstance(remaining_walltime_seconds, (int, float))
+                or not math.isfinite(remaining_walltime_seconds)
+                or remaining_walltime_seconds <= 0
+            ):
+                raise SearchAdapterError(
+                    "WALLTIME_BUDGET_EXCEEDED",
+                    "remaining walltime must be finite and positive",
+                )
+            deadline = _read_finite_clock(
+                self.monotonic_clock,
+                "monotonic_clock",
+            ) + float(remaining_walltime_seconds)
+        pacing_delay = self._pace_request(deadline_monotonic=deadline)
+        cleaned_query = " ".join(query.text.replace('"', " ").split())
+        clauses = [f'all:"{cleaned_query}"']
+        if (
+            self.publication_year_from is not None
+            or self.publication_year_to is not None
+        ):
+            lower_year = self.publication_year_from or 1991
+            upper_year = self.publication_year_to or 2200
+            clauses.append(
+                "submittedDate:"
+                f"[{lower_year:04d}01010000 TO {upper_year:04d}12312359]"
+            )
+        url = "https://export.arxiv.org/api/query?" + urlencode(
+            {
+                "max_results": str(self.max_results),
+                "search_query": " AND ".join(clauses),
+                "sortBy": "relevance",
+                "sortOrder": "descending",
+                "start": "0",
+            }
+        )
+        try:
+            result = self.transport.get(
+                url,
+                headers={
+                    "Accept": "application/atom+xml",
+                    "Accept-Encoding": "identity",
+                    "User-Agent": "materials-screening-agent/0.1 (metadata-only)",
+                },
+                timeout_seconds=float(self.timeout_seconds),
+                max_response_bytes=max_response_bytes,
+                deadline_monotonic=deadline,
+                max_physical_requests=max_physical_requests,
+            )
+        except SearchAdapterError as error:
+            hops = error.physical_hops or (
+                PhysicalSearchHop(
+                    outcome="error",
+                    error_code=error.code,
+                    http_status=error.http_status,
+                    response_bytes=error.response_bytes,
+                ),
+            )
+            attempts = _attempt_records_from_physical_hops(
+                query_id=query.query_id,
+                first_attempt_number=1,
+                physical_hops=hops,
+                pacing_delay_seconds=pacing_delay,
+            )
+            raise error.with_attempts(attempts) from error
+        if isinstance(result, bytes):
+            payload = result
+            hops = (
+                PhysicalSearchHop(
+                    outcome="success",
+                    error_code=None,
+                    http_status=200,
+                    response_bytes=len(payload),
+                ),
+            )
+        elif isinstance(result, BoundedHttpResult):
+            payload = result.payload
+            hops = result.physical_hops
+        else:
+            raise SearchAdapterError(
+                "INVALID_NETWORK_PAYLOAD",
+                "metadata transport must return bytes or BoundedHttpResult",
+            )
+        if len(payload) > max_response_bytes:
+            raise SearchAdapterError(
+                "RESPONSE_BUDGET_EXCEEDED",
+                "metadata transport returned more than the declared byte budget",
+                response_bytes=len(payload),
+            )
+        attempts = _attempt_records_from_physical_hops(
+            query_id=query.query_id,
+            first_attempt_number=1,
+            physical_hops=hops,
+            pacing_delay_seconds=pacing_delay,
+        )
+        return RawSearchPage(
+            provider="arxiv",
+            query_id=query.query_id,
+            payload=payload,
+            media_type="application/atom+xml",
+            attempts=attempts,
+        )
+
+    def _pace_request(self, *, deadline_monotonic: float | None) -> float:
+        with self._pacing_lock:
+            now = _read_finite_clock(self.monotonic_clock, "monotonic_clock")
+            delay = 0.0
+            if self._last_request_started is not None:
+                elapsed = now - self._last_request_started
+                if elapsed < 0:
+                    raise SearchAdapterError(
+                        "INVALID_MONOTONIC_CLOCK",
+                        "monotonic_clock moved backwards",
+                    )
+                delay = max(0.0, self.min_request_interval_seconds - elapsed)
+            deadline_remaining = _remaining_before_deadline(
+                deadline_monotonic,
+                monotonic_clock=self.monotonic_clock,
+            )
+            if deadline_remaining is not None and delay >= deadline_remaining:
+                raise SearchAdapterError(
+                    "WALLTIME_BUDGET_EXCEEDED",
+                    "arXiv pacing cannot complete before the run deadline",
+                )
+            if delay:
+                self.sleeper(delay)
+            self._last_request_started = _read_finite_clock(
+                self.monotonic_clock,
+                "monotonic_clock",
+            )
+            return delay
+
+
 class OpenAlexPublicAdapter:
     """OpenAlex Works metadata adapter with an explicit key and one-call budget.
 
@@ -1605,14 +1855,15 @@ def public_search_adapter_from_environment(
     environment: Mapping[str, str] | None = None,
     crossref_transport: BoundedHttpTransport | None = None,
     openalex_transport: BoundedHttpTransport | None = None,
+    arxiv_transport: BoundedHttpTransport | None = None,
 ) -> SearchAdapter:
-    """Build Crossref by default or an explicitly opted-in two-source adapter.
+    """Build Crossref by default or an explicitly opted-in provider set.
 
-    This factory binds the policy year window to both provider requests.  The
+    This factory binds the policy year window to every provider request.  The
     OpenAlex key remains lazy: constructing the adapter does not resolve or
-    persist the secret.  Multi-source mode reserves two physical requests per
-    logical query and disables Crossref retries so every provider is covered by
-    the frozen request budget.
+    persist the secret.  Multi-source modes reserve one physical request per
+    provider and logical query, and disable Crossref retries so every provider
+    is covered by the frozen request budget.
     """
 
     from material_agent.inspiration.policy import SearchBudgetV1
@@ -1621,39 +1872,62 @@ def public_search_adapter_from_environment(
         raise TypeError("budget must be SearchBudgetV1")
     selected = environment if environment is not None else os.environ
     mode = selected.get(PUBLIC_SEARCH_PROVIDER_ENV, "crossref").strip().casefold()
-    if mode in {"", "crossref"}:
-        return CrossrefPublicAdapter(
-            contact_email=selected.get(CROSSREF_CONTACT_EMAIL_ENV) or None,
-            publication_year_from=budget.publication_year_from,
-            publication_year_to=budget.publication_year_to,
-            transport=crossref_transport,
-        )
-    if mode != "crossref+openalex":
+    if not mode:
+        mode = "crossref"
+    requested = tuple(part.strip() for part in mode.split("+") if part.strip())
+    supported = ("crossref", "openalex", "arxiv")
+    if (
+        not requested
+        or len(requested) != len(set(requested))
+        or any(provider not in supported for provider in requested)
+    ):
         raise ValueError(
-            f"{PUBLIC_SEARCH_PROVIDER_ENV} must be 'crossref' or 'crossref+openalex'"
+            f"{PUBLIC_SEARCH_PROVIDER_ENV} must contain unique providers from "
+            "'crossref', 'openalex', and 'arxiv'"
         )
-    required_requests = budget.max_queries * 2
+    provider_ids = tuple(provider for provider in supported if provider in requested)
+    required_requests = budget.max_queries * len(provider_ids)
     if budget.max_physical_requests < required_requests:
+        provider_count = {2: "two", 3: "three", 4: "four"}.get(
+            len(provider_ids),
+            str(len(provider_ids)),
+        )
         raise ValueError(
-            "crossref+openalex requires at least two physical requests per query"
+            f"{'+'.join(provider_ids)} requires at least {provider_count} "
+            "physical requests per query"
         )
-    return MultiSourceSearchAdapter(
-        (
-            CrossrefPublicAdapter(
-                contact_email=selected.get(CROSSREF_CONTACT_EMAIL_ENV) or None,
-                max_retries=0,
-                publication_year_from=budget.publication_year_from,
-                publication_year_to=budget.publication_year_to,
-                transport=crossref_transport,
-            ),
-            OpenAlexPublicAdapter(
-                api_key_resolver=lambda: selected.get(OPENALEX_API_KEY_ENV, ""),
-                publication_year_from=budget.publication_year_from,
-                publication_year_to=budget.publication_year_to,
-                transport=openalex_transport,
-            ),
-        )
-    )
+    adapters: list[SearchAdapter] = []
+    for provider in provider_ids:
+        if provider == "crossref":
+            adapters.append(
+                CrossrefPublicAdapter(
+                    contact_email=selected.get(CROSSREF_CONTACT_EMAIL_ENV) or None,
+                    max_retries=0 if len(provider_ids) > 1 else 2,
+                    publication_year_from=budget.publication_year_from,
+                    publication_year_to=budget.publication_year_to,
+                    transport=crossref_transport,
+                )
+            )
+        elif provider == "openalex":
+            adapters.append(
+                OpenAlexPublicAdapter(
+                    api_key_resolver=lambda: selected.get(OPENALEX_API_KEY_ENV, ""),
+                    publication_year_from=budget.publication_year_from,
+                    publication_year_to=budget.publication_year_to,
+                    transport=openalex_transport,
+                )
+            )
+        else:
+            adapters.append(
+                ArxivPublicAdapter(
+                    publication_year_from=budget.publication_year_from,
+                    publication_year_to=budget.publication_year_to,
+                    transport=arxiv_transport,
+                )
+            )
+    if len(adapters) == 1:
+        return adapters[0]
+    return MultiSourceSearchAdapter(tuple(adapters))
 
 
 class FixtureSearchAdapter:
@@ -1783,6 +2057,182 @@ def document_id_for(
                 "provider_record_id": provider_record_id.strip(),
             }
     return deterministic_id("document", identity)
+
+
+def normalize_arxiv_id(value: str | None) -> str | None:
+    """Normalize an arXiv identifier and collapse versioned records."""
+
+    if value is None:
+        return None
+    candidate = value.strip()
+    for prefix in (
+        "https://arxiv.org/abs/",
+        "http://arxiv.org/abs/",
+        "arxiv:",
+    ):
+        if candidate.casefold().startswith(prefix):
+            candidate = candidate[len(prefix) :]
+            break
+    candidate = _ARXIV_VERSION_SUFFIX.sub("", candidate).strip()
+    if not candidate or len(candidate) > 64:
+        return None
+    if any(character.isspace() for character in candidate):
+        return None
+    return candidate
+
+
+def parse_arxiv_page(
+    *,
+    query: SearchQueryV1,
+    payload: bytes,
+    raw_response_artifact: ArtifactPointerV1,
+    max_hits: int,
+    publication_year_from: int | None = None,
+    publication_year_to: int | None = None,
+) -> ParsedSearchPage:
+    """Parse one bounded official arXiv Atom feed without following links."""
+
+    if max_hits < 1:
+        raise SearchAdapterError("INVALID_HIT_BUDGET", "max_hits must be positive")
+    _validate_publication_year_range(publication_year_from, publication_year_to)
+    upper_payload = payload.upper()
+    if b"<!DOCTYPE" in upper_payload or b"<!ENTITY" in upper_payload:
+        raise SearchAdapterError(
+            "UNSAFE_XML",
+            "arXiv Atom metadata cannot contain DTD or entity declarations",
+        )
+    try:
+        root = ElementTree.fromstring(payload)
+    except ElementTree.ParseError as error:
+        raise SearchAdapterError(
+            "INVALID_XML",
+            "arXiv response is not well-formed Atom XML",
+        ) from error
+    if root.tag != f"{{{_ATOM_NAMESPACE}}}feed":
+        raise SearchAdapterError(
+            "SCHEMA_DRIFT",
+            "arXiv response root must be an Atom feed",
+        )
+
+    hits: list[SearchHitV1] = []
+    warnings: list[str] = []
+    for rank, entry in enumerate(
+        root.findall(f"{{{_ATOM_NAMESPACE}}}entry"),
+        start=1,
+    ):
+        if len(hits) >= max_hits:
+            break
+        raw_id = _atom_required_text(entry, "id")
+        arxiv_id = normalize_arxiv_id(raw_id)
+        if arxiv_id is None:
+            raise SearchAdapterError(
+                "SCHEMA_DRIFT",
+                "arXiv entry has no valid identifier",
+            )
+        title = _atom_required_text(entry, "title")
+        abstract = _atom_optional_text(entry, "summary")
+        if abstract is not None and len(abstract) > 20_000:
+            abstract = abstract[:20_000]
+            warnings.append(f"ABSTRACT_TRUNCATED:{arxiv_id}")
+        published = _atom_required_text(entry, "published")
+        try:
+            published_year = int(published[:4])
+        except (TypeError, ValueError) as error:
+            raise SearchAdapterError(
+                "SCHEMA_DRIFT",
+                f"arXiv published date for {arxiv_id!r} is invalid",
+            ) from error
+        if not 1600 <= published_year <= 2200:
+            raise SearchAdapterError(
+                "SCHEMA_DRIFT",
+                f"arXiv published year for {arxiv_id!r} is invalid",
+            )
+        if not _publication_year_allowed(
+            published_year,
+            publication_year_from=publication_year_from,
+            publication_year_to=publication_year_to,
+        ):
+            warnings.append(f"PUBLICATION_YEAR_REJECTED:{arxiv_id}")
+            continue
+        authors = tuple(
+            dict.fromkeys(
+                text
+                for author in entry.findall(f"{{{_ATOM_NAMESPACE}}}author")
+                if (
+                    text := _clean_atom_text(
+                        author.findtext(f"{{{_ATOM_NAMESPACE}}}name")
+                    )
+                )
+            )
+        )[:256]
+        keywords = tuple(
+            dict.fromkeys(
+                term
+                for category in entry.findall(f"{{{_ATOM_NAMESPACE}}}category")
+                if (term := _clean_atom_text(category.attrib.get("term")))
+            )
+        )[:128]
+        doi = normalize_doi(
+            _clean_atom_text(entry.findtext(f"{{{_ARXIV_NAMESPACE}}}doi"))
+        )
+        canonical_url = f"https://arxiv.org/abs/{arxiv_id}"
+        document_id = document_id_for(
+            provider="arxiv",
+            provider_record_id=arxiv_id,
+            doi=doi,
+            arxiv_id=arxiv_id,
+            canonical_url=canonical_url,
+        )
+        hit_id = deterministic_id(
+            "hit",
+            {
+                "provider": "arxiv",
+                "provider_record_id": arxiv_id,
+                "query_id": query.query_id,
+                "raw_response_sha256": raw_response_artifact.sha256,
+            },
+        )
+        hits.append(
+            SearchHitV1(
+                hit_id=hit_id,
+                document_id=document_id,
+                provider="arxiv",
+                provider_record_id=arxiv_id,
+                query_ids=(query.query_id,),
+                provider_rank=rank,
+                title=title,
+                authors=authors,
+                published_year=published_year,
+                doi=doi,
+                arxiv_id=arxiv_id,
+                canonical_url=canonical_url,
+                abstract=abstract,
+                keywords=keywords,
+                raw_response_artifact=raw_response_artifact,
+            )
+        )
+    return ParsedSearchPage(hits=tuple(hits), warnings=tuple(warnings))
+
+
+def _clean_atom_text(value: str | None) -> str | None:
+    if not isinstance(value, str):
+        return None
+    cleaned = " ".join(html.unescape(value).split())
+    return cleaned or None
+
+
+def _atom_optional_text(entry: ElementTree.Element, local_name: str) -> str | None:
+    return _clean_atom_text(entry.findtext(f"{{{_ATOM_NAMESPACE}}}{local_name}"))
+
+
+def _atom_required_text(entry: ElementTree.Element, local_name: str) -> str:
+    value = _atom_optional_text(entry, local_name)
+    if value is None:
+        raise SearchAdapterError(
+            "SCHEMA_DRIFT",
+            f"arXiv entry is missing Atom field {local_name!r}",
+        )
+    return value
 
 
 def parse_openalex_page(
@@ -2009,7 +2459,7 @@ def parse_multi_source_page(
         }:
             raise SearchAdapterError("SCHEMA_DRIFT", "multi-source page is invalid")
         provider = page["provider"]
-        if provider not in {"crossref", "openalex"} or provider in seen_providers:
+        if provider not in {"arxiv", "crossref", "openalex"} or provider in seen_providers:
             raise SearchAdapterError(
                 "SCHEMA_DRIFT",
                 "multi-source provider set is unsupported or duplicated",
@@ -2039,12 +2489,21 @@ def parse_multi_source_page(
                 publication_year_from=publication_year_from,
                 publication_year_to=publication_year_to,
             )
-        else:
+        elif provider == "openalex":
             parsed = parse_openalex_page(
                 query=query,
                 payload=child_payload,
                 raw_response_artifact=raw_response_artifact,
                 provider="openalex",
+                max_hits=remaining,
+                publication_year_from=publication_year_from,
+                publication_year_to=publication_year_to,
+            )
+        else:
+            parsed = parse_arxiv_page(
+                query=query,
+                payload=child_payload,
+                raw_response_artifact=raw_response_artifact,
                 max_hits=remaining,
                 publication_year_from=publication_year_from,
                 publication_year_to=publication_year_to,

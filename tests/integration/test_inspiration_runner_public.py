@@ -25,7 +25,7 @@ from material_agent.inspiration.policy import (
     TransformationBudgetV1,
 )
 from material_agent.inspiration.runner import STRUCTURE_MEDIA_TYPE, InspirationRunner
-from material_agent.inspiration.search import CrossrefPublicAdapter
+from material_agent.inspiration.search import ArxivPublicAdapter, CrossrefPublicAdapter
 from material_agent.inspiration.tag_graph import curated_flat_band_tag_graph
 from material_agent.inspiration.transformations import (
     DEFAULT_SUBSTITUTION_REGISTRY_V1,
@@ -107,6 +107,32 @@ def _response_bytes() -> bytes:
     ).encode("utf-8")
 
 
+def _arxiv_response_bytes() -> bytes:
+    abstract = (
+        "Local resonance in an acoustic metamaterial produces a weakly dispersive "
+        "mode because a resonator couples weakly to an extended lattice. The local "
+        "resonance mechanism preserves spectral separation and suppresses dispersion, "
+        "which can guide electronic flat band hypotheses when connectivity and "
+        "equivalent site chemistry remain controlled. Strong hybridization breaks "
+        "localization and broadens the mode, providing a direct falsification condition."
+    )
+    return f"""<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom"
+      xmlns:arxiv="http://arxiv.org/schemas/atom">
+  <title>arXiv Query</title>
+  <entry>
+    <id>http://arxiv.org/abs/2401.09999v1</id>
+    <updated>2024-01-03T00:00:00Z</updated>
+    <published>2024-01-02T00:00:00Z</published>
+    <title>Local resonance as a bounded cross-domain mechanism</title>
+    <summary>{abstract}</summary>
+    <author><name>Fixture Author</name></author>
+    <category term="cond-mat.mtrl-sci" />
+    <arxiv:doi>10.5555/material-agent.arxiv.1</arxiv:doi>
+  </entry>
+</feed>""".encode("utf-8")
+
+
 def _policy() -> InspirationPolicyV1:
     return InspirationPolicyV1(
         policy_id="inspiration-public-crossref-v1",
@@ -148,17 +174,20 @@ def _policy() -> InspirationPolicyV1:
     )
 
 
-def _run_public(root: Path):
+def _run_public(root: Path, *, adapter=None):
     store = LocalArtifactStore(root)
     policy = _policy()
     graph = curated_flat_band_tag_graph()
-    payload = _response_bytes()
-    transport = StaticCrossrefTransport(payload)
-    adapter = CrossrefPublicAdapter(
-        max_results=1,
-        timeout_seconds=7,
-        transport=transport,
-    )
+    if adapter is None:
+        payload = _response_bytes()
+        transport = StaticCrossrefTransport(payload)
+        adapter = CrossrefPublicAdapter(
+            max_results=1,
+            timeout_seconds=7,
+            transport=transport,
+        )
+    else:
+        transport = adapter.transport
 
     requirement_pointer = _pointer(
         store.write_bytes(
@@ -331,4 +360,35 @@ def test_public_crossref_vertical_slice_persists_raw_metadata_and_no_body(
     assert len(store.read_jsonl(f"{prefix}/bridge_packets.jsonl")) == 1
     assert "PDF full-text reads: `0`" in result.report
     assert "novelty" not in result.report.casefold()
+    runner.verify_stage_result(result.stage_result)
+
+
+def test_public_arxiv_vertical_slice_reaches_evidence_and_transformation(
+    tmp_path: Path,
+) -> None:
+    payload = _arxiv_response_bytes()
+    transport = StaticCrossrefTransport(payload)
+    adapter = ArxivPublicAdapter(
+        max_results=1,
+        timeout_seconds=7,
+        transport=transport,
+    )
+
+    store, runner, result, _input, returned_transport = _run_public(
+        tmp_path / "arxiv",
+        adapter=adapter,
+    )
+
+    assert returned_transport is transport
+    assert result.stage_result.outcome is InspirationOutcome.SUCCEEDED
+    assert len(result.bundle.selected_candidates) == 1
+    prefix = "stages/inspiration/run-public-crossref"
+    hits = store.read_jsonl(f"{prefix}/search_hits.jsonl")
+    passages = store.read_jsonl(f"{prefix}/passages.jsonl")
+    assert {record["provider"] for record in hits} == {"arxiv"}
+    assert {record["arxiv_id"] for record in hits} == {"2401.09999"}
+    assert len(passages) == 1
+    assert passages[0]["locator"]["kind"] == "API_FIELD"
+    assert "provider=arxiv" in passages[0]["locator"]["selector"]
+    assert result.bundle.cost_ledger.fetch_requests == 0
     runner.verify_stage_result(result.stage_result)

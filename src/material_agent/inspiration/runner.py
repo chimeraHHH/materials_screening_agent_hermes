@@ -30,6 +30,7 @@ from material_agent.inspiration.extractors import (
     extract_crossref_metadata,
     extract_document,
     extract_openalex_metadata,
+    extract_search_hit_metadata,
     extract_semantic_scholar_metadata,
 )
 from material_agent.inspiration.feedback import (
@@ -98,6 +99,7 @@ from material_agent.inspiration.search import (
     SearchAdapterError,
     SearchAttemptRecord,
     group_document_hits,
+    parse_arxiv_page,
     parse_crossref_page,
     parse_multi_source_page,
     parse_openalex_page,
@@ -1299,10 +1301,11 @@ class InspirationRunner:
                 "SEARCH_QUERY_MISMATCH",
                 "search adapter returned a response for a different query",
             )
-        if page.media_type != "application/json":
+        if page.media_type not in {"application/json", "application/atom+xml"}:
             raise InspirationRunnerError(
                 "UNSUPPORTED_SEARCH_MEDIA_TYPE",
-                "metadata search responses must be application/json",
+                "metadata search responses must be application/json or "
+                "application/atom+xml",
             )
         if not isinstance(page.payload, bytes):
             raise InspirationRunnerError(
@@ -1321,6 +1324,7 @@ class InspirationRunner:
                     "public metadata responses cannot use fixture bindings",
                 )
             if page.provider not in {
+                "arxiv",
                 "crossref",
                 "openalex",
                 "multi-source-v1",
@@ -1378,6 +1382,15 @@ class InspirationRunner:
             )
         if page.provider == "crossref":
             return parse_crossref_page(
+                query=query,
+                payload=page.payload,
+                raw_response_artifact=raw_response_artifact,
+                max_hits=max_hits,
+                publication_year_from=publication_year_from,
+                publication_year_to=publication_year_to,
+            )
+        if page.provider == "arxiv":
+            return parse_arxiv_page(
                 query=query,
                 payload=page.payload,
                 raw_response_artifact=raw_response_artifact,
@@ -1537,6 +1550,18 @@ class InspirationRunner:
                     target_terms=target_terms,
                     limits=metadata_limits,
                     result_index=hit.provider_rank - 1,
+                )
+            elif (
+                (page.provider == hit.provider and hit.provider in {"arxiv", "openalex"})
+                or (
+                    page.provider == "multi-source-v1"
+                    and hit.provider in {"arxiv", "crossref", "openalex"}
+                )
+            ):
+                extraction = extract_search_hit_metadata(
+                    hit,
+                    target_terms=target_terms,
+                    limits=metadata_limits,
                 )
             else:
                 raise InspirationRunnerError(
@@ -2371,6 +2396,7 @@ def public_inspiration_runner_from_environment(
     environment: Mapping[str, str] | None = None,
     crossref_transport: BoundedHttpTransport | None = None,
     openalex_transport: BoundedHttpTransport | None = None,
+    arxiv_transport: BoundedHttpTransport | None = None,
     document_fetcher: DocumentFetcher | None = None,
     monotonic_clock: Callable[[], float] = time.monotonic,
 ) -> InspirationRunner:
@@ -2390,6 +2416,7 @@ def public_inspiration_runner_from_environment(
         environment=environment,
         crossref_transport=crossref_transport,
         openalex_transport=openalex_transport,
+        arxiv_transport=arxiv_transport,
     )
     return InspirationRunner(
         store=store,

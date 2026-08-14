@@ -17,7 +17,7 @@ from html.parser import HTMLParser
 from typing import Any
 from xml.etree import ElementTree
 
-from material_agent.inspiration.models import PassageLocatorKind
+from material_agent.inspiration.models import PassageLocatorKind, SearchHitV1
 
 _TOKEN_RE = re.compile(
     r"[\u3400-\u9fff]|[A-Za-z0-9]+(?:[-'][A-Za-z0-9]+)*|[^\W\d_]+",
@@ -121,6 +121,58 @@ def count_approximate_tokens(text: str) -> int:
     """Return a deterministic, dependency-free token-count approximation."""
 
     return sum(1 for _ in _TOKEN_RE.finditer(text))
+
+
+def extract_search_hit_metadata(
+    hit: SearchHitV1,
+    *,
+    target_terms: Iterable[str] = (),
+    limits: ExtractionLimits | None = None,
+) -> ExtractionResult:
+    """Extract a passage from a strictly parsed provider-neutral search hit.
+
+    This path is used when a raw response is an Atom feed or a multi-provider
+    envelope.  The hit still closes to the immutable raw-response Artifact; the
+    API-field selector records the exact provider record used after strict local
+    schema validation.
+    """
+
+    if not isinstance(hit, SearchHitV1):
+        raise TypeError("hit must be SearchHitV1")
+    selected_limits = limits or ExtractionLimits()
+    abstract = _clean_extracted_text(hit.abstract) if hit.abstract else None
+    drafts: tuple[ExtractedTextDraft, ...] = ()
+    if abstract:
+        drafts = (
+            ExtractedTextDraft(
+                text=abstract,
+                locator_kind=PassageLocatorKind.API_FIELD,
+                selector=(
+                    f"provider={hit.provider};record={hit.provider_record_id};"
+                    "field=abstract"
+                ),
+                section_heading="Abstract",
+                source_tier=ExtractionTier.METADATA_API,
+            ),
+        )
+    sufficient = abstract is not None and _is_sufficient_abstract(
+        abstract,
+        title=hit.title,
+        keywords=hit.keywords,
+        target_terms=target_terms,
+        min_tokens=selected_limits.min_abstract_tokens,
+    )
+    return ExtractionResult(
+        title=hit.title,
+        keywords=hit.keywords,
+        drafts=drafts,
+        decision=(
+            ExtractionDecision.SKIP_BODY_ABSTRACT_SUFFICIENT
+            if sufficient
+            else ExtractionDecision.FETCH_BODY_METADATA_INSUFFICIENT
+        ),
+        media_type="application/vnd.material-agent.search-hit+json",
+    )
 
 
 def extract_openalex_metadata(

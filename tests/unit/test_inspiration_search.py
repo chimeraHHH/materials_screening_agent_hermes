@@ -16,6 +16,7 @@ from material_agent.inspiration import (
     SearchQueryV1,
 )
 from material_agent.inspiration.search import (
+    ArxivPublicAdapter,
     CrossrefPublicAdapter,
     FixtureSearchAdapter,
     MultiSourceSearchAdapter,
@@ -24,7 +25,9 @@ from material_agent.inspiration.search import (
     UrlLibBoundedTransport,
     document_id_for,
     group_document_hits,
+    normalize_arxiv_id,
     normalize_doi,
+    parse_arxiv_page,
     parse_crossref_page,
     parse_multi_source_page,
     parse_openalex_page,
@@ -114,6 +117,27 @@ def crossref_response_bytes() -> bytes:
         },
         sort_keys=True,
     ).encode()
+
+
+def arxiv_response_bytes(*, published_year: int = 2024) -> bytes:
+    return f"""<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom"
+      xmlns:arxiv="http://arxiv.org/schemas/atom">
+  <title>arXiv Query</title>
+  <entry>
+    <id>http://arxiv.org/abs/2401.01234v2</id>
+    <updated>{published_year}-01-03T00:00:00Z</updated>
+    <published>{published_year}-01-02T00:00:00Z</published>
+    <title>Compact localized states in a materials lattice</title>
+    <summary>Compact localized states arise because destructive interference
+    suppresses electronic hopping and produces a narrow band in the lattice.</summary>
+    <author><name>Ada Example</name></author>
+    <author><name>Ada Example</name></author>
+    <category term="cond-mat.mtrl-sci" />
+    <category term="cond-mat.str-el" />
+    <arxiv:doi>10.1000/ABC</arxiv:doi>
+  </entry>
+</feed>""".encode("utf-8")
 
 
 class _RecordingTransport:
@@ -1298,6 +1322,131 @@ def test_openalex_request_is_bounded_year_filtered_and_secret_is_lazy() -> None:
     assert parameters["api_key"] == ["offline-test-key"]
     assert "offline-test-key" not in repr(page)
     assert "offline-test-key" not in adapter.component.model_dump_json()
+
+
+def test_arxiv_adapter_builds_bounded_atom_query_and_paces_requests() -> None:
+    payload = arxiv_response_bytes()
+    transport = _RecordingTransport(payload)
+    clock = _FakeClock()
+    adapter = ArxivPublicAdapter(
+        max_results=3,
+        timeout_seconds=7,
+        publication_year_from=1990,
+        publication_year_to=2025,
+        transport=transport,
+        sleeper=clock.sleep,
+        monotonic_clock=clock.monotonic,
+    )
+
+    first = adapter.search(query(), max_response_bytes=len(payload))
+    second = adapter.search(query("query-2"), max_response_bytes=len(payload))
+
+    assert first.provider == "arxiv"
+    assert first.media_type == "application/atom+xml"
+    assert second.attempts[0].pacing_delay_seconds == 3.0
+    assert clock.sleeps == [3.0]
+    parameters = parse_qs(urlsplit(str(transport.calls[0]["url"])).query)
+    assert parameters["max_results"] == ["3"]
+    assert parameters["start"] == ["0"]
+    assert parameters["sortBy"] == ["relevance"]
+    assert parameters["search_query"] == [
+        'all:"flat band compact localized state" AND '
+        "submittedDate:[199001010000 TO 202512312359]"
+    ]
+    assert transport.calls[0]["headers"] == {
+        "Accept": "application/atom+xml",
+        "Accept-Encoding": "identity",
+        "User-Agent": "materials-screening-agent/0.1 (metadata-only)",
+    }
+
+
+def test_parse_arxiv_page_normalizes_version_and_deduplicates_by_doi() -> None:
+    parsed = parse_arxiv_page(
+        query=query(),
+        payload=arxiv_response_bytes(),
+        raw_response_artifact=artifact(),
+        max_hits=5,
+    )
+    openalex = parse_openalex_page(
+        query=query(),
+        payload=response_bytes(),
+        raw_response_artifact=artifact(),
+        max_hits=5,
+    )
+
+    assert len(parsed.hits) == 1
+    hit = parsed.hits[0]
+    assert hit.provider == "arxiv"
+    assert hit.provider_record_id == "2401.01234"
+    assert hit.arxiv_id == "2401.01234"
+    assert hit.doi == "10.1000/abc"
+    assert hit.published_year == 2024
+    assert hit.authors == ("Ada Example",)
+    assert hit.keywords == ("cond-mat.mtrl-sci", "cond-mat.str-el")
+    assert hit.document_id == openalex.hits[0].document_id
+    assert normalize_arxiv_id("https://arxiv.org/abs/2401.01234v9") == "2401.01234"
+
+
+def test_parse_arxiv_page_rechecks_year_and_rejects_dtd() -> None:
+    filtered = parse_arxiv_page(
+        query=query(),
+        payload=arxiv_response_bytes(published_year=2024),
+        raw_response_artifact=artifact(),
+        max_hits=5,
+        publication_year_from=1960,
+        publication_year_to=1990,
+    )
+    assert filtered.hits == ()
+    assert filtered.warnings == ("PUBLICATION_YEAR_REJECTED:2401.01234",)
+
+    unsafe = arxiv_response_bytes().replace(
+        b"<feed ",
+        b"<!DOCTYPE feed [<!ENTITY x 'bad'>]><feed ",
+        1,
+    )
+    with pytest.raises(SearchAdapterError) as error:
+        parse_arxiv_page(
+            query=query(),
+            payload=unsafe,
+            raw_response_artifact=artifact(),
+            max_hits=5,
+        )
+    assert error.value.code == "UNSAFE_XML"
+
+
+def test_public_search_factory_supports_arxiv_single_and_multi_source() -> None:
+    single = public_search_adapter_from_environment(
+        budget=SearchBudgetV1(
+            max_queries=2,
+            max_physical_requests=2,
+            max_direct_queries=2,
+            max_bridge_queries=0,
+            max_counter_queries=0,
+        ),
+        environment={"MATERIAL_AGENT_INSPIRATION_SEARCH_PROVIDER": "arxiv"},
+        arxiv_transport=_RecordingTransport(arxiv_response_bytes()),
+    )
+    assert isinstance(single, ArxivPublicAdapter)
+
+    multi = public_search_adapter_from_environment(
+        budget=SearchBudgetV1(
+            max_queries=2,
+            max_physical_requests=4,
+            max_direct_queries=2,
+            max_bridge_queries=0,
+            max_counter_queries=0,
+        ),
+        environment={
+            "MATERIAL_AGENT_INSPIRATION_SEARCH_PROVIDER": "crossref+arxiv"
+        },
+        crossref_transport=_RecordingTransport(crossref_response_bytes()),
+        arxiv_transport=_RecordingTransport(arxiv_response_bytes()),
+    )
+    assert isinstance(multi, MultiSourceSearchAdapter)
+    assert {item.component.component_id for item in multi.adapters} == {
+        "arxiv-public-adapter",
+        "crossref-public-adapter",
+    }
 
 
 def test_openalex_missing_secret_fails_before_network() -> None:

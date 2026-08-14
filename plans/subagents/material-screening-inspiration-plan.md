@@ -1028,3 +1028,20 @@ parent hard-kill 后独立 action child 的清理仍是 public production P0。
   定向跨模块回归 `53 passed`；独立 worker 真实集成 `1 passed`；排除已暂停 flatband 研究轨的
   完整离线回归 `1049 passed, 17 skipped`，主环境 heavy-package isolation 与两套环境
   `pip check` 均通过。本 checkpoint 不运行 CHGNet、DeepH、DFT 或外部网络科学计算。
+
+### 2026-08-14：arXiv 与 OSTI 公共元数据接入（进行中）
+
+- 范围：在既有 `SearchAdapter`/原始响应 Artifact/SHA-256/年代复核契约内新增 arXiv
+  Query API（Atom）与 OSTI.GOV v1（JSON）adapter、严格 parser、metadata passage
+  extractor，并接入公共 runner 的单源与多源环境工厂；不下载 PDF，不把检索摘要提升为
+  DFT、实验或专家证据。
+- 真实入口：非 DFT `research_pipeline` 继续通过
+  `public_inspiration_runner_from_environment` 调用；组合 provider 模式必须由冻结的物理请求
+  budget 覆盖每个逻辑 query 的全部来源，并保留每个子响应的原始字节与 hash。
+- 验收：离线 unit 覆盖请求构造、年代过滤、Atom/JSON schema drift、跨源 DOI/arXiv 去重、
+  factory budget 与 runner 抽取；各做一次有界 live smoke，随后运行 Inspiration 定向 Gate、
+  `pip check` 与 `git diff --check`。arXiv 与 OSTI 分别提交并推送，不写入任何 API key。
+- arXiv 子步已完成：新增官方 Query API adapter、三秒请求间隔、Atom/DTD fail-closed parser、
+  DOI/arXiv identity、单源/多源 factory 与 provider-neutral 摘要抽取；真实 adapter live gate
+  返回 `1` hit（`3278` bytes，arXiv `2602.01354`），runner 纵切进入 evidence/变换且 PDF/body
+  请求为 `0`。Inspiration unit/contract/public integration 共 `328 passed`；OSTI 子步待完成。
