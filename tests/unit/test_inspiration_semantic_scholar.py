@@ -7,7 +7,11 @@ from urllib.parse import parse_qs, urlsplit
 import pytest
 from pydantic import ValidationError
 
-from material_agent.inspiration.models import ArtifactPointerV1
+from material_agent.inspiration.models import (
+    ArtifactPointerV1,
+    SearchQueryKind,
+    SearchQueryV1,
+)
 from material_agent.inspiration.query_context import (
     AnchorPolarity,
     LiteratureAnchorV2,
@@ -15,14 +19,16 @@ from material_agent.inspiration.query_context import (
     ReviewedQueryHintsV2,
     compile_query_context_v2,
 )
+from material_agent.inspiration.search import SearchAdapterError
 from material_agent.inspiration.semantic_scholar import (
     SemanticScholarPublicAdapter,
     SemanticScholarRequestV1,
     SemanticScholarRoute,
+    SemanticScholarTopicSearchAdapter,
     compile_semantic_scholar_requests,
     parse_semantic_scholar_page,
+    parse_semantic_scholar_topic_page,
 )
-from material_agent.inspiration.search import SearchAdapterError
 from material_agent.retrieval.models import (
     CandidateAuditRecordV2,
     Decision,
@@ -119,6 +125,15 @@ def _pointer() -> ArtifactPointerV1:
     )
 
 
+def _topic_query() -> SearchQueryV1:
+    return SearchQueryV1(
+        query_id="query-common-topic",
+        kind=SearchQueryKind.DIRECT,
+        text="layered transition-metal flat band",
+        tag_ids=("flat-band",),
+    )
+
+
 def test_request_compiler_builds_autosci_style_routes() -> None:
     requests = compile_semantic_scholar_requests(_context())
 
@@ -164,6 +179,36 @@ def test_adapter_builds_bounded_topic_request_and_keeps_key_out_of_url() -> None
     assert "secret-test-key" not in url
     assert call["headers"]["x-api-key"] == "secret-test-key"  # type: ignore[index]
     assert call["deadline_monotonic"] == 105.0
+
+
+def test_common_topic_adapter_and_parser_preserve_common_query_identity() -> None:
+    transport = _RecordingTransport(json.dumps({"data": [_paper()]}).encode())
+    adapter = SemanticScholarTopicSearchAdapter(
+        max_results=7,
+        publication_year_from=1960,
+        publication_year_to=2026,
+        transport=transport,
+    )
+
+    page = adapter.search(
+        _topic_query(),
+        max_response_bytes=10_000,
+        max_physical_requests=1,
+    )
+    parsed = parse_semantic_scholar_topic_page(
+        query=_topic_query(),
+        payload=page.payload,
+        raw_response_artifact=_pointer(),
+        max_hits=7,
+        publication_year_from=1960,
+        publication_year_to=2026,
+    )
+
+    parameters = parse_qs(urlsplit(str(transport.calls[0]["url"])).query)
+    assert parameters["query"] == [_topic_query().text]
+    assert parameters["limit"] == ["7"]
+    assert len(parsed.hits) == 1
+    assert parsed.hits[0].query_ids == ("query-common-topic",)
 
 
 def test_parser_maps_topic_metadata_with_local_year_check() -> None:

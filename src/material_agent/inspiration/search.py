@@ -17,14 +17,14 @@ import re
 import socket
 import threading
 import time
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, replace
 from datetime import timezone
 from email.utils import parsedate_to_datetime
 from html.parser import HTMLParser
 from pathlib import Path
-from typing import Any, Callable, Literal, Protocol
+from typing import Any, Literal, Protocol
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode, urljoin, urlsplit, urlunsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
@@ -39,7 +39,6 @@ from material_agent.inspiration.models import (
     canonical_sha256,
     deterministic_id,
 )
-
 
 _TRANSIENT_HTTP_STATUSES = frozenset({408, 429, 500, 502, 503, 504})
 _MAX_RETRIES = 5
@@ -2074,6 +2073,7 @@ def public_search_adapter_from_environment(
     environment: Mapping[str, str] | None = None,
     crossref_transport: BoundedHttpTransport | None = None,
     openalex_transport: BoundedHttpTransport | None = None,
+    semantic_scholar_transport: BoundedHttpTransport | None = None,
     arxiv_transport: BoundedHttpTransport | None = None,
     osti_transport: BoundedHttpTransport | None = None,
 ) -> SearchAdapter:
@@ -2106,7 +2106,7 @@ def public_search_adapter_from_environment(
     if not mode:
         mode = "crossref"
     requested = tuple(part.strip() for part in mode.split("+") if part.strip())
-    supported = ("crossref", "openalex", "arxiv", "osti")
+    supported = ("crossref", "openalex", "semantic-scholar", "arxiv", "osti")
     if (
         not requested
         or len(requested) != len(set(requested))
@@ -2114,7 +2114,7 @@ def public_search_adapter_from_environment(
     ):
         raise ValueError(
             f"{PUBLIC_SEARCH_PROVIDER_ENV} must contain unique providers from "
-            "'crossref', 'openalex', 'arxiv', and 'osti'"
+            "'crossref', 'openalex', 'semantic-scholar', 'arxiv', and 'osti'"
         )
     provider_ids = tuple(provider for provider in supported if provider in requested)
     required_requests = budget.max_queries * len(provider_ids)
@@ -2148,6 +2148,22 @@ def public_search_adapter_from_environment(
                     publication_year_from=budget.publication_year_from,
                     publication_year_to=budget.publication_year_to,
                     transport=openalex_transport,
+                )
+            )
+        elif provider == "semantic-scholar":
+            from material_agent.inspiration.semantic_scholar import (
+                SemanticScholarTopicSearchAdapter,
+            )
+
+            adapters.append(
+                SemanticScholarTopicSearchAdapter(
+                    max_results=max_results,
+                    publication_year_from=budget.publication_year_from,
+                    publication_year_to=budget.publication_year_to,
+                    api_key_resolver=lambda: selected.get(
+                        "SEMANTIC_SCHOLAR_API_KEY", ""
+                    ),
+                    transport=semantic_scholar_transport,
                 )
             )
         elif provider == "arxiv":
@@ -2941,11 +2957,16 @@ def _parse_openalex_multi_source_page(**kwargs: Any) -> ParsedSearchPage:
 
 
 def _default_multi_source_parsers() -> Mapping[str, Callable[..., ParsedSearchPage]]:
+    from material_agent.inspiration.semantic_scholar import (
+        parse_semantic_scholar_topic_page,
+    )
+
     return {
         "arxiv": parse_arxiv_page,
         "crossref": parse_crossref_page,
         "openalex": _parse_openalex_multi_source_page,
         "osti": parse_osti_page,
+        "semantic-scholar": parse_semantic_scholar_topic_page,
     }
 
 

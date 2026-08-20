@@ -13,9 +13,10 @@ import json
 import math
 import os
 import time
+from collections.abc import Callable, Mapping
 from enum import StrEnum
 from pathlib import Path
-from typing import Annotated, Any, Callable, Literal, Mapping
+from typing import Annotated, Any, Literal
 from urllib.parse import quote, urlencode
 
 from pydantic import Field, model_validator
@@ -25,6 +26,7 @@ from material_agent.inspiration.models import (
     ComponentSnapshotV1,
     Identifier,
     SearchHitV1,
+    SearchQueryV1,
     ShortText,
     StrictModel,
     canonical_json_bytes,
@@ -46,7 +48,6 @@ from material_agent.inspiration.search import (
     document_id_for,
     normalize_doi,
 )
-
 
 SEMANTIC_SCHOLAR_REQUEST_VERSION = "semantic-scholar-request-v1"
 SEMANTIC_SCHOLAR_API_KEY_ENV = "SEMANTIC_SCHOLAR_API_KEY"
@@ -336,6 +337,136 @@ class SemanticScholarPublicAdapter:
             payload=payload,
             attempts=_attempts_from_hops(request.query_id, hops),
         )
+
+
+class SemanticScholarTopicSearchAdapter:
+    """Adapt the existing four-route client to the common topic-search boundary."""
+
+    network_access = True
+    provider_id = "semantic-scholar"
+
+    def __init__(
+        self,
+        *,
+        max_results: int = 5,
+        publication_year_from: int | None = None,
+        publication_year_to: int | None = None,
+        api_key_resolver: Callable[[], str] | None = None,
+        transport: BoundedHttpTransport | None = None,
+    ) -> None:
+        if not 1 <= max_results <= 100:
+            raise ValueError("max_results must be between 1 and 100")
+        self.max_results = max_results
+        self.publication_year_from = publication_year_from
+        self.publication_year_to = publication_year_to
+        self.provider = SemanticScholarPublicAdapter(
+            api_key_resolver=api_key_resolver,
+            transport=transport,
+        )
+        self.component = ComponentSnapshotV1(
+            component_id="semantic-scholar-topic-public-adapter",
+            version="topic-v1",
+            implementation_sha256=hashlib.sha256(
+                canonical_json_bytes(
+                    {
+                        "child": self.provider.component.implementation_sha256,
+                        "max_results": max_results,
+                        "publication_year_from": publication_year_from,
+                        "publication_year_to": publication_year_to,
+                        "source_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+                    }
+                )
+            ).hexdigest(),
+        )
+
+    def search(
+        self,
+        query: SearchQueryV1,
+        *,
+        max_response_bytes: int,
+        remaining_walltime_seconds: float | None = None,
+        max_physical_requests: int | None = None,
+    ) -> RawSearchPage:
+        request = semantic_scholar_topic_request(
+            query,
+            max_results=self.max_results,
+            publication_year_from=self.publication_year_from,
+            publication_year_to=self.publication_year_to,
+        )
+        return self.provider.search(
+            request,
+            max_response_bytes=max_response_bytes,
+            remaining_walltime_seconds=remaining_walltime_seconds,
+            max_physical_requests=max_physical_requests,
+        )
+
+
+def semantic_scholar_topic_request(
+    query: SearchQueryV1,
+    *,
+    max_results: int,
+    publication_year_from: int | None,
+    publication_year_to: int | None,
+) -> SemanticScholarRequestV1:
+    if not isinstance(query, SearchQueryV1):
+        raise SearchAdapterError("INVALID_QUERY", "query must be SearchQueryV1")
+    payload = {
+        "schema_version": SEMANTIC_SCHOLAR_REQUEST_VERSION,
+        "context_id": deterministic_id(
+            "s2-context", {"search_query_id": query.query_id}
+        ),
+        "route": SemanticScholarRoute.TOPIC,
+        "query_text": query.text,
+        "anchor_paper_id": None,
+        "anchor_polarity": None,
+        "max_results": max_results,
+        "publication_year_from": publication_year_from,
+        "publication_year_to": publication_year_to,
+    }
+    return SemanticScholarRequestV1(
+        query_id=deterministic_id("s2-query", payload),
+        **payload,
+    )
+
+
+def parse_semantic_scholar_topic_page(
+    *,
+    query: SearchQueryV1,
+    payload: bytes,
+    raw_response_artifact: ArtifactPointerV1,
+    max_hits: int,
+    publication_year_from: int | None = None,
+    publication_year_to: int | None = None,
+) -> ParsedSearchPage:
+    request = semantic_scholar_topic_request(
+        query,
+        max_results=max_hits,
+        publication_year_from=publication_year_from,
+        publication_year_to=publication_year_to,
+    )
+    parsed = parse_semantic_scholar_page(
+        request=request,
+        payload=payload,
+        raw_response_artifact=raw_response_artifact,
+    )
+    hits = tuple(
+        hit.model_copy(
+            update={
+                "hit_id": deterministic_id(
+                    "hit",
+                    {
+                        "provider": hit.provider,
+                        "provider_record_id": hit.provider_record_id,
+                        "query_id": query.query_id,
+                        "provider_rank": hit.provider_rank,
+                    },
+                ),
+                "query_ids": (query.query_id,),
+            }
+        )
+        for hit in parsed.hits
+    )
+    return ParsedSearchPage(hits=hits, warnings=parsed.warnings)
 
 
 def parse_semantic_scholar_page(

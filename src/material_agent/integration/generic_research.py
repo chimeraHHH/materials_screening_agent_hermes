@@ -55,7 +55,7 @@ from material_agent.retrieval.storage import LocalArtifactStore
 GENERIC_RESEARCH_TOOL_NAME = "materials_generic_research_run"
 GENERIC_RESEARCH_REQUEST_SCHEMA_VERSION = "materials-generic-research-run-v1"
 GENERIC_RESEARCH_RESULT_SCHEMA_VERSION = "materials-generic-research-run-v3"
-GENERIC_RESEARCH_IMPLEMENTATION_REVISION = "generic-research-20260819-r4"
+GENERIC_RESEARCH_IMPLEMENTATION_REVISION = "generic-research-20260821-r5"
 
 
 def research_secret_resolver_from_environment(
@@ -109,7 +109,7 @@ class GenericResearchRunResultV3(StrictModel):
     schema_version: Literal["materials-generic-research-run-v3"] = (
         GENERIC_RESEARCH_RESULT_SCHEMA_VERSION
     )
-    implementation_revision: Literal["generic-research-20260819-r4"] = (
+    implementation_revision: Literal["generic-research-20260821-r5"] = (
         GENERIC_RESEARCH_IMPLEMENTATION_REVISION
     )
     run_id: str
@@ -193,9 +193,9 @@ class GenericMaterialsResearchService:
         search_environment = dict(self.environment)
         search_environment.setdefault(
             PUBLIC_SEARCH_PROVIDER_ENV,
-            "crossref+openalex+arxiv+osti"
+            "crossref+openalex+semantic-scholar+arxiv+osti"
             if search_environment.get(OPENALEX_API_KEY_ENV, "").strip()
-            else "crossref+arxiv+osti",
+            else "crossref+semantic-scholar+arxiv+osti",
         )
         search_environment.setdefault(PUBLIC_SEARCH_MAX_RESULTS_ENV, "20")
         provider_count = len(search_environment[PUBLIC_SEARCH_PROVIDER_ENV].split("+"))
