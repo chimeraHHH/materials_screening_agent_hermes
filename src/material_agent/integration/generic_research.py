@@ -16,6 +16,13 @@ from material_agent.inspiration.deepseek_agent import (
     DeepSeekAgentResultV1,
     DeepSeekThinkingAgent,
 )
+from material_agent.inspiration.fulltext import (
+    UNPAYWALL_EMAIL_ENV,
+    LawfulFullTextResolver,
+    OpenAccessPdfFetcher,
+    UnpaywallPublicAdapter,
+    UrllibLocalGrobidTransport,
+)
 from material_agent.inspiration.models import canonical_json_bytes
 from material_agent.inspiration.native_search import DeepSeekNativeSearchDiscovery
 from material_agent.inspiration.opencitations import (
@@ -63,7 +70,7 @@ from material_agent.retrieval.storage import LocalArtifactStore
 GENERIC_RESEARCH_TOOL_NAME = "materials_generic_research_run"
 GENERIC_RESEARCH_REQUEST_SCHEMA_VERSION = "materials-generic-research-run-v1"
 GENERIC_RESEARCH_RESULT_SCHEMA_VERSION = "materials-generic-research-run-v4"
-GENERIC_RESEARCH_IMPLEMENTATION_REVISION = "generic-research-20260821-r6"
+GENERIC_RESEARCH_IMPLEMENTATION_REVISION = "generic-research-20260821-r8"
 
 
 def research_secret_resolver_from_environment(
@@ -117,7 +124,7 @@ class GenericResearchRunResultV4(StrictModel):
     schema_version: Literal["materials-generic-research-run-v4"] = (
         GENERIC_RESEARCH_RESULT_SCHEMA_VERSION
     )
-    implementation_revision: Literal["generic-research-20260821-r6"] = (
+    implementation_revision: Literal["generic-research-20260821-r8"] = (
         GENERIC_RESEARCH_IMPLEMENTATION_REVISION
     )
     run_id: str
@@ -207,13 +214,16 @@ class GenericMaterialsResearchService:
         )
         search_environment.setdefault(PUBLIC_SEARCH_MAX_RESULTS_ENV, "20")
         provider_count = len(search_environment[PUBLIC_SEARCH_PROVIDER_ENV].split("+"))
+        candidate_search_calls = 4
         authoritative_calls = min(
             selected.max_authoritative_search_calls,
             64 // provider_count,
         )
         search_budget = SearchBudgetV1(
             max_queries=authoritative_calls,
-            max_physical_requests=authoritative_calls * provider_count,
+            max_physical_requests=(
+                (authoritative_calls + candidate_search_calls) * provider_count
+            ),
             max_direct_queries=authoritative_calls,
             max_bridge_queries=0,
             max_counter_queries=0,
@@ -252,6 +262,18 @@ class GenericMaterialsResearchService:
                 )
             ),
             native_leads_snapshot=native_state.snapshot,
+            max_candidate_calls=candidate_search_calls,
+            fulltext_resolver=LawfulFullTextResolver(
+                unpaywall=UnpaywallPublicAdapter(
+                    email_resolver=lambda: search_environment.get(
+                        UNPAYWALL_EMAIL_ENV, ""
+                    )
+                ),
+                pdf_fetcher=OpenAccessPdfFetcher(),
+                grobid=UrllibLocalGrobidTransport(),
+                store=self.store,
+                run_id=run_id,
+            ),
         )
         database_state = FederatedCandidateSearchState(
             store=self.store,
@@ -373,6 +395,7 @@ class GenericMaterialsResearchService:
             authoritative_search_tool=evidence_state.as_tool(),
             evidence_snapshot=evidence_state.snapshot,
             lead_resolutions_snapshot=evidence_state.lead_resolutions_snapshot,
+            candidate_literature_search=evidence_state.search_candidates,
             database_search_tool=database_state.as_tool(),
             database_candidates_snapshot=database_state.snapshot,
             database_federation_snapshot=database_state.federation_snapshot,

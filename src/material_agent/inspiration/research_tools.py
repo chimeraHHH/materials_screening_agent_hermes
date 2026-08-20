@@ -15,6 +15,7 @@ from pymatgen.analysis.structure_matcher import SpeciesComparator, StructureMatc
 from pymatgen.core import Composition, Element, Structure
 
 from material_agent.inspiration.deepseek_agent import DeepSeekFunctionTool
+from material_agent.inspiration.fulltext import LawfulFullTextResolver
 from material_agent.inspiration.models import (
     ArtifactPointerV1,
     SearchQueryKind,
@@ -33,6 +34,9 @@ from material_agent.inspiration.opencitations import (
 )
 from material_agent.inspiration.query_context import AnchorPolarity
 from material_agent.inspiration.research_graph import (
+    CandidateLiteratureRetrievalV1,
+    CandidateSetV1,
+    ConstraintGraphV1,
     DatabaseCandidateV1,
     DatabaseFederationAuditV1,
     DatabaseSourceQueryReceiptV1,
@@ -95,9 +99,9 @@ class AuthoritativeLiteratureSearchArgsV1(StrictModel):
         description="One to sixteen existing constraint IDs; this list cannot be empty.",
     )
     max_hits: int = Field(ge=1, le=20)
-    route: Literal["TOPIC", "RECOMMENDATIONS", "REFERENCES", "CITATIONS"] = (
-        "TOPIC"
-    )
+    route: Literal[
+        "TOPIC", "RECOMMENDATIONS", "REFERENCES", "CITATIONS", "FULL_TEXT"
+    ] = "TOPIC"
     anchor_paper_id: str = Field(
         default="",
         max_length=256,
@@ -233,6 +237,9 @@ class AuthoritativeLiteratureSearchState:
         semantic_scholar_adapter: SemanticScholarPublicAdapter | None = None,
         opencitations_adapter: OpenCitationsPublicAdapter | None = None,
         native_leads_snapshot: Callable[[], tuple[Mapping[str, Any], ...]] | None = None,
+        max_candidate_calls: int = 4,
+        fulltext_resolver: LawfulFullTextResolver | None = None,
+        max_fulltext_calls: int = 4,
     ) -> None:
         if (
             not run_id
@@ -250,6 +257,10 @@ class AuthoritativeLiteratureSearchState:
             raise ValueError("max_physical_requests must be between 1 and 128")
         if not 1 <= max_response_bytes <= 10_000_000:
             raise ValueError("max_response_bytes must be between 1 and 10000000")
+        if not 1 <= max_candidate_calls <= 8:
+            raise ValueError("max_candidate_calls must be between 1 and 8")
+        if not 1 <= max_fulltext_calls <= 8:
+            raise ValueError("max_fulltext_calls must be between 1 and 8")
         self.adapter = adapter
         self.store = store
         self.run_id = run_id
@@ -261,7 +272,12 @@ class AuthoritativeLiteratureSearchState:
         self.semantic_scholar_adapter = semantic_scholar_adapter
         self.opencitations_adapter = opencitations_adapter
         self.native_leads_snapshot = native_leads_snapshot or (lambda: ())
+        self.max_candidate_calls = max_candidate_calls
+        self.fulltext_resolver = fulltext_resolver
+        self.max_fulltext_calls = max_fulltext_calls
         self._calls = 0
+        self._candidate_calls = 0
+        self._fulltext_calls = 0
         self._physical_requests = 0
         self._evidence: dict[str, ResolvedEvidenceV1] = {}
         self._lock = threading.Lock()
@@ -274,8 +290,8 @@ class AuthoritativeLiteratureSearchState:
                 "anchor paper through Semantic Scholar RECOMMENDATIONS, REFERENCES, and "
                 "CITATIONS. DOI anchors on reference/citation routes are independently "
                 "cross-checked through OpenCitations Index + Meta. Exact raw bytes are "
-                "persisted before parsing; metadata/abstract evidence cannot establish "
-                "band properties."
+                "persisted before parsing. FULL_TEXT resolves only Unpaywall-reported OA "
+                "PDFs and extracts page/section/sentence locators through local GROBID."
             ),
             arguments_model=AuthoritativeLiteratureSearchArgsV1,
             handler=self._handle,
@@ -333,8 +349,82 @@ class AuthoritativeLiteratureSearchState:
     def _handle(
         self, arguments: AuthoritativeLiteratureSearchArgsV1
     ) -> Mapping[str, Any]:
+        if arguments.route == "FULL_TEXT":
+            return self._handle_fulltext(arguments)
         if arguments.route != "TOPIC":
             return self._handle_graph(arguments)
+        return self._handle_topic(arguments)
+
+    def _handle_fulltext(
+        self, arguments: AuthoritativeLiteratureSearchArgsV1
+    ) -> Mapping[str, Any]:
+        doi = normalize_doi(arguments.anchor_paper_id)
+        if doi is None:
+            raise LLMProviderError(
+                "FULLTEXT_REQUIRES_DOI",
+                "FULL_TEXT requires a DOI anchor",
+                retryable=False,
+            )
+        if self.fulltext_resolver is None:
+            raise LLMProviderError(
+                "FULLTEXT_UNAVAILABLE",
+                "lawful full-text resolver is not configured",
+                retryable=False,
+            )
+        with self._lock:
+            if self._fulltext_calls >= self.max_fulltext_calls:
+                raise LLMProviderError(
+                    "BUDGET_EXHAUSTED",
+                    "full-text resolution exhausted its call budget",
+                    retryable=False,
+                )
+            record = next(
+                (item for item in self._evidence.values() if item.doi == doi), None
+            )
+            self._fulltext_calls += 1
+        if record is None:
+            raise LLMProviderError(
+                "FULLTEXT_METADATA_REQUIRED",
+                "resolve DOI metadata before requesting full text",
+                retryable=False,
+            )
+        result = self.fulltext_resolver.resolve(
+            doi=doi,
+            document_id=record.document_id,
+            evidence_id=record.evidence_id,
+        )
+        if result.status == "RESOLVED":
+            updated = record.model_copy(
+                update={
+                    "full_text_status": "RESOLVED",
+                    "full_text_spans": result.spans,
+                    "evidence_scope": "OPEN_ACCESS_FULL_TEXT",
+                    "supported_constraint_ids": tuple(
+                        dict.fromkeys(
+                            (
+                                *record.supported_constraint_ids,
+                                *arguments.target_constraint_ids,
+                            )
+                        )
+                    ),
+                }
+            )
+        else:
+            updated = record.model_copy(update={"full_text_status": "UNAVAILABLE"})
+        with self._lock:
+            self._evidence[record.evidence_id] = updated
+        return {
+            "record": updated.model_dump(mode="json"),
+            "fulltext_resolution": result.model_dump(mode="json"),
+            "scientific_evidence_allowed": result.status == "RESOLVED",
+        }
+
+    def _handle_topic(
+        self,
+        arguments: AuthoritativeLiteratureSearchArgsV1,
+        *,
+        candidate_lane: bool = False,
+    ) -> Mapping[str, Any]:
         semantic = {
             "query": " ".join(arguments.query.split()),
             "target_constraint_ids": arguments.target_constraint_ids,
@@ -348,21 +438,9 @@ class AuthoritativeLiteratureSearchState:
             text=semantic["query"],
             tag_ids=("materials-research",),
         )
-        with self._lock:
-            if self._calls >= self.max_calls:
-                raise LLMProviderError(
-                    "BUDGET_EXHAUSTED",
-                    "authoritative-search tool exhausted its call budget",
-                    retryable=False,
-                )
-            remaining_requests = self.max_physical_requests - self._physical_requests
-            if remaining_requests <= 0:
-                raise LLMProviderError(
-                    "BUDGET_EXHAUSTED",
-                    "authoritative-search tool exhausted its physical-request budget",
-                    retryable=False,
-                )
-            self._calls += 1
+        remaining_requests = self._reserve_logical_call(
+            candidate_lane=candidate_lane
+        )
         try:
             page = self.adapter.search(
                 query,
@@ -414,6 +492,72 @@ class AuthoritativeLiteratureSearchState:
             "raw_response": pointer.model_dump(mode="json"),
         }
 
+    def search_candidates(
+        self, candidates: CandidateSetV1, constraints: ConstraintGraphV1
+    ) -> CandidateLiteratureRetrievalV1:
+        before = {item.evidence_id for item in self.snapshot()}
+        queries: list[str] = []
+        failures: list[str] = []
+        constraint_ids = tuple(item.constraint_id for item in constraints.constraints)
+        for candidate in candidates.candidates[: self.max_candidate_calls]:
+            terms = [candidate.material_name]
+            if candidate.formula and candidate.formula.casefold() not in (
+                candidate.material_name.casefold()
+            ):
+                terms.append(candidate.formula)
+            terms.extend(
+                [
+                    candidate.mechanism[:180],
+                    "flat band orbital Fermi level oxidation state layered material",
+                ]
+            )
+            query = " ".join(" ".join(terms).split())[:512]
+            queries.append(query)
+            try:
+                self._handle_topic(
+                    AuthoritativeLiteratureSearchArgsV1(
+                        query=query,
+                        target_constraint_ids=constraint_ids[:16],
+                        max_hits=10,
+                    ),
+                    candidate_lane=True,
+                )
+            except (LLMProviderError, SearchAdapterError) as exc:
+                failures.append(
+                    f"{candidate.candidate_id}:{getattr(exc, 'code', type(exc).__name__)}"
+                )
+        after = {item.evidence_id for item in self.snapshot()}
+        return CandidateLiteratureRetrievalV1(
+            triggered=True,
+            queries=tuple(queries),
+            new_evidence_ids=tuple(sorted(after - before)),
+            failures=tuple(failures),
+        )
+
+    def _reserve_logical_call(self, *, candidate_lane: bool) -> int:
+        with self._lock:
+            used = self._candidate_calls if candidate_lane else self._calls
+            limit = self.max_candidate_calls if candidate_lane else self.max_calls
+            if used >= limit:
+                lane = "candidate-aware" if candidate_lane else "authoritative"
+                raise LLMProviderError(
+                    "BUDGET_EXHAUSTED",
+                    f"{lane} search exhausted its call budget",
+                    retryable=False,
+                )
+            remaining_requests = self.max_physical_requests - self._physical_requests
+            if remaining_requests <= 0:
+                raise LLMProviderError(
+                    "BUDGET_EXHAUSTED",
+                    "authoritative-search tool exhausted its physical-request budget",
+                    retryable=False,
+                )
+            if candidate_lane:
+                self._candidate_calls += 1
+            else:
+                self._calls += 1
+            return remaining_requests
+
     def _handle_graph(
         self, arguments: AuthoritativeLiteratureSearchArgsV1
     ) -> Mapping[str, Any]:
@@ -426,20 +570,7 @@ class AuthoritativeLiteratureSearchState:
         query_id = (
             "query-" + hashlib.sha256(canonical_json_bytes(semantic)).hexdigest()[:24]
         )
-        with self._lock:
-            if self._calls >= self.max_calls:
-                raise LLMProviderError(
-                    "BUDGET_EXHAUSTED",
-                    "authoritative-search tool exhausted its call budget",
-                    retryable=False,
-                )
-            if self._physical_requests >= self.max_physical_requests:
-                raise LLMProviderError(
-                    "BUDGET_EXHAUSTED",
-                    "authoritative-search tool exhausted its physical-request budget",
-                    retryable=False,
-                )
-            self._calls += 1
+        self._reserve_logical_call(candidate_lane=False)
         pages: list[tuple[object, ArtifactPointerV1, tuple[object, ...]]] = []
         failures: list[str] = []
         route = SemanticScholarRoute(arguments.route)

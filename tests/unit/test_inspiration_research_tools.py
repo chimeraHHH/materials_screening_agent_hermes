@@ -5,7 +5,17 @@ from pathlib import Path
 
 from pymatgen.core import Lattice, Structure
 
+from material_agent.inspiration.fulltext import FullTextResolutionV1
 from material_agent.inspiration.opencitations import OpenCitationsPublicAdapter
+from material_agent.inspiration.research_graph import (
+    CandidateHypothesisV1,
+    CandidateSetV1,
+    ConstraintGraphV1,
+    ConstraintKind,
+    FineGrainedEvidenceSpanV1,
+    ResearchConstraintV1,
+    VerificationMethod,
+)
 from material_agent.inspiration.research_tools import (
     AuthoritativeLiteratureSearchArgsV1,
     AuthoritativeLiteratureSearchState,
@@ -194,6 +204,119 @@ def test_citation_graph_cross_checks_providers_and_closes_native_lead(
     assert resolution.document_id == evidence.document_id
     assert resolution.evidence_id == evidence.evidence_id
     assert resolution.resolution_method == "DOI_URL"
+
+
+def test_candidate_generation_triggers_reserved_second_literature_pass(
+    tmp_path: Path,
+) -> None:
+    state = AuthoritativeLiteratureSearchState(
+        adapter=Adapter(),
+        store=LocalArtifactStore(tmp_path),
+        run_id="candidate-search-run",
+        max_calls=1,
+        max_candidate_calls=1,
+        max_physical_requests=2,
+    )
+    constraints = ConstraintGraphV1(
+        goal_summary="Find a layered transition-metal flat-band candidate.",
+        constraints=(
+            ResearchConstraintV1(
+                constraint_id="constraint-flat-band",
+                kind=ConstraintKind.ELECTRONIC_BANDWIDTH,
+                statement="Target band width is at most 50 meV",
+                threshold_value=50,
+                threshold_unit="meV",
+                required_verification=(VerificationMethod.BAND_STRUCTURE,),
+            ),
+        ),
+        prohibited_inferences=("Metadata alone cannot prove a flat band.",),
+    )
+    candidates = CandidateSetV1(
+        candidates=(
+            CandidateHypothesisV1(
+                candidate_id="candidate-tis2-substitution",
+                material_name="TiS2 chalcogen-substituted monolayer",
+                formula="TiSSe",
+                hypothesis="Ligand substitution could narrow a metal-ligand band.",
+                mechanism="Symmetry-preserving chalcogen substitution tunes hopping.",
+            ),
+        )
+    )
+
+    receipt = state.search_candidates(candidates, constraints)
+
+    assert receipt.triggered is True
+    assert len(receipt.queries) == 1
+    assert "TiSSe" in receipt.queries[0]
+    assert len(receipt.new_evidence_ids) == 1
+    assert receipt.failures == ()
+
+
+def test_fulltext_route_upgrades_existing_metadata_to_located_spans(
+    tmp_path: Path,
+) -> None:
+    class Resolver:
+        def resolve(self, *, doi: str, document_id: str, evidence_id: str):
+            text = "The isolated band width is 42 meV."
+            import hashlib
+
+            span = FineGrainedEvidenceSpanV1(
+                span_id="span-" + "4" * 24,
+                document_id=document_id,
+                evidence_id=evidence_id,
+                section_path=("Electronic structure",),
+                paragraph_index=3,
+                sentence_index=1,
+                page_numbers=(4,),
+                text_excerpt=text,
+                text_sha256=hashlib.sha256(text.encode()).hexdigest(),
+                locator="section=Electronic structure;paragraph=3;sentence=1;pages=4",
+                parser="GROBID_TEI",
+                tei_artifact_uri="artifact://research/paper.tei.xml",
+                pdf_artifact_uri="artifact://research/paper.pdf",
+            )
+            return FullTextResolutionV1(
+                doi=doi,
+                document_id=document_id,
+                evidence_id=evidence_id,
+                status="RESOLVED",
+                unpaywall_artifact_uri="artifact://research/unpaywall.json",
+                pdf_artifact_uri="artifact://research/paper.pdf",
+                tei_artifact_uri="artifact://research/paper.tei.xml",
+                spans=(span,),
+            )
+
+    state = AuthoritativeLiteratureSearchState(
+        adapter=Adapter(),
+        store=LocalArtifactStore(tmp_path),
+        run_id="fulltext-route-run",
+        max_calls=1,
+        max_physical_requests=1,
+        fulltext_resolver=Resolver(),  # type: ignore[arg-type]
+    )
+    state.as_tool().handler(
+        AuthoritativeLiteratureSearchArgsV1(
+            query="resolve metadata first",
+            target_constraint_ids=("constraint-flat-band",),
+            max_hits=1,
+        )
+    )
+
+    result = state.as_tool().handler(
+        AuthoritativeLiteratureSearchArgsV1(
+            query="extract located full-text evidence",
+            target_constraint_ids=("constraint-flat-band",),
+            max_hits=1,
+            route="FULL_TEXT",
+            anchor_paper_id="10.1234/flat",
+        )
+    )
+
+    assert result["scientific_evidence_allowed"] is True
+    evidence = state.snapshot()[0]
+    assert evidence.full_text_status == "RESOLVED"
+    assert evidence.evidence_scope == "OPEN_ACCESS_FULL_TEXT"
+    assert evidence.full_text_spans[0].page_numbers == (4,)
 
 
 def test_federated_candidate_tool_merges_sources_and_preserves_failures(

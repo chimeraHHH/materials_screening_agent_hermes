@@ -148,6 +148,22 @@ class DiscoveryReviewV1(StrictModel):
     )
 
 
+class FineGrainedEvidenceSpanV1(StrictModel):
+    span_id: str = Field(pattern=r"^span-[0-9a-f]{24}$")
+    document_id: str = Field(pattern=r"^document-[0-9a-f]{24}$")
+    evidence_id: str = Field(pattern=r"^evidence-[0-9a-f]{24}$")
+    section_path: tuple[str, ...] = Field(default=(), max_length=16)
+    paragraph_index: int = Field(ge=1, le=100_000)
+    sentence_index: int | None = Field(default=None, ge=1, le=100_000)
+    page_numbers: tuple[int, ...] = Field(default=(), max_length=32)
+    text_excerpt: str = Field(min_length=1, max_length=2_000)
+    text_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    locator: str = Field(min_length=3, max_length=1_000)
+    parser: Literal["GROBID_TEI", "DOCLING"]
+    tei_artifact_uri: str | None = Field(default=None, pattern=r"^artifact://")
+    pdf_artifact_uri: str | None = Field(default=None, pattern=r"^artifact://")
+
+
 class ResolvedEvidenceV1(StrictModel):
     evidence_id: str = Field(pattern=r"^evidence-[0-9a-f]{24}$")
     document_id: str = Field(pattern=r"^document-[0-9a-f]{24}$")
@@ -164,7 +180,24 @@ class ResolvedEvidenceV1(StrictModel):
     raw_response_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     supported_constraint_ids: tuple[str, ...] = Field(default=(), max_length=32)
     source_lead_ids: tuple[str, ...] = Field(default=(), max_length=64)
-    evidence_scope: Literal["METADATA_OR_ABSTRACT_ONLY"] = "METADATA_OR_ABSTRACT_ONLY"
+    full_text_status: Literal["NOT_REQUESTED", "RESOLVED", "UNAVAILABLE"] = (
+        "NOT_REQUESTED"
+    )
+    full_text_spans: tuple[FineGrainedEvidenceSpanV1, ...] = Field(
+        default=(), max_length=256
+    )
+    evidence_scope: Literal[
+        "METADATA_OR_ABSTRACT_ONLY", "OPEN_ACCESS_FULL_TEXT"
+    ] = "METADATA_OR_ABSTRACT_ONLY"
+
+    @model_validator(mode="after")
+    def validate_full_text(self) -> ResolvedEvidenceV1:
+        if self.full_text_status == "RESOLVED":
+            if not self.full_text_spans or self.evidence_scope != "OPEN_ACCESS_FULL_TEXT":
+                raise ValueError("resolved full text requires spans and full-text scope")
+        elif self.full_text_spans:
+            raise ValueError("full-text spans require RESOLVED status")
+        return self
 
 
 class LeadEvidenceResolutionV1(StrictModel):
@@ -311,6 +344,16 @@ class CandidateSetV1(StrictModel):
         if len(ids) != len(set(ids)):
             raise ValueError("candidate IDs must be unique")
         return self
+
+
+class CandidateLiteratureRetrievalV1(StrictModel):
+    triggered: bool
+    queries: tuple[str, ...] = Field(default=(), max_length=8)
+    new_evidence_ids: tuple[str, ...] = Field(default=(), max_length=128)
+    failures: tuple[str, ...] = Field(default=(), max_length=16)
+    trigger_policy: Literal["AFTER_CANDIDATE_GENERATION_BEFORE_SKEPTIC"] = (
+        "AFTER_CANDIDATE_GENERATION_BEFORE_SKEPTIC"
+    )
 
 
 class ConstraintAssessmentV1(StrictModel):
@@ -467,6 +510,7 @@ class MaterialsResearchGraphResultV4(StrictModel):
     database_federation: DatabaseFederationAuditV1
     database_candidates: tuple[DatabaseCandidateV1, ...] = Field(max_length=128)
     candidates: CandidateSetV1
+    candidate_literature_retrieval: CandidateLiteratureRetrievalV1
     skeptic_review: SkepticReviewV1
     inference_review: ScientificInferenceReviewV1
     synthesis: ResearchSynthesisV1
@@ -497,6 +541,7 @@ class ReadStateArgsV1(StrictModel):
             "lead_resolutions",
             "database_candidates",
             "candidates",
+            "candidate_retrieval",
             "skeptic_review",
             "inference_review",
             "inference_context",
@@ -505,7 +550,7 @@ class ReadStateArgsV1(StrictModel):
         ...,
     ] = Field(
         min_length=1,
-        max_length=12,
+        max_length=13,
         description="One or more required_state_sections to read in a single call.",
     )
 
@@ -528,6 +573,10 @@ class MaterialsResearchDirector:
             [], tuple[LeadEvidenceResolutionV1, ...]
         ]
         | None = None,
+        candidate_literature_search: Callable[
+            [CandidateSetV1, ConstraintGraphV1], CandidateLiteratureRetrievalV1
+        ]
+        | None = None,
         checkpoint_load: Callable[
             [str, type[StrictModel]], DeepSeekAgentResultV1[Any] | None
         ]
@@ -541,6 +590,7 @@ class MaterialsResearchDirector:
         self.authoritative_search_tool = authoritative_search_tool
         self.evidence_snapshot = evidence_snapshot
         self.lead_resolutions_snapshot = lead_resolutions_snapshot or (lambda: ())
+        self.candidate_literature_search = candidate_literature_search
         self.database_search_tool = database_search_tool
         self.database_candidates_snapshot = database_candidates_snapshot
         self.database_federation_snapshot = database_federation_snapshot
@@ -621,6 +671,19 @@ class MaterialsResearchDirector:
         self._commit_checkpoint("mechanism_chemist", final_override=candidates)
         state["candidates"] = candidates.model_dump(mode="json")
 
+        candidate_retrieval = (
+            self.candidate_literature_search(candidates, constraints)
+            if self.candidate_literature_search is not None
+            else CandidateLiteratureRetrievalV1(triggered=False)
+        )
+        evidence = self.evidence_snapshot()
+        lead_resolutions = self.lead_resolutions_snapshot()
+        state["evidence"] = tuple(item.model_dump(mode="json") for item in evidence)
+        state["lead_resolutions"] = tuple(
+            item.model_dump(mode="json") for item in lead_resolutions
+        )
+        state["candidate_retrieval"] = candidate_retrieval.model_dump(mode="json")
+
         sparse_skeptic = self._run_role(
             "skeptic", SparseSkepticReviewV1, state, records
         )
@@ -676,6 +739,7 @@ class MaterialsResearchDirector:
             database_federation=database_federation,
             database_candidates=database_candidates,
             candidates=candidates,
+            candidate_literature_retrieval=candidate_retrieval,
             skeptic_review=skeptic,
             inference_review=inference,
             synthesis=synthesis,
@@ -779,6 +843,8 @@ def _role_prompt(role: str, model: type[StrictModel]) -> str:
             "For strong DOI or Semantic Scholar anchors, also execute RECOMMENDATIONS, "
             "REFERENCES, and CITATIONS routes within the budget. Prefer DOI anchors because "
             "reference/citation routes are then independently cross-checked by OpenCitations. "
+            "For the most relevant resolved DOI records, call FULL_TEXT to attempt lawful "
+            "Unpaywall OA retrieval and GROBID page/section/sentence localization. "
             "Use only returned evidence IDs and retain unresolved constraints explicitly. "
         )
     elif role == "skeptic":
@@ -843,6 +909,7 @@ def _required_state_sections(role: str, available: tuple[str, ...]) -> tuple[str
         "skeptic": (
             "constraints",
             "evidence",
+            "candidate_retrieval",
             "database_candidates",
             "candidates",
         ),

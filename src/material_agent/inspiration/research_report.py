@@ -740,6 +740,33 @@ def _render_markdown(
             for item in graph.lead_evidence_resolutions
         ],
         "",
+        "### 开放全文定位摘录",
+        "",
+        *[
+            line
+            for evidence in graph.resolved_evidence
+            for span in evidence.full_text_spans[:8]
+            for line in (
+                f"- `{evidence.evidence_id}` · {span.locator}",
+                f"  > {span.text_excerpt}",
+                (
+                    "  "
+                    + " · ".join(
+                        link
+                        for link in (
+                            f"[PDF]({_relative_link(span.pdf_artifact_uri, report_path)})"
+                            if span.pdf_artifact_uri
+                            else "",
+                            f"[GROBID TEI]({_relative_link(span.tei_artifact_uri, report_path)})"
+                            if span.tei_artifact_uri
+                            else "",
+                        )
+                        if link
+                    )
+                ),
+                "",
+            )
+        ],
         "## 数据库标量性质总览",
         "",
     ]
