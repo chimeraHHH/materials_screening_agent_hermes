@@ -39,9 +39,11 @@ from material_agent.inspiration.research_graph import (
     SparseConstraintAssessmentV1,
     SparseSkepticReviewV1,
     VerificationMethod,
+    _build_inference_context,
     _normalize_candidate_references,
     _normalize_candidate_retrieval_references,
     _normalize_evidence_review_references,
+    _normalize_executed_counter_queries,
     _normalize_sparse_skeptic_references,
     _normalize_synthesis,
 )
@@ -523,6 +525,83 @@ def test_superseded_cross_source_evidence_ids_are_dropped_at_every_join() -> Non
     )
     assert normalized_skeptic.evidence_backed_assessments == ()
     assert skeptic_changes == ("DROPPED_SUPERSEDED_SKEPTIC_REFERENCES",)
+
+
+def test_only_successfully_executed_counter_queries_survive_normalization() -> None:
+    review = SparseSkepticReviewV1(
+        counter_evidence_queries=("query executed", "query failed"),
+        global_failure_modes=("Counter-search providers may fail independently.",),
+    )
+
+    normalized, changes = _normalize_executed_counter_queries(
+        review, ("query executed",)
+    )
+
+    assert normalized.counter_evidence_queries == ("query executed",)
+    assert changes == ("DROPPED_UNEXECUTED_COUNTER_QUERIES",)
+
+
+def test_inference_context_fairly_bounds_large_candidate_evidence() -> None:
+    graph = constraints()
+    evidence = tuple(
+        ResolvedEvidenceV1(
+            evidence_id=f"evidence-{index:024x}",
+            document_id=f"document-{index:024x}",
+            provider="crossref",
+            source_providers=("crossref",),
+            stable_record_id=f"10.1000/{index}",
+            title="T" * 800,
+            abstract_excerpt="A" * 2_000,
+            raw_response_uri=f"artifact://research/raw/{index}.json",
+            raw_response_sha256=f"{index % 16:x}" * 64,
+        )
+        for index in range(40)
+    )
+    candidate_set = CandidateSetV1(
+        candidates=tuple(
+            CandidateHypothesisV1(
+                candidate_id=f"candidate-{name}",
+                material_name=name,
+                hypothesis="A bounded scientific hypothesis.",
+                mechanism="A testable orbital mechanism.",
+                evidence_ids=tuple(item.evidence_id for item in evidence[start::2]),
+            )
+            for name, start in (("even", 0), ("odd", 1))
+        )
+    )
+    skeptic = SkepticReviewV1(
+        matrix=tuple(
+            CandidateConstraintMatrixRowV1(
+                candidate_id=candidate.candidate_id,
+                assessments=tuple(
+                    ConstraintAssessmentV1(
+                        constraint_id=constraint.constraint_id,
+                        verdict="UNKNOWN",
+                        rationale="Direct evidence is incomplete.",
+                        next_verification="Run the required calculation.",
+                    )
+                    for constraint in graph.constraints
+                ),
+            )
+            for candidate in candidate_set.candidates
+        ),
+        global_failure_modes=("The proposed mechanism may not survive relaxation.",),
+    )
+
+    context = _build_inference_context(
+        "Find a layered transition-metal flat-band material.",
+        graph,
+        candidate_set,
+        skeptic,
+        evidence,
+        (),
+    )
+
+    projected = context["candidate_evidence"]
+    assert len(projected) == 32
+    assert sum(int(item["evidence_id"].split("-")[-1], 16) % 2 == 0 for item in projected) == 16
+    assert all(len(item["title"]) == 400 for item in projected)
+    assert all(len(item["abstract_excerpt"]) == 1_000 for item in projected)
 
 
 def test_director_rejects_incomplete_constraint_matrix() -> None:

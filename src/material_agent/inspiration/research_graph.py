@@ -805,6 +805,12 @@ class MaterialsResearchDirector:
         )
         executed_counter_queries = self.counter_queries_snapshot()
         if self.counter_evidence_search_tool is not None:
+            sparse_skeptic, counter_normalizations = (
+                _normalize_executed_counter_queries(
+                    sparse_skeptic, executed_counter_queries
+                )
+            )
+            deterministic_normalizations.extend(counter_normalizations)
             _validate_executed_counter_queries(
                 sparse_skeptic.counter_evidence_queries, executed_counter_queries
             )
@@ -830,7 +836,7 @@ class MaterialsResearchDirector:
         _validate_complete_matrix(
             skeptic, candidates, constraints, evidence, database_candidates
         )
-        self._commit_checkpoint("skeptic")
+        self._commit_checkpoint("skeptic", final_override=sparse_skeptic)
         state["skeptic_review"] = skeptic.model_dump(mode="json")
         state["inference_context"] = _build_inference_context(
             selected_goal,
@@ -1075,9 +1081,25 @@ def _build_inference_context(
 ) -> Mapping[str, Any]:
     """Project the large research state into a dense hypothesis prompt."""
 
-    referenced_evidence = {
-        item for candidate in candidates.candidates for item in candidate.evidence_ids
-    }
+    evidence_by_id = {item.evidence_id: item for item in evidence}
+    projected_evidence_ids: list[str] = []
+    candidate_evidence_lists = [
+        candidate.evidence_ids for candidate in candidates.candidates
+    ]
+    for ordinal in range(max((len(items) for items in candidate_evidence_lists), default=0)):
+        for items in candidate_evidence_lists:
+            if ordinal >= len(items):
+                continue
+            evidence_id = items[ordinal]
+            if (
+                evidence_id in evidence_by_id
+                and evidence_id not in projected_evidence_ids
+            ):
+                projected_evidence_ids.append(evidence_id)
+            if len(projected_evidence_ids) >= 32:
+                break
+        if len(projected_evidence_ids) >= 32:
+            break
     referenced_database = {
         item
         for candidate in candidates.candidates
@@ -1101,13 +1123,23 @@ def _build_inference_context(
         "candidate_evidence": [
             {
                 "evidence_id": item.evidence_id,
-                "title": item.title,
-                "abstract_excerpt": item.abstract_excerpt,
+                "title": item.title[:400],
+                "abstract_excerpt": (
+                    item.abstract_excerpt[:1_000]
+                    if item.abstract_excerpt is not None
+                    else None
+                ),
                 "supported_constraint_ids": item.supported_constraint_ids,
             }
-            for item in evidence
-            if item.evidence_id in referenced_evidence
+            for evidence_id in projected_evidence_ids
+            for item in (evidence_by_id[evidence_id],)
         ],
+        "candidate_evidence_projection": {
+            "policy": "CANDIDATE_ROUND_ROBIN_V1",
+            "max_records": 32,
+            "projected_records": len(projected_evidence_ids),
+            "all_referenced_ids_remain_in_candidate_objects": True,
+        },
         "candidate_database_records": [
             {
                 "database_candidate_id": item.database_candidate_id,
@@ -1120,7 +1152,7 @@ def _build_inference_context(
                         "source_database_version": record.source_database_version,
                         "band_gap_ev": record.band_gap_ev,
                     }
-                    for record in item.source_records
+                    for record in item.source_records[:4]
                 ],
                 "formula": item.formula,
                 "transition_metals": item.transition_metals,
@@ -1318,6 +1350,26 @@ def _validate_executed_counter_queries(
         raise ValueError(
             "skeptic counter_evidence_queries must be executed before finalization"
         )
+
+
+def _normalize_executed_counter_queries(
+    review: SparseSkepticReviewV1,
+    executed: tuple[str, ...],
+) -> tuple[SparseSkepticReviewV1, tuple[str, ...]]:
+    """Remove declarations whose tool call failed or never happened."""
+
+    normalized_executed = {" ".join(item.split()) for item in executed}
+    retained = tuple(
+        item
+        for item in review.counter_evidence_queries
+        if " ".join(item.split()) in normalized_executed
+    )
+    if retained == review.counter_evidence_queries:
+        return review, ()
+    return (
+        review.model_copy(update={"counter_evidence_queries": retained}),
+        ("DROPPED_UNEXECUTED_COUNTER_QUERIES",),
+    )
 
 
 def _validate_evidence_review(

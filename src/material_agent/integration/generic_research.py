@@ -261,7 +261,12 @@ class GenericMaterialsResearchService:
             publication_year_from=selected.publication_year_from,
             publication_year_to=selected.publication_year_to,
             max_calls=authoritative_calls,
-            max_physical_requests=authoritative_calls * provider_count,
+            max_physical_requests=(
+                authoritative_calls
+                + candidate_search_calls
+                + counter_search_calls
+            )
+            * provider_count,
             semantic_scholar_adapter=SemanticScholarPublicAdapter(
                 api_key_resolver=lambda: search_environment.get(
                     SEMANTIC_SCHOLAR_API_KEY_ENV, ""
