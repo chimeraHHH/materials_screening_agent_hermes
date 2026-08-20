@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import hashlib
 import threading
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
+from urllib.parse import urlsplit
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pymatgen.analysis.structure_matcher import SpeciesComparator, StructureMatcher
 from pymatgen.core import Composition, Element, Structure
 
@@ -24,21 +25,38 @@ from material_agent.inspiration.native_search import (
     DeepSeekNativeSearchDiscovery,
     NativeSearchLeadV1,
 )
+from material_agent.inspiration.opencitations import (
+    OpenCitationsPublicAdapter,
+    OpenCitationsRequestV1,
+    OpenCitationsRoute,
+    parse_opencitations_page,
+)
+from material_agent.inspiration.query_context import AnchorPolarity
 from material_agent.inspiration.research_graph import (
     DatabaseCandidateV1,
     DatabaseFederationAuditV1,
     DatabaseSourceQueryReceiptV1,
     DatabaseSourceRecordV1,
+    LeadEvidenceResolutionV1,
     ResolvedEvidenceV1,
 )
 from material_agent.inspiration.search import (
     SearchAdapter,
     SearchAdapterError,
+    normalize_document_url,
+    normalize_doi,
     parse_arxiv_page,
     parse_crossref_page,
     parse_multi_source_page,
     parse_openalex_page,
     parse_osti_page,
+)
+from material_agent.inspiration.semantic_scholar import (
+    SemanticScholarPublicAdapter,
+    SemanticScholarRequestV1,
+    SemanticScholarRoute,
+    parse_semantic_scholar_page,
+    parse_semantic_scholar_topic_page,
 )
 from material_agent.orchestrator.llm import LLMProviderError
 from material_agent.orchestrator.models import StrictModel
@@ -77,6 +95,25 @@ class AuthoritativeLiteratureSearchArgsV1(StrictModel):
         description="One to sixteen existing constraint IDs; this list cannot be empty.",
     )
     max_hits: int = Field(ge=1, le=20)
+    route: Literal["TOPIC", "RECOMMENDATIONS", "REFERENCES", "CITATIONS"] = (
+        "TOPIC"
+    )
+    anchor_paper_id: str = Field(
+        default="",
+        max_length=256,
+        description=(
+            "Required for graph routes. Prefer a normalized DOI; Semantic Scholar paper "
+            "IDs are also accepted when OpenCitations cross-validation is unavailable."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def validate_route(self) -> AuthoritativeLiteratureSearchArgsV1:
+        if self.route == "TOPIC" and self.anchor_paper_id:
+            raise ValueError("TOPIC searches cannot contain anchor_paper_id")
+        if self.route != "TOPIC" and not self.anchor_paper_id.strip():
+            raise ValueError("graph searches require anchor_paper_id")
+        return self
 
 
 class FederatedCandidateSearchArgsV1(StrictModel):
@@ -193,6 +230,9 @@ class AuthoritativeLiteratureSearchState:
         max_calls: int = 24,
         max_physical_requests: int = 64,
         max_response_bytes: int = 4_000_000,
+        semantic_scholar_adapter: SemanticScholarPublicAdapter | None = None,
+        opencitations_adapter: OpenCitationsPublicAdapter | None = None,
+        native_leads_snapshot: Callable[[], tuple[Mapping[str, Any], ...]] | None = None,
     ) -> None:
         if (
             not run_id
@@ -218,6 +258,9 @@ class AuthoritativeLiteratureSearchState:
         self.max_calls = max_calls
         self.max_physical_requests = max_physical_requests
         self.max_response_bytes = max_response_bytes
+        self.semantic_scholar_adapter = semantic_scholar_adapter
+        self.opencitations_adapter = opencitations_adapter
+        self.native_leads_snapshot = native_leads_snapshot or (lambda: ())
         self._calls = 0
         self._physical_requests = 0
         self._evidence: dict[str, ResolvedEvidenceV1] = {}
@@ -227,8 +270,12 @@ class AuthoritativeLiteratureSearchState:
         return DeepSeekFunctionTool(
             name="authoritative_literature_search",
             description=(
-                "Search accepted scholarly metadata providers. Exact raw bytes are persisted "
-                "before parsing; returned metadata/abstract evidence cannot establish band properties."
+                "Search accepted scholarly metadata providers by TOPIC, or traverse an "
+                "anchor paper through Semantic Scholar RECOMMENDATIONS, REFERENCES, and "
+                "CITATIONS. DOI anchors on reference/citation routes are independently "
+                "cross-checked through OpenCitations Index + Meta. Exact raw bytes are "
+                "persisted before parsing; metadata/abstract evidence cannot establish "
+                "band properties."
             ),
             arguments_model=AuthoritativeLiteratureSearchArgsV1,
             handler=self._handle,
@@ -237,6 +284,42 @@ class AuthoritativeLiteratureSearchState:
     def snapshot(self) -> tuple[ResolvedEvidenceV1, ...]:
         with self._lock:
             return tuple(self._evidence.values())
+
+    def lead_resolutions_snapshot(self) -> tuple[LeadEvidenceResolutionV1, ...]:
+        with self._lock:
+            evidence = tuple(self._evidence.values())
+        by_lead = {
+            lead_id: item
+            for item in evidence
+            for lead_id in item.source_lead_ids
+        }
+        resolutions: list[LeadEvidenceResolutionV1] = []
+        for lead in self.native_leads_snapshot():
+            lead_id = lead.get("lead_id")
+            if not isinstance(lead_id, str):
+                continue
+            item = by_lead.get(lead_id)
+            if item is None:
+                resolutions.append(
+                    LeadEvidenceResolutionV1(
+                        lead_id=lead_id,
+                        status="UNRESOLVED",
+                        resolution_method="NO_AUTHORITATIVE_MATCH",
+                    )
+                )
+                continue
+            method = self._lead_match_method(lead, item)
+            resolutions.append(
+                LeadEvidenceResolutionV1(
+                    lead_id=lead_id,
+                    status="RESOLVED",
+                    doi=item.doi,
+                    document_id=item.document_id,
+                    evidence_id=item.evidence_id,
+                    resolution_method=method or "NORMALIZED_TITLE",
+                )
+            )
+        return tuple(resolutions)
 
     def restore_snapshot(self, values: object) -> None:
         if not isinstance(values, list):
@@ -250,6 +333,8 @@ class AuthoritativeLiteratureSearchState:
     def _handle(
         self, arguments: AuthoritativeLiteratureSearchArgsV1
     ) -> Mapping[str, Any]:
+        if arguments.route != "TOPIC":
+            return self._handle_graph(arguments)
         semantic = {
             "query": " ".join(arguments.query.split()),
             "target_constraint_ids": arguments.target_constraint_ids,
@@ -316,34 +401,11 @@ class AuthoritativeLiteratureSearchState:
             pointer=pointer,
             max_hits=arguments.max_hits,
         )
-        created: list[ResolvedEvidenceV1] = []
-        for hit in parsed.hits:
-            stable_id = hit.doi or hit.arxiv_id or hit.provider_record_id
-            evidence_id = (
-                "evidence-"
-                + hashlib.sha256(
-                    canonical_json_bytes(
-                        {"provider": hit.provider, "stable_record_id": stable_id}
-                    )
-                ).hexdigest()[:24]
-            )
-            record = ResolvedEvidenceV1(
-                evidence_id=evidence_id,
-                provider=hit.provider,
-                stable_record_id=stable_id,
-                title=hit.title,
-                published_year=hit.published_year,
-                doi=hit.doi,
-                arxiv_id=hit.arxiv_id,
-                canonical_url=hit.canonical_url,
-                abstract_excerpt=(hit.abstract[:2_000] if hit.abstract else None),
-                raw_response_uri=pointer.uri,
-                raw_response_sha256=pointer.sha256,
-                supported_constraint_ids=arguments.target_constraint_ids,
-            )
-            with self._lock:
-                self._evidence.setdefault(record.evidence_id, record)
-            created.append(record)
+        created = self._record_hits(
+            parsed.hits,
+            pointer=pointer,
+            target_constraint_ids=arguments.target_constraint_ids,
+        )
         return {
             "query_id": query_id,
             "records": [item.model_dump(mode="json") for item in created],
@@ -351,6 +413,270 @@ class AuthoritativeLiteratureSearchState:
             "evidence_scope": "METADATA_OR_ABSTRACT_ONLY",
             "raw_response": pointer.model_dump(mode="json"),
         }
+
+    def _handle_graph(
+        self, arguments: AuthoritativeLiteratureSearchArgsV1
+    ) -> Mapping[str, Any]:
+        semantic = {
+            "route": arguments.route,
+            "anchor_paper_id": arguments.anchor_paper_id.strip(),
+            "query": " ".join(arguments.query.split()),
+            "target_constraint_ids": arguments.target_constraint_ids,
+        }
+        query_id = (
+            "query-" + hashlib.sha256(canonical_json_bytes(semantic)).hexdigest()[:24]
+        )
+        with self._lock:
+            if self._calls >= self.max_calls:
+                raise LLMProviderError(
+                    "BUDGET_EXHAUSTED",
+                    "authoritative-search tool exhausted its call budget",
+                    retryable=False,
+                )
+            if self._physical_requests >= self.max_physical_requests:
+                raise LLMProviderError(
+                    "BUDGET_EXHAUSTED",
+                    "authoritative-search tool exhausted its physical-request budget",
+                    retryable=False,
+                )
+            self._calls += 1
+        pages: list[tuple[object, ArtifactPointerV1, tuple[object, ...]]] = []
+        failures: list[str] = []
+        route = SemanticScholarRoute(arguments.route)
+        anchor_doi = normalize_doi(arguments.anchor_paper_id)
+        if self.semantic_scholar_adapter is not None:
+            payload = {
+                "schema_version": "semantic-scholar-request-v1",
+                "context_id": query_id,
+                "route": route,
+                "query_text": None,
+                "anchor_paper_id": (
+                    f"DOI:{anchor_doi}"
+                    if anchor_doi is not None
+                    else arguments.anchor_paper_id.strip()
+                ),
+                "anchor_polarity": AnchorPolarity.POSITIVE,
+                "max_results": arguments.max_hits,
+                "publication_year_from": self.publication_year_from,
+                "publication_year_to": self.publication_year_to,
+            }
+            request = SemanticScholarRequestV1(
+                query_id=(
+                    "s2-query-"
+                    + hashlib.sha256(canonical_json_bytes(payload)).hexdigest()[:24]
+                ),
+                **payload,
+            )
+            try:
+                page = self._run_graph_adapter(self.semantic_scholar_adapter, request)
+                pointer = self._persist_graph_page(page, query_id, "semantic-scholar")
+                parsed = parse_semantic_scholar_page(
+                    request=request,
+                    payload=page.payload,
+                    raw_response_artifact=pointer,
+                )
+                pages.append((page, pointer, parsed.hits))
+            except (SearchAdapterError, LLMProviderError) as exc:
+                failures.append(f"semantic-scholar:{getattr(exc, 'code', type(exc).__name__)}")
+        if (
+            self.opencitations_adapter is not None
+            and anchor_doi is not None
+            and arguments.route in {"REFERENCES", "CITATIONS"}
+        ):
+            request = OpenCitationsRequestV1(
+                query_id=query_id,
+                route=OpenCitationsRoute(arguments.route),
+                anchor_doi=anchor_doi,
+                max_results=arguments.max_hits,
+                publication_year_from=self.publication_year_from,
+                publication_year_to=self.publication_year_to,
+            )
+            try:
+                page = self._run_graph_adapter(self.opencitations_adapter, request)
+                pointer = self._persist_graph_page(page, query_id, "opencitations")
+                parsed = parse_opencitations_page(
+                    request=request,
+                    payload=page.payload,
+                    raw_response_artifact=pointer,
+                )
+                pages.append((page, pointer, parsed.hits))
+            except (SearchAdapterError, LLMProviderError) as exc:
+                failures.append(f"opencitations:{getattr(exc, 'code', type(exc).__name__)}")
+        if not pages:
+            raise LLMProviderError(
+                "AUTHORITATIVE_GRAPH_SEARCH_FAILED",
+                "all configured citation-graph providers failed or were unavailable",
+                retryable=False,
+            )
+        created: list[ResolvedEvidenceV1] = []
+        raw_responses: list[Mapping[str, Any]] = []
+        for _, pointer, hits in pages:
+            created.extend(
+                self._record_hits(
+                    hits,
+                    pointer=pointer,
+                    target_constraint_ids=arguments.target_constraint_ids,
+                )
+            )
+            raw_responses.append(pointer.model_dump(mode="json"))
+        unique = {item.evidence_id: item for item in created}
+        return {
+            "query_id": query_id,
+            "route": arguments.route,
+            "anchor_paper_id": arguments.anchor_paper_id,
+            "records": [item.model_dump(mode="json") for item in unique.values()],
+            "provider_failures": failures,
+            "evidence_scope": "METADATA_OR_ABSTRACT_ONLY",
+            "raw_responses": raw_responses,
+        }
+
+    def _run_graph_adapter(self, adapter: object, request: object):
+        with self._lock:
+            remaining = self.max_physical_requests - self._physical_requests
+        if remaining <= 0:
+            raise LLMProviderError(
+                "BUDGET_EXHAUSTED",
+                "authoritative-search tool exhausted its physical-request budget",
+                retryable=False,
+            )
+        try:
+            page = adapter.search(  # type: ignore[attr-defined]
+                request,
+                max_response_bytes=self.max_response_bytes,
+                max_physical_requests=remaining,
+            )
+        except SearchAdapterError as exc:
+            with self._lock:
+                self._physical_requests += len(exc.attempts)
+            raise
+        with self._lock:
+            self._physical_requests += len(page.attempts)
+            if self._physical_requests > self.max_physical_requests:
+                raise LLMProviderError(
+                    "BUDGET_EXHAUSTED",
+                    "authoritative search exceeded its physical-request budget",
+                    retryable=False,
+                )
+        return page
+
+    def _persist_graph_page(
+        self, page: object, query_id: str, provider: str
+    ) -> ArtifactPointerV1:
+        payload = page.payload  # type: ignore[attr-defined]
+        raw_hash = hashlib.sha256(payload).hexdigest()
+        raw_ref = self.store.write_bytes(
+            f"research/{self.run_id}/raw_search/{query_id}-{provider}-{raw_hash[:16]}.json",
+            payload,
+            "application/json",
+            immutable=True,
+        )
+        return ArtifactPointerV1.model_validate(raw_ref.model_dump(mode="python"))
+
+    def _record_hits(
+        self,
+        hits: tuple[object, ...],
+        *,
+        pointer: ArtifactPointerV1,
+        target_constraint_ids: tuple[str, ...],
+    ) -> list[ResolvedEvidenceV1]:
+        created: list[ResolvedEvidenceV1] = []
+        for hit in hits:
+            stable_id = hit.doi or hit.arxiv_id or hit.provider_record_id  # type: ignore[attr-defined]
+            document_id = hit.document_id  # type: ignore[attr-defined]
+            evidence_id = (
+                "evidence-"
+                + hashlib.sha256(
+                    canonical_json_bytes({"document_id": document_id})
+                ).hexdigest()[:24]
+            )
+            provisional = ResolvedEvidenceV1(
+                evidence_id=evidence_id,
+                document_id=document_id,
+                provider=hit.provider,  # type: ignore[attr-defined]
+                source_providers=(hit.provider,),  # type: ignore[attr-defined]
+                stable_record_id=stable_id,
+                title=hit.title,  # type: ignore[attr-defined]
+                published_year=hit.published_year,  # type: ignore[attr-defined]
+                doi=hit.doi,  # type: ignore[attr-defined]
+                arxiv_id=hit.arxiv_id,  # type: ignore[attr-defined]
+                canonical_url=hit.canonical_url,  # type: ignore[attr-defined]
+                abstract_excerpt=(
+                    hit.abstract[:2_000] if hit.abstract else None  # type: ignore[attr-defined]
+                ),
+                raw_response_uri=pointer.uri,
+                raw_response_sha256=pointer.sha256,
+                supported_constraint_ids=target_constraint_ids,
+                source_lead_ids=self._matching_lead_ids(hit),
+            )
+            with self._lock:
+                existing = self._evidence.get(evidence_id)
+                record = (
+                    provisional
+                    if existing is None
+                    else existing.model_copy(
+                        update={
+                            "source_providers": tuple(
+                                dict.fromkeys(
+                                    (*existing.source_providers, hit.provider)  # type: ignore[attr-defined]
+                                )
+                            ),
+                            "supported_constraint_ids": tuple(
+                                dict.fromkeys(
+                                    (*existing.supported_constraint_ids, *target_constraint_ids)
+                                )
+                            ),
+                            "source_lead_ids": tuple(
+                                dict.fromkeys(
+                                    (*existing.source_lead_ids, *provisional.source_lead_ids)
+                                )
+                            ),
+                            "abstract_excerpt": (
+                                existing.abstract_excerpt
+                                or provisional.abstract_excerpt
+                            ),
+                        }
+                    )
+                )
+                self._evidence[evidence_id] = record
+            created.append(record)
+        return created
+
+    def _matching_lead_ids(self, hit: object) -> tuple[str, ...]:
+        return tuple(
+            lead_id
+            for lead in self.native_leads_snapshot()
+            if isinstance((lead_id := lead.get("lead_id")), str)
+            and self._lead_match_method(lead, hit) is not None
+        )
+
+    @staticmethod
+    def _lead_match_method(
+        lead: Mapping[str, Any], evidence: object
+    ) -> Literal["DOI_URL", "NORMALIZED_URL", "NORMALIZED_TITLE"] | None:
+        lead_url = lead.get("url")
+        evidence_doi = getattr(evidence, "doi", None)
+        if isinstance(lead_url, str) and evidence_doi is not None:
+            parsed = urlsplit(lead_url)
+            lead_doi = normalize_doi(
+                lead_url
+                if parsed.netloc.casefold() in {"doi.org", "dx.doi.org"}
+                else None
+            )
+            if lead_doi == evidence_doi:
+                return "DOI_URL"
+        evidence_url = getattr(evidence, "canonical_url", None)
+        if isinstance(lead_url, str) and normalize_document_url(lead_url) == (
+            normalize_document_url(evidence_url)
+        ):
+            return "NORMALIZED_URL"
+        lead_title = lead.get("title")
+        evidence_title = getattr(evidence, "title", None)
+        if isinstance(lead_title, str) and isinstance(evidence_title, str) and (
+            " ".join(lead_title.casefold().split())
+            == " ".join(evidence_title.casefold().split())
+        ):
+            return "NORMALIZED_TITLE"
+        return None
 
     def _parse(
         self,
@@ -379,6 +705,8 @@ class AuthoritativeLiteratureSearchState:
             return parse_arxiv_page(**common)
         if provider == "osti":
             return parse_osti_page(**common)
+        if provider == "semantic-scholar":
+            return parse_semantic_scholar_topic_page(**common)
         raise LLMProviderError(
             "AUTHORITATIVE_SEARCH_FAILED",
             "authoritative metadata adapter returned an unsupported provider",

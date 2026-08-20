@@ -150,7 +150,9 @@ def test_generic_research_director_separates_evidence_unknowns_from_inference() 
         del args
         item = ResolvedEvidenceV1(
             evidence_id="evidence-" + "2" * 24,
+            document_id="document-" + "9" * 24,
             provider="crossref",
+            source_providers=("crossref",),
             stable_record_id="10.1234/example",
             title="Layered material metadata",
             published_year=2024,

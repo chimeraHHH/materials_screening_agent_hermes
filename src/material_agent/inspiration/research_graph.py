@@ -25,7 +25,7 @@ from material_agent.inspiration.deepseek_agent import (
 from material_agent.inspiration.models import canonical_json_bytes
 from material_agent.orchestrator.models import StrictModel
 
-MATERIALS_RESEARCH_GRAPH_VERSION = "materials-inspiration-research-graph-v3"
+MATERIALS_RESEARCH_GRAPH_VERSION = "materials-inspiration-research-graph-v4"
 
 
 class ConstraintKind(StrEnum):
@@ -150,7 +150,9 @@ class DiscoveryReviewV1(StrictModel):
 
 class ResolvedEvidenceV1(StrictModel):
     evidence_id: str = Field(pattern=r"^evidence-[0-9a-f]{24}$")
+    document_id: str = Field(pattern=r"^document-[0-9a-f]{24}$")
     provider: str = Field(min_length=1, max_length=64)
+    source_providers: tuple[str, ...] = Field(min_length=1, max_length=16)
     stable_record_id: str = Field(min_length=1, max_length=256)
     title: str = Field(min_length=1, max_length=1_000)
     published_year: int | None = Field(default=None, ge=1600, le=2200)
@@ -161,7 +163,38 @@ class ResolvedEvidenceV1(StrictModel):
     raw_response_uri: str = Field(pattern=r"^artifact://")
     raw_response_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     supported_constraint_ids: tuple[str, ...] = Field(default=(), max_length=32)
+    source_lead_ids: tuple[str, ...] = Field(default=(), max_length=64)
     evidence_scope: Literal["METADATA_OR_ABSTRACT_ONLY"] = "METADATA_OR_ABSTRACT_ONLY"
+
+
+class LeadEvidenceResolutionV1(StrictModel):
+    lead_id: str = Field(pattern=r"^lead-[0-9a-f]{24}$")
+    status: Literal["RESOLVED", "UNRESOLVED"]
+    doi: str | None = Field(default=None, max_length=256)
+    document_id: str | None = Field(
+        default=None, pattern=r"^document-[0-9a-f]{24}$"
+    )
+    evidence_id: str | None = Field(
+        default=None, pattern=r"^evidence-[0-9a-f]{24}$"
+    )
+    resolution_method: Literal[
+        "DOI_URL",
+        "NORMALIZED_URL",
+        "NORMALIZED_TITLE",
+        "NO_AUTHORITATIVE_MATCH",
+    ]
+
+    @model_validator(mode="after")
+    def validate_resolution(self) -> LeadEvidenceResolutionV1:
+        resolved_values = (self.document_id, self.evidence_id)
+        if self.status == "RESOLVED":
+            if any(value is None for value in resolved_values):
+                raise ValueError("resolved leads require document_id and evidence_id")
+            if self.resolution_method == "NO_AUTHORITATIVE_MATCH":
+                raise ValueError("resolved leads require a positive resolution method")
+        elif any(value is not None for value in (*resolved_values, self.doi)):
+            raise ValueError("unresolved leads cannot reference evidence identity")
+        return self
 
 
 class EvidenceReviewV1(StrictModel):
@@ -417,8 +450,8 @@ class ResearchRoleRecordV1(StrictModel):
     receipt: DeepSeekAgentReceiptV1
 
 
-class MaterialsResearchGraphResultV3(StrictModel):
-    schema_version: Literal["materials-inspiration-research-graph-v3"] = (
+class MaterialsResearchGraphResultV4(StrictModel):
+    schema_version: Literal["materials-inspiration-research-graph-v4"] = (
         MATERIALS_RESEARCH_GRAPH_VERSION
     )
     goal_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
@@ -427,6 +460,9 @@ class MaterialsResearchGraphResultV3(StrictModel):
     discovery_review: DiscoveryReviewV1
     evidence_review: EvidenceReviewV1
     resolved_evidence: tuple[ResolvedEvidenceV1, ...] = Field(max_length=256)
+    lead_evidence_resolutions: tuple[LeadEvidenceResolutionV1, ...] = Field(
+        max_length=256
+    )
     database_review: DatabaseCandidateReviewV1
     database_federation: DatabaseFederationAuditV1
     database_candidates: tuple[DatabaseCandidateV1, ...] = Field(max_length=128)
@@ -458,6 +494,7 @@ class ReadStateArgsV1(StrictModel):
             "query_plan",
             "native_leads",
             "evidence",
+            "lead_resolutions",
             "database_candidates",
             "candidates",
             "skeptic_review",
@@ -468,7 +505,7 @@ class ReadStateArgsV1(StrictModel):
         ...,
     ] = Field(
         min_length=1,
-        max_length=11,
+        max_length=12,
         description="One or more required_state_sections to read in a single call.",
     )
 
@@ -487,6 +524,10 @@ class MaterialsResearchDirector:
         database_search_tool: DeepSeekFunctionTool,
         database_candidates_snapshot: Callable[[], tuple[DatabaseCandidateV1, ...]],
         database_federation_snapshot: Callable[[], DatabaseFederationAuditV1],
+        lead_resolutions_snapshot: Callable[
+            [], tuple[LeadEvidenceResolutionV1, ...]
+        ]
+        | None = None,
         checkpoint_load: Callable[
             [str, type[StrictModel]], DeepSeekAgentResultV1[Any] | None
         ]
@@ -499,6 +540,7 @@ class MaterialsResearchDirector:
         self.native_leads_snapshot = native_leads_snapshot
         self.authoritative_search_tool = authoritative_search_tool
         self.evidence_snapshot = evidence_snapshot
+        self.lead_resolutions_snapshot = lead_resolutions_snapshot or (lambda: ())
         self.database_search_tool = database_search_tool
         self.database_candidates_snapshot = database_candidates_snapshot
         self.database_federation_snapshot = database_federation_snapshot
@@ -506,7 +548,7 @@ class MaterialsResearchDirector:
         self.checkpoint_save = checkpoint_save
         self._pending_checkpoints: dict[str, DeepSeekAgentResultV1[Any]] = {}
 
-    def run(self, goal: str) -> MaterialsResearchGraphResultV3:
+    def run(self, goal: str) -> MaterialsResearchGraphResultV4:
         selected_goal = " ".join(goal.split())
         if not 10 <= len(selected_goal) <= 4_000:
             raise ValueError("research goal must contain 10 to 4000 characters")
@@ -547,9 +589,13 @@ class MaterialsResearchDirector:
             tools=(self.authoritative_search_tool,),
         )
         evidence = self.evidence_snapshot()
+        lead_resolutions = self.lead_resolutions_snapshot()
         _validate_evidence_review(evidence_review, evidence, constraints)
         self._commit_checkpoint("evidence_researcher")
         state["evidence"] = tuple(item.model_dump(mode="json") for item in evidence)
+        state["lead_resolutions"] = tuple(
+            item.model_dump(mode="json") for item in lead_resolutions
+        )
 
         database_review = self._run_role(
             "database_scout",
@@ -618,13 +664,14 @@ class MaterialsResearchDirector:
         deterministic_normalizations.extend(synthesis_normalizations)
         _validate_synthesis(synthesis, candidates, skeptic)
         self._commit_checkpoint("synthesist", final_override=synthesis)
-        return MaterialsResearchGraphResultV3(
+        return MaterialsResearchGraphResultV4(
             goal_sha256=hashlib.sha256(selected_goal.encode("utf-8")).hexdigest(),
             constraints=constraints,
             query_plan=query_plan,
             discovery_review=discovery,
             evidence_review=evidence_review,
             resolved_evidence=evidence,
+            lead_evidence_resolutions=lead_resolutions,
             database_review=database_review,
             database_federation=database_federation,
             database_candidates=database_candidates,
@@ -725,6 +772,14 @@ def _role_prompt(role: str, model: type[StrictModel]) -> str:
             "source receipts and do not describe a credential-unavailable or failed source "
             "as searched successfully. Prefer candidates supported by multiple source_records "
             "without treating duplicate database entries as independent scientific evidence. "
+        )
+    elif role == "evidence_researcher":
+        role_specific = (
+            "Use TOPIC searches to resolve native leads and constraint-specific literature. "
+            "For strong DOI or Semantic Scholar anchors, also execute RECOMMENDATIONS, "
+            "REFERENCES, and CITATIONS routes within the budget. Prefer DOI anchors because "
+            "reference/citation routes are then independently cross-checked by OpenCitations. "
+            "Use only returned evidence IDs and retain unresolved constraints explicitly. "
         )
     elif role == "skeptic":
         role_specific = (
@@ -1321,5 +1376,5 @@ def _normalize_synthesis(
     return normalized, tuple(normalizations)
 
 
-def research_graph_sha256(result: MaterialsResearchGraphResultV3) -> str:
+def research_graph_sha256(result: MaterialsResearchGraphResultV4) -> str:
     return hashlib.sha256(canonical_json_bytes(result)).hexdigest()

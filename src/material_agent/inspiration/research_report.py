@@ -26,7 +26,7 @@ from material_agent.inspiration.models import canonical_json_bytes
 from material_agent.inspiration.research_graph import (
     DatabaseCandidateV1,
     DatabaseSourceRecordV1,
-    MaterialsResearchGraphResultV3,
+    MaterialsResearchGraphResultV4,
 )
 from material_agent.orchestrator.models import StrictModel
 from material_agent.retrieval.mp_screening import DeepEndpoint
@@ -65,7 +65,7 @@ class ResearchMarkdownReportV2(StrictModel):
 
 def build_generic_research_markdown_report(
     *,
-    graph: MaterialsResearchGraphResultV3,
+    graph: MaterialsResearchGraphResultV4,
     store: LocalArtifactStore,
     run_id: str,
     materials_project_adapter: Any | None = None,
@@ -685,7 +685,7 @@ def _collect_scalar_rows(
 
 def _render_markdown(
     *,
-    graph: MaterialsResearchGraphResultV3,
+    graph: MaterialsResearchGraphResultV4,
     candidates_by_id: Mapping[str, DatabaseCandidateV1],
     structure_assets: Mapping[str, ArtifactRef],
     band_assets: Mapping[str, ArtifactRef],
@@ -712,6 +712,33 @@ def _render_markdown(
         graph.synthesis.scientific_conclusion,
         "",
         "结论状态：`REASONED_HYPOTHESIS`；性质验证完成：`false`。",
+        "",
+        "## 文献证据与原生线索闭环",
+        "",
+        "| Evidence ID | Document ID | DOI/arXiv/记录 ID | 来源 | 标题 |",
+        "|---|---|---|---|---|",
+        *[
+            (
+                f"| `{item.evidence_id}` | `{item.document_id}` | "
+                f"`{item.doi or item.arxiv_id or item.stable_record_id}` | "
+                f"{', '.join(f'`{provider}`' for provider in item.source_providers)} | "
+                f"{_escape_table(item.title)} |"
+            )
+            for item in graph.resolved_evidence
+        ],
+        "",
+        "| Lead ID | 状态 | DOI | Document ID | Evidence ID | 解析方法 |",
+        "|---|---|---|---|---|---|",
+        *[
+            (
+                f"| `{item.lead_id}` | `{item.status}` | "
+                f"{f'`{item.doi}`' if item.doi else 'N/A'} | "
+                f"{f'`{item.document_id}`' if item.document_id else 'N/A'} | "
+                f"{f'`{item.evidence_id}`' if item.evidence_id else 'N/A'} | "
+                f"`{item.resolution_method}` |"
+            )
+            for item in graph.lead_evidence_resolutions
+        ],
         "",
         "## 数据库标量性质总览",
         "",

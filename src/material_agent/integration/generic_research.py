@@ -18,10 +18,14 @@ from material_agent.inspiration.deepseek_agent import (
 )
 from material_agent.inspiration.models import canonical_json_bytes
 from material_agent.inspiration.native_search import DeepSeekNativeSearchDiscovery
+from material_agent.inspiration.opencitations import (
+    OPENCITATIONS_ACCESS_TOKEN_ENV,
+    OpenCitationsPublicAdapter,
+)
 from material_agent.inspiration.policy import SearchBudgetV1
 from material_agent.inspiration.research_graph import (
     MaterialsResearchDirector,
-    MaterialsResearchGraphResultV3,
+    MaterialsResearchGraphResultV4,
     research_graph_sha256,
 )
 from material_agent.inspiration.research_report import (
@@ -37,6 +41,10 @@ from material_agent.inspiration.search import (
     PUBLIC_SEARCH_MAX_RESULTS_ENV,
     PUBLIC_SEARCH_PROVIDER_ENV,
     public_search_adapter_from_environment,
+)
+from material_agent.inspiration.semantic_scholar import (
+    SEMANTIC_SCHOLAR_API_KEY_ENV,
+    SemanticScholarPublicAdapter,
 )
 from material_agent.orchestrator.llm import (
     DEFAULT_KEYCHAIN_SERVICE,
@@ -54,8 +62,8 @@ from material_agent.retrieval.storage import LocalArtifactStore
 
 GENERIC_RESEARCH_TOOL_NAME = "materials_generic_research_run"
 GENERIC_RESEARCH_REQUEST_SCHEMA_VERSION = "materials-generic-research-run-v1"
-GENERIC_RESEARCH_RESULT_SCHEMA_VERSION = "materials-generic-research-run-v3"
-GENERIC_RESEARCH_IMPLEMENTATION_REVISION = "generic-research-20260821-r5"
+GENERIC_RESEARCH_RESULT_SCHEMA_VERSION = "materials-generic-research-run-v4"
+GENERIC_RESEARCH_IMPLEMENTATION_REVISION = "generic-research-20260821-r6"
 
 
 def research_secret_resolver_from_environment(
@@ -105,18 +113,18 @@ class GenericResearchRunRequestV1(StrictModel):
         return self
 
 
-class GenericResearchRunResultV3(StrictModel):
-    schema_version: Literal["materials-generic-research-run-v3"] = (
+class GenericResearchRunResultV4(StrictModel):
+    schema_version: Literal["materials-generic-research-run-v4"] = (
         GENERIC_RESEARCH_RESULT_SCHEMA_VERSION
     )
-    implementation_revision: Literal["generic-research-20260821-r5"] = (
+    implementation_revision: Literal["generic-research-20260821-r6"] = (
         GENERIC_RESEARCH_IMPLEMENTATION_REVISION
     )
     run_id: str
     submission_id: str
     request_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     status: Literal["SUCCEEDED"] = "SUCCEEDED"
-    research_graph: MaterialsResearchGraphResultV3
+    research_graph: MaterialsResearchGraphResultV4
     research_graph_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     result_artifact_uri: str = Field(pattern=r"^artifact://")
     report_artifact_uri: str | None = Field(default=None, pattern=r"^artifact://")
@@ -139,7 +147,7 @@ def generic_research_tool_manifest() -> tuple[dict[str, object], ...]:
                 "property-verification boundaries."
             ),
             "inputSchema": GenericResearchRunRequestV1.model_json_schema(),
-            "outputSchema": GenericResearchRunResultV3.model_json_schema(),
+            "outputSchema": GenericResearchRunResultV4.model_json_schema(),
             "readOnly": False,
         },
     )
@@ -165,7 +173,7 @@ class GenericMaterialsResearchService:
 
     def run(
         self, request: GenericResearchRunRequestV1 | Mapping[str, object]
-    ) -> GenericResearchRunResultV3:
+    ) -> GenericResearchRunResultV4:
         selected = GenericResearchRunRequestV1.model_validate(request)
         semantic_request = selected.model_dump(mode="json", exclude={"submission_id"})
         semantic_sha = hashlib.sha256(
@@ -184,7 +192,7 @@ class GenericMaterialsResearchService:
         result_path = f"generic_research/{run_id}/result.json"
         result_uri = f"artifact://{result_path}"
         if self.store.exists(result_uri):
-            cached = GenericResearchRunResultV3.model_validate(
+            cached = GenericResearchRunResultV4.model_validate(
                 self.store.read_json(result_uri)
             )
             return self._with_report(cached)
@@ -233,6 +241,17 @@ class GenericMaterialsResearchService:
             publication_year_to=selected.publication_year_to,
             max_calls=authoritative_calls,
             max_physical_requests=authoritative_calls * provider_count,
+            semantic_scholar_adapter=SemanticScholarPublicAdapter(
+                api_key_resolver=lambda: search_environment.get(
+                    SEMANTIC_SCHOLAR_API_KEY_ENV, ""
+                )
+            ),
+            opencitations_adapter=OpenCitationsPublicAdapter(
+                access_token_resolver=lambda: search_environment.get(
+                    OPENCITATIONS_ACCESS_TOKEN_ENV, ""
+                )
+            ),
+            native_leads_snapshot=native_state.snapshot,
         )
         database_state = FederatedCandidateSearchState(
             store=self.store,
@@ -353,13 +372,14 @@ class GenericMaterialsResearchService:
             native_leads_snapshot=native_state.snapshot,
             authoritative_search_tool=evidence_state.as_tool(),
             evidence_snapshot=evidence_state.snapshot,
+            lead_resolutions_snapshot=evidence_state.lead_resolutions_snapshot,
             database_search_tool=database_state.as_tool(),
             database_candidates_snapshot=database_state.snapshot,
             database_federation_snapshot=database_state.federation_snapshot,
             checkpoint_load=checkpoint_load,
             checkpoint_save=checkpoint_save,
         ).run(selected.goal)
-        result = GenericResearchRunResultV3(
+        result = GenericResearchRunResultV4(
             run_id=run_id,
             submission_id=selected.submission_id,
             request_sha256=request_sha,
@@ -379,8 +399,8 @@ class GenericMaterialsResearchService:
         return result
 
     def _with_report(
-        self, result: GenericResearchRunResultV3
-    ) -> GenericResearchRunResultV3:
+        self, result: GenericResearchRunResultV4
+    ) -> GenericResearchRunResultV4:
         report = build_generic_research_markdown_report(
             graph=result.research_graph,
             store=self.store,
