@@ -74,7 +74,7 @@ from material_agent.retrieval.storage import LocalArtifactStore
 GENERIC_RESEARCH_TOOL_NAME = "materials_generic_research_run"
 GENERIC_RESEARCH_REQUEST_SCHEMA_VERSION = "materials-generic-research-run-v1"
 GENERIC_RESEARCH_RESULT_SCHEMA_VERSION = "materials-generic-research-run-v5"
-GENERIC_RESEARCH_IMPLEMENTATION_REVISION = "generic-research-20260821-r11"
+GENERIC_RESEARCH_IMPLEMENTATION_REVISION = "generic-research-20260821-r12"
 
 
 def research_secret_resolver_from_environment(
@@ -128,7 +128,7 @@ class GenericResearchRunResultV5(StrictModel):
     schema_version: Literal["materials-generic-research-run-v5"] = (
         GENERIC_RESEARCH_RESULT_SCHEMA_VERSION
     )
-    implementation_revision: Literal["generic-research-20260821-r11"] = (
+    implementation_revision: Literal["generic-research-20260821-r12"] = (
         GENERIC_RESEARCH_IMPLEMENTATION_REVISION
     )
     run_id: str
@@ -385,7 +385,12 @@ class GenericMaterialsResearchService:
                     selected.max_agent_rounds_per_role,
                     authoritative_calls + 3,
                 )
-                role_tool_calls = max(12, authoritative_calls + 4)
+                # One DeepSeek turn may legitimately batch topic, graph, and
+                # full-text calls. Scientific request ceilings remain enforced
+                # independently inside AuthoritativeLiteratureSearchState; this
+                # receipt ceiling must be large enough to record the whole batch,
+                # including its terminal BUDGET_EXHAUSTED responses.
+                role_tool_calls = 24
             elif role == "database_scout":
                 role_rounds = min(selected.max_agent_rounds_per_role, 7)
                 role_tool_calls = 16
