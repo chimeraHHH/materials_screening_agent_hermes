@@ -22,6 +22,8 @@ from material_agent.inspiration.search import (
     MultiSourceSearchAdapter,
     OpenAlexPublicAdapter,
     OstiPublicAdapter,
+    ParsedSearchPage,
+    RawSearchPage,
     SearchAdapterError,
     UrlLibBoundedTransport,
     document_id_for,
@@ -1674,6 +1676,119 @@ def test_multi_source_adapter_preserves_exact_child_payloads_and_parses_both() -
         warning.startswith("PUBLICATION_YEAR_REJECTED:")
         for warning in historical_only.warnings
     )
+
+
+def test_multi_source_search_is_fail_open_with_explicit_provider_warning() -> None:
+    adapter = MultiSourceSearchAdapter(
+        (
+            CrossrefPublicAdapter(
+                transport=_RecordingTransport(crossref_response_bytes()),
+                max_retries=0,
+            ),
+            OpenAlexPublicAdapter(
+                transport=_RecordingTransport(response_bytes()),
+                api_key_resolver=lambda: "",
+            ),
+        )
+    )
+
+    page = adapter.search(
+        query(),
+        max_response_bytes=1_000_000,
+        max_physical_requests=2,
+    )
+    parsed = parse_multi_source_page(
+        query=query(),
+        payload=page.payload,
+        raw_response_artifact=artifact(),
+        max_hits=10,
+    )
+
+    assert [hit.provider for hit in parsed.hits] == ["crossref"]
+    assert "PROVIDER_FAILED:openalex:OPENALEX_CREDENTIAL_UNAVAILABLE" in parsed.warnings
+    envelope = json.loads(page.payload)
+    assert envelope["schema_version"] == "inspiration-multi-source-page-v2"
+    assert envelope["failures"][0]["provider"] == "openalex"
+
+
+def test_multi_source_hit_budget_is_fair_across_providers() -> None:
+    crossref_payload = json.loads(crossref_response_bytes())
+    original = crossref_payload["message"]["items"][0]
+    crossref_payload["message"]["items"] = [
+        {**original, "DOI": f"10.1000/CROSSREF-{index}", "title": [f"Paper {index}"]}
+        for index in range(3)
+    ]
+    adapter = MultiSourceSearchAdapter(
+        (
+            CrossrefPublicAdapter(
+                transport=_RecordingTransport(json.dumps(crossref_payload).encode()),
+                max_results=3,
+                max_retries=0,
+            ),
+            OpenAlexPublicAdapter(
+                transport=_RecordingTransport(response_bytes()),
+                api_key_resolver=lambda: "offline-test-key",
+            ),
+        )
+    )
+
+    page = adapter.search(
+        query(),
+        max_response_bytes=1_000_000,
+        max_physical_requests=2,
+    )
+    parsed = parse_multi_source_page(
+        query=query(),
+        payload=page.payload,
+        raw_response_artifact=artifact(),
+        max_hits=2,
+    )
+
+    assert [hit.provider for hit in parsed.hits] == ["crossref", "openalex"]
+
+
+def test_multi_source_parser_registry_accepts_new_provider_without_branch_change() -> None:
+    class CustomAdapter:
+        network_access = True
+        component = ComponentSnapshotV1(
+            component_id="custom-public-adapter",
+            version="1",
+            implementation_sha256="f" * 64,
+        )
+
+        def search(self, selected_query, **_kwargs):
+            return RawSearchPage(
+                provider="custom",
+                query_id=selected_query.query_id,
+                payload=b"{}",
+            )
+
+    adapter = MultiSourceSearchAdapter(
+        (
+            CustomAdapter(),
+            CrossrefPublicAdapter(
+                transport=_RecordingTransport(crossref_response_bytes()),
+                max_retries=0,
+            ),
+        )
+    )
+    page = adapter.search(
+        query(),
+        max_response_bytes=1_000_000,
+        max_physical_requests=2,
+    )
+    parsed = parse_multi_source_page(
+        query=query(),
+        payload=page.payload,
+        raw_response_artifact=artifact(),
+        max_hits=10,
+        provider_parsers={
+            "custom": lambda **_kwargs: ParsedSearchPage(hits=()),
+            "crossref": parse_crossref_page,
+        },
+    )
+
+    assert [hit.provider for hit in parsed.hits] == ["crossref"]
 
 
 @pytest.mark.parametrize(

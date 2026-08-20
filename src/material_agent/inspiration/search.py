@@ -18,6 +18,7 @@ import socket
 import threading
 import time
 from collections.abc import Mapping, Sequence
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, replace
 from datetime import timezone
 from email.utils import parsedate_to_datetime
@@ -1878,20 +1879,21 @@ class OstiPublicAdapter:
 
 
 class MultiSourceSearchAdapter:
-    """Execute the same bounded query against an explicit provider set.
+    """Execute one bounded query concurrently against an explicit provider set.
 
     The returned payload is a canonical envelope containing each provider's
     exact response bytes as base64 plus its SHA-256.  This keeps one existing
-    ``SearchAdapter`` call boundary while preserving byte-level provenance.
-    Any provider failure fails the logical query closed.
+    ``SearchAdapter`` call boundary while preserving byte-level provenance.  A
+    child failure is retained in the envelope and does not discard successful
+    sibling responses.  The logical query fails only when every provider fails.
     """
 
     network_access = True
 
     def __init__(self, adapters: Sequence[SearchAdapter]) -> None:
         selected = tuple(adapters)
-        if len(selected) < 2 or len(selected) > 4:
-            raise ValueError("multi-source search requires two to four adapters")
+        if len(selected) < 2 or len(selected) > 16:
+            raise ValueError("multi-source search requires two to sixteen adapters")
         if any(not adapter.network_access for adapter in selected):
             raise ValueError("multi-source public search requires networked adapters")
         provider_ids = tuple(adapter.component.component_id for adapter in selected)
@@ -1953,51 +1955,82 @@ class MultiSourceSearchAdapter:
                 "SEARCH_REQUEST_BUDGET_EXCEEDED",
                 "multi-source query budget cannot cover every configured provider",
             )
-        pages: list[dict[str, str]] = []
-        attempts: list[SearchAttemptRecord] = []
-        remaining_bytes = max_response_bytes
-        for adapter in self.adapters:
-            child_budget = (
-                None
-                if max_physical_requests is None
-                else max_physical_requests - len(attempts)
+        provider_count = len(self.adapters)
+        child_response_budget = max(1, max_response_bytes // (2 * provider_count))
+        if max_physical_requests is None:
+            child_request_budgets: tuple[int | None, ...] = (None,) * provider_count
+        else:
+            base, remainder = divmod(max_physical_requests, provider_count)
+            child_request_budgets = tuple(
+                base + (1 if index < remainder else 0)
+                for index in range(provider_count)
             )
+
+        def execute(index: int, adapter: SearchAdapter):
             try:
                 page = adapter.search(
                     query,
-                    max_response_bytes=remaining_bytes,
-                    remaining_walltime_seconds=(
-                        None
-                        if remaining_walltime_seconds is None
-                        else remaining_walltime_seconds / len(self.adapters)
-                    ),
-                    max_physical_requests=child_budget,
+                    max_response_bytes=child_response_budget,
+                    remaining_walltime_seconds=remaining_walltime_seconds,
+                    max_physical_requests=child_request_budgets[index],
                 )
             except SearchAdapterError as error:
-                combined = (*attempts, *error.attempts)
-                raise error.with_attempts(
-                    _renumber_attempts(query.query_id, combined)
-                ) from error
+                return index, None, error
+            return index, page, None
+
+        completed: dict[int, tuple[RawSearchPage | None, SearchAdapterError | None]] = {}
+        with ThreadPoolExecutor(
+            max_workers=provider_count,
+            thread_name_prefix="hermes-literature-provider",
+        ) as executor:
+            futures = {
+                executor.submit(execute, index, adapter): index
+                for index, adapter in enumerate(self.adapters)
+            }
+            for future in as_completed(futures):
+                index, page, error = future.result()
+                completed[index] = (page, error)
+
+        pages: list[dict[str, str]] = []
+        failures: list[dict[str, object]] = []
+        attempts: list[SearchAttemptRecord] = []
+        for index, adapter in enumerate(self.adapters):
+            page, error = completed[index]
+            if error is not None:
+                attempts.extend(error.attempts)
+                failures.append(
+                    {
+                        "error_code": error.code,
+                        "http_status": error.http_status,
+                        "provider": _adapter_provider_label(adapter),
+                        "response_bytes": error.response_bytes,
+                    }
+                )
+                continue
+            if page is None:  # pragma: no cover - defensive executor invariant
+                raise SearchAdapterError(
+                    "INVALID_PROVIDER_RESULT",
+                    "multi-source provider returned neither a page nor an error",
+                )
             attempts.extend(page.attempts)
-            encoded = base64.b64encode(page.payload).decode("ascii")
             pages.append(
                 {
-                    "payload_base64": encoded,
+                    "payload_base64": base64.b64encode(page.payload).decode("ascii"),
                     "payload_sha256": hashlib.sha256(page.payload).hexdigest(),
                     "provider": page.provider,
                 }
             )
-            remaining_bytes -= len(page.payload)
-            if remaining_bytes < 1:
-                raise SearchAdapterError(
-                    "RESPONSE_BUDGET_EXCEEDED",
-                    "multi-source responses exhausted the aggregate byte budget",
-                    attempts=_renumber_attempts(query.query_id, tuple(attempts)),
-                )
+        if not pages:
+            raise SearchAdapterError(
+                "ALL_PROVIDERS_FAILED",
+                "every configured literature provider failed",
+                attempts=_renumber_attempts(query.query_id, tuple(attempts)),
+            )
         payload = canonical_json_bytes(
             {
+                "failures": failures,
                 "pages": pages,
-                "schema_version": "inspiration-multi-source-page-v1",
+                "schema_version": "inspiration-multi-source-page-v2",
             }
         )
         if len(payload) > max_response_bytes:
@@ -2012,6 +2045,17 @@ class MultiSourceSearchAdapter:
             payload=payload,
             attempts=_renumber_attempts(query.query_id, tuple(attempts)),
         )
+
+
+def _adapter_provider_label(adapter: SearchAdapter) -> str:
+    """Return a stable non-secret label even when a child fails before a page exists."""
+
+    explicit = getattr(adapter, "provider_id", None)
+    if isinstance(explicit, str) and explicit:
+        return explicit
+    component_id = adapter.component.component_id
+    suffix = "-public-adapter"
+    return component_id[: -len(suffix)] if component_id.endswith(suffix) else component_id
 
 
 def _renumber_attempts(
@@ -2772,8 +2816,18 @@ def parse_multi_source_page(
     max_hits: int,
     publication_year_from: int | None = None,
     publication_year_to: int | None = None,
+    provider_parsers: Mapping[str, Callable[..., ParsedSearchPage]] | None = None,
 ) -> ParsedSearchPage:
-    """Parse an exact-response envelope emitted by ``MultiSourceSearchAdapter``."""
+    """Parse a fail-open provider envelope with fair round-robin hit selection.
+
+    ``max_hits`` remains an aggregate caller budget, but no early provider can
+    consume it before later providers are inspected.  Parsers are selected from
+    an explicit registry rather than a fixed provider branch, so additional
+    audited providers can join without changing this envelope parser.
+    """
+
+    if type(max_hits) is not int or not 1 <= max_hits <= 10_000:
+        raise SearchAdapterError("INVALID_QUERY", "max_hits must be between 1 and 10000")
 
     try:
         decoded = json.loads(payload.decode("utf-8"))
@@ -2784,7 +2838,11 @@ def parse_multi_source_page(
         ) from error
     if (
         not isinstance(decoded, dict)
-        or decoded.get("schema_version") != "inspiration-multi-source-page-v1"
+        or decoded.get("schema_version")
+        not in {
+            "inspiration-multi-source-page-v1",
+            "inspiration-multi-source-page-v2",
+        }
         or not isinstance(decoded.get("pages"), list)
         or not decoded["pages"]
     ):
@@ -2792,9 +2850,36 @@ def parse_multi_source_page(
             "SCHEMA_DRIFT",
             "multi-source response envelope is invalid",
         )
-    hits: list[SearchHitV1] = []
+    parsers = dict(provider_parsers or _default_multi_source_parsers())
+    if not parsers or any(not key or not callable(value) for key, value in parsers.items()):
+        raise SearchAdapterError("INVALID_PARSER_REGISTRY", "provider parser registry is invalid")
+    failures = decoded.get("failures", [])
+    if not isinstance(failures, list):
+        raise SearchAdapterError("SCHEMA_DRIFT", "multi-source failures must be an array")
     warnings: list[str] = []
     seen_providers: set[str] = set()
+    for failure in failures:
+        if not isinstance(failure, dict) or set(failure) != {
+            "error_code",
+            "http_status",
+            "provider",
+            "response_bytes",
+        }:
+            raise SearchAdapterError("SCHEMA_DRIFT", "multi-source failure is invalid")
+        provider = failure["provider"]
+        error_code = failure["error_code"]
+        if (
+            not isinstance(provider, str)
+            or not provider
+            or provider in seen_providers
+            or not isinstance(error_code, str)
+            or not error_code
+        ):
+            raise SearchAdapterError("SCHEMA_DRIFT", "multi-source failure identity is invalid")
+        seen_providers.add(provider)
+        warnings.append(f"PROVIDER_FAILED:{provider}:{error_code}")
+
+    parsed_pages: list[tuple[str, ParsedSearchPage]] = []
     for page in decoded["pages"]:
         if not isinstance(page, dict) or set(page) != {
             "payload_base64",
@@ -2803,10 +2888,10 @@ def parse_multi_source_page(
         }:
             raise SearchAdapterError("SCHEMA_DRIFT", "multi-source page is invalid")
         provider = page["provider"]
-        if provider not in {"arxiv", "crossref", "openalex", "osti"} or provider in seen_providers:
+        if not isinstance(provider, str) or not provider or provider in seen_providers:
             raise SearchAdapterError(
                 "SCHEMA_DRIFT",
-                "multi-source provider set is unsupported or duplicated",
+                "multi-source provider set is invalid or duplicated",
             )
         seen_providers.add(provider)
         try:
@@ -2821,49 +2906,47 @@ def parse_multi_source_page(
                 "RAW_RESPONSE_HASH_MISMATCH",
                 "multi-source child response hash does not match",
             )
-        remaining = max_hits - len(hits)
-        if remaining <= 0:
-            break
-        if provider == "crossref":
-            parsed = parse_crossref_page(
-                query=query,
-                payload=child_payload,
-                raw_response_artifact=raw_response_artifact,
-                max_hits=remaining,
-                publication_year_from=publication_year_from,
-                publication_year_to=publication_year_to,
+        parser = parsers.get(provider)
+        if parser is None:
+            raise SearchAdapterError(
+                "UNSUPPORTED_PROVIDER",
+                f"no parser is registered for provider {provider!r}",
             )
-        elif provider == "openalex":
-            parsed = parse_openalex_page(
-                query=query,
-                payload=child_payload,
-                raw_response_artifact=raw_response_artifact,
-                provider="openalex",
-                max_hits=remaining,
-                publication_year_from=publication_year_from,
-                publication_year_to=publication_year_to,
-            )
-        elif provider == "arxiv":
-            parsed = parse_arxiv_page(
-                query=query,
-                payload=child_payload,
-                raw_response_artifact=raw_response_artifact,
-                max_hits=remaining,
-                publication_year_from=publication_year_from,
-                publication_year_to=publication_year_to,
-            )
-        else:
-            parsed = parse_osti_page(
-                query=query,
-                payload=child_payload,
-                raw_response_artifact=raw_response_artifact,
-                max_hits=remaining,
-                publication_year_from=publication_year_from,
-                publication_year_to=publication_year_to,
-            )
-        hits.extend(parsed.hits)
+        parsed = parser(
+            query=query,
+            payload=child_payload,
+            raw_response_artifact=raw_response_artifact,
+            max_hits=max_hits,
+            publication_year_from=publication_year_from,
+            publication_year_to=publication_year_to,
+        )
+        parsed_pages.append((provider, parsed))
         warnings.extend(parsed.warnings)
+
+    hits: list[SearchHitV1] = []
+    maximum_provider_hits = max((len(item.hits) for _, item in parsed_pages), default=0)
+    for rank in range(maximum_provider_hits):
+        for _provider, parsed in parsed_pages:
+            if rank >= len(parsed.hits):
+                continue
+            hit = parsed.hits[rank]
+            hits.append(hit)
+            if len(hits) >= max_hits:
+                return ParsedSearchPage(hits=tuple(hits), warnings=tuple(warnings))
     return ParsedSearchPage(hits=tuple(hits), warnings=tuple(warnings))
+
+
+def _parse_openalex_multi_source_page(**kwargs: Any) -> ParsedSearchPage:
+    return parse_openalex_page(provider="openalex", **kwargs)
+
+
+def _default_multi_source_parsers() -> Mapping[str, Callable[..., ParsedSearchPage]]:
+    return {
+        "arxiv": parse_arxiv_page,
+        "crossref": parse_crossref_page,
+        "openalex": _parse_openalex_multi_source_page,
+        "osti": parse_osti_page,
+    }
 
 
 def _publication_year_allowed(
