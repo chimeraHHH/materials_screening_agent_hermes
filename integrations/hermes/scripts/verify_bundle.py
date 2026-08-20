@@ -38,7 +38,10 @@ EXPECTED_TOOLS = [
     "materials_run_act",
     "materials_result_get",
 ]
-EXPECTED_RESEARCH_TOOLS = ["materials_research_pipeline_run"]
+EXPECTED_RESEARCH_TOOLS = [
+    "materials_research_pipeline_run",
+    "materials_generic_research_run",
+]
 EXPECTED_SERVICE_FACTORY = "shared-loopback-mcp-http-hub-v1"
 GATEWAY_REFERENCE_GUIDANCE = (
     "Read [the Gateway contract](references/gateway-contract.md) before the first tool\n"

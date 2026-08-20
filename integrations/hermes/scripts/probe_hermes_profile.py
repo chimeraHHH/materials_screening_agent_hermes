@@ -19,7 +19,10 @@ EXPECTED_TOOLS = (
     "materials_run_act",
     "materials_result_get",
 )
-EXPECTED_RESEARCH_TOOLS = ("materials_research_pipeline_run",)
+EXPECTED_RESEARCH_TOOLS = (
+    "materials_research_pipeline_run",
+    "materials_generic_research_run",
+)
 EXPECTED_FACTORY = "shared-loopback-mcp-http-hub-v1"
 MAX_MANAGED_PROFILE_FILE_BYTES = 1_000_000
 MAX_MANAGED_SKILL_FILES = 64

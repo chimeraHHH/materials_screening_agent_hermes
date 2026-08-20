@@ -168,6 +168,7 @@ def test_fresh_profile_provider_and_real_mcp_database_probes(tmp_path: Path) -> 
     )
     assert tuple(profile_payload["research_tools"]) == (
         "materials_research_pipeline_run",
+        "materials_generic_research_run",
     )
     assert secret not in profile_probe.stdout + profile_probe.stderr
 

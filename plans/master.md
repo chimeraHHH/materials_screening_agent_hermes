@@ -13,7 +13,56 @@
 > [Agent 04 计划](subagents/material-screening-agent04-plan.md)中明确记录的状态更新。当前可运行能力以 README、源码、配置和测试为准。
 > 只有这些仓库文档明确确认完成的事项才标为 `[x]`；无法确认的事项保持 `[ ]`。
 
-状态基准日期：2026-08-10
+状态基准日期：2026-08-19
+
+### 当前交付轨道：Hermes 通用材料灵感研究操作系统
+
+用户于 2026-08-19 明确要求：本轮不是给 Agent01 或固定 TiS2→TiSe2 demo 做最小补丁，
+而是在现有 Hermes companion、材料证据引擎和安全边界上，完成能够处理复杂自然语言材料
+约束的通用灵感生成研究循环，并显著提高 DeepSeek 原生思考、工具调用和搜索在研究过程中的
+占比。以下为本轮发布验收，未全部通过前不得把目标称为完成：
+
+- [x] research request 不再硬编码 `TIS2_TO_TISE2_NARROW_BAND_V1`；能够接收通用材料目标，
+  将层状性、能带拓扑/带宽、轨道来源、价态、连通子晶格等复合约束编译成可审计约束图；
+- [x] DeepSeek V4-Pro 具有显式 `high/max` thinking、多轮 function-tool loop、严格参数
+  Schema、轮次/调用/字节/时间预算和完整 receipt；`reasoning_content` 只在同一原子循环中
+  回传，不进入 Artifact、SQLite、日志或最终结果；
+- [x] 研究循环包含需求审计、查询扩展、资料发现、机理/化学、证据反证、假设推理和综合；
+  候选同时给出逐约束 `PASS/FAIL/UNKNOWN` 证据矩阵与
+  `LIKELY_PASS/LIKELY_FAIL` 概率推理矩阵；前者不把模型自信当证据，后者不能因证据
+  `UNKNOWN` 而拒绝生成可证伪灵感；
+- [x] DeepSeek 原生搜索只作为 lead discovery；正式科学引用必须解析到 Crossref/OpenAlex/
+  arXiv/OSTI 或材料数据库等可复核来源，并保留原始响应 hash、稳定身份和工具调用账本；
+- [x] 结构建议只能调用注册的受控 transformation，并经价态、成键/连通性、层状性和结构
+  完整性确定性校验；带宽、费米面交叉和轨道贡献在缺少 band/PDOS 数据时，证据 verdict
+  保持 `UNKNOWN`，但推理层仍输出概率判断、机理、假设和决定性证伪；
+- [x] 新增独立 Hermes research profile，只暴露粗粒度、Schema 化研究工具；production 和
+  evolution profile 的权限、安全及状态真源边界保持不变；
+- [x] 离线 fake-provider 测试覆盖正常多轮、非法工具、参数错误、预算耗尽、空结果、搜索
+  resolver 失败和 reasoning 不落盘；相关非 flatband Gate、依赖检查和 diff 检查通过；
+- [x] 使用既有科研测试专用密钥完成一次真实 DeepSeek thinking + 多轮 tool-call + 严格最终
+  Schema Gate，以及一次通用材料 prompt 的 Hermes/MCP 端到端实机运行；只报告实际返回的
+  能力与 blocker，不把候选假说写成性质结论。
+
+本轨道优先于下方已暂停的 benchmark 轨道。现有固定 TiS2 路径继续作为兼容回归 fixture，
+不再代表通用研究能力的产品边界。
+
+2026-08-19 superseding release checkpoint：thinking/tool loop、原生 discovery、四源 resolver、
+C2DB scout、九角色研究图、稀疏 skeptic→确定性证据矩阵、DeepSeek 完整推理矩阵、通用 MCP tool、Schema-hash
+角色/工具快照和隔离 Hermes research profile 已实现。科研专用 key 的真实 Gate 覆盖
+max-thinking 多轮 strict tools、原生 search 与原始中文 prompt 端到端，结果为 `3 passed`；
+完整非 flatband Gate 当前为 `1145 passed, 20 skipped`。通用 MCP 当前仍同步，耐久异步状态与
+细粒度 UI 进度是后续生产增强，不影响本轮 correctness release。真实 MCP stdio 边界也已
+调用通用工具并复用不可变 live 结果，返回 `isError=false`、九个角色、完整推理矩阵与
+`REASONED_HYPOTHESIS`。
+
+2026-08-19 灵感语义修正 Gate：此前把证据 `UNKNOWN` 等同于无结论，真实原始 prompt 因而
+输出 50 个 UNKNOWN，虽安全但不构成有用灵感。现新增独立 `hypothesis_reasoner`，要求对每个
+候选×约束作二元概率预测，并把共享机理、假设、关键前提和证伪提升到候选级。首版重复长文本
+在 25 分钟实测中被主动终止；紧凑上下文/输出版复用七个安全检查点后以 `1 passed in
+162.61s` 完成。真实结果为 NbCl2O/TaCl2O 两个低置信候选、20 个证据 UNKNOWN、7 个
+`LIKELY_PASS`、13 个 `LIKELY_FAIL`，概率 0.06–0.98，非空科学推理结论通过 MCP stdio 返回。
+最终非 flatband 回归为 `1145 passed, 20 skipped, 377 warnings`。
 
 ### 当前科研轨道：平带/窄带灵感生成 Benchmark
 

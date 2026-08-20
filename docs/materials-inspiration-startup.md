@@ -12,7 +12,8 @@ worker 或 monitor，否则进程身份、数据库绑定和健康检查不会�
   `9120` 和 `9121`。
 - profile 保留 `materials_inspiration_run`、`materials_run_get`、
   `materials_run_act`、`materials_result_get` 四个审计 MCP tools，并新增独立的
-  `materials_research_pipeline_run` 本地科研直跑入口。
+  `materials_research_pipeline_run` 固定科研直跑入口和
+  `materials_generic_research_run` 通用 DeepSeek 研究入口。
 - provider key、`API_SERVER_KEY` 只通过当前进程环境传入，不写入仓库、profile、
   workspace Artifact 或运维事件。
 - 部署成功只表示本地工程闭环可运行，不表示候选结构获得性质、稳定性或新颖性验证。
@@ -88,7 +89,7 @@ export OPENROUTER_API_KEY='<provider-api-key>'
 2. 校验并同步固定的 Gateway 与 Hermes Python 3.11 环境；
 3. 安装 Hermes `slack` extra，并验证 `aiohttp`、`api_server` 和 Slack adapter 可导入；
 4. 安装 source-controlled profile，写入规范化后的 provider/model；
-5. 构建 dashboard，执行 profile、四个审计工具加一个科研直跑工具、SQLite 和本地运行时 preflight；
+5. 构建 dashboard，执行 profile、四个审计工具加两个科研工具、SQLite 和本地运行时 preflight；
 6. 启动同时承载 queued worker 与共享 Streamable HTTP MCP Hub 的单一进程，再启动
    dashboard 和 monitor，并记录精确进程身份。
 
@@ -170,6 +171,51 @@ DeepSeek grounded RAG、SMACT、软化学变换、CHGNet 和 DeepH。请按阶�
 - DeepH 只有在 CHGNet 发布 QC 通过的 L2 弛豫结构且存在匹配模型/overlap binding 后
   才能运行。`BLOCKED` 不能解读为 ML 计算成功；
 - DFT 与依赖 DFT 的 many-body 始终为 `SKIPPED`。
+
+### 6.1 通用复杂约束研究
+
+不属于固定 TiS2→TiSe2 路线的请求使用
+`materials_generic_research_run`。该入口启用 DeepSeek V4-Pro `high|max` thinking、
+多轮严格工具调用、原生 web lead discovery、Crossref/OpenAlex/arXiv/OSTI resolver 和
+C2DB、Materials Cloud MC3D、NOMAD 与有凭据时的 Materials Project 联邦结构候选。每次查询强制覆盖全部已启用源，
+并保存单源失败/空结果 receipt、跨库结构去重和多源 provenance。它会输出两个完整
+candidate × constraint 矩阵：证据矩阵在缺少目标能带、
+PDOS、费米面或价态数据时返回 `UNKNOWN`；假设矩阵则由独立 DeepSeek reasoner 对每一项
+给出 `LIKELY_PASS` 或 `LIKELY_FAIL`、通过概率与短科学理由。候选级同时给出共享机理、关键
+假设、决定性证伪和最高信息增益计算，最终输出非空 `REASONED_HYPOTHESIS` 科学结论。
+内部由 DeepSeek 生成有证据的稀疏 skeptic 例外，再由确定性代码补全证据矩阵；角色与安全
+工具快照按 Schema hash 检查点化。可用以下示例做实机验收：
+
+终态返回的 `report_artifact_uri` 指向图文 Markdown：每个候选包含 CIF 三视图、可下载 CIF、
+逐约束证据/推理对照；总览包含按数据库来源拆分的形成能、凸包距离和带隙。C2DB 的官方
+GPAW/PBE Plotly 数值以及可获得的 Materials Project 路径能带会被本地绘图并保存原始压缩
+对象。数据库未提供能带时只显示缺失原因，不生成示意曲线。
+
+```text
+搜索数据库中的过渡金属二维平带材料。必须层状并优先 vdW gap；W<=50 meV；
+目标平带是费米面附近第一条能带，不能与色散带有一阶交点；轨道来自过渡金属或
+金属-配体杂化；过渡金属为常见或混合价态；贡献态来自互连子晶格而不是孤立原子或 cluster。
+逐候选列出证据 PASS/FAIL/UNKNOWN；再用物理与化学推理给出 LIKELY_PASS/LIKELY_FAIL、
+概率、机理、候选排序和证伪计算。不要把搜索摘要当证明，也不要把证据 UNKNOWN 当成没有灵感。
+```
+
+若只希望 Hermes 看见通用研究工具，可安装隔离 profile：
+
+```bash
+.venv/bin/python integrations/hermes/scripts/verify_research_bundle.py
+HERMES_HOME=/absolute/path/to/research-hermes-home \
+.venv-hermes/bin/hermes profile install \
+  integrations/hermes/profiles/materials-inspiration-research \
+  --name materials-inspiration-research --force --yes
+```
+
+真实 DeepSeek 发布 Gate：
+
+```bash
+.venv/bin/python -m pytest -q --run-live-llm \
+  tests/live/test_live_deepseek_research_agent.py \
+  tests/live/test_live_generic_research_pipeline.py
+```
 
 若 UI 页面断开，标准 dashboard 会给重连保留 10 秒；超过该窗口后每 2 秒运行的
 reaper 会终止 detached TUI 及其 Python gateway，避免多个浏览器 token 长期堆积进程。

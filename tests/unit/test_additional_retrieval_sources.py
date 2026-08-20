@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from copy import deepcopy
 import json
 import threading
 import time
+from copy import deepcopy
 from typing import Any
 
 from material_agent.retrieval.adapters import (
@@ -278,6 +278,24 @@ def test_c2db_adapter_maps_table_properties_and_ase_json(
     assert documents[0]["nsites"] == 2
     assert documents[0]["source_response"]["table_row"]["uid"] == "2SiO-1"
     assert documents[0]["source_response"]["download_json"] == atoms
+
+
+def test_c2db_adapter_extracts_official_pbe_plotly_band_data() -> None:
+    graph = {
+        "data": [{"type": "scattergl", "x": [0, 1], "y": [-1, 1]}],
+        "layout": {"xaxis": {"tickvals": [0, 1], "ticktext": ["Γ", "M"]}},
+    }
+    page = (
+        "<script>var graphs = "
+        + json.dumps(graph)
+        + "; Plotly.newPlot('bandstructure', graphs, {});</script>"
+    )
+    adapter = C2dbAdapter(session=FakeSession([FakeResponse(text=page)]))
+
+    result = adapter.fetch_plotly_bandstructure("2TiS2-1")
+
+    assert result["method"] == "GPAW/PBE"
+    assert result["plotly"] == graph
 
 
 def test_c2db_filters_exact_formula_before_parallel_structure_downloads(

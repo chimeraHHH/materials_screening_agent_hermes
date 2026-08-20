@@ -92,6 +92,26 @@ Use `/memory pending` and `/skills pending` to review proposed learning writes.
 The production profile remains the only Hermes profile allowed to call
 `materials_inspiration_run` or `materials_run_act`.
 
+## Generic materials research profile
+
+`profiles/materials-inspiration-research/` is an isolated profile for complex,
+open-ended material constraints. It exposes only `materials_generic_research_run`;
+the fixed TiS2 compatibility route and the four production mutation tools are
+not visible. Hermes host web/browser/shell/file/memory/delegation remain disabled.
+DeepSeek thinking, native web discovery, scholarly resolver tools, and the nine
+research roles run inside the audited materials service, where exact budgets,
+raw-response hashes, provider-compatible strict schemas, C2DB structure diagnostics,
+schema-hashed role/tool checkpoints, sparse skeptical exceptions, and the
+dual evidence/inference boundary are enforceable. Evidence `UNKNOWN` values remain
+visible, while the hypothesis reasoner produces complete probabilistic
+`LIKELY_PASS`/`LIKELY_FAIL` predictions and a `REASONED_HYPOTHESIS` conclusion.
+
+Validate it with:
+
+```bash
+.venv/bin/python integrations/hermes/scripts/verify_research_bundle.py
+```
+
 At runtime, set these non-secret variables in the profile environment:
 
 ```text

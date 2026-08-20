@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import http.client
 import json
 import os
 import subprocess
@@ -164,7 +165,12 @@ class UrllibJSONTransport:
         except urllib.error.HTTPError as exc:
             content = exc.read(max_response_bytes + 1)
             status = int(exc.code)
-        except (TimeoutError, urllib.error.URLError, OSError) as exc:
+        except (
+            TimeoutError,
+            urllib.error.URLError,
+            OSError,
+            http.client.HTTPException,
+        ) as exc:
             raise LLMProviderError(
                 "TRANSIENT_EXTERNAL",
                 "LLM provider request failed before receiving a valid response",

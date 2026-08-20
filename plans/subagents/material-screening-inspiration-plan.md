@@ -1,8 +1,8 @@
 # Hermes 与灵感生成器实施计划
 
-- 版本：v0.3
-- 日期：2026-08-08
-- 状态：P0.3 fixed-request pilot 已完成；P3.1/P3.2/P3.3 已通过，P3.x 最终 release 进行中
+- 版本：v0.4
+- 日期：2026-08-19
+- 状态：Hermes 通用 DeepSeek 多轮材料研究循环 release Gate 已完成；历史 fixed-request 路径仅作兼容回归
 - 依据：[`docs/system-plan.md`](../../docs/system-plan.md)、
   [`docs/architecture.md`](../../docs/architecture.md)、
   [`ADR-0001`](../../docs/adr/0001-hermes-platform-and-inspiration-boundary.md) 与
@@ -20,6 +20,76 @@
 - [Agent01 计划](material-screening-agent01-plan.md)：候选、结构、检索、去重和来源证据边界。
 
 ## 0. 当前任务与真实基线
+
+### 0.0 2026-08-19 当前任务：通用材料灵感研究循环
+
+本轮明确替代“在固定 TiS2→TiSe2 路径上最小补齐”的做法。目标是在 Hermes 顶层交互与
+材料执行/证据引擎之间建立一个有界、可审计但能自主迭代的 DeepSeek research loop。
+
+实现范围：
+
+1. 新增 provider-neutral agent loop 与 DeepSeek V4-Pro 实现，启用 `high/max` thinking，
+   支持连续多轮严格 function tools；模型的 `reasoning_content` 只在当前调用循环中回传，
+   持久层只保存 final JSON、request/final/tool 参数与结果的 hash、usage 和安全 receipt；
+2. 新增通用研究对象：约束图、query family、search lead、已解析证据、候选假说、逐约束
+   证据矩阵、逐约束概率推理矩阵、反证/缺口和综合报告；每一项必须由 Pydantic 严格校验
+   并有大小上限；
+3. 以多个有明确职责的 DeepSeek 回合完成需求审计、查询扩展、发现、机理/化学评估、
+   skeptic 反证和 synthesis。允许模型多次搜索/查证，不允许自由 shell、任意文件或任意 CIF；
+4. 原生搜索仅发现线索，随后必须通过受控公共适配器或权威数据库 resolver 形成正式证据。
+   无法解析的线索只保留为 `UNRESOLVED_LEAD`，不得支撑约束通过；
+5. research MCP 接受任意受限长度的材料目标；旧 workflow 作为兼容模式保留。新 Hermes
+   research profile 与 production/evolution 隔离，只看见粗粒度研究接口；
+6. 受控结构 transformation、价态/组成/连通性校验与下游 CHGNet/DeepH/DFT Gate 复用现有
+   实现。没有 band/PDOS/费米面数据时，证据 verdict 只能是 `UNKNOWN`，不能由文献摘要或
+   LLM 推断成证据 `PASS`；独立假设层则必须做 `LIKELY_PASS/LIKELY_FAIL` 概率预测。
+
+发布验收：
+
+- [x] 离线 scripted transport 证明至少两轮 tool calls 后生成严格最终 JSON，且 invalid tool、
+  invalid args、超预算、provider 空响应全部 fail closed；
+- [x] Artifact/日志扫描证明没有 `reasoning_content` 或密钥，tool receipt 可精确核验参数/
+  结果 hash；
+- [x] 通用 flat-band prompt 被编译为包含八类用户硬条件的约束图，并生成多 query family；
+- [x] evidence matrix 对每一硬条件给出 `PASS/FAIL/UNKNOWN`、证据引用和下一验证动作；
+- [x] inference matrix 对每个候选×约束给出 `LIKELY_PASS/LIKELY_FAIL`、概率、短科学依据，
+  并在候选级给出机理、关键假设、决定性证伪与最高信息增益计算；
+- [x] Hermes research bundle verifier、MCP discovery/stdio 和既有幂等兼容测试通过；
+- [x] 使用既有科研专用 DeepSeek 密钥完成真实 thinking/tool loop 和通用 prompt 端到端 smoke；
+- [x] 更新 README、架构、主计划和本计划，记录实现、来源、限制与凭据安全边界；
+- [x] 相关定向测试、完整非 flatband 离线 Gate、`pip check`、`git diff --check` 通过。
+
+2026-08-19 实现/实测 checkpoint：新增 `DeepSeekThinkingAgent`、DeepSeek Anthropic-compatible
+原生 web discovery、四源权威 literature tool、C2DB database scout、九角色 research graph、
+严格 candidate × constraint matrix、第二个 MCP tool 和隔离 research profile。Crossref live
+Gate `3 passed`；新 resolver 实机解析 2 records 并保存 raw hash；C2DB exact-formula live smoke
+解析 2 records，raw/CIF hash 闭合且 flat-band/费米/轨道/价态均保持 `UNKNOWN`；非 flatband
+完整 Gate 为 `1107 passed, 4 skipped`，两套 profile verifier、真实 MCP stdio discovery、
+main `.venv` `pip check` 和 diff check 通过。
+
+Superseding live Gate 已使用用户提供的科研专用 key 运行并通过：DeepSeek max-thinking
+多轮 strict tools、原生 server-side web search 与原始中文复杂 prompt 共 `3 passed in
+49.45s`（通用结果命中此前完成的安全检查点）。实测同时驱动 strict-schema 投影、瞬态重试、
+预算降级、最终 JSON 修复、C2DB 24→最多 8 个深评假设分层、稀疏 skeptic 和安全工具快照
+恢复。完整非 flatband Gate 更新为 `1144 passed, 20 skipped, 377 warnings`。
+同一冻结请求随后从真实 MCP stdio 边界调用
+`materials_generic_research_run` 成功：tool discovery 返回固定/通用两项 allowlist，调用
+`isError=false`、run 状态 `SUCCEEDED`、八个旧版角色完整返回且
+`scientific_conclusion=false`。这项历史边界验收复用已完成的不可变 DeepSeek 结果，不重复消耗
+Provider 调用；真实 Provider 计算由前述 live Gate 覆盖。
+
+2026-08-19 灵感推理 superseding checkpoint：用户指出“全 UNKNOWN 没有灵感价值”后，架构
+拆成 evidence audit 与 scientific inference 两层。新增第九角色 `hypothesis_reasoner`，不得
+复制 evidence UNKNOWN，必须对每个 candidate × constraint 输出 `LIKELY_PASS/LIKELY_FAIL`
+和通过概率。首个逐格长文本 schema 在真实运行 25 分钟时主动中止；改为候选级共享机理/
+假设/证伪、逐格短预测，并只读取过滤后的 inference context。复用七个已验证角色检查点后，
+原始中文 prompt 真实 Gate `1 passed in 162.61s`：NbCl2O/TaCl2O 两个低置信候选，20 个证据
+UNKNOWN 与 20 个推理判断并存，其中 7 `LIKELY_PASS`、13 `LIKELY_FAIL`，概率 0.06–0.98；
+MCP stdio 返回非空 `REASONED_HYPOTHESIS` 且 `property_verification_complete=false`；最终非
+flatband 回归为 `1145 passed, 20 skipped, 377 warnings`。
+
+非目标保持不变：不声称 novelty，不用 LLM 伪造能带/PDOS/价态/结构计算，不开放任意代码
+执行，不把 Hermes memory 作为科研状态真源，不把原生搜索摘要直接升级为科学结论。
 
 用户已明确将项目范围升级为一项持续的系统工程：
 

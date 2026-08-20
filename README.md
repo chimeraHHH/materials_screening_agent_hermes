@@ -94,6 +94,87 @@ is read-only with respect to materials runs: only `materials_run_get` and
 and delegated children inherit no Materials MCP tools. See
 [ADR 0003](docs/adr/0003-hermes-controlled-evolution-profile.md).
 
+### Generic DeepSeek materials research graph
+
+The independent `materials-inspiration-research` profile exposes only
+`materials_generic_research_run`. Unlike the compatibility-only
+`TIS2_TO_TISE2_NARROW_BAND_V1` route, this entry accepts a complete natural
+language materials goal and runs nine bounded DeepSeek V4-Pro roles:
+requirements, query planning, native-search discovery, authoritative literature
+resolution, federated database scouting, mechanism/chemistry, skeptical constraint
+auditing, hypothesis reasoning, and synthesis. Each role uses enabled `high` or `max` thinking and a
+strict multi-round function-tool loop. Provider `reasoning_content` is returned
+only inside the same in-memory tool conversation and is never written to an
+Artifact, SQLite, log, or result.
+
+DeepSeek-native web search returns only `UNRESOLVED_LEAD`. Crossref, OpenAlex,
+arXiv, and OSTI metadata becomes evidence only after the accepted adapter has
+persisted exact raw response bytes and assigned a stable evidence ID. Each
+database query is server-side fanned out to C2DB, Materials Cloud MC3D, public
+NOMAD, and Materials Project when its credential is available; the model cannot
+silently choose only one source. Per-source versions, query fingerprints, empty results, failures,
+credential unavailability, raw records, canonical CIFs, licenses, and local
+filter counts are retained. Canonical structure IDs followed by a strict
+StructureMatcher merge equivalent cross-source records without discarding their
+provenance. Local dimensionality and transition-metal periodic-connectivity
+diagnostics are then applied. These databases do not establish the requested
+flat-band width, Fermi ordering, PDOS orbital weight, or oxidation assignment in
+this path, so those evidence fields remain `UNKNOWN`.
+The database pool is bounded separately from the at-most-eight hypotheses sent
+to deep review. The skeptical evidence role emits only evidence-backed exceptions;
+deterministic code expands the complete evidence matrix with `UNKNOWN` defaults
+and next-verification actions. A separate DeepSeek hypothesis reasoner must then
+predict `LIKELY_PASS` or `LIKELY_FAIL` for every candidate × constraint pair,
+including probability, scientific rationale, physical/chemical basis, assumptions,
+and a decisive falsifier. Synthesis returns a concrete `REASONED_HYPOTHESIS`
+scientific conclusion while `property_verification_complete=false` keeps the
+evidence boundary explicit. Strict-tool schemas are
+projected onto DeepSeek's supported subset and then revalidated against the full
+local Pydantic model. Transport retries, final-JSON repair, physical-search
+budgets, and schema-hashed role/tool-snapshot checkpoints are all receipt-audited.
+
+Every completed generic run also produces a deterministic Markdown sidecar
+report. It embeds one labelled CIF three-view image per federated candidate and
+a source-resolved comparison of formation energy, energy above hull, and band
+gap. C2DB candidates are enriched from the official GPAW/PBE Plotly band arrays;
+Materials Project candidates use the official line-bandstructure object when it
+is available. The numeric band payload is stored compressed beside the image.
+Missing values and failed endpoints remain visibly `NOT_AVAILABLE` or
+`FETCH_FAILED`; the reporter never synthesizes a band curve or substitutes a
+model prediction for database data. The result exposes `report_artifact_uri`
+and `report_manifest_artifact_uri` in addition to the canonical JSON result.
+
+Validate the new profile and real public evidence boundaries with:
+
+```bash
+.venv/bin/python integrations/hermes/scripts/verify_research_bundle.py
+.venv/bin/python -m pytest -q --run-live-crossref \
+  tests/live/test_live_crossref_inspiration.py \
+  tests/live/test_live_crossref_inspiration_runner.py
+```
+
+The opt-in DeepSeek release Gate needs the research-only key in
+`MATERIAL_AGENT_LLM_API_KEY`, `DEEPSEEK_API_KEY`, or the configured macOS
+Keychain service. It exercises max-thinking multi-round strict tools and the
+native server-side web-search capability:
+
+```bash
+.venv/bin/python -m pytest -q --run-live-llm \
+  tests/live/test_live_deepseek_research_agent.py \
+  tests/live/test_live_generic_research_pipeline.py
+```
+
+The evidence/inference split, failed oversized-schema attempt, compact recovery,
+real candidate predictions, and MCP audit are recorded in the
+[reasoned-hypothesis release run](docs/runs/2026-08-19-hermes-generic-reasoned-hypothesis.md).
+The database fan-out, failure isolation, provenance merge, checkpoint replay,
+and public C2DB/NOMAD smoke are recorded in the
+[federated database release](docs/runs/2026-08-19-hermes-federated-database-layer.md).
+
+The generic MCP call is currently synchronous. Role checkpoints make exact
+replay and recovery bounded, but a durable asynchronous submit/status API and
+fine-grained UI progress projection remain production-stage work.
+
 ### Opt-in Agent01 → Inspiration LangGraph runtime
 
 `InspirationCompositeRuntimeV2` resolves an existing Agent01 run from the same
@@ -378,9 +459,10 @@ Requirement confirmation Gate before it can be frozen.
 
 The default remains `OfflineRequirementParser`; no network or secret-store
 access occurs unless `MATERIAL_AGENT_LLM_PROVIDER=deepseek` is explicitly set.
-The opt-in parser uses DeepSeek's OpenAI-compatible non-streaming Chat
-Completions endpoint with `deepseek-v4-pro`, thinking enabled at `high` effort,
-and JSON Output. Provider output is still local-untrusted input: it is
+The opt-in Stage 0 parser uses DeepSeek's OpenAI-compatible non-streaming Chat
+Completions endpoint with `deepseek-v4-pro`, thinking disabled, and JSON Output.
+The separate generic research graph above owns enabled thinking and multi-round
+tools. Stage 0 provider output is still local-untrusted input: it is
 validated as a `Requirement`, displayed at the existing Requirement
 confirmation Gate, and cannot control the Requirement ID, revision,
 confirmation state, policy version, stage routing, scientific thresholds, or

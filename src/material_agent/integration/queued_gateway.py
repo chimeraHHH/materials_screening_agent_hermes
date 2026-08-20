@@ -213,6 +213,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             create_mcp_server as create_gateway_mcp_server,
         )
         from material_agent.integration.mcp_http import MCPHttpHub
+        from material_agent.integration.generic_research import (
+            GenericMaterialsResearchService,
+        )
         from material_agent.integration.research_pipeline import ResearchPipelineService
         from material_agent.integration.research_pipeline_mcp import (
             ResearchPipelineDispatcher,
@@ -225,13 +228,19 @@ def main(argv: Sequence[str] | None = None) -> int:
             smact_worker_python=args.smact_worker_python,
             chgnet_worker_python=args.chgnet_worker_python,
         )
+        generic_research_service = GenericMaterialsResearchService(
+            workspace=args.workspace,
+            project_id=args.project,
+        )
         hub = MCPHttpHub(
             {
                 "materials": create_gateway_mcp_server(
                     GatewayToolDispatcher(service)
                 ),
                 "research": create_research_mcp_server(
-                    ResearchPipelineDispatcher(research_service)
+                    ResearchPipelineDispatcher(
+                        research_service, generic_research_service
+                    )
                 ),
             },
             host=args.mcp_host,

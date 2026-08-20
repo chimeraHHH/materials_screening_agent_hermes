@@ -5,6 +5,11 @@ import time
 from datetime import UTC, datetime
 from types import SimpleNamespace
 
+from material_agent.integration.generic_research import (
+    GENERIC_RESEARCH_TOOL_NAME,
+    GenericResearchRunRequestV1,
+    generic_research_tool_manifest,
+)
 from material_agent.integration.research_pipeline import (
     RESEARCH_PIPELINE_TOOL_NAME,
     ResearchPipelineRunRequestV1,
@@ -18,8 +23,12 @@ from material_agent.integration.research_pipeline import (
 from material_agent.integration.research_pipeline_mcp import (
     ResearchPipelineDispatcher,
 )
-from material_agent.orchestrator.models import RunStatus
-from material_agent.orchestrator.models import StageExecutionRecord, StageId, StageStatus
+from material_agent.orchestrator.models import (
+    RunStatus,
+    StageExecutionRecord,
+    StageId,
+    StageStatus,
+)
 from material_agent.orchestrator.runtime import OrchestratorRuntime
 
 
@@ -109,6 +118,52 @@ def test_dispatcher_validates_and_routes_direct_request() -> None:
 
     assert response["run_id"] == "research-1"
     assert response["scientific_conclusion"] is False
+
+
+def test_generic_manifest_and_dispatcher_accept_open_ended_goal() -> None:
+    request = GenericResearchRunRequestV1(
+        submission_id="generic-unit",
+        goal="Find layered transition-metal flat-band hypotheses with audited evidence.",
+        reasoning_effort="max",
+    )
+
+    class GenericService:
+        def run(self, selected):
+            assert selected == request
+            return type(
+                "GenericResult",
+                (),
+                {
+                    "model_dump": lambda self, **_kwargs: {
+                        "schema_version": "materials-generic-research-run-v3",
+                        "run_id": "generic-1",
+                        "submission_id": "generic-unit",
+                        "request_sha256": "b" * 64,
+                        "status": "SUCCEEDED",
+                        "scientific_conclusion": (
+                            "The layered candidate is a reasoned hypothesis."
+                        ),
+                        "scientific_conclusion_status": "REASONED_HYPOTHESIS",
+                        "property_verification_complete": False,
+                    }
+                },
+            )()
+
+    manifest = generic_research_tool_manifest()
+    assert manifest[0]["name"] == GENERIC_RESEARCH_TOOL_NAME
+    assert "workflow" not in manifest[0]["inputSchema"]["properties"]
+    assert {
+        "report_artifact_uri",
+        "report_manifest_artifact_uri",
+    } <= manifest[0]["outputSchema"]["properties"].keys()
+    dispatcher = ResearchPipelineDispatcher(_Service(), GenericService())
+    response = dispatcher.dispatch(
+        GENERIC_RESEARCH_TOOL_NAME, request.model_dump(mode="json")
+    )
+    assert response["run_id"] == "generic-1"
+    assert response["scientific_conclusion_status"] == "REASONED_HYPOTHESIS"
+    assert response["scientific_conclusion"]
+    assert response["property_verification_complete"] is False
 
 
 def test_finish_is_idempotent_and_keeps_scientific_boundary(tmp_path) -> None:

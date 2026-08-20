@@ -1,4 +1,4 @@
-"""One-tool MCP stdio server for the direct non-DFT research pipeline."""
+"""Two-tool MCP server for fixed and generic materials research flows."""
 
 from __future__ import annotations
 
@@ -17,6 +17,12 @@ from material_agent.integration.research_pipeline import (
     ResearchPipelineService,
     research_pipeline_tool_manifest,
 )
+from material_agent.integration.generic_research import (
+    GENERIC_RESEARCH_TOOL_NAME,
+    GenericMaterialsResearchService,
+    GenericResearchRunRequestV1,
+    generic_research_tool_manifest,
+)
 
 
 class ResearchPipelineDispatchError(RuntimeError):
@@ -24,23 +30,45 @@ class ResearchPipelineDispatchError(RuntimeError):
 
 
 class ResearchPipelineDispatcher:
-    def __init__(self, service: ResearchPipelineService) -> None:
+    def __init__(
+        self,
+        service: ResearchPipelineService,
+        generic_service: GenericMaterialsResearchService | None = None,
+    ) -> None:
         self.service = service
+        self.generic_service = generic_service
 
     def dispatch(self, tool_name: str, arguments: Mapping[str, Any]) -> dict[str, Any]:
-        if tool_name != RESEARCH_PIPELINE_TOOL_NAME:
+        if tool_name not in {RESEARCH_PIPELINE_TOOL_NAME, GENERIC_RESEARCH_TOOL_NAME}:
             raise ResearchPipelineDispatchError("unknown research pipeline tool")
         if not isinstance(arguments, Mapping) or not all(
             isinstance(key, str) for key in arguments
         ):
             raise ResearchPipelineDispatchError("tool arguments must be a JSON object")
         try:
-            request = ResearchPipelineRunRequestV1.model_validate(dict(arguments))
+            request = (
+                GenericResearchRunRequestV1.model_validate(dict(arguments))
+                if tool_name == GENERIC_RESEARCH_TOOL_NAME
+                else ResearchPipelineRunRequestV1.model_validate(dict(arguments))
+            )
         except (TypeError, ValueError, ValidationError):
             raise ResearchPipelineDispatchError("invalid research pipeline arguments") from None
         try:
-            submit = getattr(self.service, "submit", None)
-            result = submit(request) if callable(submit) else self.service.run(request)
+            selected_service = (
+                self.generic_service
+                if tool_name == GENERIC_RESEARCH_TOOL_NAME
+                else self.service
+            )
+            if selected_service is None:
+                raise ResearchPipelineDispatchError(
+                    "generic research service is unavailable"
+                )
+            submit = getattr(selected_service, "submit", None)
+            result = (
+                submit(request)
+                if callable(submit)
+                else selected_service.run(request)
+            )
         except Exception as exc:
             code = getattr(exc, "code", None) or getattr(exc, "category", None)
             label = str(code or type(exc).__name__)
@@ -57,7 +85,10 @@ def create_mcp_server(dispatcher: ResearchPipelineDispatcher):
     except ImportError as exc:  # pragma: no cover - isolated runtime only
         raise ResearchPipelineDispatchError("MCP support is unavailable") from exc
 
-    manifest = research_pipeline_tool_manifest()[0]
+    manifests = {
+        item["name"]: item
+        for item in (*research_pipeline_tool_manifest(), *generic_research_tool_manifest())
+    }
     server = Server(
         "materials-research-pipeline",
         version=RESEARCH_PIPELINE_SCHEMA_VERSION,
@@ -69,15 +100,27 @@ def create_mcp_server(dispatcher: ResearchPipelineDispatcher):
 
     @server.list_tools()
     async def list_tools():
-        return [
+        tools = [
             types.Tool(
                 name=RESEARCH_PIPELINE_TOOL_NAME,
-                description=str(manifest["description"]),
+                description=str(manifests[RESEARCH_PIPELINE_TOOL_NAME]["description"]),
                 inputSchema=ResearchPipelineRunRequestV1.model_json_schema(),
-                outputSchema=manifest["outputSchema"],
+                outputSchema=manifests[RESEARCH_PIPELINE_TOOL_NAME]["outputSchema"],
                 annotations=types.ToolAnnotations(readOnlyHint=False),
             )
         ]
+        if dispatcher.generic_service is not None:
+            generic = manifests[GENERIC_RESEARCH_TOOL_NAME]
+            tools.append(
+                types.Tool(
+                    name=GENERIC_RESEARCH_TOOL_NAME,
+                    description=str(generic["description"]),
+                    inputSchema=GenericResearchRunRequestV1.model_json_schema(),
+                    outputSchema=generic["outputSchema"],
+                    annotations=types.ToolAnnotations(readOnlyHint=False),
+                )
+            )
+        return tools
 
     @server.call_tool(validate_input=True)
     async def call_tool(name: str, arguments: dict[str, Any]):
@@ -115,7 +158,7 @@ def serve_stdio(dispatcher: ResearchPipelineDispatcher) -> None:
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="material-agent-research-pipeline",
-        description="Run the one-tool direct non-DFT research MCP server.",
+        description="Run the bounded fixed and generic materials research MCP server.",
     )
     parser.add_argument("--workspace", type=Path, required=True)
     parser.add_argument("--project", default="materials-inspiration")
@@ -131,7 +174,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.manifest:
         print(
             json.dumps(
-                research_pipeline_tool_manifest(),
+                (*research_pipeline_tool_manifest(), *generic_research_tool_manifest()),
                 ensure_ascii=False,
                 sort_keys=True,
                 separators=(",", ":"),
@@ -145,7 +188,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             smact_worker_python=args.smact_worker_python,
             chgnet_worker_python=args.chgnet_worker_python,
         )
-        serve_stdio(ResearchPipelineDispatcher(service))
+        generic_service = GenericMaterialsResearchService(
+            workspace=args.workspace.resolve(),
+            project_id=args.project,
+        )
+        serve_stdio(ResearchPipelineDispatcher(service, generic_service))
     except ResearchPipelineDispatchError as exc:
         parser.exit(2, f"research pipeline startup failed: {exc}\n")
     return 0

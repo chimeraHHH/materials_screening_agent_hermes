@@ -2,18 +2,18 @@
 
 from __future__ import annotations
 
-import importlib.metadata
 import csv
 import getpass
 import html
+import importlib.metadata
 import io
+import json
 import math
 import os
 import re
 import subprocess
 import time
-from collections.abc import Sequence
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Protocol
 from urllib.parse import urljoin
@@ -884,6 +884,50 @@ class C2dbAdapter:
             },
             [],
         )
+
+    def fetch_plotly_bandstructure(self, material_id: str) -> dict[str, Any]:
+        """Return the official PBE band plot embedded in a C2DB material page.
+
+        C2DB currently publishes the numerical band traces as a Plotly JSON
+        object rather than through the structure-download JSON endpoint.  Keep
+        page parsing in the source adapter so report code never depends on HTML
+        layout details or confuses a rendered plot with screening evidence.
+        """
+
+        if not material_id or any(
+            character not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-"
+            for character in material_id
+        ):
+            raise ValueError("C2DB material id is invalid")
+        response = self.session.get(
+            f"{self.base_url}/material/{material_id}",
+            timeout=self.timeout_seconds,
+        )
+        response.raise_for_status()
+        marker = "Plotly.newPlot('bandstructure', graphs, {});"
+        plot_end = response.text.find(marker)
+        if plot_end < 0:
+            raise ValueError("C2DB material page is missing the PBE band plot")
+        assignment = response.text.rfind("var graphs = ", 0, plot_end)
+        if assignment < 0:
+            raise ValueError("C2DB PBE band plot is missing its Plotly data")
+        json_start = assignment + len("var graphs = ")
+        try:
+            graph, _ = json.JSONDecoder().raw_decode(
+                response.text[json_start:plot_end]
+            )
+        except json.JSONDecodeError as exc:
+            raise ValueError("C2DB PBE band Plotly data is invalid JSON") from exc
+        if not isinstance(graph, dict) or not isinstance(graph.get("data"), list):
+            raise TypeError("C2DB PBE band Plotly object is missing data[]")
+        return {
+            "material_id": material_id,
+            "source_url": getattr(
+                response, "url", f"{self.base_url}/material/{material_id}"
+            ),
+            "method": "GPAW/PBE",
+            "plotly": graph,
+        }
 
 
 class TopologicalQuantumChemistryAdapter:

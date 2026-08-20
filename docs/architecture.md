@@ -768,7 +768,7 @@ CLI 规则：
 
 ### 10.1 Hermes Tool 与 beta/pilot 入口
 
-Hermes source-controlled production profile 允许四个审计工具和一个独立的 DFT 外科研入口：
+Hermes source-controlled production profile 允许四个审计工具和两个独立的 DFT 外科研入口：
 
 ```text
 materials_inspiration_run
@@ -776,6 +776,7 @@ materials_run_get
 materials_run_act
 materials_result_get
 materials_research_pipeline_run
+materials_generic_research_run
 ```
 
 `materials_run_act` 使用严格 discriminated union，一次调用最多完成一次澄清、批准、拒绝、
@@ -790,6 +791,51 @@ DFT/ML/many-body submit。
 越过 LangGraph outcome-recording 边界，Orchestrator 在 research `FAILED` 写入前以一个事务
 将 run、活动 stage 和 attempt 一并封口为失败；启动时还会核对历史 terminal Artifact 并修复
 旧的 RUNNING 投影。终态结果仍以 immutable Artifact 幂等返回。
+
+`materials_generic_research_run` 是通用灵感研究图，不复用固定 TiS2→TiSe2 语义。它将完整
+自然语言目标编译为约束图，并由九个有界 DeepSeek 角色依次完成 query family、原生搜索
+lead、权威文献解析、联邦数据库候选、机理化学、证据反证、假设推理和综合。每个角色在
+`deepseek-v4-pro` 的 `high|max` thinking 下运行严格 function-tool loop；
+`reasoning_content` 只在同一内存会话继续轮次，不进入任何持久状态。DeepSeek 原生搜索只产生
+`UNRESOLVED_LEAD`，必须由 Crossref/OpenAlex/arXiv/OSTI adapter 重新获取并保存原始字节后才
+能形成 evidence。每次数据库调用由服务端强制并行 fan-out 至 C2DB、Materials Cloud MC3D、
+NOMAD 和具备凭据时的 Materials Project，DeepSeek 不能选择只查其中一库。单源的成功、空结果、失败和凭据缺失均以
+receipt 进入最终研究图，失败不连带取消其他源。各源原始记录与 canonical CIF 同样内容寻址；
+先按 canonical structure ID、再以严格 StructureMatcher 做跨库等价去重，同时保留全部 source
+record、数据库版本、query fingerprint、license 和 artifact hash。随后以本地 Larsen
+dimensionality 和 CrystalNN 周期连通性作保守诊断；带宽、费米排序、能带交叉、PDOS 和价态
+没有直接数据时保持 `UNKNOWN`。最终确定性 join 要求每个候选覆盖每条约束，拒绝伪造 ID、
+漏约束和无证据的 `PASS`。
+
+数据库候选池与深评假设集分离：联邦层全角色最多保留 24 个去重结构候选，每个物理查询
+对每个已启用源使用独立配额，机理角色最多晋级
+8 个假设。skeptic 不直接生成完整笛卡尔积，只返回有证据的 `PASS/FAIL` 稀疏例外；确定性
+层为所有遗漏组合生成 `UNKNOWN` 和下一验证动作，并禁止仅凭 metadata/database scalar 将带宽、
+费米排序、带隔离、轨道或价态判为证据 `PASS`。这不是最终灵感输出：独立
+`hypothesis_reasoner` 随后必须对每个 candidate × constraint 给出 `LIKELY_PASS` 或
+`LIKELY_FAIL`、通过概率、公开科学依据、关键假设与决定性证伪条件。synthesist 从该推理矩阵
+产出明确的 `REASONED_HYPOTHESIS` 科学结论，同时保留
+`property_verification_complete=false`。因此“未验证”和“没有可推理的灵感”不再是同一状态。
+角色结果和安全工具快照按输出 Schema hash 检查点化；恢复时悬空证据引用被删除并记录
+normalization，不得冒充旧证据仍有效。为容纳联邦候选扩展后的完整 candidate × constraint
+JSON，DeepSeek agent 的单轮 completion ceiling 为 32768 tokens，总 token、轮次和 walltime
+仍由每角色预算分别限制。
+
+通用研究终态同时生成独立 Markdown 图文报告。报告对每个联邦候选从 hash-verified CIF
+本地绘制沿 a/b/c 晶轴的三视图，并按 source record 汇总形成能、凸包距离和带隙；source
+record 契约直接保留 `formation_energy_ev_atom` 与 `energy_above_hull_ev_atom`。能带只从真实
+源对象生成：C2DB adapter 解析材料页公开的 GPAW/PBE Plotly 数值，Materials Project adapter
+读取 line-bandstructure 对象，同时把绘图所用数值压缩归档。没有对应对象或端点失败时，报告
+写入 `NOT_AVAILABLE/FETCH_FAILED` 原因而不补画。Markdown、图片、CIF 链接、原始能带数值和
+manifest 均使用 Artifact URI；图像是报告证据的可视化，不会反向把旧研究图中的 `UNKNOWN`
+改写成 `PASS`。
+
+该 MCP 工具当前仍是同步调用。角色级恢复已经实现，但耐久异步 submit/status、细粒度阶段
+进度和跨 worker lease 尚未接入通用入口，属于生产增强而非当前已完成能力。
+
+独立 `materials-inspiration-research` profile 只暴露这个通用工具。Hermes host 自身的 web、
+browser、shell、file、memory 与 delegation 继续关闭；搜索和材料数据库访问只能发生在上述
+有预算、Schema 和 receipt 的服务端工具内。production/evolution profile 的权限不因此扩大。
 
 Requirement-freeze 交互同时显式返回 `execution_manifest_sha256` 和兼容字段
 `input_sha256`，两者必须完全相同。manifest v2 绑定冻结输入、policy、TagGraph、目标 Tag、

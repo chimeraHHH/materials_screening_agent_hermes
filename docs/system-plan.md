@@ -272,6 +272,26 @@ Global State 必须使用逻辑 Artifact URI，而不是依赖 Mac 绝对路径�
 - 最终以一次自然语言 Hermes turn 驱动完整固定流程，并明确是否包含公共搜索；
 - 首批结果只作为可审计 proposal，不进行 novelty 或性质背书。
 
+2026-08-19 新增的通用研究轨道不再把固定 TiS2 路线当作产品范围：DeepSeek 原生 thinking、
+多轮严格工具调用、原生 web lead discovery、四源权威文献 resolver、C2DB + Materials
+Cloud MC3D + NOMAD + 可选 Materials Project 联邦结构候选和逐约束
+反证矩阵被封装在独立 research profile 中。该能力生成明确的 reasoned scientific
+hypothesis，但数据库结构/标量、文献摘要、连通性 proxy 均不能替代目标能带、PDOS、价态和
+费米面计算。证据 verdict 与推理 verdict 分层保存，前者可为 UNKNOWN，后者必须给出概率
+判断。真实 DeepSeek
+release Gate 需要科研专用密钥，当前是否已通过以主计划和 live test 记录为准。
+
+通用研究结果现包含可直接阅读的 Markdown sidecar：候选 CIF a/b/c 三视图、形成能/凸包
+距离/带隙总览、C2DB 官方 PBE 能带和可获得的 MP 路径能带。所有图均绑定源 Artifact；缺失
+端点显式保留，不允许用 DeepSeek 推理曲线替代计算数据。
+
+2026-08-19 superseding release Gate 已使用科研专用 DeepSeek key 通过：max-thinking 多轮
+strict tool、原生 server-side search 与原始中文复杂约束端到端共 `3 passed`。实测驱动加入
+供应商 strict-schema 投影、chunked 断流重试、预算降级、最终 JSON 修复、外部证据快照恢复、
+数据库池/深评集分层和稀疏 skeptic。后续灵感语义修正增加第九个 hypothesis reasoner：
+逐约束给出 `LIKELY_PASS/LIKELY_FAIL`，综合输出 `REASONED_HYPOTHESIS`；这属于科学推理结论，
+但 `property_verification_complete=false`，不构成已验证的平带性质结论。
+
 截至 2026-08-08，单用户本机 pilot 已通过三个分离 Gate：公共 Crossref metadata live
 runner 验证真实搜索/真实 `pymatgen` 结构路径；fixture-backed 四工具 MCP run 验证 Gateway、
 operator 审批、持久化和非空 bundle；完成设备授权后的自然语言 Hermes session 验证真实
