@@ -14,6 +14,7 @@ from material_agent.inspiration.research_graph import (
     CandidateConstraintMatrixRowV1,
     CandidateHypothesisV1,
     CandidateInferenceRowV1,
+    CandidateLiteratureRetrievalV1,
     CandidateSetV1,
     ConstraintAssessmentV1,
     ConstraintGraphV1,
@@ -39,6 +40,9 @@ from material_agent.inspiration.research_graph import (
     SparseSkepticReviewV1,
     VerificationMethod,
     _normalize_candidate_references,
+    _normalize_candidate_retrieval_references,
+    _normalize_evidence_review_references,
+    _normalize_sparse_skeptic_references,
     _normalize_synthesis,
 )
 from material_agent.orchestrator.models import StrictModel
@@ -474,6 +478,51 @@ def test_stale_checkpoint_evidence_references_are_dropped() -> None:
         "DROPPED_STALE_LITERATURE_REFERENCES",
         "DROPPED_STALE_DATABASE_REFERENCES",
     )
+
+
+def test_superseded_cross_source_evidence_ids_are_dropped_at_every_join() -> None:
+    review = EvidenceReviewV1(
+        selected_evidence_ids=("evidence-" + "1" * 24,),
+        rejected_evidence_ids=("evidence-" + "2" * 24,),
+        limitations=("Canonical merging may supersede tool-returned identities.",),
+    )
+    normalized_review, review_changes = _normalize_evidence_review_references(
+        review, ()
+    )
+    assert normalized_review.selected_evidence_ids == ()
+    assert normalized_review.rejected_evidence_ids == ()
+    assert review_changes == ("DROPPED_SUPERSEDED_EVIDENCE_REVIEW_REFERENCES",)
+
+    retrieval = CandidateLiteratureRetrievalV1(
+        triggered=True,
+        queries=("TiS2 flat band",),
+        new_evidence_ids=("evidence-" + "1" * 24,),
+    )
+    normalized_retrieval, retrieval_changes = (
+        _normalize_candidate_retrieval_references(retrieval, ())
+    )
+    assert normalized_retrieval.new_evidence_ids == ()
+    assert retrieval_changes == (
+        "DROPPED_SUPERSEDED_CANDIDATE_RETRIEVAL_REFERENCES",
+    )
+
+    skeptic = SparseSkepticReviewV1(
+        evidence_backed_assessments=(
+            SparseConstraintAssessmentV1(
+                candidate_id="candidate-stale",
+                constraint_id="constraint-layered",
+                verdict="PASS",
+                evidence_ids=("evidence-" + "1" * 24,),
+                rationale="The now-superseded record originally supported this claim.",
+            ),
+        ),
+        global_failure_modes=("Canonical identity can change during federation.",),
+    )
+    normalized_skeptic, skeptic_changes = _normalize_sparse_skeptic_references(
+        skeptic, (), ()
+    )
+    assert normalized_skeptic.evidence_backed_assessments == ()
+    assert skeptic_changes == ("DROPPED_SUPERSEDED_SKEPTIC_REFERENCES",)
 
 
 def test_director_rejects_incomplete_constraint_matrix() -> None:

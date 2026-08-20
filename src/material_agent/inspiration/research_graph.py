@@ -730,8 +730,12 @@ class MaterialsResearchDirector:
         )
         evidence = self.evidence_snapshot()
         lead_resolutions = self.lead_resolutions_snapshot()
+        evidence_review, evidence_normalizations = (
+            _normalize_evidence_review_references(evidence_review, evidence)
+        )
+        deterministic_normalizations.extend(evidence_normalizations)
         _validate_evidence_review(evidence_review, evidence, constraints)
-        self._commit_checkpoint("evidence_researcher")
+        self._commit_checkpoint("evidence_researcher", final_override=evidence_review)
         state["evidence"] = tuple(item.model_dump(mode="json") for item in evidence)
         state["lead_resolutions"] = tuple(
             item.model_dump(mode="json") for item in lead_resolutions
@@ -746,8 +750,14 @@ class MaterialsResearchDirector:
         )
         database_candidates = self.database_candidates_snapshot()
         database_federation = self.database_federation_snapshot()
+        database_review, database_normalizations = (
+            _normalize_database_review_references(
+                database_review, database_candidates
+            )
+        )
+        deterministic_normalizations.extend(database_normalizations)
         _validate_database_review(database_review, database_candidates)
-        self._commit_checkpoint("database_scout")
+        self._commit_checkpoint("database_scout", final_override=database_review)
         state["database_candidates"] = tuple(
             item.model_dump(mode="json") for item in database_candidates
         )
@@ -800,6 +810,16 @@ class MaterialsResearchDirector:
             )
         evidence = self.evidence_snapshot()
         state["evidence"] = tuple(item.model_dump(mode="json") for item in evidence)
+        candidate_retrieval, retrieval_normalizations = (
+            _normalize_candidate_retrieval_references(candidate_retrieval, evidence)
+        )
+        deterministic_normalizations.extend(retrieval_normalizations)
+        sparse_skeptic, skeptic_normalizations = _normalize_sparse_skeptic_references(
+            sparse_skeptic,
+            evidence,
+            database_candidates,
+        )
+        deterministic_normalizations.extend(skeptic_normalizations)
         skeptic = _expand_sparse_skeptic(
             sparse_skeptic,
             candidates,
@@ -1314,6 +1334,28 @@ def _validate_evidence_review(
         raise ValueError("evidence review references an unknown constraint")
 
 
+def _normalize_evidence_review_references(
+    review: EvidenceReviewV1,
+    evidence: tuple[ResolvedEvidenceV1, ...],
+) -> tuple[EvidenceReviewV1, tuple[str, ...]]:
+    """Drop evidence identities superseded by canonical cross-source merging."""
+
+    known = {item.evidence_id for item in evidence}
+    selected = tuple(item for item in review.selected_evidence_ids if item in known)
+    rejected = tuple(item for item in review.rejected_evidence_ids if item in known)
+    if selected == review.selected_evidence_ids and rejected == review.rejected_evidence_ids:
+        return review, ()
+    return (
+        review.model_copy(
+            update={
+                "selected_evidence_ids": selected,
+                "rejected_evidence_ids": rejected,
+            }
+        ),
+        ("DROPPED_SUPERSEDED_EVIDENCE_REVIEW_REFERENCES",),
+    )
+
+
 def _validate_candidate_evidence(
     candidates: CandidateSetV1,
     evidence: tuple[ResolvedEvidenceV1, ...],
@@ -1403,6 +1445,88 @@ def _validate_database_review(
     )
     if not referenced <= known:
         raise ValueError("database review references an unknown candidate")
+
+
+def _normalize_database_review_references(
+    review: DatabaseCandidateReviewV1,
+    candidates: tuple[DatabaseCandidateV1, ...],
+) -> tuple[DatabaseCandidateReviewV1, tuple[str, ...]]:
+    known = {item.database_candidate_id for item in candidates}
+    selected = tuple(
+        item for item in review.selected_database_candidate_ids if item in known
+    )
+    rejected = tuple(
+        item for item in review.rejected_database_candidate_ids if item in known
+    )
+    if (
+        selected == review.selected_database_candidate_ids
+        and rejected == review.rejected_database_candidate_ids
+    ):
+        return review, ()
+    return (
+        review.model_copy(
+            update={
+                "selected_database_candidate_ids": selected,
+                "rejected_database_candidate_ids": rejected,
+            }
+        ),
+        ("DROPPED_SUPERSEDED_DATABASE_REVIEW_REFERENCES",),
+    )
+
+
+def _normalize_candidate_retrieval_references(
+    retrieval: CandidateLiteratureRetrievalV1,
+    evidence: tuple[ResolvedEvidenceV1, ...],
+) -> tuple[CandidateLiteratureRetrievalV1, tuple[str, ...]]:
+    known = {item.evidence_id for item in evidence}
+    retained = tuple(item for item in retrieval.new_evidence_ids if item in known)
+    if retained == retrieval.new_evidence_ids:
+        return retrieval, ()
+    return (
+        retrieval.model_copy(update={"new_evidence_ids": retained}),
+        ("DROPPED_SUPERSEDED_CANDIDATE_RETRIEVAL_REFERENCES",),
+    )
+
+
+def _normalize_sparse_skeptic_references(
+    review: SparseSkepticReviewV1,
+    evidence: tuple[ResolvedEvidenceV1, ...],
+    database_candidates: tuple[DatabaseCandidateV1, ...],
+) -> tuple[SparseSkepticReviewV1, tuple[str, ...]]:
+    """Keep only still-resolved skeptic exceptions; omissions become UNKNOWN."""
+
+    known_evidence = {item.evidence_id for item in evidence}
+    known_database = {item.database_candidate_id for item in database_candidates}
+    retained: list[SparseConstraintAssessmentV1] = []
+    changed = False
+    for assessment in review.evidence_backed_assessments:
+        evidence_ids = tuple(
+            item for item in assessment.evidence_ids if item in known_evidence
+        )
+        database_ids = tuple(
+            item
+            for item in assessment.database_candidate_ids
+            if item in known_database
+        )
+        changed = changed or evidence_ids != assessment.evidence_ids
+        changed = changed or database_ids != assessment.database_candidate_ids
+        if not evidence_ids and not database_ids:
+            changed = True
+            continue
+        retained.append(
+            assessment.model_copy(
+                update={
+                    "evidence_ids": evidence_ids,
+                    "database_candidate_ids": database_ids,
+                }
+            )
+        )
+    if not changed:
+        return review, ()
+    return (
+        review.model_copy(update={"evidence_backed_assessments": tuple(retained)}),
+        ("DROPPED_SUPERSEDED_SKEPTIC_REFERENCES",),
+    )
 
 
 def _validate_complete_matrix(

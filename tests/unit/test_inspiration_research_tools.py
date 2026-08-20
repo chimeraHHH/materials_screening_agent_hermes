@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
 from pymatgen.core import Lattice, Structure
 
 from material_agent.inspiration.fulltext import FullTextResolutionV1
@@ -344,6 +345,23 @@ def test_counter_evidence_tool_executes_and_records_exact_query(tmp_path: Path) 
     assert state.counter_queries_snapshot() == (
         "TiS2 flat band instability null result",
     )
+
+    restored = AuthoritativeLiteratureSearchState(
+        adapter=Adapter(),
+        store=LocalArtifactStore(tmp_path),
+        run_id="counter-run",
+        max_calls=1,
+        max_counter_calls=1,
+        max_physical_requests=1,
+    )
+    restored.restore_snapshot(state.checkpoint_snapshot())
+    assert restored.snapshot() == state.snapshot()
+    assert restored.counter_queries_snapshot() == state.counter_queries_snapshot()
+
+    tampered = dict(state.checkpoint_snapshot())
+    tampered["counter_calls"] = 2
+    with pytest.raises(ValueError, match="counter call budget"):
+        restored.restore_snapshot(tampered)
 
 
 def test_federated_candidate_tool_merges_sources_and_preserves_failures(

@@ -127,6 +127,28 @@ class CounterEvidenceSearchArgsV1(StrictModel):
     max_hits: int = Field(default=10, ge=1, le=20)
 
 
+class AuthoritativeLiteratureCheckpointV1(StrictModel):
+    schema_version: Literal["authoritative-literature-tool-checkpoint-v1"] = (
+        "authoritative-literature-tool-checkpoint-v1"
+    )
+    calls: int = Field(ge=0, le=24)
+    candidate_calls: int = Field(ge=0, le=8)
+    fulltext_calls: int = Field(ge=0, le=8)
+    counter_calls: int = Field(ge=0, le=16)
+    physical_requests: int = Field(ge=0, le=512)
+    counter_queries: tuple[str, ...] = Field(default=(), max_length=16)
+    evidence: tuple[ResolvedEvidenceV1, ...] = Field(default=(), max_length=256)
+
+    @model_validator(mode="after")
+    def validate_checkpoint(self) -> AuthoritativeLiteratureCheckpointV1:
+        ids = tuple(item.evidence_id for item in self.evidence)
+        if len(ids) != len(set(ids)):
+            raise ValueError("evidence checkpoint IDs must be unique")
+        if self.counter_calls < len(self.counter_queries):
+            raise ValueError("executed counter queries cannot exceed counter calls")
+        return self
+
+
 class FederatedCandidateSearchArgsV1(StrictModel):
     required_elements: tuple[str, ...] = Field(
         min_length=1,
@@ -333,6 +355,19 @@ class AuthoritativeLiteratureSearchState:
         with self._lock:
             return tuple(self._evidence.values())
 
+    def checkpoint_snapshot(self) -> Mapping[str, Any]:
+        with self._lock:
+            checkpoint = AuthoritativeLiteratureCheckpointV1(
+                calls=self._calls,
+                candidate_calls=self._candidate_calls,
+                fulltext_calls=self._fulltext_calls,
+                counter_calls=self._counter_calls,
+                physical_requests=self._physical_requests,
+                counter_queries=tuple(self._counter_queries),
+                evidence=tuple(self._evidence.values()),
+            )
+        return checkpoint.model_dump(mode="json")
+
     def lead_resolutions_snapshot(self) -> tuple[LeadEvidenceResolutionV1, ...]:
         with self._lock:
             evidence = tuple(self._evidence.values())
@@ -370,13 +405,42 @@ class AuthoritativeLiteratureSearchState:
         return tuple(resolutions)
 
     def restore_snapshot(self, values: object) -> None:
-        if not isinstance(values, list):
-            raise TypeError("evidence checkpoint snapshot must be a list")
-        restored = [ResolvedEvidenceV1.model_validate(item) for item in values]
+        if isinstance(values, list):
+            checkpoint = AuthoritativeLiteratureCheckpointV1(
+                calls=0,
+                candidate_calls=0,
+                fulltext_calls=0,
+                counter_calls=0,
+                physical_requests=0,
+                evidence=tuple(
+                    ResolvedEvidenceV1.model_validate_json(canonical_json_bytes(item))
+                    for item in values
+                ),
+            )
+        else:
+            checkpoint = AuthoritativeLiteratureCheckpointV1.model_validate_json(
+                canonical_json_bytes(values)
+            )
+        if checkpoint.calls > self.max_calls:
+            raise ValueError("evidence checkpoint exceeds primary call budget")
+        if checkpoint.candidate_calls > self.max_candidate_calls:
+            raise ValueError("evidence checkpoint exceeds candidate call budget")
+        if checkpoint.fulltext_calls > self.max_fulltext_calls:
+            raise ValueError("evidence checkpoint exceeds full-text call budget")
+        if checkpoint.counter_calls > self.max_counter_calls:
+            raise ValueError("evidence checkpoint exceeds counter call budget")
+        if checkpoint.physical_requests > self.max_physical_requests:
+            raise ValueError("evidence checkpoint exceeds physical-request budget")
         with self._lock:
-            if self._calls or self._evidence:
-                raise ValueError("evidence state must be empty before restore")
-            self._evidence = {item.evidence_id: item for item in restored}
+            self._calls = checkpoint.calls
+            self._candidate_calls = checkpoint.candidate_calls
+            self._fulltext_calls = checkpoint.fulltext_calls
+            self._counter_calls = checkpoint.counter_calls
+            self._physical_requests = checkpoint.physical_requests
+            self._counter_queries = list(checkpoint.counter_queries)
+            self._evidence = {
+                item.evidence_id: item for item in checkpoint.evidence
+            }
 
     def _handle(
         self, arguments: AuthoritativeLiteratureSearchArgsV1

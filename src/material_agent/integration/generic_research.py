@@ -74,7 +74,7 @@ from material_agent.retrieval.storage import LocalArtifactStore
 GENERIC_RESEARCH_TOOL_NAME = "materials_generic_research_run"
 GENERIC_RESEARCH_REQUEST_SCHEMA_VERSION = "materials-generic-research-run-v1"
 GENERIC_RESEARCH_RESULT_SCHEMA_VERSION = "materials-generic-research-run-v5"
-GENERIC_RESEARCH_IMPLEMENTATION_REVISION = "generic-research-20260821-r10"
+GENERIC_RESEARCH_IMPLEMENTATION_REVISION = "generic-research-20260821-r11"
 
 
 def research_secret_resolver_from_environment(
@@ -128,7 +128,7 @@ class GenericResearchRunResultV5(StrictModel):
     schema_version: Literal["materials-generic-research-run-v5"] = (
         GENERIC_RESEARCH_RESULT_SCHEMA_VERSION
     )
-    implementation_revision: Literal["generic-research-20260821-r10"] = (
+    implementation_revision: Literal["generic-research-20260821-r11"] = (
         GENERIC_RESEARCH_IMPLEMENTATION_REVISION
     )
     run_id: str
@@ -306,6 +306,7 @@ class GenericMaterialsResearchService:
             "evidence_researcher": evidence_state,
             "database_scout": database_state,
             "mechanism_chemist": operator_planning_state,
+            "skeptic": evidence_state,
         }
 
         def checkpoint_load(role, final_model):
@@ -331,7 +332,9 @@ class GenericMaterialsResearchService:
                         payload = payload["agent_result"]
                     elif isinstance(payload, dict) and "agent_result" in payload:
                         payload = payload["agent_result"]
-                    result = DeepSeekAgentResultV1[final_model].model_validate(payload)
+                    result = DeepSeekAgentResultV1[final_model].model_validate_json(
+                        canonical_json_bytes(payload)
+                    )
                     if role in snapshot_states:
                         snapshot_states[role].restore_snapshot(tool_snapshot)
                     return result
@@ -347,7 +350,13 @@ class GenericMaterialsResearchService:
                 "agent_result": result.model_dump(mode="json"),
                 "tool_snapshot": (
                     snapshot_states[role].checkpoint_snapshot()
-                    if role in {"database_scout", "mechanism_chemist"}
+                    if role
+                    in {
+                        "evidence_researcher",
+                        "database_scout",
+                        "mechanism_chemist",
+                        "skeptic",
+                    }
                     else [
                         item.model_dump(mode="json")
                         if hasattr(item, "model_dump")
