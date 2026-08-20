@@ -105,6 +105,11 @@ schema-hashed role/tool checkpoints, sparse skeptical exceptions, and the
 dual evidence/inference boundary are enforceable. Evidence `UNKNOWN` values remain
 visible, while the hypothesis reasoner produces complete probabilistic
 `LIKELY_PASS`/`LIKELY_FAIL` predictions and a `REASONED_HYPOTHESIS` conclusion.
+Concrete S↔Se minimal-replacement ideas must pass the hash-pinned operator compiler;
+the result contains candidate-bound `TransformationPlanV1` records that can be
+handed to the existing SMACT-first executor. Generic research leaves them
+`PLANNED` and makes no execution, relaxation, or property claim. Other soft-chemistry
+families are not registered in v1.
 
 Validate it with:
 

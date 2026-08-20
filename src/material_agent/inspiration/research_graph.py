@@ -22,10 +22,10 @@ from material_agent.inspiration.deepseek_agent import (
     DeepSeekAgentResultV1,
     DeepSeekFunctionTool,
 )
-from material_agent.inspiration.models import canonical_json_bytes
+from material_agent.inspiration.models import TransformationPlanV1, canonical_json_bytes
 from material_agent.orchestrator.models import StrictModel
 
-MATERIALS_RESEARCH_GRAPH_VERSION = "materials-inspiration-research-graph-v4"
+MATERIALS_RESEARCH_GRAPH_VERSION = "materials-inspiration-research-graph-v5"
 
 
 class ConstraintKind(StrEnum):
@@ -349,7 +349,12 @@ class CandidateHypothesisV1(StrictModel):
     evidence_ids: tuple[str, ...] = Field(default=(), max_length=64)
     database_candidate_ids: tuple[str, ...] = Field(default=(), max_length=32)
     proposed_registered_transformations: tuple[str, ...] = Field(
-        default=(), max_length=16
+        default=(),
+        max_length=16,
+        description=(
+            "Plan IDs returned by compile_registered_substitution; free-text operation "
+            "names are invalid."
+        ),
     )
     property_conclusion: Literal[False] = False
 
@@ -362,6 +367,57 @@ class CandidateSetV1(StrictModel):
         ids = [candidate.candidate_id for candidate in self.candidates]
         if len(ids) != len(set(ids)):
             raise ValueError("candidate IDs must be unique")
+        return self
+
+
+class TransformationCompileRejectionV1(StrictModel):
+    candidate_id: str = Field(pattern=r"^candidate-[a-z0-9-]{1,64}$")
+    database_candidate_id: str = Field(pattern=r"^db-candidate-[0-9a-f]{24}$")
+    substitution_rule_id: str = Field(min_length=1, max_length=128)
+    reason_code: str = Field(pattern=r"^[A-Z][A-Z0-9_]{2,63}$")
+
+
+class TransformationPlanBindingV1(StrictModel):
+    candidate_id: str = Field(pattern=r"^candidate-[a-z0-9-]{1,64}$")
+    plan_id: str = Field(pattern=r"^[a-z][a-z0-9-]{0,31}-[0-9a-f]{24}$")
+
+
+class RegisteredTransformationAuditV1(StrictModel):
+    registry_status: Literal["NOT_CONFIGURED", "HASH_PINNED"]
+    operator_registry_sha256: str | None = Field(
+        default=None, pattern=r"^[0-9a-f]{64}$"
+    )
+    substitution_registry_sha256: str | None = Field(
+        default=None, pattern=r"^[0-9a-f]{64}$"
+    )
+    compile_attempt_count: int = Field(default=0, ge=0, le=32)
+    plans: tuple[TransformationPlanV1, ...] = Field(default=(), max_length=64)
+    bindings: tuple[TransformationPlanBindingV1, ...] = Field(default=(), max_length=64)
+    rejections: tuple[TransformationCompileRejectionV1, ...] = Field(
+        default=(), max_length=32
+    )
+    scientific_conclusion: Literal[False] = False
+
+    @model_validator(mode="after")
+    def validate_registry_binding(self) -> RegisteredTransformationAuditV1:
+        hashes = (self.operator_registry_sha256, self.substitution_registry_sha256)
+        if self.registry_status == "HASH_PINNED" and any(item is None for item in hashes):
+            raise ValueError("hash-pinned transformation audit requires both registries")
+        if self.registry_status == "NOT_CONFIGURED":
+            if any(item is not None for item in hashes) or self.compile_attempt_count:
+                raise ValueError("unconfigured transformation audit cannot claim registry use")
+            if self.plans or self.bindings or self.rejections:
+                raise ValueError("unconfigured transformation audit cannot contain outcomes")
+        if self.compile_attempt_count < len(self.rejections):
+            raise ValueError("compile rejections cannot exceed attempts")
+        plan_ids = tuple(item.plan_id for item in self.plans)
+        if len(plan_ids) != len(set(plan_ids)):
+            raise ValueError("compiled transformation plan IDs must be unique")
+        binding_ids = tuple(item.plan_id for item in self.bindings)
+        if len(binding_ids) != len(set(binding_ids)) or set(binding_ids) != set(plan_ids):
+            raise ValueError("every compiled plan requires one candidate binding")
+        if any(item.status.value != "PLANNED" for item in self.plans):
+            raise ValueError("generic research may expose only unexecuted PLANNED routes")
         return self
 
 
@@ -512,8 +568,8 @@ class ResearchRoleRecordV1(StrictModel):
     receipt: DeepSeekAgentReceiptV1
 
 
-class MaterialsResearchGraphResultV4(StrictModel):
-    schema_version: Literal["materials-inspiration-research-graph-v4"] = (
+class MaterialsResearchGraphResultV5(StrictModel):
+    schema_version: Literal["materials-inspiration-research-graph-v5"] = (
         MATERIALS_RESEARCH_GRAPH_VERSION
     )
     goal_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
@@ -529,6 +585,7 @@ class MaterialsResearchGraphResultV4(StrictModel):
     database_federation: DatabaseFederationAuditV1
     database_candidates: tuple[DatabaseCandidateV1, ...] = Field(max_length=128)
     candidates: CandidateSetV1
+    transformation_audit: RegisteredTransformationAuditV1
     candidate_literature_retrieval: CandidateLiteratureRetrievalV1
     skeptic_review: SkepticReviewV1
     executed_counter_queries: tuple[str, ...] = Field(default=(), max_length=32)
@@ -597,6 +654,11 @@ class MaterialsResearchDirector:
             [CandidateSetV1, ConstraintGraphV1], CandidateLiteratureRetrievalV1
         ]
         | None = None,
+        operator_planning_tool: DeepSeekFunctionTool | None = None,
+        transformation_audit_snapshot: Callable[
+            [], RegisteredTransformationAuditV1
+        ]
+        | None = None,
         counter_evidence_search_tool: DeepSeekFunctionTool | None = None,
         counter_queries_snapshot: Callable[[], tuple[str, ...]] | None = None,
         checkpoint_load: Callable[
@@ -613,6 +675,10 @@ class MaterialsResearchDirector:
         self.evidence_snapshot = evidence_snapshot
         self.lead_resolutions_snapshot = lead_resolutions_snapshot or (lambda: ())
         self.candidate_literature_search = candidate_literature_search
+        self.operator_planning_tool = operator_planning_tool
+        self.transformation_audit_snapshot = transformation_audit_snapshot or (
+            lambda: RegisteredTransformationAuditV1(registry_status="NOT_CONFIGURED")
+        )
         self.counter_evidence_search_tool = counter_evidence_search_tool
         self.counter_queries_snapshot = counter_queries_snapshot or (lambda: ())
         self.database_search_tool = database_search_tool
@@ -622,7 +688,7 @@ class MaterialsResearchDirector:
         self.checkpoint_save = checkpoint_save
         self._pending_checkpoints: dict[str, DeepSeekAgentResultV1[Any]] = {}
 
-    def run(self, goal: str) -> MaterialsResearchGraphResultV4:
+    def run(self, goal: str) -> MaterialsResearchGraphResultV5:
         selected_goal = " ".join(goal.split())
         if not 10 <= len(selected_goal) <= 4_000:
             raise ValueError("research goal must contain 10 to 4000 characters")
@@ -686,12 +752,22 @@ class MaterialsResearchDirector:
             item.model_dump(mode="json") for item in database_candidates
         )
 
-        candidates = self._run_role("mechanism_chemist", CandidateSetV1, state, records)
+        candidates = self._run_role(
+            "mechanism_chemist",
+            CandidateSetV1,
+            state,
+            records,
+            tools=(self.operator_planning_tool,)
+            if self.operator_planning_tool is not None
+            else None,
+        )
         candidates, candidate_normalizations = _normalize_candidate_references(
             candidates, evidence, database_candidates
         )
         deterministic_normalizations.extend(candidate_normalizations)
         _validate_candidate_evidence(candidates, evidence, database_candidates)
+        transformation_audit = self.transformation_audit_snapshot()
+        _validate_candidate_transformations(candidates, transformation_audit)
         self._commit_checkpoint("mechanism_chemist", final_override=candidates)
         state["candidates"] = candidates.model_dump(mode="json")
 
@@ -764,7 +840,7 @@ class MaterialsResearchDirector:
         deterministic_normalizations.extend(synthesis_normalizations)
         _validate_synthesis(synthesis, candidates, skeptic)
         self._commit_checkpoint("synthesist", final_override=synthesis)
-        return MaterialsResearchGraphResultV4(
+        return MaterialsResearchGraphResultV5(
             goal_sha256=hashlib.sha256(selected_goal.encode("utf-8")).hexdigest(),
             constraints=constraints,
             query_plan=query_plan,
@@ -776,6 +852,7 @@ class MaterialsResearchDirector:
             database_federation=database_federation,
             database_candidates=database_candidates,
             candidates=candidates,
+            transformation_audit=transformation_audit,
             candidate_literature_retrieval=candidate_retrieval,
             skeptic_review=skeptic,
             executed_counter_queries=executed_counter_queries,
@@ -884,6 +961,14 @@ def _role_prompt(role: str, model: type[StrictModel]) -> str:
             "For the most relevant resolved DOI records, call FULL_TEXT to attempt lawful "
             "Unpaywall OA retrieval and GROBID page/section/sentence localization. "
             "Use only returned evidence IDs and retain unresolved constraints explicitly. "
+        )
+    elif role == "mechanism_chemist":
+        role_specific = (
+            "Use compile_registered_substitution for every concrete minimal element-"
+            "replacement route. It is the sole authority for executable operations. "
+            "Copy only returned plan_id values into proposed_registered_transformations; "
+            "never place operation names, prose, or invented IDs there. A rejected or "
+            "inapplicable route remains a scientific hypothesis without a plan ID. "
         )
     elif role == "skeptic":
         role_specific = (
@@ -1243,6 +1328,32 @@ def _validate_candidate_evidence(
             raise ValueError("candidate references an unknown database candidate ID")
 
 
+def _validate_candidate_transformations(
+    candidates: CandidateSetV1,
+    audit: RegisteredTransformationAuditV1,
+) -> None:
+    plans = {item.plan_id: item for item in audit.plans}
+    bindings = {item.plan_id: item.candidate_id for item in audit.bindings}
+    referenced: list[str] = []
+    for candidate in candidates.candidates:
+        plan_ids = candidate.proposed_registered_transformations
+        if len(plan_ids) != len(set(plan_ids)):
+            raise ValueError("candidate transformation plan IDs must be unique")
+        for plan_id in plan_ids:
+            plan = plans.get(plan_id)
+            if plan is None:
+                raise ValueError("candidate references an uncompiled transformation plan")
+            if bindings.get(plan_id) != candidate.candidate_id:
+                raise ValueError("compiled transformation is bound to another candidate")
+            if plan.parent_candidate_id not in candidate.database_candidate_ids:
+                raise ValueError(
+                    "compiled transformation parent must be a candidate database reference"
+                )
+        referenced.extend(plan_ids)
+    if len(referenced) != len(set(referenced)) or set(referenced) != set(plans):
+        raise ValueError("every compiled transformation plan must be claimed once")
+
+
 def _normalize_candidate_references(
     candidates: CandidateSetV1,
     evidence: tuple[ResolvedEvidenceV1, ...],
@@ -1497,5 +1608,5 @@ def _normalize_synthesis(
     return normalized, tuple(normalizations)
 
 
-def research_graph_sha256(result: MaterialsResearchGraphResultV4) -> str:
+def research_graph_sha256(result: MaterialsResearchGraphResultV5) -> str:
     return hashlib.sha256(canonical_json_bytes(result)).hexdigest()

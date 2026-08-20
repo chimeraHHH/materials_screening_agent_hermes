@@ -26,7 +26,7 @@ from material_agent.inspiration.models import canonical_json_bytes
 from material_agent.inspiration.research_graph import (
     DatabaseCandidateV1,
     DatabaseSourceRecordV1,
-    MaterialsResearchGraphResultV4,
+    MaterialsResearchGraphResultV5,
 )
 from material_agent.orchestrator.models import StrictModel
 from material_agent.retrieval.mp_screening import DeepEndpoint
@@ -65,7 +65,7 @@ class ResearchMarkdownReportV3(StrictModel):
 
 def build_generic_research_markdown_report(
     *,
-    graph: MaterialsResearchGraphResultV4,
+    graph: MaterialsResearchGraphResultV5,
     store: LocalArtifactStore,
     run_id: str,
     materials_project_adapter: Any | None = None,
@@ -685,7 +685,7 @@ def _collect_scalar_rows(
 
 def _render_markdown(
     *,
-    graph: MaterialsResearchGraphResultV4,
+    graph: MaterialsResearchGraphResultV5,
     candidates_by_id: Mapping[str, DatabaseCandidateV1],
     structure_assets: Mapping[str, ArtifactRef],
     band_assets: Mapping[str, ArtifactRef],
@@ -712,6 +712,15 @@ def _render_markdown(
         graph.synthesis.scientific_conclusion,
         "",
         "结论状态：`REASONED_HYPOTHESIS`；性质验证完成：`false`。",
+        "",
+        "## 可执行最小结构操作审计",
+        "",
+        f"- 注册表状态：`{graph.transformation_audit.registry_status}`",
+        f"- 算子注册表 SHA-256：`{graph.transformation_audit.operator_registry_sha256 or 'N/A'}`",
+        f"- 元素替换规则注册表 SHA-256：`{graph.transformation_audit.substitution_registry_sha256 or 'N/A'}`",
+        f"- 编译尝试 / 成功计划 / 拒绝：`{graph.transformation_audit.compile_attempt_count}` / `{len(graph.transformation_audit.plans)}` / `{len(graph.transformation_audit.rejections)}`",
+        "",
+        "> 这些记录是可回放的 `PLANNED` 结构操作，不是已执行结构，也不构成目标电子性质结论。",
         "",
         "## 文献证据与原生线索闭环",
         "",
@@ -824,6 +833,9 @@ def _render_markdown(
     hypothesis_by_id = {
         candidate.candidate_id: candidate for candidate in graph.candidates.candidates
     }
+    transformation_by_id = {
+        plan.plan_id: plan for plan in graph.transformation_audit.plans
+    }
     constraint_names = {
         item.constraint_id: item.statement for item in graph.constraints.constraints
     }
@@ -865,6 +877,21 @@ def _render_markdown(
                 ]
             )
         lines.extend([band_notes.get(database_id, "未获得可审计能带数据。"), ""])
+        lines.extend(["#### 注册最小操作", ""])
+        if hypothesis.proposed_registered_transformations:
+            for plan_id in hypothesis.proposed_registered_transformations:
+                plan = transformation_by_id[plan_id]
+                lines.extend(
+                    [
+                        f"- `{plan.plan_id}` · `{plan.operator_id}@{plan.operator_version}`",
+                        f"  - 母体：`{plan.parent_candidate_id}` / `{plan.parent_structure_id}`",
+                        f"  - 替换：`{plan.parameters.source_species}` → `{plan.parameters.target_species}`；完整等价位点 `{plan.parameters.equivalent_site_indices}`",
+                        f"  - route SHA-256：`{plan.route_sha256}`；状态：`{plan.status.value}`",
+                    ]
+                )
+        else:
+            lines.append("- 没有通过注册表编译的最小结构操作；自由文本设想未被当作可执行计划。")
+        lines.append("")
         evidence = {item.constraint_id: item for item in skeptic.assessments}
         predicted = {item.constraint_id: item for item in inference.assessments}
         lines.extend(

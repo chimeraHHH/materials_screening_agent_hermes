@@ -821,6 +821,15 @@ normalization，不得冒充旧证据仍有效。为容纳联邦候选扩展后�
 JSON，DeepSeek agent 的单轮 completion ceiling 为 32768 tokens，总 token、轮次和 walltime
 仍由每角色预算分别限制。
 
+机理化学角色若提出具体元素替换，必须调用 `compile_registered_substitution`；自由文本操作名
+不能进入 `proposed_registered_transformations`。编译器从联邦候选的 hash-verified CIF 重新
+计算完整晶体学等价位点，只接受 pinned substitution rule，并产生确定性
+`TransformationPlanV1`。研究图同时保存 proposal→candidate binding、softchem operator
+registry SHA-256、substitution registry SHA-256、编译拒绝原因和 `PLANNED` 状态。该 plan 可直接
+构造现有 `SubstitutionExecutionRequestV1`，再经独立 SMACT prior 与注册执行器生成结构；但通用
+研究本身不执行、弛豫或验证性质。v1 只注册 S↔Se 等价位点整组同价替换；应变、空位、插层、
+堆垛变化和任意元素替换尚未进入可执行注册表。
+
 通用研究终态同时生成独立 Markdown 图文报告。报告对每个联邦候选从 hash-verified CIF
 本地绘制沿 a/b/c 晶轴的三视图，并按 source record 汇总形成能、凸包距离和带隙；source
 record 契约直接保留 `formation_energy_ev_atom` 与 `energy_above_hull_ev_atom`。能带只从真实

@@ -12,10 +12,19 @@ Use `reasoning_effort=high` normally and `max` for explicitly exhaustive work.
 
 The service—not Hermes memory—is the research state authority. It runs nine
 bounded DeepSeek roles with in-memory thinking and strict tools, including a
-C2DB database scout with deterministic structure diagnostics. DeepSeek-native
+C2DB/MC3D/NOMAD/Materials Project federated database scout with deterministic
+structure diagnostics. DeepSeek-native
 web results are unresolved leads. Only evidence re-fetched through the accepted
-Crossref/OpenAlex/arXiv/OSTI adapters, persisted as exact raw bytes, and assigned
+Crossref/OpenAlex/Semantic Scholar/arXiv/OSTI adapters, persisted as exact raw bytes, and assigned
 a stable evidence ID may enter a candidate matrix.
+
+For a concrete S↔Se element-replacement idea, the mechanism role must call the
+hash-pinned registered compiler. Report only returned plan IDs, their parent
+database candidate, complete equivalence-site indices, registry hashes, and
+`PLANNED` status. Do not turn prose operation names into plans. The compiled plan
+can enter the separate SMACT-first executor, but generic research does not execute,
+relax, or property-verify it. Strain, vacancies, intercalation, stacking changes,
+and arbitrary substitutions are not registered v1 operations.
 
 Report both layers; do not collapse one into the other. The evidence matrix shows
 every hard constraint as `PASS`, `FAIL`, or `UNKNOWN`. The hypothesis matrix then

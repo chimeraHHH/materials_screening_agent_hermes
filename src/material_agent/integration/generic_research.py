@@ -31,10 +31,11 @@ from material_agent.inspiration.opencitations import (
     OPENCITATIONS_ACCESS_TOKEN_ENV,
     OpenCitationsPublicAdapter,
 )
+from material_agent.inspiration.operator_planning import OperatorPlanningToolState
 from material_agent.inspiration.policy import SearchBudgetV1
 from material_agent.inspiration.research_graph import (
     MaterialsResearchDirector,
-    MaterialsResearchGraphResultV4,
+    MaterialsResearchGraphResultV5,
     research_graph_sha256,
 )
 from material_agent.inspiration.research_report import (
@@ -72,8 +73,8 @@ from material_agent.retrieval.storage import LocalArtifactStore
 
 GENERIC_RESEARCH_TOOL_NAME = "materials_generic_research_run"
 GENERIC_RESEARCH_REQUEST_SCHEMA_VERSION = "materials-generic-research-run-v1"
-GENERIC_RESEARCH_RESULT_SCHEMA_VERSION = "materials-generic-research-run-v4"
-GENERIC_RESEARCH_IMPLEMENTATION_REVISION = "generic-research-20260821-r9"
+GENERIC_RESEARCH_RESULT_SCHEMA_VERSION = "materials-generic-research-run-v5"
+GENERIC_RESEARCH_IMPLEMENTATION_REVISION = "generic-research-20260821-r10"
 
 
 def research_secret_resolver_from_environment(
@@ -123,18 +124,18 @@ class GenericResearchRunRequestV1(StrictModel):
         return self
 
 
-class GenericResearchRunResultV4(StrictModel):
-    schema_version: Literal["materials-generic-research-run-v4"] = (
+class GenericResearchRunResultV5(StrictModel):
+    schema_version: Literal["materials-generic-research-run-v5"] = (
         GENERIC_RESEARCH_RESULT_SCHEMA_VERSION
     )
-    implementation_revision: Literal["generic-research-20260821-r9"] = (
+    implementation_revision: Literal["generic-research-20260821-r10"] = (
         GENERIC_RESEARCH_IMPLEMENTATION_REVISION
     )
     run_id: str
     submission_id: str
     request_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     status: Literal["SUCCEEDED"] = "SUCCEEDED"
-    research_graph: MaterialsResearchGraphResultV4
+    research_graph: MaterialsResearchGraphResultV5
     research_graph_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     result_artifact_uri: str = Field(pattern=r"^artifact://")
     report_artifact_uri: str | None = Field(default=None, pattern=r"^artifact://")
@@ -153,11 +154,12 @@ def generic_research_tool_manifest() -> tuple[dict[str, object], ...]:
             "description": (
                 "Run the generic nine-role DeepSeek materials-inspiration research graph "
                 "with native lead discovery, authoritative metadata resolution, constraint "
-                "evidence auditing, probabilistic hypothesis reasoning, and explicit "
-                "property-verification boundaries."
+                "evidence auditing, probabilistic hypothesis reasoning, hash-pinned "
+                "minimal-operation compilation, and explicit property-verification "
+                "boundaries."
             ),
             "inputSchema": GenericResearchRunRequestV1.model_json_schema(),
-            "outputSchema": GenericResearchRunResultV4.model_json_schema(),
+            "outputSchema": GenericResearchRunResultV5.model_json_schema(),
             "readOnly": False,
         },
     )
@@ -183,7 +185,7 @@ class GenericMaterialsResearchService:
 
     def run(
         self, request: GenericResearchRunRequestV1 | Mapping[str, object]
-    ) -> GenericResearchRunResultV4:
+    ) -> GenericResearchRunResultV5:
         selected = GenericResearchRunRequestV1.model_validate(request)
         semantic_request = selected.model_dump(mode="json", exclude={"submission_id"})
         semantic_sha = hashlib.sha256(
@@ -202,7 +204,7 @@ class GenericMaterialsResearchService:
         result_path = f"generic_research/{run_id}/result.json"
         result_uri = f"artifact://{result_path}"
         if self.store.exists(result_uri):
-            cached = GenericResearchRunResultV4.model_validate(
+            cached = GenericResearchRunResultV5.model_validate(
                 self.store.read_json(result_uri)
             )
             return self._with_report(cached)
@@ -295,10 +297,15 @@ class GenericMaterialsResearchService:
             max_calls=4,
             max_total_candidates=24,
         )
+        operator_planning_state = OperatorPlanningToolState(
+            store=self.store,
+            database_candidates_snapshot=database_state.snapshot,
+        )
         snapshot_states = {
             "native_search_scout": native_state,
             "evidence_researcher": evidence_state,
             "database_scout": database_state,
+            "mechanism_chemist": operator_planning_state,
         }
 
         def checkpoint_load(role, final_model):
@@ -340,7 +347,7 @@ class GenericMaterialsResearchService:
                 "agent_result": result.model_dump(mode="json"),
                 "tool_snapshot": (
                     snapshot_states[role].checkpoint_snapshot()
-                    if role == "database_scout"
+                    if role in {"database_scout", "mechanism_chemist"}
                     else [
                         item.model_dump(mode="json")
                         if hasattr(item, "model_dump")
@@ -414,10 +421,12 @@ class GenericMaterialsResearchService:
             database_search_tool=database_state.as_tool(),
             database_candidates_snapshot=database_state.snapshot,
             database_federation_snapshot=database_state.federation_snapshot,
+            operator_planning_tool=operator_planning_state.as_tool(),
+            transformation_audit_snapshot=operator_planning_state.audit_snapshot,
             checkpoint_load=checkpoint_load,
             checkpoint_save=checkpoint_save,
         ).run(selected.goal)
-        result = GenericResearchRunResultV4(
+        result = GenericResearchRunResultV5(
             run_id=run_id,
             submission_id=selected.submission_id,
             request_sha256=request_sha,
@@ -437,8 +446,8 @@ class GenericMaterialsResearchService:
         return result
 
     def _with_report(
-        self, result: GenericResearchRunResultV4
-    ) -> GenericResearchRunResultV4:
+        self, result: GenericResearchRunResultV5
+    ) -> GenericResearchRunResultV5:
         report = build_generic_research_markdown_report(
             graph=result.research_graph,
             store=self.store,

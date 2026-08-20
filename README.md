@@ -108,8 +108,14 @@ only inside the same in-memory tool conversation and is never written to an
 Artifact, SQLite, log, or result.
 
 DeepSeek-native web search returns only `UNRESOLVED_LEAD`. Crossref, OpenAlex,
-arXiv, and OSTI metadata becomes evidence only after the accepted adapter has
+Semantic Scholar, arXiv, and OSTI metadata becomes evidence only after the accepted adapter has
 persisted exact raw response bytes and assigned a stable evidence ID. Each
+DOI/corpus anchor can additionally traverse Semantic Scholar recommendations,
+references, and citations with OpenCitations Index/Meta cross-resolution.
+Unpaywall resolves lawful OA locations; a loopback GROBID service (or an
+explicitly pinned local Docling bundle) can turn retrieved PDFs into located
+section/page/sentence evidence and report figures without weakening the source boundary.
+Each
 database query is server-side fanned out to C2DB, Materials Cloud MC3D, public
 NOMAD, and Materials Project when its credential is available; the model cannot
 silently choose only one source. Per-source versions, query fingerprints, empty results, failures,
@@ -132,6 +138,18 @@ evidence boundary explicit. Strict-tool schemas are
 projected onto DeepSeek's supported subset and then revalidated against the full
 local Pydantic model. Transport retries, final-JSON repair, physical-search
 budgets, and schema-hashed role/tool-snapshot checkpoints are all receipt-audited.
+
+The mechanism/chemistry role cannot turn a prose operation into a structure.
+For a concrete element-replacement idea it must call
+`compile_registered_substitution`, which resolves a database parent CIF by hash,
+selects a complete crystallographic equivalence class, and emits a deterministic
+`TransformationPlanV1`. The result graph binds the plan to the proposing candidate
+and to both the soft-chemistry operator-registry and substitution-rule-registry
+SHA-256 values. That plan is directly consumable by the existing SMACT-first
+executor. It remains `PLANNED`, not executed or property-verified, in generic
+research. The current reviewed v1 chemistry coverage is deliberately only
+isovalent S↔Se replacement; strain, vacancies, intercalation, stacking changes,
+and arbitrary substitutions remain scientific ideas rather than registered routes.
 
 Every completed generic run also produces a deterministic Markdown sidecar
 report. It embeds one labelled CIF three-view image per federated candidate and
