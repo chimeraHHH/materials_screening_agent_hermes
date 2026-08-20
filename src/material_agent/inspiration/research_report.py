@@ -49,9 +49,9 @@ class ResearchReportAssetV1(StrictModel):
     note: str = Field(min_length=1, max_length=1_000)
 
 
-class ResearchMarkdownReportV2(StrictModel):
-    schema_version: Literal["materials-generic-research-report-v2"] = (
-        "materials-generic-research-report-v2"
+class ResearchMarkdownReportV3(StrictModel):
+    schema_version: Literal["materials-generic-research-report-v3"] = (
+        "materials-generic-research-report-v3"
     )
     run_id: str
     markdown_artifact_uri: str = Field(pattern=r"^artifact://")
@@ -70,15 +70,15 @@ def build_generic_research_markdown_report(
     run_id: str,
     materials_project_adapter: Any | None = None,
     c2db_adapter: Any | None = None,
-) -> ResearchMarkdownReportV2:
+) -> ResearchMarkdownReportV3:
     """Render a sidecar report without turning missing plots into fake evidence."""
 
     prefix = f"generic_research/{run_id}"
-    asset_prefix = f"{prefix}/report_assets_v2"
-    data_prefix = f"{prefix}/report_data_v2"
-    manifest_uri = f"artifact://{prefix}/report_manifest_v2.json"
+    asset_prefix = f"{prefix}/report_assets_v3"
+    data_prefix = f"{prefix}/report_data_v3"
+    manifest_uri = f"artifact://{prefix}/report_manifest_v3.json"
     if store.exists(manifest_uri):
-        existing = ResearchMarkdownReportV2.model_validate(
+        existing = ResearchMarkdownReportV3.model_validate(
             store.read_json(manifest_uri)
         )
         markdown_ref = store.inspect(
@@ -253,7 +253,7 @@ def build_generic_research_markdown_report(
         markdown_path, markdown, "text/markdown", immutable=True
     )
     manifest_payload = {
-        "schema_version": "materials-generic-research-report-v2",
+        "schema_version": "materials-generic-research-report-v3",
         "run_id": run_id,
         "markdown_artifact_uri": markdown_ref.uri,
         "markdown_artifact_sha256": markdown_ref.sha256,
@@ -266,7 +266,7 @@ def build_generic_research_markdown_report(
     store.write_json(
         manifest_uri.removeprefix("artifact://"), manifest_payload, immutable=True
     )
-    return ResearchMarkdownReportV2.model_validate(manifest_payload)
+    return ResearchMarkdownReportV3.model_validate(manifest_payload)
 
 
 def render_structure_three_view_png(structure: Structure, *, title: str) -> bytes:
@@ -698,7 +698,7 @@ def _render_markdown(
     lines = [
         "---",
         f"run_id: {run_id}",
-        "schema_version: materials-generic-research-report-v2",
+        "schema_version: materials-generic-research-report-v3",
         "conclusion_status: REASONED_HYPOTHESIS",
         "property_verification_complete: false",
         "---",
@@ -766,6 +766,28 @@ def _render_markdown(
                 ),
                 "",
             )
+        ],
+        "### 文献图像、图注与原始来源",
+        "",
+        *[
+            line
+            for evidence in graph.resolved_evidence
+            for figure in evidence.literature_figures
+            for line in (
+                (
+                    f"![{_escape_table(figure.label or figure.figure_id)}]"
+                    f"({_relative_link(figure.image_artifact_uri, report_path)})"
+                    if figure.image_artifact_uri
+                    else ""
+                ),
+                f"**{figure.label or 'Figure'}** — {figure.caption}",
+                (
+                    f"[原始 OA PDF · page {figure.page_number or 'N/A'}]"
+                    f"({_relative_link(figure.source_pdf_artifact_uri, report_path)})"
+                ),
+                "",
+            )
+            if line
         ],
         "## 数据库标量性质总览",
         "",

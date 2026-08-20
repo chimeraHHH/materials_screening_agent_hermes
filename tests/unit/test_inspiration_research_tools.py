@@ -19,6 +19,7 @@ from material_agent.inspiration.research_graph import (
 from material_agent.inspiration.research_tools import (
     AuthoritativeLiteratureSearchArgsV1,
     AuthoritativeLiteratureSearchState,
+    CounterEvidenceSearchArgsV1,
     FederatedCandidateSearchArgsV1,
     FederatedCandidateSearchState,
 )
@@ -317,6 +318,32 @@ def test_fulltext_route_upgrades_existing_metadata_to_located_spans(
     assert evidence.full_text_status == "RESOLVED"
     assert evidence.evidence_scope == "OPEN_ACCESS_FULL_TEXT"
     assert evidence.full_text_spans[0].page_numbers == (4,)
+
+
+def test_counter_evidence_tool_executes_and_records_exact_query(tmp_path: Path) -> None:
+    state = AuthoritativeLiteratureSearchState(
+        adapter=Adapter(),
+        store=LocalArtifactStore(tmp_path),
+        run_id="counter-run",
+        max_calls=1,
+        max_counter_calls=1,
+        max_physical_requests=1,
+    )
+
+    result = state.as_counter_tool().handler(
+        CounterEvidenceSearchArgsV1(
+            query="  TiS2 flat band instability null result  ",
+            target_constraint_ids=("constraint-flat-band",),
+            max_hits=3,
+        )
+    )
+
+    assert result["counter_query_executed"] == (
+        "TiS2 flat band instability null result"
+    )
+    assert state.counter_queries_snapshot() == (
+        "TiS2 flat band instability null result",
+    )
 
 
 def test_federated_candidate_tool_merges_sources_and_preserves_failures(

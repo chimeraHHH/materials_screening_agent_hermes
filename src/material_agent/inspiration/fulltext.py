@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import secrets
 from collections.abc import Callable, Mapping
@@ -14,8 +15,12 @@ from xml.etree import ElementTree
 
 from pydantic import Field
 
+from material_agent.inspiration.docling_parser import DoclingLocalParser
 from material_agent.inspiration.models import canonical_json_bytes
-from material_agent.inspiration.research_graph import FineGrainedEvidenceSpanV1
+from material_agent.inspiration.research_graph import (
+    FineGrainedEvidenceSpanV1,
+    LiteratureFigureV1,
+)
 from material_agent.inspiration.search import (
     BoundedHttpTransport,
     SearchAdapterError,
@@ -52,7 +57,9 @@ class FullTextResolutionV1(StrictModel):
     unpaywall_artifact_uri: str | None = None
     pdf_artifact_uri: str | None = None
     tei_artifact_uri: str | None = None
+    docling_artifact_uri: str | None = None
     spans: tuple[FineGrainedEvidenceSpanV1, ...] = Field(default=(), max_length=256)
+    figures: tuple[LiteratureFigureV1, ...] = Field(default=(), max_length=64)
     failure_category: str | None = Field(default=None, max_length=128)
 
 
@@ -60,6 +67,41 @@ class GrobidTransport(Protocol):
     def process_fulltext(
         self, pdf_payload: bytes, *, max_response_bytes: int
     ) -> bytes: ...
+
+
+class PdfFigureRenderer(Protocol):
+    def crop_png(
+        self,
+        pdf_payload: bytes,
+        *,
+        page_number: int,
+        bbox_pdf: tuple[float, float, float, float],
+    ) -> bytes: ...
+
+
+class PyMuPdfFigureRenderer:
+    def crop_png(
+        self,
+        pdf_payload: bytes,
+        *,
+        page_number: int,
+        bbox_pdf: tuple[float, float, float, float],
+    ) -> bytes:
+        try:
+            import fitz
+        except ImportError as exc:
+            raise RuntimeError("PyMuPDF is not installed") from exc
+        x, y, width, height = bbox_pdf
+        document = fitz.open(stream=pdf_payload, filetype="pdf")
+        try:
+            page = document.load_page(page_number - 1)
+            rect = fitz.Rect(x, y, x + width, y + height)
+            pixmap = page.get_pixmap(
+                matrix=fitz.Matrix(2.0, 2.0), clip=rect, alpha=False
+            )
+            return pixmap.tobytes("png")
+        finally:
+            document.close()
 
 
 class UnpaywallPublicAdapter:
@@ -248,12 +290,16 @@ class LawfulFullTextResolver:
         grobid: GrobidTransport,
         store: LocalArtifactStore,
         run_id: str,
+        docling: DoclingLocalParser | None = None,
+        figure_renderer: PdfFigureRenderer | None = None,
     ) -> None:
         self.unpaywall = unpaywall
         self.pdf_fetcher = pdf_fetcher
         self.grobid = grobid
         self.store = store
         self.run_id = run_id
+        self.docling = docling
+        self.figure_renderer = figure_renderer
 
     def resolve(
         self, *, doi: str, document_id: str, evidence_id: str
@@ -285,20 +331,84 @@ class LawfulFullTextResolver:
                 "application/pdf",
                 immutable=True,
             )
-            tei = self.grobid.process_fulltext(pdf, max_response_bytes=_MAX_TEI_BYTES)
-            tei_ref = self.store.write_bytes(
-                f"research/{self.run_id}/fulltext/{evidence_id}.tei.xml",
-                tei,
-                "application/xml",
-                immutable=True,
-            )
-            spans = parse_grobid_tei_spans(
-                tei,
-                document_id=document_id,
-                evidence_id=evidence_id,
-                pdf_artifact_uri=pdf_ref.uri,
-                tei_artifact_uri=tei_ref.uri,
-            )
+            tei_ref = None
+            docling_ref = None
+            figures: tuple[LiteratureFigureV1, ...] = ()
+            try:
+                tei = self.grobid.process_fulltext(
+                    pdf, max_response_bytes=_MAX_TEI_BYTES
+                )
+                tei_ref = self.store.write_bytes(
+                    f"research/{self.run_id}/fulltext/{evidence_id}.tei.xml",
+                    tei,
+                    "application/xml",
+                    immutable=True,
+                )
+                spans = parse_grobid_tei_spans(
+                    tei,
+                    document_id=document_id,
+                    evidence_id=evidence_id,
+                    pdf_artifact_uri=pdf_ref.uri,
+                    tei_artifact_uri=tei_ref.uri,
+                )
+                figures = parse_grobid_tei_figures(
+                    tei,
+                    document_id=document_id,
+                    evidence_id=evidence_id,
+                    pdf_artifact_uri=pdf_ref.uri,
+                )
+                if self.figure_renderer is not None:
+                    rendered: list[LiteratureFigureV1] = []
+                    for figure in figures:
+                        if figure.page_number is None or figure.bbox_pdf is None:
+                            rendered.append(figure)
+                            continue
+                        try:
+                            png = self.figure_renderer.crop_png(
+                                pdf,
+                                page_number=figure.page_number,
+                                bbox_pdf=figure.bbox_pdf,
+                            )
+                            image_ref = self.store.write_bytes(
+                                f"research/{self.run_id}/fulltext/{figure.figure_id}.png",
+                                png,
+                                "image/png",
+                                immutable=True,
+                            )
+                            rendered.append(
+                                figure.model_copy(
+                                    update={"image_artifact_uri": image_ref.uri}
+                                )
+                            )
+                        except (OSError, RuntimeError, ValueError):
+                            rendered.append(figure)
+                    figures = tuple(rendered)
+            except (OSError, RuntimeError, ValueError):
+                if self.docling is None:
+                    raise
+                structured_path = (
+                    f"research/{self.run_id}/fulltext/{evidence_id}.docling.json"
+                )
+                structured_uri = f"artifact://{structured_path}"
+                markdown, structured, spans = self.docling.parse(
+                    pdf,
+                    document_id=document_id,
+                    evidence_id=evidence_id,
+                    pdf_artifact_uri=pdf_ref.uri,
+                    structured_artifact_uri=structured_uri,
+                )
+                docling_ref = self.store.write_bytes(
+                    structured_path,
+                    structured,
+                    "application/json",
+                    immutable=True,
+                )
+                self.store.write_text(
+                    f"research/{self.run_id}/fulltext/{evidence_id}.docling.md",
+                    markdown,
+                    "text/markdown",
+                    immutable=True,
+                )
             if not spans:
                 raise ValueError("GROBID returned no body evidence spans")
             return FullTextResolutionV1(
@@ -309,8 +419,12 @@ class LawfulFullTextResolver:
                 oa_location=location,
                 unpaywall_artifact_uri=raw_ref.uri,
                 pdf_artifact_uri=pdf_ref.uri,
-                tei_artifact_uri=tei_ref.uri,
+                tei_artifact_uri=tei_ref.uri if tei_ref is not None else None,
+                docling_artifact_uri=(
+                    docling_ref.uri if docling_ref is not None else None
+                ),
                 spans=spans,
+                figures=figures,
             )
         except (OSError, RuntimeError, SearchAdapterError, ValueError) as exc:
             return FullTextResolutionV1(
@@ -385,6 +499,7 @@ def parse_grobid_tei_spans(
                         text_sha256=text_hash,
                         locator=locator,
                         parser="GROBID_TEI",
+                        structured_artifact_uri=tei_artifact_uri,
                         tei_artifact_uri=tei_artifact_uri,
                         pdf_artifact_uri=pdf_artifact_uri,
                     )
@@ -392,6 +507,57 @@ def parse_grobid_tei_spans(
                 if len(spans) >= max_spans:
                     return tuple(spans)
     return tuple(spans)
+
+
+def parse_grobid_tei_figures(
+    payload: bytes,
+    *,
+    document_id: str,
+    evidence_id: str,
+    pdf_artifact_uri: str,
+    max_figures: int = 64,
+) -> tuple[LiteratureFigureV1, ...]:
+    if b"<!DOCTYPE" in payload.upper() or b"<!ENTITY" in payload.upper():
+        raise ValueError("unsafe TEI declarations are forbidden")
+    try:
+        root = ElementTree.fromstring(payload)
+    except ElementTree.ParseError as exc:
+        raise ValueError("GROBID returned invalid TEI XML") from exc
+    figures: list[LiteratureFigureV1] = []
+    for node in root.findall(f".//{{{_TEI_NS}}}body//{{{_TEI_NS}}}figure"):
+        caption_node = node.find(f".//{{{_TEI_NS}}}figDesc")
+        if caption_node is None:
+            caption_node = node.find(f".//{{{_TEI_NS}}}head")
+        caption = _element_text(caption_node) if caption_node is not None else ""
+        if not caption:
+            continue
+        label_node = node.find(f"./{{{_TEI_NS}}}label")
+        label = _element_text(label_node) if label_node is not None else None
+        page_number, bbox = _first_coords_box(node.get("coords"))
+        identity = {
+            "evidence_id": evidence_id,
+            "label": label,
+            "caption": caption,
+            "page_number": page_number,
+            "bbox": bbox,
+        }
+        figures.append(
+            LiteratureFigureV1(
+                figure_id="literature-figure-"
+                + hashlib.sha256(canonical_json_bytes(identity)).hexdigest()[:24],
+                document_id=document_id,
+                evidence_id=evidence_id,
+                label=label,
+                caption=caption,
+                page_number=page_number,
+                bbox_pdf=bbox,
+                source_pdf_artifact_uri=pdf_artifact_uri,
+                parser="GROBID_TEI",
+            )
+        )
+        if len(figures) >= max_figures:
+            break
+    return tuple(figures)
 
 
 def _multipart_body(boundary: str, pdf_payload: bytes) -> bytes:
@@ -438,6 +604,23 @@ def _coords_pages(value: str | None) -> tuple[int, ...]:
         if first.isdigit() and (page := int(first)) > 0 and page not in pages:
             pages.append(page)
     return tuple(pages)
+
+
+def _first_coords_box(
+    value: str | None,
+) -> tuple[int | None, tuple[float, float, float, float] | None]:
+    if not value:
+        return None, None
+    parts = value.split(";", 1)[0].split(",")
+    if len(parts) != 5 or not parts[0].strip().isdigit():
+        return None, None
+    try:
+        coordinates = tuple(float(item) for item in parts[1:])
+    except ValueError:
+        return None, None
+    if any(not math.isfinite(item) or item < 0 for item in coordinates):
+        return None, None
+    return int(parts[0]), coordinates  # type: ignore[return-value]
 
 
 def _valid_https_url(value: str) -> bool:

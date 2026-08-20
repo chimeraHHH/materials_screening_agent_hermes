@@ -160,8 +160,24 @@ class FineGrainedEvidenceSpanV1(StrictModel):
     text_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     locator: str = Field(min_length=3, max_length=1_000)
     parser: Literal["GROBID_TEI", "DOCLING"]
+    structured_artifact_uri: str | None = Field(
+        default=None, pattern=r"^artifact://"
+    )
     tei_artifact_uri: str | None = Field(default=None, pattern=r"^artifact://")
     pdf_artifact_uri: str | None = Field(default=None, pattern=r"^artifact://")
+
+
+class LiteratureFigureV1(StrictModel):
+    figure_id: str = Field(pattern=r"^literature-figure-[0-9a-f]{24}$")
+    document_id: str = Field(pattern=r"^document-[0-9a-f]{24}$")
+    evidence_id: str = Field(pattern=r"^evidence-[0-9a-f]{24}$")
+    label: str | None = Field(default=None, max_length=256)
+    caption: str = Field(min_length=1, max_length=4_000)
+    page_number: int | None = Field(default=None, ge=1)
+    bbox_pdf: tuple[float, float, float, float] | None = None
+    image_artifact_uri: str | None = Field(default=None, pattern=r"^artifact://")
+    source_pdf_artifact_uri: str = Field(pattern=r"^artifact://")
+    parser: Literal["GROBID_TEI", "DOCLING"]
 
 
 class ResolvedEvidenceV1(StrictModel):
@@ -186,6 +202,9 @@ class ResolvedEvidenceV1(StrictModel):
     full_text_spans: tuple[FineGrainedEvidenceSpanV1, ...] = Field(
         default=(), max_length=256
     )
+    literature_figures: tuple[LiteratureFigureV1, ...] = Field(
+        default=(), max_length=64
+    )
     evidence_scope: Literal[
         "METADATA_OR_ABSTRACT_ONLY", "OPEN_ACCESS_FULL_TEXT"
     ] = "METADATA_OR_ABSTRACT_ONLY"
@@ -195,8 +214,8 @@ class ResolvedEvidenceV1(StrictModel):
         if self.full_text_status == "RESOLVED":
             if not self.full_text_spans or self.evidence_scope != "OPEN_ACCESS_FULL_TEXT":
                 raise ValueError("resolved full text requires spans and full-text scope")
-        elif self.full_text_spans:
-            raise ValueError("full-text spans require RESOLVED status")
+        elif self.full_text_spans or self.literature_figures:
+            raise ValueError("full-text spans/figures require RESOLVED status")
         return self
 
 
@@ -512,6 +531,7 @@ class MaterialsResearchGraphResultV4(StrictModel):
     candidates: CandidateSetV1
     candidate_literature_retrieval: CandidateLiteratureRetrievalV1
     skeptic_review: SkepticReviewV1
+    executed_counter_queries: tuple[str, ...] = Field(default=(), max_length=32)
     inference_review: ScientificInferenceReviewV1
     synthesis: ResearchSynthesisV1
     roles: tuple[ResearchRoleRecordV1, ...] = Field(min_length=9, max_length=9)
@@ -577,6 +597,8 @@ class MaterialsResearchDirector:
             [CandidateSetV1, ConstraintGraphV1], CandidateLiteratureRetrievalV1
         ]
         | None = None,
+        counter_evidence_search_tool: DeepSeekFunctionTool | None = None,
+        counter_queries_snapshot: Callable[[], tuple[str, ...]] | None = None,
         checkpoint_load: Callable[
             [str, type[StrictModel]], DeepSeekAgentResultV1[Any] | None
         ]
@@ -591,6 +613,8 @@ class MaterialsResearchDirector:
         self.evidence_snapshot = evidence_snapshot
         self.lead_resolutions_snapshot = lead_resolutions_snapshot or (lambda: ())
         self.candidate_literature_search = candidate_literature_search
+        self.counter_evidence_search_tool = counter_evidence_search_tool
+        self.counter_queries_snapshot = counter_queries_snapshot or (lambda: ())
         self.database_search_tool = database_search_tool
         self.database_candidates_snapshot = database_candidates_snapshot
         self.database_federation_snapshot = database_federation_snapshot
@@ -685,8 +709,21 @@ class MaterialsResearchDirector:
         state["candidate_retrieval"] = candidate_retrieval.model_dump(mode="json")
 
         sparse_skeptic = self._run_role(
-            "skeptic", SparseSkepticReviewV1, state, records
+            "skeptic",
+            SparseSkepticReviewV1,
+            state,
+            records,
+            tools=(self.counter_evidence_search_tool,)
+            if self.counter_evidence_search_tool is not None
+            else None,
         )
+        executed_counter_queries = self.counter_queries_snapshot()
+        if self.counter_evidence_search_tool is not None:
+            _validate_executed_counter_queries(
+                sparse_skeptic.counter_evidence_queries, executed_counter_queries
+            )
+        evidence = self.evidence_snapshot()
+        state["evidence"] = tuple(item.model_dump(mode="json") for item in evidence)
         skeptic = _expand_sparse_skeptic(
             sparse_skeptic,
             candidates,
@@ -741,6 +778,7 @@ class MaterialsResearchDirector:
             candidates=candidates,
             candidate_literature_retrieval=candidate_retrieval,
             skeptic_review=skeptic,
+            executed_counter_queries=executed_counter_queries,
             inference_review=inference,
             synthesis=synthesis,
             roles=tuple(records),
@@ -849,6 +887,9 @@ def _role_prompt(role: str, model: type[StrictModel]) -> str:
         )
     elif role == "skeptic":
         role_specific = (
+            "Use execute_counter_evidence_search for concrete falsification, null-result, "
+            "instability, competing-mechanism, and prior-art queries. Include in the final "
+            "counter_evidence_queries only exact queries that the tool executed. "
             "For the skeptic evidence audit, emit only evidence-backed PASS or FAIL "
             "exceptions. Omit unsupported pairs; deterministic code expands them to "
             "UNKNOWN. This role answers what is directly established, not what is likely. "
@@ -1159,6 +1200,19 @@ def _validate_native_lead_refs(
     selected = set(review.useful_lead_ids) | set(review.rejected_lead_ids)
     if not selected <= known:
         raise ValueError("native-search review references an unknown lead")
+
+
+def _validate_executed_counter_queries(
+    declared: tuple[str, ...], executed: tuple[str, ...]
+) -> None:
+    normalized_executed = {" ".join(item.split()) for item in executed}
+    missing = {
+        " ".join(item.split()) for item in declared
+    } - normalized_executed
+    if missing:
+        raise ValueError(
+            "skeptic counter_evidence_queries must be executed before finalization"
+        )
 
 
 def _validate_evidence_review(

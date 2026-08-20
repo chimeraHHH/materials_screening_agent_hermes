@@ -62,6 +62,7 @@ from material_agent.inspiration.semantic_scholar import (
     parse_semantic_scholar_page,
     parse_semantic_scholar_topic_page,
 )
+from material_agent.inspiration.specter2 import Specter2EvidenceRanker
 from material_agent.orchestrator.llm import LLMProviderError
 from material_agent.orchestrator.models import StrictModel
 from material_agent.retrieval.adapters import (
@@ -118,6 +119,12 @@ class AuthoritativeLiteratureSearchArgsV1(StrictModel):
         if self.route != "TOPIC" and not self.anchor_paper_id.strip():
             raise ValueError("graph searches require anchor_paper_id")
         return self
+
+
+class CounterEvidenceSearchArgsV1(StrictModel):
+    query: str = Field(min_length=3, max_length=512)
+    target_constraint_ids: tuple[str, ...] = Field(min_length=1, max_length=16)
+    max_hits: int = Field(default=10, ge=1, le=20)
 
 
 class FederatedCandidateSearchArgsV1(StrictModel):
@@ -240,6 +247,8 @@ class AuthoritativeLiteratureSearchState:
         max_candidate_calls: int = 4,
         fulltext_resolver: LawfulFullTextResolver | None = None,
         max_fulltext_calls: int = 4,
+        max_counter_calls: int = 8,
+        evidence_ranker: Specter2EvidenceRanker | None = None,
     ) -> None:
         if (
             not run_id
@@ -261,6 +270,8 @@ class AuthoritativeLiteratureSearchState:
             raise ValueError("max_candidate_calls must be between 1 and 8")
         if not 1 <= max_fulltext_calls <= 8:
             raise ValueError("max_fulltext_calls must be between 1 and 8")
+        if not 1 <= max_counter_calls <= 16:
+            raise ValueError("max_counter_calls must be between 1 and 16")
         self.adapter = adapter
         self.store = store
         self.run_id = run_id
@@ -275,9 +286,13 @@ class AuthoritativeLiteratureSearchState:
         self.max_candidate_calls = max_candidate_calls
         self.fulltext_resolver = fulltext_resolver
         self.max_fulltext_calls = max_fulltext_calls
+        self.max_counter_calls = max_counter_calls
+        self.evidence_ranker = evidence_ranker
         self._calls = 0
         self._candidate_calls = 0
         self._fulltext_calls = 0
+        self._counter_calls = 0
+        self._counter_queries: list[str] = []
         self._physical_requests = 0
         self._evidence: dict[str, ResolvedEvidenceV1] = {}
         self._lock = threading.Lock()
@@ -296,6 +311,23 @@ class AuthoritativeLiteratureSearchState:
             arguments_model=AuthoritativeLiteratureSearchArgsV1,
             handler=self._handle,
         )
+
+    def as_counter_tool(self) -> DeepSeekFunctionTool:
+        return DeepSeekFunctionTool(
+            name="execute_counter_evidence_search",
+            description=(
+                "Execute a concrete falsification, null-result, instability, competing-"
+                "mechanism, or prior-art query against the authoritative literature "
+                "federation. Every counter_evidence_query in the final skeptic output must "
+                "first be executed with this tool."
+            ),
+            arguments_model=CounterEvidenceSearchArgsV1,
+            handler=self._handle_counter_search,
+        )
+
+    def counter_queries_snapshot(self) -> tuple[str, ...]:
+        with self._lock:
+            return tuple(self._counter_queries)
 
     def snapshot(self) -> tuple[ResolvedEvidenceV1, ...]:
         with self._lock:
@@ -355,6 +387,22 @@ class AuthoritativeLiteratureSearchState:
             return self._handle_graph(arguments)
         return self._handle_topic(arguments)
 
+    def _handle_counter_search(
+        self, arguments: CounterEvidenceSearchArgsV1
+    ) -> Mapping[str, Any]:
+        normalized = " ".join(arguments.query.split())
+        result = self._handle_topic(
+            AuthoritativeLiteratureSearchArgsV1(
+                query=normalized,
+                target_constraint_ids=arguments.target_constraint_ids,
+                max_hits=arguments.max_hits,
+            ),
+            lane="counter",
+        )
+        with self._lock:
+            self._counter_queries.append(normalized)
+        return {**result, "counter_query_executed": normalized}
+
     def _handle_fulltext(
         self, arguments: AuthoritativeLiteratureSearchArgsV1
     ) -> Mapping[str, Any]:
@@ -394,10 +442,18 @@ class AuthoritativeLiteratureSearchState:
             evidence_id=record.evidence_id,
         )
         if result.status == "RESOLVED":
+            spans = (
+                self.evidence_ranker.rank_spans(
+                    arguments.query, result.spans, max_results=64
+                )
+                if self.evidence_ranker is not None
+                else result.spans
+            )
             updated = record.model_copy(
                 update={
                     "full_text_status": "RESOLVED",
-                    "full_text_spans": result.spans,
+                    "full_text_spans": spans,
+                    "literature_figures": result.figures,
                     "evidence_scope": "OPEN_ACCESS_FULL_TEXT",
                     "supported_constraint_ids": tuple(
                         dict.fromkeys(
@@ -417,13 +473,18 @@ class AuthoritativeLiteratureSearchState:
             "record": updated.model_dump(mode="json"),
             "fulltext_resolution": result.model_dump(mode="json"),
             "scientific_evidence_allowed": result.status == "RESOLVED",
+            "span_ranking_model": (
+                self.evidence_ranker.provider.model_identity
+                if self.evidence_ranker is not None
+                else None
+            ),
         }
 
     def _handle_topic(
         self,
         arguments: AuthoritativeLiteratureSearchArgsV1,
         *,
-        candidate_lane: bool = False,
+        lane: Literal["primary", "candidate", "counter"] = "primary",
     ) -> Mapping[str, Any]:
         semantic = {
             "query": " ".join(arguments.query.split()),
@@ -439,7 +500,7 @@ class AuthoritativeLiteratureSearchState:
             tag_ids=("materials-research",),
         )
         remaining_requests = self._reserve_logical_call(
-            candidate_lane=candidate_lane
+            lane=lane
         )
         try:
             page = self.adapter.search(
@@ -520,7 +581,7 @@ class AuthoritativeLiteratureSearchState:
                         target_constraint_ids=constraint_ids[:16],
                         max_hits=10,
                     ),
-                    candidate_lane=True,
+                    lane="candidate",
                 )
             except (LLMProviderError, SearchAdapterError) as exc:
                 failures.append(
@@ -534,12 +595,17 @@ class AuthoritativeLiteratureSearchState:
             failures=tuple(failures),
         )
 
-    def _reserve_logical_call(self, *, candidate_lane: bool) -> int:
+    def _reserve_logical_call(
+        self, *, lane: Literal["primary", "candidate", "counter"]
+    ) -> int:
         with self._lock:
-            used = self._candidate_calls if candidate_lane else self._calls
-            limit = self.max_candidate_calls if candidate_lane else self.max_calls
+            if lane == "candidate":
+                used, limit = self._candidate_calls, self.max_candidate_calls
+            elif lane == "counter":
+                used, limit = self._counter_calls, self.max_counter_calls
+            else:
+                used, limit = self._calls, self.max_calls
             if used >= limit:
-                lane = "candidate-aware" if candidate_lane else "authoritative"
                 raise LLMProviderError(
                     "BUDGET_EXHAUSTED",
                     f"{lane} search exhausted its call budget",
@@ -552,8 +618,10 @@ class AuthoritativeLiteratureSearchState:
                     "authoritative-search tool exhausted its physical-request budget",
                     retryable=False,
                 )
-            if candidate_lane:
+            if lane == "candidate":
                 self._candidate_calls += 1
+            elif lane == "counter":
+                self._counter_calls += 1
             else:
                 self._calls += 1
             return remaining_requests
@@ -570,7 +638,7 @@ class AuthoritativeLiteratureSearchState:
         query_id = (
             "query-" + hashlib.sha256(canonical_json_bytes(semantic)).hexdigest()[:24]
         )
-        self._reserve_logical_call(candidate_lane=False)
+        self._reserve_logical_call(lane="primary")
         pages: list[tuple[object, ArtifactPointerV1, tuple[object, ...]]] = []
         failures: list[str] = []
         route = SemanticScholarRoute(arguments.route)

@@ -9,6 +9,7 @@ from material_agent.inspiration.fulltext import (
     LawfulFullTextResolver,
     OpenAccessLocationV1,
     UnpaywallPublicAdapter,
+    parse_grobid_tei_figures,
     parse_grobid_tei_spans,
 )
 from material_agent.retrieval.storage import LocalArtifactStore
@@ -45,6 +46,7 @@ def _tei() -> bytes:
 <TEI xmlns="http://www.tei-c.org/ns/1.0">
   <text><body><div><head>Electronic structure</head>
     <p coords="3,10,20,100,12"><s coords="3,10,20,50,12">The isolated band has a width of 42 meV.</s><s coords="3,60,20,50,12">Ti d and ligand p states hybridize.</s></p>
+    <figure coords="4,20,30,200,120"><label>Fig. 2</label><figDesc>Calculated band structure and projected density of states.</figDesc></figure>
   </div></body></text>
 </TEI>"""
 
@@ -79,6 +81,18 @@ def test_grobid_tei_parser_emits_section_sentence_page_locators() -> None:
     assert spans[0].page_numbers == (3,)
     assert "width of 42 meV" in spans[0].text_excerpt
 
+    figures = parse_grobid_tei_figures(
+        _tei(),
+        document_id="document-" + "1" * 24,
+        evidence_id="evidence-" + "2" * 24,
+        pdf_artifact_uri="artifact://research/paper.pdf",
+    )
+    assert len(figures) == 1
+    assert figures[0].label == "Fig. 2"
+    assert figures[0].page_number == 4
+    assert figures[0].bbox_pdf == (20.0, 30.0, 200.0, 120.0)
+    assert "projected density" in figures[0].caption
+
 
 def test_fulltext_resolver_persists_unpaywall_pdf_tei_and_spans(
     tmp_path: Path,
@@ -96,6 +110,13 @@ def test_fulltext_resolver_persists_unpaywall_pdf_tei_and_spans(
             assert max_response_bytes >= len(_tei())
             return _tei()
 
+    class FigureRenderer:
+        def crop_png(self, pdf_payload, *, page_number, bbox_pdf):
+            assert pdf_payload.startswith(b"%PDF-")
+            assert page_number == 4
+            assert bbox_pdf == (20.0, 30.0, 200.0, 120.0)
+            return b"\x89PNG\r\n\x1a\nfixture"
+
     resolver = LawfulFullTextResolver(
         unpaywall=UnpaywallPublicAdapter(
             email_resolver=lambda: "researcher@example.org",
@@ -105,6 +126,7 @@ def test_fulltext_resolver_persists_unpaywall_pdf_tei_and_spans(
         grobid=Grobid(),
         store=LocalArtifactStore(tmp_path),
         run_id="fulltext-run",
+        figure_renderer=FigureRenderer(),
     )
 
     result = resolver.resolve(
@@ -115,6 +137,12 @@ def test_fulltext_resolver_persists_unpaywall_pdf_tei_and_spans(
 
     assert result.status == "RESOLVED"
     assert len(result.spans) == 2
+    assert len(result.figures) == 1
+    assert result.figures[0].image_artifact_uri is not None
+    assert (
+        tmp_path
+        / result.figures[0].image_artifact_uri.removeprefix("artifact://")
+    ).is_file()
     for uri in (
         result.unpaywall_artifact_uri,
         result.pdf_artifact_uri,

@@ -16,10 +16,12 @@ from material_agent.inspiration.deepseek_agent import (
     DeepSeekAgentResultV1,
     DeepSeekThinkingAgent,
 )
+from material_agent.inspiration.docling_parser import docling_parser_from_environment
 from material_agent.inspiration.fulltext import (
     UNPAYWALL_EMAIL_ENV,
     LawfulFullTextResolver,
     OpenAccessPdfFetcher,
+    PyMuPdfFigureRenderer,
     UnpaywallPublicAdapter,
     UrllibLocalGrobidTransport,
 )
@@ -53,6 +55,7 @@ from material_agent.inspiration.semantic_scholar import (
     SEMANTIC_SCHOLAR_API_KEY_ENV,
     SemanticScholarPublicAdapter,
 )
+from material_agent.inspiration.specter2 import specter2_ranker_from_environment
 from material_agent.orchestrator.llm import (
     DEFAULT_KEYCHAIN_SERVICE,
     DEFAULT_LLM_API_KEY_ENV,
@@ -70,7 +73,7 @@ from material_agent.retrieval.storage import LocalArtifactStore
 GENERIC_RESEARCH_TOOL_NAME = "materials_generic_research_run"
 GENERIC_RESEARCH_REQUEST_SCHEMA_VERSION = "materials-generic-research-run-v1"
 GENERIC_RESEARCH_RESULT_SCHEMA_VERSION = "materials-generic-research-run-v4"
-GENERIC_RESEARCH_IMPLEMENTATION_REVISION = "generic-research-20260821-r8"
+GENERIC_RESEARCH_IMPLEMENTATION_REVISION = "generic-research-20260821-r9"
 
 
 def research_secret_resolver_from_environment(
@@ -124,7 +127,7 @@ class GenericResearchRunResultV4(StrictModel):
     schema_version: Literal["materials-generic-research-run-v4"] = (
         GENERIC_RESEARCH_RESULT_SCHEMA_VERSION
     )
-    implementation_revision: Literal["generic-research-20260821-r8"] = (
+    implementation_revision: Literal["generic-research-20260821-r9"] = (
         GENERIC_RESEARCH_IMPLEMENTATION_REVISION
     )
     run_id: str
@@ -215,6 +218,7 @@ class GenericMaterialsResearchService:
         search_environment.setdefault(PUBLIC_SEARCH_MAX_RESULTS_ENV, "20")
         provider_count = len(search_environment[PUBLIC_SEARCH_PROVIDER_ENV].split("+"))
         candidate_search_calls = 4
+        counter_search_calls = 8
         authoritative_calls = min(
             selected.max_authoritative_search_calls,
             64 // provider_count,
@@ -222,7 +226,12 @@ class GenericMaterialsResearchService:
         search_budget = SearchBudgetV1(
             max_queries=authoritative_calls,
             max_physical_requests=(
-                (authoritative_calls + candidate_search_calls) * provider_count
+                (
+                    authoritative_calls
+                    + candidate_search_calls
+                    + counter_search_calls
+                )
+                * provider_count
             ),
             max_direct_queries=authoritative_calls,
             max_bridge_queries=0,
@@ -263,6 +272,8 @@ class GenericMaterialsResearchService:
             ),
             native_leads_snapshot=native_state.snapshot,
             max_candidate_calls=candidate_search_calls,
+            max_counter_calls=counter_search_calls,
+            evidence_ranker=specter2_ranker_from_environment(search_environment),
             fulltext_resolver=LawfulFullTextResolver(
                 unpaywall=UnpaywallPublicAdapter(
                     email_resolver=lambda: search_environment.get(
@@ -273,6 +284,8 @@ class GenericMaterialsResearchService:
                 grobid=UrllibLocalGrobidTransport(),
                 store=self.store,
                 run_id=run_id,
+                docling=docling_parser_from_environment(search_environment),
+                figure_renderer=PyMuPdfFigureRenderer(),
             ),
         )
         database_state = FederatedCandidateSearchState(
@@ -396,6 +409,8 @@ class GenericMaterialsResearchService:
             evidence_snapshot=evidence_state.snapshot,
             lead_resolutions_snapshot=evidence_state.lead_resolutions_snapshot,
             candidate_literature_search=evidence_state.search_candidates,
+            counter_evidence_search_tool=evidence_state.as_counter_tool(),
+            counter_queries_snapshot=evidence_state.counter_queries_snapshot,
             database_search_tool=database_state.as_tool(),
             database_candidates_snapshot=database_state.snapshot,
             database_federation_snapshot=database_state.federation_snapshot,
