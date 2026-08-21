@@ -216,8 +216,8 @@ def build_evidence_cards(
                 conditions = rule.required_conditions
             else:
                 conditions = (
-                    "source mentions the mechanism, but the deterministic relation "
-                    "gate found no unambiguous support or counter assertion",
+                    ("source mentions the mechanism, but the deterministic relation "
+                    "gate found no unambiguous support or counter assertion"),
                 )
                 warnings.append(f"RELATION_UNCERTAIN:{passage.passage_id}")
 

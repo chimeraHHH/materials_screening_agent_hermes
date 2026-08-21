@@ -5,22 +5,22 @@ from types import SimpleNamespace
 
 import pytest
 
+from material_agent.retrieval.models import RetrievalPolicy
 from material_agent.retrieval.mp_screening import (
     MP_CAPABILITY_CATALOG,
     MappedClause,
+    MappingStatus,
     ScreeningIntent,
     UnmappedClause,
-    MappingStatus,
     capability_catalog_hash,
-    make_spec,
     compile_mp_screening_spec,
+    make_spec,
 )
 from material_agent.retrieval.runner import (
     _limit_adaptive_deep_documents,
     _prefilter_adaptive_layered_documents,
     _prefilter_adaptive_summary_documents,
 )
-from material_agent.retrieval.models import RetrievalPolicy
 
 
 def test_catalog_hash_and_compilation_are_stable() -> None:

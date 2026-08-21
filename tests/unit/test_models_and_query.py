@@ -11,8 +11,6 @@ from material_agent.retrieval.models import (
     NumericRange,
     Requirement,
     SourceSpecificConstraints,
-    SourceDatabase,
-    SourceMetadata,
 )
 from material_agent.retrieval.normalizer import candidate_id_for
 from material_agent.retrieval.query import (

@@ -11,7 +11,6 @@ from typing import Any
 from material_agent.research.flatband_contracts import RawExpertAnnotationV1
 from material_agent.research.flatband_ingress import SOURCE_AUDIT_V1_SHA256
 
-
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 ARTIFACT_DIRECTORY = (
     REPOSITORY_ROOT
@@ -710,14 +709,3 @@ def test_protocol_documents_are_content_addressed() -> None:
     assert READINESS_REVIEW_PATH.with_suffix(".sha256").read_text(
         encoding="utf-8"
     ) == f"{READINESS_REVIEW_SHA256}  {READINESS_REVIEW_PATH.name}\n"
-    "key_material_included",
-    "private_identity_evidence_included",
-    "private_identity_evidence_sha256",
-    "release_control_attestations",
-    "review_signature_hmac_sha256",
-    "reviewer_decision_key_commitment_sha256",
-    "reviewer_decision_key_material_included",
-    "signature_hmac_sha256",
-    "private_identity_evidence_sha256",
-    "review_signature_hmac_sha256",
-    "signature_hmac_sha256",

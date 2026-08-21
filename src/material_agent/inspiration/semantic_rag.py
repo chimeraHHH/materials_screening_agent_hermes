@@ -29,10 +29,10 @@ from material_agent.inspiration.models import (
     canonical_json_bytes,
 )
 from material_agent.orchestrator.llm import (
-    DEFAULT_KEYCHAIN_SERVICE,
-    DEFAULT_LLM_API_KEY_ENV,
     DEEPSEEK_BASE_URL,
     DEEPSEEK_MODEL_ID,
+    DEFAULT_KEYCHAIN_SERVICE,
+    DEFAULT_LLM_API_KEY_ENV,
     DeepSeekProvider,
     EnvironmentOrKeychainSecretResolver,
     JSONTransport,
@@ -40,7 +40,6 @@ from material_agent.orchestrator.llm import (
     LLMProviderError,
 )
 from material_agent.orchestrator.models import LLMCallAudit
-
 
 SEMANTIC_RAG_PROMPT_VERSION = "inspiration-grounded-rerank-deepseek-v1"
 SEMANTIC_RAG_MODEL_REVISION = "provider-managed-v4-pro"
@@ -68,7 +67,7 @@ class LocalRAGCandidateV1(StrictModel):
     ]
 
     @model_validator(mode="after")
-    def validate_evidence_ids(self) -> "LocalRAGCandidateV1":
+    def validate_evidence_ids(self) -> LocalRAGCandidateV1:
         if tuple(sorted(set(self.evidence_card_ids))) != self.evidence_card_ids:
             raise ValueError("candidate evidence_card_ids must be sorted and unique")
         return self
@@ -86,7 +85,7 @@ class SemanticRAGRequestV1(StrictModel):
     ]
 
     @model_validator(mode="after")
-    def validate_closed_lineage(self) -> "SemanticRAGRequestV1":
+    def validate_closed_lineage(self) -> SemanticRAGRequestV1:
         passage_ids = tuple(item.passage_id for item in self.passages)
         evidence_ids = tuple(item.evidence_card_id for item in self.evidence_cards)
         candidate_ids = tuple(item.candidate_id for item in self.candidates)
@@ -133,7 +132,7 @@ class GroundedCandidateJudgementV1(StrictModel):
     rationale: ShortText
 
     @model_validator(mode="after")
-    def validate_citations(self) -> "GroundedCandidateJudgementV1":
+    def validate_citations(self) -> GroundedCandidateJudgementV1:
         for label, values in (
             ("cited_passage_ids", self.cited_passage_ids),
             ("cited_evidence_card_ids", self.cited_evidence_card_ids),

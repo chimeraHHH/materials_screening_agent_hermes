@@ -18,9 +18,9 @@ def render_fake_report(
     lines = [
         "# Agent02 Fake Screening Report",
         "",
-        "> **TEST FIXTURE / MOCK:** this report contains no real ML inference, "
+        ("> **TEST FIXTURE / MOCK:** this report contains no real ML inference, "
         "cannot produce L2 evidence, and must never be presented as a "
-        "scientific result.",
+        "scientific result."),
         "",
         f"- Run: `{plan.run_id}`",
         f"- Contract: `{plan.schema_version}`",
@@ -60,9 +60,9 @@ def render_fake_report(
     lines.extend(
         [
             "",
-            "No value in this report is a formation energy, energy above hull, "
+            ("No value in this report is a formation energy, energy above hull, "
             "thermodynamic-stability proof, magnetic-ground-state result, or "
-            "DFT validation.",
+            "DFT validation."),
             "",
         ]
     )
@@ -84,9 +84,9 @@ def render_stage_report(
     lines = [
         "# Agent02 CHGNet Screening Report",
         "",
-        "> This report contains ML interatomic-potential calculations. "
+        ("> This report contains ML interatomic-potential calculations. "
         "It is not DFT, experiment, formation-energy, convex-hull, magnetic-"
-        "ground-state, topology, or Mott evidence.",
+        "ground-state, topology, or Mott evidence."),
         "",
         f"- Run: `{plan.run_id}`",
         f"- Contract: `{plan.schema_version}`",
@@ -128,8 +128,8 @@ def render_stage_report(
     lines.extend(
         [
             "",
-            "L2_ML_SCREENED is used only for non-mock, applicable candidates "
-            "whose relaxation converged and passed the frozen structure QC.",
+            ("L2_ML_SCREENED is used only for non-mock, applicable candidates "
+            "whose relaxation converged and passed the frozen structure QC."),
             "",
         ]
     )

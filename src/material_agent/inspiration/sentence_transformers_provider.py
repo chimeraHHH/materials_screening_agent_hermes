@@ -25,7 +25,6 @@ from material_agent.inspiration.semantic_embedding import (
     SemanticEmbeddingError,
 )
 
-
 SENTENCE_TRANSFORMERS_BUNDLE_SCHEMA = "sentence-transformers-local-bundle-v1"
 SENTENCE_TRANSFORMERS_MANIFEST = "semantic-model-manifest-v1.json"
 SEMANTIC_MODEL_BUNDLE_ENV = "MATERIALS_SEMANTIC_MODEL_BUNDLE"

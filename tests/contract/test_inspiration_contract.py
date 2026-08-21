@@ -6,14 +6,13 @@ import json
 from collections.abc import Iterator
 from typing import Any
 
-import material_agent.inspiration as inspiration
 from pydantic import BaseModel
 
+from material_agent import inspiration
 from material_agent.inspiration import (
     PUBLIC_CONTRACT_MODELS,
     PUBLIC_POLICY_MODELS,
 )
-
 
 SCHEMA_SHA256 = {
     "ArtifactPointerV1": "110be326948fa3866eacd0678a1b86fc7c96e3ca7b978aee1a01a97fc949a126",

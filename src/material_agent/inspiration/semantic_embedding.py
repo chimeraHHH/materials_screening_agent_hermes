@@ -25,7 +25,6 @@ from typing import Protocol, runtime_checkable
 
 from material_agent.inspiration.models import canonical_json_bytes, canonical_sha256
 
-
 SEMANTIC_ADAPTER_SCHEMA_VERSION = "local-semantic-passage-embedding-v1"
 SEMANTIC_CACHE_SCHEMA_VERSION = "local-semantic-passage-cache-v1"
 SEMANTIC_VECTOR_ARTIFACT_MEDIA_TYPE = (

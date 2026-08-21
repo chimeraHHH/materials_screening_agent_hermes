@@ -21,7 +21,6 @@ from pydantic import (
     model_validator,
 )
 
-
 MATERIALS_GATEWAY_VERSION = "materials-gateway-v1"
 
 Identifier = Annotated[

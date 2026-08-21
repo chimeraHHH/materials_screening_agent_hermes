@@ -5,11 +5,11 @@ from __future__ import annotations
 import hashlib
 import hmac
 import os
+from collections.abc import Callable, Mapping
 from contextlib import ExitStack
-from collections.abc import Mapping
 from pathlib import Path
 from threading import Event, Thread
-from typing import Any, Callable
+from typing import Any, Self
 
 from pydantic import ValidationError
 
@@ -19,8 +19,8 @@ except ImportError:  # pragma: no cover - exercised only on non-POSIX hosts
     fcntl = None  # type: ignore[assignment]
 
 from material_agent.gateway.authorization import (
-    ActionGrantReceipt,
     ActionAuthorizer,
+    ActionGrantReceipt,
     DenyAllActionAuthorizer,
     SqliteOneTimeActionGrantStore,
 )
@@ -42,29 +42,29 @@ from material_agent.gateway.job_queue import (
     SqliteGatewayJobQueue,
 )
 from material_agent.gateway.models import (
+    INTERACTION_ADAPTER,
+    RUN_ACTION_ADAPTER,
     ArtifactReferenceV1,
     CompanionTransitionV1,
+    FailedStateV1,
     GatewayRunRecordV1,
     InspirationConstraintsV1,
     InspirationRunRequestV1,
-    INTERACTION_ADAPTER,
     InteractionRequiredStateV1,
     MaterialsResultGetRequestV1,
     MaterialsResultViewV1,
     MaterialsRunActRequestV1,
     MaterialsRunGetRequestV1,
     MaterialsRunViewV1,
-    ReadableReportV1,
     PartialStateV1,
-    FailedStateV1,
+    ReadableReportV1,
     RunActionV1,
-    RUN_ACTION_ADAPTER,
     RunningStateV1,
     SucceededStateV1,
     canonical_json_bytes,
     gateway_result_sha256,
-    inspiration_request_sha256,
     inspiration_report_uri,
+    inspiration_request_sha256,
     inspiration_run_id,
     run_view,
     terminal_reference,
@@ -159,7 +159,7 @@ class MaterialsGatewayService:
                 code="ADAPTER_CONTRACT_ERROR",
                 message="inspiration companion returned an invalid transition",
             )
-        except Exception:  # adapter traceback and internal details stay private
+        except Exception:  # adapter traceback and internal details stay private  # noqa: BLE001
             transition = self._failure_transition(
                 code="ADAPTER_EXECUTION_ERROR",
                 message="inspiration companion failed during start",
@@ -205,7 +205,7 @@ class MaterialsGatewayService:
             )
         except ActionAuthorizationError:
             raise
-        except Exception:
+        except Exception:  # noqa: BLE001
             raise ActionAuthorizationError(
                 "operator authorization could not be verified"
             ) from None
@@ -228,7 +228,7 @@ class MaterialsGatewayService:
                 code="ADAPTER_CONTRACT_ERROR",
                 message="inspiration companion returned an invalid transition",
             )
-        except Exception:  # an uncertain action outcome must not be retried implicitly
+        except Exception:  # an uncertain action outcome must not be retried implicitly  # noqa: BLE001
             transition = self._failure_transition(
                 code="ADAPTER_EXECUTION_ERROR",
                 message="inspiration companion failed during action",
@@ -452,7 +452,7 @@ class _RunScopedProcessLock:
         self.name = hashlib.sha256(run_id.encode("utf-8")).hexdigest() + ".lock"
         self.fd: int | None = None
 
-    def __enter__(self) -> _RunScopedProcessLock:
+    def __enter__(self) -> Self:
         if fcntl is None:
             raise GatewayActionWorkerError(
                 "run-scoped worker locking is unavailable on this platform"
@@ -570,7 +570,7 @@ class QueuedMaterialsGatewayService(MaterialsGatewayService):
             )
         except ActionAuthorizationError:
             raise
-        except Exception:
+        except Exception:  # noqa: BLE001
             raise ActionAuthorizationError(
                 "operator authorization and durable enqueue could not be verified"
             ) from None
@@ -623,7 +623,7 @@ class _LeaseHeartbeat:
         self.error: BaseException | None = None
         self.thread: Thread | None = None
 
-    def __enter__(self) -> _LeaseHeartbeat:
+    def __enter__(self) -> Self:
         if self.interval_seconds is not None:
             if self.interval_seconds <= 0:
                 raise ValueError("heartbeat interval must be positive")
@@ -642,7 +642,7 @@ class _LeaseHeartbeat:
                     lease_token=self.job.lease_token,
                     lease_seconds=self.lease_seconds,
                 )
-            except BaseException as exc:  # preserve fencing failure for main worker
+            except BaseException as exc:  # preserve fencing failure for main worker  # noqa: BLE001
                 self.error = exc
                 self.stop_event.set()
                 return
@@ -800,7 +800,7 @@ class GatewayActionWorker:
                             code="ADAPTER_CONTRACT_ERROR",
                             message="inspiration companion returned an invalid transition",
                         )
-                except Exception:
+                except Exception:  # noqa: BLE001
                     transition = self.validator._failure_transition(
                         code="ADAPTER_EXECUTION_ERROR",
                         message="inspiration companion failed during queued action",
@@ -932,7 +932,7 @@ class GatewayActionWorker:
             or job.job_kind != f"gateway-action-{action.kind}"
         ):
             raise GatewayActionWorkerError("action job hashes or receipt differ")
-        if isinstance(interaction, type(None)) or action.interaction_id != interaction.interaction_id:
+        if (interaction is None) or action.interaction_id != interaction.interaction_id:
             raise GatewayActionWorkerError("action interaction differs")
         self.grant_store.verify_consumed_grant_receipt(receipt)
         revision = job.payload["expected_run_revision"]

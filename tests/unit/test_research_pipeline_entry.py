@@ -67,6 +67,7 @@ def test_full_research_roles_receive_non_truncating_production_budgets() -> None
         "skeptic",
         "hypothesis_reasoner",
         "synthesist",
+        "contract_repair",
     ):
         budget = research_role_budget(
             role=role,
@@ -104,6 +105,12 @@ def test_full_research_roles_receive_non_truncating_production_budgets() -> None
         native_search_calls=8,
         authoritative_calls=12,
     ).max_rounds == 20
+    assert research_role_budget(
+        role="contract_repair",
+        requested_rounds=20,
+        native_search_calls=8,
+        authoritative_calls=12,
+    ).max_rounds == 4
 
 
 class _Service:

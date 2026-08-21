@@ -9,9 +9,10 @@ replayed final human judgment is :class:`DerivativeClass.NOT`.
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import Iterable
 from datetime import datetime
 from enum import StrEnum
-from typing import Annotated, Iterable, Literal, TypeVar
+from typing import Annotated, Literal, TypeVar
 
 from pydantic import Field, field_validator, model_validator
 
@@ -28,13 +29,12 @@ from material_agent.research.flatband_leakage import (
     MechanismLineageCuratorDeclarationV3,
 )
 
-
 ModelT = TypeVar("ModelT", bound=StrictModel)
 
 
 def _require_rfc3339(value: str) -> str:
     try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        parsed = datetime.fromisoformat(value)
     except ValueError as exc:
         raise ValueError("timestamp must be RFC3339-compatible") from exc
     if parsed.tzinfo is None or parsed.utcoffset() is None:
@@ -43,7 +43,7 @@ def _require_rfc3339(value: str) -> str:
 
 
 def _timestamp(value: str) -> datetime:
-    return datetime.fromisoformat(_require_rfc3339(value).replace("Z", "+00:00"))
+    return datetime.fromisoformat(_require_rfc3339(value))
 
 
 def _build_addressed(
@@ -113,7 +113,7 @@ class DerivativeSourceEvidenceRefV3(StrictModel):
     scientific_conclusion: Literal[False] = False
 
     @model_validator(mode="after")
-    def validate_ref(self) -> "DerivativeSourceEvidenceRefV3":
+    def validate_ref(self) -> DerivativeSourceEvidenceRefV3:
         _assert_addressed(
             self,
             id_field="evidence_ref_id",
@@ -151,7 +151,7 @@ class DerivativeScreeningPolicyV3(StrictModel):
         return _require_rfc3339(value)
 
     @model_validator(mode="after")
-    def validate_policy(self) -> "DerivativeScreeningPolicyV3":
+    def validate_policy(self) -> DerivativeScreeningPolicyV3:
         if self.derivative_class_taxonomy != tuple(DerivativeClass):
             raise ValueError("derivative class taxonomy differs from frozen V3 taxonomy")
         if self.review_criteria != tuple(sorted(set(self.review_criteria))):
@@ -190,7 +190,7 @@ class DerivativeScreeningReviewerRosterV3(StrictModel):
         return _require_rfc3339(value)
 
     @model_validator(mode="after")
-    def validate_roster(self) -> "DerivativeScreeningReviewerRosterV3":
+    def validate_roster(self) -> DerivativeScreeningReviewerRosterV3:
         reviewer_ids = tuple(item.curator_id for item in self.reviewers)
         if reviewer_ids != tuple(sorted(set(reviewer_ids))):
             raise ValueError("derivative reviewers must be ID-sorted and unique")
@@ -246,7 +246,7 @@ class DerivativeScreeningAssignmentV3(StrictModel):
         return _require_rfc3339(value)
 
     @model_validator(mode="after")
-    def validate_assignment(self) -> "DerivativeScreeningAssignmentV3":
+    def validate_assignment(self) -> DerivativeScreeningAssignmentV3:
         evidence_keys = tuple(
             (item.source_id, item.source_record_id, item.evidence_ref_id)
             for item in self.evidence_refs
@@ -308,7 +308,7 @@ class DerivativeScreeningRawReviewV3(StrictModel):
         return _require_rfc3339(value)
 
     @model_validator(mode="after")
-    def validate_review(self) -> "DerivativeScreeningRawReviewV3":
+    def validate_review(self) -> DerivativeScreeningRawReviewV3:
         if self.criterion_findings != tuple(sorted(set(self.criterion_findings))):
             raise ValueError("derivative review findings must be sorted and unique")
         _assert_addressed(
@@ -355,7 +355,7 @@ class DerivativeScreeningAdjudicationV3(StrictModel):
         return _require_rfc3339(value)
 
     @model_validator(mode="after")
-    def validate_adjudication(self) -> "DerivativeScreeningAdjudicationV3":
+    def validate_adjudication(self) -> DerivativeScreeningAdjudicationV3:
         if self.review_refs != tuple(sorted(set(self.review_refs))):
             raise ValueError("derivative adjudication review refs must be sorted and unique")
         _assert_addressed(
@@ -401,7 +401,7 @@ class DerivativeScreeningFinalJudgmentV3(StrictModel):
         return _require_rfc3339(value)
 
     @model_validator(mode="after")
-    def validate_judgment(self) -> "DerivativeScreeningFinalJudgmentV3":
+    def validate_judgment(self) -> DerivativeScreeningFinalJudgmentV3:
         if self.review_refs != tuple(sorted(set(self.review_refs))):
             raise ValueError("derivative final review refs must be sorted and unique")
         if (self.adjudication_ref is None) != (
@@ -458,7 +458,7 @@ class DerivativeScreeningReleaseV3(StrictModel):
         return _require_rfc3339(value)
 
     @model_validator(mode="after")
-    def validate_release(self) -> "DerivativeScreeningReleaseV3":
+    def validate_release(self) -> DerivativeScreeningReleaseV3:
         case_ids = tuple(item.case_id for item in self.cases)
         if case_ids != tuple(sorted(set(case_ids))):
             raise ValueError("derivative release cases must be case-ID sorted and unique")

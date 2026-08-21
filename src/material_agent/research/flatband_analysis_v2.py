@@ -14,12 +14,12 @@ the external authenticity of the opaque upstream Gold artifacts.
 
 from __future__ import annotations
 
+import math
+import random
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from datetime import datetime
 from enum import StrEnum
-import math
-import random
 from typing import Annotated, Literal, TypeVar
 
 from pydantic import Field, field_validator, model_validator
@@ -47,10 +47,10 @@ from material_agent.research.flatband_execution import (
     Top5ProjectionV1,
 )
 from material_agent.research.flatband_lifecycle import (
+    LOCKED_SECONDARY_FAMILY,
     DevelopmentMetricRowV1,
     FormalVerifierAttestationRefV1,
     LifecycleArtifactType,
-    LOCKED_SECONDARY_FAMILY,
     LockedPrimaryResultV1,
     LockedSecondaryHypothesis,
     LockedSecondaryResultV1,
@@ -69,7 +69,6 @@ from material_agent.research.flatband_metrics import (
     success_at_5,
 )
 
-
 ModelT = TypeVar("ModelT", bound=StrictModel)
 
 DEVELOPMENT_CASE_COUNT = 60
@@ -85,7 +84,7 @@ MAX_EXACT_SIGN_ASSIGNMENTS = 100_000
 
 def _timestamp(value: str) -> datetime:
     try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        parsed = datetime.fromisoformat(value)
     except ValueError as exc:
         raise ValueError("timestamp must be RFC3339-compatible") from exc
     if parsed.tzinfo is None or parsed.utcoffset() is None:
@@ -208,7 +207,7 @@ class AnalysisTraceEvidenceV2(StrictModel):
     chain_of_thought_consumed: Literal[False] = False
 
     @model_validator(mode="after")
-    def validate_evidence(self) -> "AnalysisTraceEvidenceV2":
+    def validate_evidence(self) -> AnalysisTraceEvidenceV2:
         config = _revalidate(self.system_config, SystemConfigV1)
         terminal = _revalidate(self.terminal_result, TerminalRunResultV1)
         projection = _revalidate(self.top5_projection, Top5ProjectionV1)
@@ -352,7 +351,7 @@ class FinalPositionJudgmentV2(StrictModel):
     raw_annotation_or_cot_included: Literal[False] = False
 
     @model_validator(mode="after")
-    def validate_judgment(self) -> "FinalPositionJudgmentV2":
+    def validate_judgment(self) -> FinalPositionJudgmentV2:
         present = self.packet_id is not None or self.packet_sha256 is not None
         if (self.packet_id is None) != (self.packet_sha256 is None):
             raise ValueError("position packet ID and SHA must be present together")
@@ -399,7 +398,7 @@ class AnalysisCellEvidenceV2(StrictModel):
     upstream_gold_exact_replay_required: Literal[True] = True
 
     @model_validator(mode="after")
-    def validate_cell(self) -> "AnalysisCellEvidenceV2":
+    def validate_cell(self) -> AnalysisCellEvidenceV2:
         trace_evidence = _revalidate(
             self.trace_evidence, AnalysisTraceEvidenceV2
         )
@@ -499,7 +498,7 @@ class CaseArmMetricRowV2(StrictModel):
     caller_supplied_scores_allowed: Literal[False] = False
 
     @model_validator(mode="after")
-    def validate_row(self) -> "CaseArmMetricRowV2":
+    def validate_row(self) -> CaseArmMetricRowV2:
         metrics = (
             self.andcg_at_5,
             self.evidence_valid_at_5,
@@ -561,7 +560,7 @@ class AnalysisInputReleaseV2(StrictModel):
         return value
 
     @model_validator(mode="after")
-    def validate_release(self) -> "AnalysisInputReleaseV2":
+    def validate_release(self) -> AnalysisInputReleaseV2:
         if self.split_context_ref.artifact_type is not AnalysisArtifactTypeV2.SPLIT_CONTEXT:
             raise ValueError("analysis split reference has the wrong type")
         if self.leakage_context_ref.artifact_type is not AnalysisArtifactTypeV2.LEAKAGE_CONTEXT:

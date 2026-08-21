@@ -6,10 +6,10 @@ import json
 from collections.abc import Iterator
 from typing import Any
 
-import material_agent.gateway as gateway
-from material_agent.gateway import PUBLIC_GATEWAY_MODELS
 from pydantic import BaseModel
 
+from material_agent import gateway
+from material_agent.gateway import PUBLIC_GATEWAY_MODELS
 
 SCHEMA_SHA256 = {
     "InspirationBudgetV1": "721f322e9ab7b1d91c775d0a540a445622b74619d2dc81adb1cb6848706a5450",

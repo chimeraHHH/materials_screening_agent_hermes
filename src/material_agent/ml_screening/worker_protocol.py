@@ -175,7 +175,7 @@ def parse_worker_stdout(
     except json.JSONDecodeError as exc:
         raise ValueError("worker stdout must contain exactly one JSON value") from exc
     if not isinstance(payload, dict):
-        raise ValueError("worker stdout JSON must be an object")
+        raise ValueError("worker stdout JSON must be an object")  # noqa: TRY004
     return WorkerResponse.model_validate(payload)
 
 

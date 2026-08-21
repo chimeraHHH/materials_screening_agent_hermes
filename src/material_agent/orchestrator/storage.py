@@ -9,9 +9,9 @@ from pathlib import Path
 from typing import Any
 
 from material_agent.orchestrator.models import (
+    ORCHESTRATOR_CONTRACT_VERSION,
     ApprovalStatus,
     ExternalJobRecord,
-    ORCHESTRATOR_CONTRACT_VERSION,
     RunStatus,
     StageExecutionRecord,
     StageId,
@@ -23,7 +23,6 @@ from material_agent.orchestrator.state_machine import (
     validate_run_transition,
     validate_stage_transition,
 )
-
 
 BUSINESS_SCHEMA_VERSION = 2
 LEGACY_BUSINESS_SCHEMA_VERSION = 1

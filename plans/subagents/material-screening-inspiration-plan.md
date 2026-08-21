@@ -21,6 +21,47 @@
 
 ## 0. 当前任务与真实基线
 
+### 0.0.1 2026-08-22：研究契约自动修复与通用操作覆盖
+
+本轮范围由用户明确为三项同时交付：
+
+1. 在现有严格 Schema 与 fail-closed 校验前保留原角色输出，在校验失败后调用一个有界、
+   可审计的 DeepSeek contract-repair agent；首批只覆盖已在六路真实生产测试复现的约束族
+   遗漏、query constraint-ID 覆盖和 native lead 引用错误，不允许修改用户阈值或生成新
+   科学结论；修复结果必须再次通过同一个确定性校验器，并持久化 hash 与调用收据；
+2. 将 run-local reasoned operator 从 substitution/strain/vacancy/intercalation/layer slide
+   扩展到载流子掺杂、静电栅控、磁近邻和 vdW 异质结构型。非结构型操作只编译为计算
+   条件计划，不生成 CIF；异质结构型必须绑定两个真实数据库父结构，未解析 registry、
+   界面间距或层匹配时保持 `PLANNED`/`REQUIRES_REVIEW`，不宣称性质；
+3. 清理仓库 Ruff 历史债务并建立显式、可重复的 lint 配置。机械修复后逐项处理剩余高
+   信号问题；测试/fixture 中有意使用私有 API 或宽异常边界时只允许窄作用域说明，不以
+   全局禁用掩盖错误。
+
+验收标准：自动修复成功、两次失败后继续 fail-closed、修复 checkpoint 可恢复；新增操作
+均有严格参数模型、run-local spec、prior/validator IDs、编译审计和负例；`ruff check src
+tests`、相关定向测试、完整离线 Gate、`pip check` 与 `git diff --check` 可复现通过，或对
+与本轮无关且已存在的阻塞给出精确收据。
+
+实施状态（2026-08-22）：
+
+- [x] research graph v7 新增 `contract_repair` runner 与逐次 `ResearchRepairRecordV1`；只在
+  三类确定性门禁失败后进入，最多两次，保留原/修复 hash、错误、receipt 和可恢复
+  `*-repaired` checkpoint；两次失败抛出原门禁错误，不进入后续科学角色；
+- [x] `softchem-operator-registry-v2` 由 5 类扩到 9 类。载流子与栅控生成无 CIF 的
+  `ReasonedConditionPlanV1`；磁近邻与 vdW 异质结构还绑定两个真实父 CIF、二维诊断和
+  保守失配 prior，专用 builder/计算完成前不产生结构或性质结论；
+- [x] 以 Ruff 0.16.3 对历史高信号集合完成 1050→0 收敛；修复未定义类型、循环闭包、
+  测试包导入、无效表达式、时区兼容写法和导入排序。138 个宽异常/兼容异常类型/异步
+  fixture 边界使用逐行 `noqa`，无全局 ignore；
+- [x] 定向新增能力测试 `54 passed`，跨模块回归 `118 passed`，非 flat-band 完整离线
+  集合 `1184 passed, 20 skipped, 440 deselected`，contract/artifact 独立回归 `13 passed`；
+  `ruff check src tests`、`pip check`、`git diff --check` 与差异密钥模式扫描通过；
+- [ ] 全量单进程 Gate 在修复历史裸 test-module import 后不再 collection-fail，但 private
+  flat-band formal fixture 的单例重放仍超过 8 分钟；一次全量尝试在 34:12 人工终止，终止
+  前 `514 passed, 19 skipped`。该私有 benchmark 的高成本重放和既有
+  `flatband_structure_grouping`/spglib 环境差异继续由其独立 CI shard 跟踪，不影响本轮
+  Hermes contract-repair/operator 证据边界。
+
 ### 0.0 2026-08-19 当前任务：通用材料灵感研究循环
 
 本轮明确替代“在固定 TiS2→TiSe2 路径上最小补齐”的做法。目标是在 Hermes 顶层交互与

@@ -55,7 +55,6 @@ from material_agent.research.flatband_main import (
     assert_main_phase_authorization_exact_v1,
 )
 
-
 ModelT = TypeVar("ModelT", bound=StrictModel)
 
 _FORMAL_SOURCE_PHASES = frozenset(
@@ -98,7 +97,7 @@ _MINUS_ROLE = {
     ),
 }
 def _timestamp(value: str) -> datetime:
-    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    parsed = datetime.fromisoformat(value)
     if parsed.tzinfo is None or parsed.utcoffset() is None:
         raise ValueError("timestamp must include a UTC offset")
     return parsed
@@ -290,7 +289,7 @@ class MainPhaseExecutionCellEvidenceV1(StrictModel):
     scientific_conclusion: Literal[False] = False
 
     @model_validator(mode="after")
-    def validate_cell(self) -> "MainPhaseExecutionCellEvidenceV1":
+    def validate_cell(self) -> MainPhaseExecutionCellEvidenceV1:
         budget = _revalidate(self.budget_manifest, BudgetManifestV1)
         config = _revalidate(self.system_config, SystemConfigV1)
         terminal = _revalidate(self.terminal_result, TerminalRunResultV1)
@@ -483,7 +482,7 @@ class MainPhaseExecutionReleaseV1(StrictModel):
         return value
 
     @model_validator(mode="after")
-    def validate_release(self) -> "MainPhaseExecutionReleaseV1":
+    def validate_release(self) -> MainPhaseExecutionReleaseV1:
         authorization = _revalidate(
             self.phase_authorization, MainPhaseAuthorizationReleaseV1
         )

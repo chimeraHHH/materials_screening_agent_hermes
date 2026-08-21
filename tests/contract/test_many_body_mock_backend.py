@@ -12,14 +12,13 @@ from material_agent.many_body import (
     CancelResult,
     EvidenceLevel,
     JobStatus,
+    ManyBodyRequest,
     MockBackendError,
     MockManyBodyBackend,
-    ManyBodyRequest,
-    package_content_hash,
     SolverValidationStatus,
+    package_content_hash,
 )
 from material_agent.many_body.models import EffectiveModelPackage
-
 
 ROOT = Path(__file__).parents[1] / "fixtures/contracts/agent04-v1"
 

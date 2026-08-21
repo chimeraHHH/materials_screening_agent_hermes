@@ -23,7 +23,6 @@ from .models import (
 )
 from .research_catalog import research_catalog_hash, research_entry
 
-
 REGISTRY_VERSION = "many-body-capability-registry/v1"
 REGISTRY_URI = "artifact://registry/many-body-capability-registry-v1.json"
 
@@ -49,20 +48,20 @@ def _capability_payload(capability: SolverCapability) -> dict[str, Any]:
 def build_registry() -> CapabilityRegistry:
     """Return the immutable, built-in task-3 registry."""
 
-    common = dict(
-        supported_model_families=(ModelFamily.SINGLE_BAND_HUBBARD,),
-        supported_geometry_types=(GeometryType.FINITE_GRAPH,),
-        supported_dimensions=(1, 2),
-        supports_real_hopping=True,
-        supports_complex_hopping=False,
-        supports_soc=False,
-        supported_interaction_kinds=(InteractionKind.ONSITE_HUBBARD_U,),
-        supported_ensembles=("CANONICAL",),
-        supported_temperatures=("ZERO_T",),
-        supported_boundaries=(BoundaryCondition.OPEN, BoundaryCondition.PERIODIC),
-        max_sites=4,
-        max_active_orbitals=4,
-    )
+    common = {
+        "supported_model_families": (ModelFamily.SINGLE_BAND_HUBBARD,),
+        "supported_geometry_types": (GeometryType.FINITE_GRAPH,),
+        "supported_dimensions": (1, 2),
+        "supports_real_hopping": True,
+        "supports_complex_hopping": False,
+        "supports_soc": False,
+        "supported_interaction_kinds": (InteractionKind.ONSITE_HUBBARD_U,),
+        "supported_ensembles": ("CANONICAL",),
+        "supported_temperatures": ("ZERO_T",),
+        "supported_boundaries": (BoundaryCondition.OPEN, BoundaryCondition.PERIODIC),
+        "max_sites": 4,
+        "max_active_orbitals": 4,
+    }
     raw = (
         SolverCapability(
             solver_id="mock-many-body/v1",

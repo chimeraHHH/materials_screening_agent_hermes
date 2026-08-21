@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 from material_agent.many_body.mock_backend import MockManyBodyBackend
@@ -9,9 +8,7 @@ from material_agent.orchestrator.models import StageCapability, StageId
 from material_agent.orchestrator.runners import StageRunnerRegistry
 from material_agent.orchestrator.runtime import OrchestratorRuntime
 from material_agent.retrieval.storage import LocalArtifactStore
-
 from tests.integration.test_orchestrator_p01 import _complete_source_run
-
 
 FIXTURE = Path(__file__).parents[1] / "fixtures/contracts/agent04-v1/one-dimensional-hubbard.json"
 

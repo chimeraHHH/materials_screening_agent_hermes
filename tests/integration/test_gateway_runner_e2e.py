@@ -356,7 +356,7 @@ async def _real_stdio_restart_scenario(workspace: Path) -> None:
         env=environment,
     )
 
-    with open(os.devnull, "w", encoding="utf-8") as error_log:
+    with open(os.devnull, "w", encoding="utf-8") as error_log:  # noqa: ASYNC230
         async with stdio_client(parameters, errlog=error_log) as streams:
             async with ClientSession(*streams) as session:
                 await session.initialize()
@@ -416,7 +416,7 @@ async def _real_stdio_restart_scenario(workspace: Path) -> None:
                 }
                 run_id = started_body["run_id"]
 
-    with open(os.devnull, "w", encoding="utf-8") as error_log:
+    with open(os.devnull, "w", encoding="utf-8") as error_log:  # noqa: ASYNC230
         async with stdio_client(parameters, errlog=error_log) as streams:
             async with ClientSession(*streams) as session:
                 await session.initialize()

@@ -29,7 +29,6 @@ from material_agent.inspiration.transformations import (
     SubstitutionExecutionRequestV1,
 )
 
-
 SMACT_PRIOR_GATE_SCHEMA_VERSION = "smact-inorganic-prior-gate-v1"
 SMACT_PRIOR_POLICY_SCHEMA_VERSION = "smact-inorganic-prior-policy-v1"
 

@@ -9,9 +9,10 @@ import os
 import signal
 import subprocess
 import time
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Sequence
+from typing import Any
 
 from material_agent.gateway.companion import CompletedInspirationRunRecovery
 from material_agent.gateway.errors import AdapterContractError
@@ -24,7 +25,6 @@ from material_agent.gateway.models import (
     canonical_json_bytes,
 )
 from material_agent.gateway.service import GatewayActionWorker
-
 
 _INPUT_SCHEMA = "materials-gateway-supervised-action-input-v1"
 _OUTPUT_SCHEMA = "materials-gateway-supervised-action-output-v1"
@@ -597,12 +597,12 @@ class GatewayActionProcessSupervisor:
                         self._terminate(process)
                     else:
                         self._kill_remaining_group(process)
-                except BaseException as exc:  # safety cleanup before propagation
+                except BaseException as exc:  # safety cleanup before propagation  # noqa: BLE001
                     cleanup_error = exc
                     self._force_kill_and_reap(process)
             try:
                 self._cleanup_protocol(input_path, output_path)
-            except BaseException as exc:  # cleanup is part of the security boundary
+            except BaseException as exc:  # cleanup is part of the security boundary  # noqa: BLE001
                 if cleanup_error is None:
                     cleanup_error = exc
             if cleanup_error is not None:
@@ -906,7 +906,7 @@ class GatewayActionProcessSupervisor:
             pass
         try:
             process.wait(timeout=1)
-        except BaseException:
+        except BaseException:  # noqa: BLE001, S110
             # There is no safer local escalation beyond SIGKILL + wait.  The
             # caller will surface the original cleanup failure and exit.
             pass

@@ -11,8 +11,8 @@ from material_agent.inspiration.extractors import (
     ExtractionLimits,
     ExtractionTier,
     FetchedBody,
-    extract_document,
     extract_crossref_metadata,
+    extract_document,
     extract_html_document,
     extract_jats_document,
     extract_jsonld_document,
@@ -24,8 +24,8 @@ from material_agent.inspiration.passages import (
     PASSAGE_SELECTOR_SNAPSHOT,
     PassageSelectionConfig,
     normalize_text,
-    selection_config_from_policy,
     select_passage_drafts,
+    selection_config_from_policy,
 )
 from material_agent.inspiration.policy import PassageBudgetV1
 

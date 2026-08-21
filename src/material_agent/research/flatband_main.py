@@ -51,12 +51,11 @@ from material_agent.research.flatband_leakage import (
     structure_grouping_case_universe_sha256_v2,
 )
 
-
 ModelT = TypeVar("ModelT", bound=StrictModel)
 
 
 def _timestamp(value: str) -> datetime:
-    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    parsed = datetime.fromisoformat(value)
     if parsed.tzinfo is None or parsed.utcoffset() is None:
         raise ValueError("timestamp must include a UTC offset")
     return parsed
@@ -150,7 +149,7 @@ class MainSamplingPolicyReleaseV1(StrictModel):
         return value
 
     @model_validator(mode="after")
-    def validate_release(self) -> "MainSamplingPolicyReleaseV1":
+    def validate_release(self) -> MainSamplingPolicyReleaseV1:
         _assert_addressed(
             self,
             id_field="release_id",
@@ -211,7 +210,7 @@ class MainCapacityPolicyV1(StrictModel):
         return value
 
     @model_validator(mode="after")
-    def validate_policy(self) -> "MainCapacityPolicyV1":
+    def validate_policy(self) -> MainCapacityPolicyV1:
         expected_pairs = (
             self.authorized_union_candidate_count
             * (self.authorized_union_candidate_count - 1)
@@ -298,7 +297,7 @@ class MainStructureUnionMemberV1(StrictModel):
     ]
 
     @model_validator(mode="after")
-    def validate_member(self) -> "MainStructureUnionMemberV1":
+    def validate_member(self) -> MainStructureUnionMemberV1:
         keys = tuple(item.case_id for item in self.cases)
         _require_sorted_unique(keys, "Main structure-union member cases")
         if self.case_universe_sha256 != canonical_sha256(
@@ -340,7 +339,7 @@ class MainStructureUnionVerifierAttestationV1(StrictModel):
         return value
 
     @model_validator(mode="after")
-    def validate_attestation(self) -> "MainStructureUnionVerifierAttestationV1":
+    def validate_attestation(self) -> MainStructureUnionVerifierAttestationV1:
         _assert_addressed(
             self,
             id_field="attestation_id",
@@ -377,7 +376,7 @@ class MainStructureUnionReleaseV1(StrictModel):
         return value
 
     @model_validator(mode="after")
-    def validate_release(self) -> "MainStructureUnionReleaseV1":
+    def validate_release(self) -> MainStructureUnionReleaseV1:
         capacity = _revalidate(self.capacity_policy, MainCapacityPolicyV1)
         members = tuple(
             _revalidate(item, MainStructureUnionMemberV1) for item in self.members
@@ -648,7 +647,7 @@ class MainCandidatePoolReleaseV1(StrictModel):
         return value
 
     @model_validator(mode="after")
-    def validate_release(self) -> "MainCandidatePoolReleaseV1":
+    def validate_release(self) -> MainCandidatePoolReleaseV1:
         gate = _revalidate(
             self.terminal_pilot_gate, FormalPilotAgreementGateReleaseV1
         )
@@ -801,7 +800,7 @@ class MainEligibilityRawAuditV1(StrictModel):
         return value
 
     @model_validator(mode="after")
-    def validate_audit(self) -> "MainEligibilityRawAuditV1":
+    def validate_audit(self) -> MainEligibilityRawAuditV1:
         if not self.evidence_refs:
             raise ValueError("Main eligibility raw audit requires source evidence")
         keys = tuple(
@@ -851,7 +850,7 @@ class MainEligibilityAdjudicationV1(StrictModel):
         return value
 
     @model_validator(mode="after")
-    def validate_adjudication(self) -> "MainEligibilityAdjudicationV1":
+    def validate_adjudication(self) -> MainEligibilityAdjudicationV1:
         if self.raw_statuses[0] is self.raw_statuses[1]:
             raise ValueError("consensus Main eligibility audits cannot be adjudicated")
         keys = tuple((item.artifact_id, item.artifact_sha256) for item in self.raw_audit_refs)
@@ -886,7 +885,7 @@ class MainEligibilityDecisionV1(StrictModel):
         return value
 
     @model_validator(mode="after")
-    def validate_decision(self) -> "MainEligibilityDecisionV1":
+    def validate_decision(self) -> MainEligibilityDecisionV1:
         _assert_addressed(
             self,
             id_field="decision_id",
@@ -1153,7 +1152,7 @@ class MainEligibilityReleaseV1(StrictModel):
         return value
 
     @model_validator(mode="after")
-    def validate_release(self) -> "MainEligibilityReleaseV1":
+    def validate_release(self) -> MainEligibilityReleaseV1:
         pool = _revalidate(self.candidate_pool_release, MainCandidatePoolReleaseV1)
         raw = tuple(_revalidate(item, MainEligibilityRawAuditV1) for item in self.raw_audits)
         adjudications = tuple(
@@ -1308,7 +1307,7 @@ class MainFrozenCaseReleaseV1(StrictModel):
         return value
 
     @model_validator(mode="after")
-    def validate_release(self) -> "MainFrozenCaseReleaseV1":
+    def validate_release(self) -> MainFrozenCaseReleaseV1:
         eligibility = _revalidate(
             self.eligibility_release, MainEligibilityReleaseV1
         )
@@ -1421,7 +1420,6 @@ def build_main_frozen_case_release_v1(
     frozen_at: str,
 ) -> MainFrozenCaseReleaseV1:
     eligibility = _revalidate(eligibility_release, MainEligibilityReleaseV1)
-    pool = eligibility.candidate_pool_release
     split = _revalidate(split_manifest, BenchmarkSplitManifestV2)
     leakage = _revalidate(leakage_release, LeakageComponentReleaseV3)
     counts = _component_counts(split, leakage)
@@ -1542,7 +1540,7 @@ class MainPreBudgetClosureReleaseV1(StrictModel):
         return value
 
     @model_validator(mode="after")
-    def validate_release(self) -> "MainPreBudgetClosureReleaseV1":
+    def validate_release(self) -> MainPreBudgetClosureReleaseV1:
         frozen = _revalidate(self.frozen_case_release, MainFrozenCaseReleaseV1)
         pool = frozen.eligibility_release.candidate_pool_release
         calibration = _revalidate(
@@ -1796,7 +1794,7 @@ class MainPhaseAuthorizationReleaseV1(StrictModel):
         return value
 
     @model_validator(mode="after")
-    def validate_release(self) -> "MainPhaseAuthorizationReleaseV1":
+    def validate_release(self) -> MainPhaseAuthorizationReleaseV1:
         pre_budget = _revalidate(
             self.pre_budget_closure_release,
             MainPreBudgetClosureReleaseV1,
@@ -1877,8 +1875,8 @@ def assert_main_phase_authorization_exact_v1(
 
 
 __all__ = [
-    "MainCapacityPolicyV1",
     "MainCandidatePoolReleaseV1",
+    "MainCapacityPolicyV1",
     "MainEligibilityAdjudicationV1",
     "MainEligibilityArtifactRefV1",
     "MainEligibilityDecisionV1",
@@ -1895,16 +1893,16 @@ __all__ = [
     "MainStructureUnionOwnerV1",
     "MainStructureUnionReleaseV1",
     "MainStructureUnionVerifierAttestationV1",
-    "assert_main_capacity_policy_exact_v1",
     "assert_main_candidate_pool_exact_v1",
+    "assert_main_capacity_policy_exact_v1",
     "assert_main_eligibility_exact_v1",
     "assert_main_frozen_case_exact_v1",
     "assert_main_phase_authorization_exact_v1",
     "assert_main_pre_budget_closure_exact_v1",
     "assert_main_sampling_policy_exact_v1",
     "assert_main_structure_union_release_exact_v1",
-    "build_main_capacity_policy_v1",
     "build_main_candidate_pool_release_v1",
+    "build_main_capacity_policy_v1",
     "build_main_eligibility_adjudication_v1",
     "build_main_eligibility_raw_audit_v1",
     "build_main_eligibility_release_v1",

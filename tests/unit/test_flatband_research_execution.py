@@ -1,16 +1,25 @@
 from __future__ import annotations
 
-import importlib.util
 import hashlib
+import importlib.util
 import json
-from pathlib import Path
 import sys
+from pathlib import Path
 from typing import Any, TypeVar
 
 import pytest
 from pydantic import ValidationError
 
-from material_agent.inspiration.models import StrictModel, canonical_sha256, deterministic_id
+from material_agent.inspiration.models import (
+    StrictModel,
+    canonical_sha256,
+    deterministic_id,
+)
+from material_agent.research.flatband_cases import (
+    assert_pre_run_eligibility_precedes_execution_v3,
+    build_pilot_pre_budget_closure_release_v3,
+    build_pre_run_eligibility_release_v3,
+)
 from material_agent.research.flatband_contracts import (
     AssertedEvidenceRelation,
     BenchmarkSplit,
@@ -38,18 +47,17 @@ from material_agent.research.flatband_execution import (
     ExecutionMatrixV1,
     ExecutionMatrixV2,
     ExecutionPhase,
-    ExecutionReleaseV2,
     ExecutionReleaseV3,
     LlmExecutionIdentityV1,
     LlmInvocationReceiptV1,
     LocalModelExecutionIdentityV1,
     LocalModelInvocationReceiptV1,
-    MissingPositionReason,
-    LogicalQueryReceiptV1,
     LogicalPageReceiptV1,
-    MetadataSpanPreimageV1,
+    LogicalQueryReceiptV1,
     MetadataModelInputRefV1,
     MetadataRecordReceiptV1,
+    MetadataSpanPreimageV1,
+    MissingPositionReason,
     NormalizedMetadataArtifactV1,
     NormalizedMetadataFieldV1,
     PhysicalHopReceiptV1,
@@ -73,14 +81,6 @@ from material_agent.research.flatband_execution import (
     replay_source_usage,
     source_policy_values,
 )
-from material_agent.research.flatband_cases import (
-    EligibilityRawAuditV3,
-    PreRunEligibilityReleaseV3,
-    assert_pre_run_eligibility_precedes_execution_v3,
-    build_pilot_pre_budget_closure_release_v3,
-    build_pre_run_eligibility_release_v3,
-)
-
 
 ModelT = TypeVar("ModelT", bound=StrictModel)
 SHA_A = "a" * 64

@@ -27,7 +27,6 @@ from material_agent.inspiration.models import (
 )
 from material_agent.inspiration.policy import PassageBudgetV1
 
-
 _TOKEN_RE = re.compile(
     r"[\u3400-\u9fff]|[A-Za-z0-9]+(?:[-'][A-Za-z0-9]+)*|[^\W\d_]+",
     re.UNICODE,

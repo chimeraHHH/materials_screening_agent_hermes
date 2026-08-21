@@ -18,9 +18,9 @@ def requirement_view_from_payload(payload: dict[str, Any]) -> MLRequirementView:
     hard = payload.get("hard_constraints")
     budget = payload.get("budget")
     if not isinstance(hard, dict):
-        raise ValueError("Requirement hard_constraints must be an object")
+        raise ValueError("Requirement hard_constraints must be an object")  # noqa: TRY004
     if not isinstance(budget, dict):
-        raise ValueError("Requirement budget must be an object")
+        raise ValueError("Requirement budget must be an object")  # noqa: TRY004
 
     return MLRequirementView(
         requirement_id=payload["requirement_id"],
@@ -44,7 +44,7 @@ def _range_or_none(value: Any, default_unit: str) -> NumericRange | None:
     if value is None:
         return None
     if not isinstance(value, dict):
-        raise ValueError("numeric Requirement constraint must be an object")
+        raise ValueError("numeric Requirement constraint must be an object")  # noqa: TRY004
     normalized = dict(value)
     normalized.setdefault("unit", default_unit)
     return NumericRange.model_validate(normalized)

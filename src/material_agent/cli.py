@@ -39,14 +39,13 @@ from material_agent.retrieval.query import (
     retrieval_policy_for_source,
     select_retrieval_source,
 )
+from material_agent.retrieval.runner import RetrievalStageRunner
 from material_agent.retrieval.source_recommendation import recommend_retrieval_source
 from material_agent.retrieval.source_requirements import compile_source_requirement
-from material_agent.retrieval.runner import RetrievalStageRunner
 from material_agent.retrieval.storage import (
     LocalArtifactStore,
     canonical_json_bytes,
 )
-
 
 RETRIEVAL_SOURCE_CHOICES = tuple(
     source.value for source in sorted(USER_SELECTABLE_SOURCES, key=lambda item: item.value)
@@ -504,14 +503,20 @@ def _property_predict_command(arguments: argparse.Namespace) -> int:
 def _property_predict_chain_command(arguments: argparse.Namespace) -> int:
     """Run ct-UAE and ALIGNN from the same verified relaxed structure."""
 
-    from material_agent.ml_screening.alignn_client import AlignnFlowRunner, AlignnSubprocessClient
+    from material_agent.ml_screening.alignn_client import (
+        AlignnFlowRunner,
+        AlignnSubprocessClient,
+    )
     from material_agent.ml_screening.alignn_models import AlignnInferenceRequest
     from material_agent.ml_screening.models import ArtifactPointer
     from material_agent.ml_screening.property_client import (
         PropertyPredictionFlowRunner,
         PropertySubprocessClient,
     )
-    from material_agent.ml_screening.property_models import PropertyModelRegistry, PropertyPredictionRequest
+    from material_agent.ml_screening.property_models import (
+        PropertyModelRegistry,
+        PropertyPredictionRequest,
+    )
     from material_agent.ml_screening.property_pipeline import (
         PostRelaxationPropertyChain,
         PropertyPredictionChainRequest,
@@ -572,7 +577,7 @@ def _property_predict_chain_command(arguments: argparse.Namespace) -> int:
 def _read_json_file(path: Path) -> dict[str, Any]:
     payload = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(payload, dict):
-        raise ValueError(f"JSON file must contain an object: {path}")
+        raise ValueError(f"JSON file must contain an object: {path}")  # noqa: TRY004
     return payload
 
 
@@ -581,7 +586,7 @@ def _parse_json_argument(value: str) -> dict[str, Any]:
         return _read_json_file(Path(value[1:]))
     payload = json.loads(value)
     if not isinstance(payload, dict):
-        raise ValueError("--json must contain a JSON object")
+        raise ValueError("--json must contain a JSON object")  # noqa: TRY004
     return payload
 
 

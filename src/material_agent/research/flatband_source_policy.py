@@ -22,7 +22,6 @@ from material_agent.inspiration.models import (
 )
 from material_agent.research.flatband_contracts import FlatBandBenchmarkCaseV1
 
-
 ModelT = TypeVar("ModelT", bound=StrictModel)
 
 
@@ -335,7 +334,7 @@ class CaseSourcePolicyAttestationV2(StrictModel):
     scientific_conclusion: Literal[False] = False
 
     @model_validator(mode="after")
-    def validate_attestation(self) -> "CaseSourcePolicyAttestationV2":
+    def validate_attestation(self) -> CaseSourcePolicyAttestationV2:
         role_values = tuple(item.value for item in self.usage_roles)
         if role_values != tuple(sorted(set(role_values))):
             raise ValueError("source usage roles must be sorted and unique")
@@ -520,11 +519,11 @@ def assert_case_source_policy_v2(
 
 
 __all__ = [
+    "_RECORD_LEVEL_COMPATIBLE_LICENSES",
+    "_SOURCE_CATALOG_POLICY_V1",
     "CaseSourcePolicyAttestationV2",
     "SourceCatalogDecision",
     "SourceUseRole",
-    "_RECORD_LEVEL_COMPATIBLE_LICENSES",
-    "_SOURCE_CATALOG_POLICY_V1",
     "assert_case_source_policy_v2",
     "build_case_source_policy_attestation_v2",
 ]

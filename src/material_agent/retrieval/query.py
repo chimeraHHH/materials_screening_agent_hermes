@@ -22,7 +22,6 @@ from material_agent.retrieval.mp_screening import (
 )
 from material_agent.retrieval.source_requirements import compile_source_requirement
 
-
 CORE_FIELDS = [
     "material_id",
     "formula_pretty",

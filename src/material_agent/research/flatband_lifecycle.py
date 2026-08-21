@@ -29,12 +29,12 @@ their existence/authenticity must be established by their owning verifier.
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
-from datetime import datetime
-from enum import StrEnum
 import hashlib
 import hmac
 import re
+from collections.abc import Mapping, Sequence
+from datetime import datetime
+from enum import StrEnum
 from typing import Annotated, Literal, TypeVar
 
 from pydantic import Field, field_validator, model_validator
@@ -48,7 +48,6 @@ from material_agent.inspiration.models import (
     deterministic_id,
 )
 from material_agent.research.flatband_execution import ResearchSystemId
-
 
 ModelT = TypeVar("ModelT", bound=StrictModel)
 Score = Annotated[float, Field(ge=0.0, le=1.0, allow_inf_nan=False)]
@@ -73,7 +72,7 @@ LOCKED_UNRESOLVABLE_MAX_RATE = 0.05
 
 def _timestamp(value: str) -> datetime:
     try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        parsed = datetime.fromisoformat(value)
     except ValueError as exc:
         raise ValueError("timestamp must be RFC3339-compatible") from exc
     if parsed.tzinfo is None or parsed.utcoffset() is None:
@@ -248,7 +247,7 @@ class ReleaseAuthorityPolicyV1(StrictModel):
         return value
 
     @model_validator(mode="after")
-    def validate_policy(self) -> "ReleaseAuthorityPolicyV1":
+    def validate_policy(self) -> ReleaseAuthorityPolicyV1:
         roles = tuple(item.role.value for item in self.authorities)
         if roles != tuple(sorted(role.value for role in ReleaseAuthorityRoleV1)):
             raise ValueError("release authority policy must freeze each role exactly once")
@@ -358,7 +357,7 @@ class FormalVerifierAttestationRefV1(StrictModel):
         return value
 
     @model_validator(mode="after")
-    def validate_attestation(self) -> "FormalVerifierAttestationRefV1":
+    def validate_attestation(self) -> FormalVerifierAttestationRefV1:
         _require_ref_type(
             self.analysis_input_ref,
             LifecycleArtifactType.ANALYSIS_INPUT_V2,
@@ -425,7 +424,7 @@ class DevelopmentMetricRowV1(StrictModel):
     scientific_conclusion: Literal[False] = False
 
     @model_validator(mode="after")
-    def validate_row(self) -> "DevelopmentMetricRowV1":
+    def validate_row(self) -> DevelopmentMetricRowV1:
         _require_ref_type(
             self.analysis_input_ref,
             LifecycleArtifactType.ANALYSIS_INPUT_V2,
@@ -648,7 +647,7 @@ class DevelopmentPromotionReleaseV1(StrictModel):
         return value
 
     @model_validator(mode="after")
-    def validate_release(self) -> "DevelopmentPromotionReleaseV1":
+    def validate_release(self) -> DevelopmentPromotionReleaseV1:
         if tuple(item.system_id for item in self.metric_rows) != _ABLATION_ORDER:
             raise ValueError("promotion rows must exactly cover B0/E1/E2-A/E2-B/E3")
         if len({item.row_id for item in self.metric_rows}) != len(self.metric_rows):
@@ -797,7 +796,7 @@ class SystemConfigurationRefV1(StrictModel):
     configuration_ref: TypedArtifactRefV1
 
     @model_validator(mode="after")
-    def validate_ref(self) -> "SystemConfigurationRefV1":
+    def validate_ref(self) -> SystemConfigurationRefV1:
         _require_ref_type(
             self.configuration_ref,
             LifecycleArtifactType.SYSTEM_CONFIGURATION,
@@ -850,7 +849,7 @@ class FusionConfigurationReleaseV1(StrictModel):
         return value
 
     @model_validator(mode="after")
-    def validate_release(self) -> "FusionConfigurationReleaseV1":
+    def validate_release(self) -> FusionConfigurationReleaseV1:
         _require_ref_type(
             self.promotion_release_ref,
             LifecycleArtifactType.DEVELOPMENT_PROMOTION_RELEASE,
@@ -975,7 +974,7 @@ class DevelopmentFusionGateReleaseV1(StrictModel):
         return value
 
     @model_validator(mode="after")
-    def validate_gate(self) -> "DevelopmentFusionGateReleaseV1":
+    def validate_gate(self) -> DevelopmentFusionGateReleaseV1:
         _require_ref_type(
             self.promotion_release_ref,
             LifecycleArtifactType.DEVELOPMENT_PROMOTION_RELEASE,
@@ -1129,7 +1128,7 @@ class LockedLabelSealV1(StrictModel):
         return value
 
     @model_validator(mode="after")
-    def validate_seal(self) -> "LockedLabelSealV1":
+    def validate_seal(self) -> LockedLabelSealV1:
         _require_ref_type(
             self.split_manifest_ref,
             LifecycleArtifactType.BENCHMARK_SPLIT_MANIFEST,
@@ -1227,7 +1226,7 @@ class LockedTestAuthorizationReleaseV1(StrictModel):
         return value
 
     @model_validator(mode="after")
-    def validate_authorization(self) -> "LockedTestAuthorizationReleaseV1":
+    def validate_authorization(self) -> LockedTestAuthorizationReleaseV1:
         for ref, expected, label in (
             (
                 self.promotion_release_ref,
@@ -1438,7 +1437,7 @@ class LockedAnnotationUnsealReleaseV1(StrictModel):
         return value
 
     @model_validator(mode="after")
-    def validate_unseal(self) -> "LockedAnnotationUnsealReleaseV1":
+    def validate_unseal(self) -> LockedAnnotationUnsealReleaseV1:
         for ref, expected, label in (
             (
                 self.authorization_ref,
@@ -1520,7 +1519,7 @@ class LockedUnsealLedgerReleaseV1(StrictModel):
         return value
 
     @model_validator(mode="after")
-    def validate_ledger(self) -> "LockedUnsealLedgerReleaseV1":
+    def validate_ledger(self) -> LockedUnsealLedgerReleaseV1:
         _require_ref_type(
             self.authorization_ref,
             LifecycleArtifactType.LOCKED_TEST_AUTHORIZATION,
@@ -1811,7 +1810,7 @@ class ProtocolDeviationReleaseV1(StrictModel):
         return value
 
     @model_validator(mode="after")
-    def validate_deviation(self) -> "ProtocolDeviationReleaseV1":
+    def validate_deviation(self) -> ProtocolDeviationReleaseV1:
         if self.unseal_ref is not None:
             _require_ref_type(
                 self.unseal_ref,
@@ -1924,7 +1923,7 @@ class LockedPrimaryResultV1(StrictModel):
     primary_has_no_holm_adjustment: Literal[True] = True
 
     @model_validator(mode="after")
-    def validate_result(self) -> "LockedPrimaryResultV1":
+    def validate_result(self) -> LockedPrimaryResultV1:
         checks = (
             self.equal_iid_ood_andcg_delta >= LOCKED_PRIMARY_ANDCG_MIN_DELTA,
             self.bootstrap_lower > 0.0
@@ -2029,7 +2028,7 @@ class LockedSecondaryResultV1(StrictModel):
     not_applicable_uses_conservative_p_one: bool
 
     @model_validator(mode="after")
-    def validate_result(self) -> "LockedSecondaryResultV1":
+    def validate_result(self) -> LockedSecondaryResultV1:
         is_leave_one = self.hypothesis in {
             LockedSecondaryHypothesis.FUSION_VS_FUSION_MINUS_E1,
             LockedSecondaryHypothesis.FUSION_VS_FUSION_MINUS_E2,
@@ -2208,7 +2207,7 @@ class SupportedClaimV1(StrictModel):
         return value
 
     @model_validator(mode="after")
-    def validate_frozen_statement(self) -> "SupportedClaimV1":
+    def validate_frozen_statement(self) -> SupportedClaimV1:
         if self.statement != _CLAIM_STATEMENT_BY_KIND[self.claim_kind]:
             raise ValueError("claim statement must use its frozen public template")
         return self
@@ -2259,7 +2258,7 @@ class ClaimSupportReleaseV1(StrictModel):
         return value
 
     @model_validator(mode="after")
-    def validate_release(self) -> "ClaimSupportReleaseV1":
+    def validate_release(self) -> ClaimSupportReleaseV1:
         for ref, expected, label in (
             (
                 self.promotion_release_ref,
@@ -2590,7 +2589,7 @@ class PublicBenchmarkProjectionV1(StrictModel):
     scientific_conclusion: Literal[False] = False
 
     @model_validator(mode="after")
-    def validate_projection(self) -> "PublicBenchmarkProjectionV1":
+    def validate_projection(self) -> PublicBenchmarkProjectionV1:
         _require_ref_type(
             self.claim_support_ref,
             LifecycleArtifactType.CLAIM_SUPPORT_RELEASE,
@@ -2779,7 +2778,7 @@ class ScientificReviewerIdentityAttestationV1(StrictModel):
         return value
 
     @model_validator(mode="after")
-    def validate_identity(self) -> "ScientificReviewerIdentityAttestationV1":
+    def validate_identity(self) -> ScientificReviewerIdentityAttestationV1:
         _assert_addressed(
             self,
             id_field="identity_attestation_id",
@@ -2923,7 +2922,7 @@ class ReleaseControlAttestationV1(StrictModel):
         return value
 
     @model_validator(mode="after")
-    def validate_control(self) -> "ReleaseControlAttestationV1":
+    def validate_control(self) -> ReleaseControlAttestationV1:
         _require_ref_type(
             self.public_projection_ref,
             LifecycleArtifactType.PUBLIC_BENCHMARK_PROJECTION,
@@ -3056,7 +3055,7 @@ class ScientificReviewerAttestationV1(StrictModel):
         return value
 
     @model_validator(mode="after")
-    def validate_attestation(self) -> "ScientificReviewerAttestationV1":
+    def validate_attestation(self) -> ScientificReviewerAttestationV1:
         identity = _revalidate(
             self.reviewer_identity_attestation,
             ScientificReviewerIdentityAttestationV1,
@@ -3263,7 +3262,7 @@ class ScientificReviewReleaseV1(StrictModel):
         return value
 
     @model_validator(mode="after")
-    def validate_review(self) -> "ScientificReviewReleaseV1":
+    def validate_review(self) -> ScientificReviewReleaseV1:
         _require_ref_type(
             self.claim_support_ref,
             LifecycleArtifactType.CLAIM_SUPPORT_RELEASE,
@@ -3457,7 +3456,7 @@ class PublicReleaseAuthorizationV1(StrictModel):
         return value
 
     @model_validator(mode="after")
-    def validate_authorization(self) -> "PublicReleaseAuthorizationV1":
+    def validate_authorization(self) -> PublicReleaseAuthorizationV1:
         for ref, expected, label in (
             (
                 self.claim_support_ref,
@@ -3679,7 +3678,7 @@ class PublicBenchmarkResultReleaseV1(StrictModel):
         return value
 
     @model_validator(mode="after")
-    def validate_release(self) -> "PublicBenchmarkResultReleaseV1":
+    def validate_release(self) -> PublicBenchmarkResultReleaseV1:
         _require_ref_type(
             self.authorization_ref,
             LifecycleArtifactType.PUBLIC_RELEASE_AUTHORIZATION,
@@ -3779,23 +3778,23 @@ def assert_public_benchmark_result_release_exact_replay_v1(
 
 
 __all__ = [
-    "ClaimKind",
-    "ClaimSupportReleaseV1",
-    "ConfirmatoryValidity",
     "DEVELOPMENT_ANDCG_MIN_DELTA",
     "DEVELOPMENT_DUPLICATE_MAX_DELTA",
     "DEVELOPMENT_EVIDENCE_MIN_DELTA",
     "DEVELOPMENT_SUCCESS_MIN_DELTA",
+    "E2_B_MIN_INCREMENT_OVER_E2_A",
+    "LOCKED_SECONDARY_FAMILY",
+    "ClaimKind",
+    "ClaimSupportReleaseV1",
+    "ConfirmatoryValidity",
     "DevelopmentFusionGateReleaseV1",
     "DevelopmentGateDecisionV1",
     "DevelopmentMetricRowV1",
     "DevelopmentPromotionReleaseV1",
     "E2SelectionReason",
-    "E2_B_MIN_INCREMENT_OVER_E2_A",
     "FormalVerifierAttestationRefV1",
     "FusionConfigurationReleaseV1",
     "LifecycleArtifactType",
-    "LOCKED_SECONDARY_FAMILY",
     "LockedAnnotationUnsealReleaseV1",
     "LockedLabelSealV1",
     "LockedPrimaryResultV1",
@@ -3824,15 +3823,16 @@ __all__ = [
     "SystemConfigurationRefV1",
     "TypedArtifactRefV1",
     "VerifiedPayloadKind",
+    "append_locked_unseal_ledger_v1",
     "assert_claim_support_release_exact_replay_v1",
     "assert_development_fusion_gate_release_exact_replay_v1",
     "assert_development_metric_row_exact_replay_v1",
     "assert_development_promotion_release_exact_replay_v1",
     "assert_fusion_configuration_release_exact_replay_v1",
     "assert_locked_annotation_unseal_exact_replay_v1",
-    "assert_locked_unseal_ledger_exact_replay_v1",
     "assert_locked_label_seal_exact_replay_v1",
     "assert_locked_test_authorization_exact_replay_v1",
+    "assert_locked_unseal_ledger_exact_replay_v1",
     "assert_protocol_deviation_exact_replay_v1",
     "assert_public_benchmark_projection_exact_replay_v1",
     "assert_public_benchmark_result_release_exact_replay_v1",
@@ -3847,11 +3847,11 @@ __all__ = [
     "build_development_promotion_release_v1",
     "build_fusion_configuration_release_v1",
     "build_locked_annotation_unseal_release_v1",
-    "build_locked_unseal_ledger_genesis_v1",
     "build_locked_label_seal_v1",
     "build_locked_primary_result_v1",
     "build_locked_secondary_family_v1",
     "build_locked_test_authorization_release_v1",
+    "build_locked_unseal_ledger_genesis_v1",
     "build_protocol_deviation_release_v1",
     "build_public_benchmark_projection_v1",
     "build_public_benchmark_result_release_v1",
@@ -3861,7 +3861,6 @@ __all__ = [
     "build_scientific_review_release_v1",
     "build_scientific_reviewer_attestation_v1",
     "build_scientific_reviewer_identity_attestation_v1",
-    "append_locked_unseal_ledger_v1",
     "locked_unseal_ledger_ref_v1",
     "supported_claim_v1",
     "typed_artifact_ref_v1",

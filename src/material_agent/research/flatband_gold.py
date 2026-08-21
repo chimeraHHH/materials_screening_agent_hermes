@@ -24,6 +24,23 @@ from material_agent.inspiration.models import (
     canonical_sha256,
     deterministic_id,
 )
+from material_agent.research.flatband_blinding import (
+    EvidenceExcerptV1,
+    EvidenceExcerptV2,
+    PrivateIdentityMapV1,
+    PrivateIdentityMapV2,
+    ReviewerManifestV1,
+    ReviewerManifestV2,
+    assert_reviewer_release_exact_coverage,
+    assert_reviewer_release_exact_coverage_v2,
+    assert_reviewer_release_legacy_v2_upstream_exact_coverage,
+)
+from material_agent.research.flatband_cases import (
+    FrozenCaseReleaseV3,
+    PreRunEligibilityReleaseV1,
+    PreRunEligibilityReleaseV2,
+    PreRunEligibilityReleaseV3,
+)
 from material_agent.research.flatband_contracts import (
     AdjudicationStatus,
     AnnotationRefV1,
@@ -40,28 +57,11 @@ from material_agent.research.flatband_contracts import (
     MechanismFamily,
     RawExpertAnnotationV1,
 )
-from material_agent.research.flatband_blinding import (
-    EvidenceExcerptV1,
-    EvidenceExcerptV2,
-    PrivateIdentityMapV1,
-    PrivateIdentityMapV2,
-    ReviewerManifestV1,
-    ReviewerManifestV2,
-    assert_reviewer_release_exact_coverage,
-    assert_reviewer_release_exact_coverage_v2,
-    assert_reviewer_release_legacy_v2_upstream_exact_coverage,
-)
 from material_agent.research.flatband_execution import (
     ExecutionPhase,
     ExecutionReleaseV1,
     ExecutionReleaseV2,
     ExecutionReleaseV3,
-)
-from material_agent.research.flatband_cases import (
-    FrozenCaseReleaseV3,
-    PreRunEligibilityReleaseV1,
-    PreRunEligibilityReleaseV2,
-    PreRunEligibilityReleaseV3,
 )
 from material_agent.research.flatband_experts import (
     ExpertStudyRegistryV1,
@@ -84,7 +84,7 @@ ModelT = TypeVar("ModelT", bound=StrictModel)
 
 def _timestamp(value: str) -> datetime:
     try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        parsed = datetime.fromisoformat(value)
     except ValueError as exc:  # pragma: no cover - shared defensive boundary
         raise ValueError("timestamp must be RFC3339-compatible") from exc
     if parsed.tzinfo is None or parsed.utcoffset() is None:
@@ -187,7 +187,7 @@ class FinalExpertJudgmentV1(StrictModel):
     scientific_conclusion: Literal[False] = False
 
     @model_validator(mode="after")
-    def validate_judgment(self) -> "FinalExpertJudgmentV1":
+    def validate_judgment(self) -> FinalExpertJudgmentV1:
         raw_keys = tuple(
             (item.reviewer_id, item.annotation_id, item.annotation_sha256)
             for item in self.raw_annotations
@@ -303,7 +303,7 @@ class ExpertDuplicateClusterV1(StrictModel):
     ]
 
     @model_validator(mode="after")
-    def validate_members(self) -> "ExpertDuplicateClusterV1":
+    def validate_members(self) -> ExpertDuplicateClusterV1:
         _require_sorted_unique(self.blinded_unit_ids, "duplicate cluster members")
         return self
 
@@ -345,7 +345,7 @@ class RawExpertDuplicatePartitionV1(StrictModel):
         return value
 
     @model_validator(mode="after")
-    def validate_partition(self) -> "RawExpertDuplicatePartitionV1":
+    def validate_partition(self) -> RawExpertDuplicatePartitionV1:
         _validate_duplicate_clusters(case_id=self.case_id, clusters=self.clusters)
         _assert_addressed(
             self,
@@ -393,7 +393,7 @@ class ExpertDuplicatePartitionV1(StrictModel):
         return value
 
     @model_validator(mode="after")
-    def validate_partition(self) -> "ExpertDuplicatePartitionV1":
+    def validate_partition(self) -> ExpertDuplicatePartitionV1:
         _require_sorted_unique(self.reviewer_ids, "partition reviewers")
         partition_keys = tuple(
             (item.reviewer_id, item.partition_id, item.partition_sha256)
@@ -487,7 +487,7 @@ class FinalGoldReleaseV1(StrictModel):
         return value
 
     @model_validator(mode="after")
-    def validate_release(self) -> "FinalGoldReleaseV1":
+    def validate_release(self) -> FinalGoldReleaseV1:
         judgment_ids = tuple(item.blinded_unit_id for item in self.judgments)
         _require_sorted_unique(judgment_ids, "final judgment unit IDs")
         judgments_by_case: dict[str, list[FinalExpertJudgmentV1]] = {}
@@ -994,7 +994,7 @@ class FinalExpertJudgmentV2(StrictModel):
     scientific_conclusion: Literal[False] = False
 
     @model_validator(mode="after")
-    def validate_judgment(self) -> "FinalExpertJudgmentV2":
+    def validate_judgment(self) -> FinalExpertJudgmentV2:
         artifact_ids = tuple(item.reviewer_id for item in self.reviewer_artifacts)
         _require_sorted_unique(artifact_ids, "reviewer artifact reviewer IDs")
         raw_ids = tuple(item.reviewer_id for item in self.raw_annotations)
@@ -1103,7 +1103,7 @@ class ReviewerDuplicateClusterV2(StrictModel):
     ]
 
     @model_validator(mode="after")
-    def validate_members(self) -> "ReviewerDuplicateClusterV2":
+    def validate_members(self) -> ReviewerDuplicateClusterV2:
         _require_sorted_unique(self.blinded_unit_ids, "reviewer duplicate members")
         return self
 
@@ -1115,7 +1115,7 @@ class PooledDuplicateClusterV2(StrictModel):
     ]
 
     @model_validator(mode="after")
-    def validate_members(self) -> "PooledDuplicateClusterV2":
+    def validate_members(self) -> PooledDuplicateClusterV2:
         _require_sorted_unique(self.pooled_unit_ids, "pooled duplicate members")
         return self
 
@@ -1165,7 +1165,7 @@ class RawDuplicatePartitionV2(StrictModel):
         return value
 
     @model_validator(mode="after")
-    def validate_partition(self) -> "RawDuplicatePartitionV2":
+    def validate_partition(self) -> RawDuplicatePartitionV2:
         keys = tuple((item.blinded_unit_ids, item.cluster_id) for item in self.clusters)
         if keys != tuple(sorted(set(keys))):
             raise ValueError("reviewer duplicate clusters must be member-sorted and unique")
@@ -1231,7 +1231,7 @@ class DuplicatePartitionAdjudicationV2(StrictModel):
         return value
 
     @model_validator(mode="after")
-    def validate_adjudication(self) -> "DuplicatePartitionAdjudicationV2":
+    def validate_adjudication(self) -> DuplicatePartitionAdjudicationV2:
         _require_sorted_unique(self.pooled_unit_ids, "adjudicated pooled universe")
         ref_keys = tuple(
             (item.reviewer_id, item.partition_id, item.partition_sha256)
@@ -1304,7 +1304,7 @@ class FinalDuplicatePartitionV2(StrictModel):
         return value
 
     @model_validator(mode="after")
-    def validate_partition(self) -> "FinalDuplicatePartitionV2":
+    def validate_partition(self) -> FinalDuplicatePartitionV2:
         _require_sorted_unique(self.reviewer_ids, "partition reviewers")
         ref_keys = tuple(
             (item.reviewer_id, item.partition_id, item.partition_sha256)
@@ -1372,7 +1372,7 @@ class FinalGoldReleaseV2(StrictModel):
         return value
 
     @model_validator(mode="after")
-    def validate_release(self) -> "FinalGoldReleaseV2":
+    def validate_release(self) -> FinalGoldReleaseV2:
         unit_ids = tuple(item.pooled_unit_id for item in self.judgments)
         _require_sorted_unique(unit_ids, "final pooled unit IDs")
         by_case: dict[str, list[FinalExpertJudgmentV2]] = {}
@@ -2740,17 +2740,17 @@ def assert_final_gold_closure_legacy_v1(
 
 __all__ = [
     "AdjudicationRefV1",
-    "DuplicatePartitionProvenance",
-    "DuplicatePartitionRefV1",
-    "ExpertDuplicateClusterV1",
-    "ExpertDuplicatePartitionV1",
-    "FinalExpertJudgmentV1",
-    "FinalGoldReleaseV1",
-    "DuplicatePartitionRefV2",
     "DuplicatePartitionAdjudicationRefV2",
     "DuplicatePartitionAdjudicationV2",
+    "DuplicatePartitionProvenance",
+    "DuplicatePartitionRefV1",
+    "DuplicatePartitionRefV2",
+    "ExpertDuplicateClusterV1",
+    "ExpertDuplicatePartitionV1",
     "FinalDuplicatePartitionV2",
+    "FinalExpertJudgmentV1",
     "FinalExpertJudgmentV2",
+    "FinalGoldReleaseV1",
     "FinalGoldReleaseV2",
     "GoldProvenance",
     "PooledDuplicateClusterV2",

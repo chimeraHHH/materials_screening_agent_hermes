@@ -32,6 +32,10 @@ from material_agent.research.flatband_execution import (
     Top5ProjectionV1,
     replay_source_usage,
 )
+from material_agent.research.flatband_main_execution import (
+    MainPhaseExecutionCellEvidenceV1,
+    MainPhaseExecutionReleaseV1,
+)
 from material_agent.research.flatband_main_gold import (
     MainExpertIdentityCommitmentV1,
     MainExpertRegistryRefV1,
@@ -48,21 +52,24 @@ from material_agent.research.flatband_main_gold import (
     build_main_review_unit,
     build_main_reviewer_materials,
 )
-from material_agent.research.flatband_main_execution import (
-    MainPhaseExecutionCellEvidenceV1,
-    MainPhaseExecutionReleaseV1,
-)
 from tests.unit.test_flatband_research_analysis_v2 import (
     _cell as _analysis_cell,
+)
+from tests.unit.test_flatband_research_analysis_v2 import (
     _config as _analysis_config,
+)
+from tests.unit.test_flatband_research_analysis_v2 import (
     _identified as _analysis_identified,
+)
+from tests.unit.test_flatband_research_analysis_v2 import (
     _trace as _analysis_trace,
 )
 from tests.unit.test_flatband_research_arm_runtime import (
     _config as _arm_config,
+)
+from tests.unit.test_flatband_research_arm_runtime import (
     _trace as _arm_trace,
 )
-
 
 KEY = b"main-gold-test-ephemeral-key!!" + b"xx"
 EXPERT_ANNOTATION_KEYS = {

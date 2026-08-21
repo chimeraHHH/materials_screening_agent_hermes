@@ -10,15 +10,16 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
+from collections.abc import Mapping
 from enum import StrEnum
 from pathlib import Path
-from typing import Any, Literal, Mapping
+from typing import Any, Literal
 
 from pydantic import Field, field_validator, model_validator
 from pymatgen.core import Structure
 
 from material_agent.ml_screening.models import ArtifactRef, Sha256, StrictFrozenModel
-
 
 AGENT02_BENCHMARK_VERSION = "agent02-benchmark-v1"
 
@@ -114,7 +115,7 @@ def _validate_finite_numeric_tree(value: Any) -> Any:
         numeric = float(value)
     except (TypeError, ValueError) as exc:
         raise ValueError("reference observable values must be finite numbers") from exc
-    if numeric != numeric or numeric in (float("inf"), float("-inf")):
+    if math.isnan(numeric) or numeric in (float("inf"), float("-inf")):
         raise ValueError("reference observable values must be finite numbers")
     return value
 
@@ -301,7 +302,7 @@ def validate_reference_readiness(
             continue
         try:
             data = BenchmarkReferenceData.model_validate_json(payload)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             results.append(
                 BenchmarkReadinessCase(
                     case_id=case.case_id,

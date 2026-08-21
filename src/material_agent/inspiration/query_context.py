@@ -31,7 +31,6 @@ from material_agent.retrieval.models import (
     Requirement,
 )
 
-
 QUERY_CONTEXT_SCHEMA_VERSION = "inspiration-query-context-v2"
 
 

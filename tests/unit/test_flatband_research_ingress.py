@@ -11,7 +11,7 @@ from material_agent.research.flatband_ingress import (
 
 
 def _raw_annotation():
-    from test_flatband_research_contracts import _annotation
+    from tests.unit.test_flatband_research_contracts import _annotation
 
     return _annotation()
 

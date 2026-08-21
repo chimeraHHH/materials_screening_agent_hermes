@@ -7,7 +7,11 @@ import pytest
 from pydantic import ValidationError
 from pymatgen.core import Composition, Lattice, Structure
 
-from material_agent.inspiration.models import StrictModel, canonical_sha256, deterministic_id
+from material_agent.inspiration.models import (
+    StrictModel,
+    canonical_sha256,
+    deterministic_id,
+)
 from material_agent.research.flatband_contracts import (
     BenchmarkSplit,
     BenchmarkSplitManifestV1,
@@ -21,6 +25,25 @@ from material_agent.research.flatband_contracts import (
     SplitCaseRefV2,
     SplitManifestKind,
     TargetBandClass,
+)
+from material_agent.research.flatband_derivative_screening import (
+    DerivativeClass,
+    DerivativeScreeningReleaseV3,
+    build_derivative_screening_adjudication_v3,
+    build_derivative_screening_assignment_v3,
+    build_derivative_screening_policy_v3,
+    build_derivative_screening_raw_review_v3,
+    build_derivative_screening_release_v3,
+    build_derivative_screening_reviewer_roster_v3,
+    build_derivative_source_evidence_ref_v3,
+)
+from material_agent.research.flatband_execution import (
+    BudgetManifestV1,
+    ResearchSystemId,
+    SourceBudgetV1,
+    SourceVariant,
+    SystemConfigV1,
+    source_policy_values,
 )
 from material_agent.research.flatband_experts import (
     CalibrationCompletionV1,
@@ -51,39 +74,6 @@ from material_agent.research.flatband_experts import (
     build_private_expert_identity_attestation_v2,
     build_public_expert_identity_release_v2,
 )
-from material_agent.research.flatband_derivative_screening import (
-    DerivativeClass,
-    DerivativeScreeningReleaseV3,
-    build_derivative_screening_adjudication_v3,
-    build_derivative_screening_assignment_v3,
-    build_derivative_screening_policy_v3,
-    build_derivative_screening_raw_review_v3,
-    build_derivative_screening_release_v3,
-    build_derivative_screening_reviewer_roster_v3,
-    build_derivative_source_evidence_ref_v3,
-)
-from material_agent.research.flatband_execution import (
-    BudgetManifestV1,
-    ResearchSystemId,
-    SourceBudgetV1,
-    SourceVariant,
-    SystemConfigV1,
-    source_policy_values,
-)
-from material_agent.research.flatband_source_policy import (
-    SourceUseRole,
-    build_case_source_policy_attestation_v2,
-)
-from material_agent.research.flatband_structure_grouping import (
-    PreGroupCandidatePreimageV2,
-    StructureDimensionalityV2,
-    build_raw_structure_artifact_v2,
-    build_structure_grouping_case_input_v2,
-    finalize_structure_grouping_release_v2,
-    normalize_raw_structure_artifact_v2,
-    run_structure_grouping_computation_v2,
-    seal_structure_grouping_input_manifest_v2,
-)
 from material_agent.research.flatband_leakage import (
     LeakageAxis,
     LeakageAxisV3,
@@ -103,7 +93,20 @@ from material_agent.research.flatband_leakage import (
     derive_leakage_group_ids_v3,
     structure_grouping_case_universe_sha256_v2,
 )
-
+from material_agent.research.flatband_source_policy import (
+    SourceUseRole,
+    build_case_source_policy_attestation_v2,
+)
+from material_agent.research.flatband_structure_grouping import (
+    PreGroupCandidatePreimageV2,
+    StructureDimensionalityV2,
+    build_raw_structure_artifact_v2,
+    build_structure_grouping_case_input_v2,
+    finalize_structure_grouping_release_v2,
+    normalize_raw_structure_artifact_v2,
+    run_structure_grouping_computation_v2,
+    seal_structure_grouping_input_manifest_v2,
+)
 
 ModelT = TypeVar("ModelT", bound=StrictModel)
 GUIDE_SHA = "a" * 64
@@ -2069,7 +2072,7 @@ def test_formal_pilot_v2_rejects_legacy_release_chain_without_projection() -> No
 def _formal_v2_positive_upstream() -> dict[str, object]:
     """Build one globally disjoint calibration/benchmark V2 upstream chain."""
 
-    import test_flatband_research_cases as cases_fixture
+    from tests.unit import test_flatband_research_cases as cases_fixture
 
     base = cases_fixture._formal_v2_study()
     calibration_registry = _global_lineage_registry_v3()

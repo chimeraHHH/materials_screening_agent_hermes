@@ -17,7 +17,6 @@ import subprocess
 import sys
 from pathlib import Path, PurePosixPath
 
-
 PROTOCOL = "agent02-deeph-worker-v1"
 
 
@@ -34,7 +33,7 @@ def main(argv=None):
             artifact_root=Path(args.artifact_root),
             deeph_executable=Path(args.deeph_executable),
         )
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         response = {
             "schema_version": PROTOCOL,
             "operation_key": _operation_key_from_payload(locals().get("payload")),
@@ -43,9 +42,7 @@ def main(argv=None):
             "is_mock": _mock_from_payload(locals().get("payload")),
             "warnings": [],
             "errors": [
-                "DeepH worker failed closed: {0}: {1}".format(
-                    type(exc).__name__, str(exc)
-                )
+                f"DeepH worker failed closed: {type(exc).__name__}: {exc!s}"
             ],
         }
     sys.stdout.write(
@@ -137,17 +134,14 @@ def execute(payload, *, artifact_root, deeph_executable):
         [str(executable), "--config", str(inference_config)],
         cwd=str(work_dir),
         stdin=subprocess.DEVNULL,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        capture_output=True,
         timeout=int(limits["wall_time_seconds"]),
         check=False,
         env=environment,
     )
     if completed.returncode != 0:
         raise RuntimeError(
-            "deeph-inference exited with code {0}; diagnostics withheld".format(
-                completed.returncode
-            )
+            f"deeph-inference exited with code {completed.returncode}; diagnostics withheld"
         )
 
     metadata_path = sandbox / "execution-summary.json"
@@ -232,7 +226,7 @@ def _write_inference_config(
 
 def _validate_input(root, artifact):
     relative = _validate_relative(artifact["root_relative_path"])
-    if artifact["artifact_uri"] != "artifact://{0}".format(relative):
+    if artifact["artifact_uri"] != f"artifact://{relative}":
         raise ValueError("DeepH artifact URI/path mismatch")
     path = _resolve_relative(root, relative)
     if not path.is_file():
@@ -325,7 +319,7 @@ def _operation_key_from_payload(payload):
         value = payload["plan"]["operation_key"]
         if isinstance(value, str) and len(value) == 64:
             return value
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
     return "0" * 64
 
@@ -333,7 +327,7 @@ def _operation_key_from_payload(payload):
 def _mock_from_payload(payload):
     try:
         return bool(payload["plan"]["request"]["is_mock"])
-    except Exception:
+    except Exception:  # noqa: BLE001
         return True
 
 

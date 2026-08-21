@@ -36,7 +36,6 @@ from material_agent.research.flatband_leakage import (
     MechanismLineageCuratorDeclarationV3,
 )
 
-
 ModelT = TypeVar("ModelT", bound=StrictModel)
 CRITERIA = (
     "check-composition-ratio",

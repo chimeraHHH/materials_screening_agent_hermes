@@ -207,7 +207,7 @@ class SemanticScholarPublicAdapter:
         if api_key_resolver is not None and not callable(api_key_resolver):
             raise ValueError("api_key_resolver must be callable")
         if not callable(monotonic_clock):
-            raise ValueError("monotonic_clock must be callable")
+            raise ValueError("monotonic_clock must be callable")  # noqa: TRY004
         self.timeout_seconds = timeout_seconds
         self.api_key_resolver = api_key_resolver or (
             lambda: os.environ.get(SEMANTIC_SCHOLAR_API_KEY_ENV, "")

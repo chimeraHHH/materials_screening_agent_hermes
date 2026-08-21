@@ -31,15 +31,6 @@ from material_agent.inspiration.models import (
     canonical_sha256,
     deterministic_id,
 )
-from material_agent.research.flatband_contracts import (
-    AssertedEvidenceRelation,
-    Dimensionality,
-    FalsificationPlanV1,
-    FlatBandBenchmarkCaseV1,
-    HypothesisPacketV1,
-    MechanismFamily,
-    TargetBandClass,
-)
 from material_agent.research.flatband_cases import (
     FrozenCaseCandidateV1,
     FrozenCaseReleaseV3,
@@ -48,6 +39,15 @@ from material_agent.research.flatband_cases import (
     PreRunEligibilityReleaseV3,
     assert_pre_run_eligibility_precedes_execution,
     assert_pre_run_eligibility_precedes_execution_v2,
+)
+from material_agent.research.flatband_contracts import (
+    AssertedEvidenceRelation,
+    Dimensionality,
+    FalsificationPlanV1,
+    FlatBandBenchmarkCaseV1,
+    HypothesisPacketV1,
+    MechanismFamily,
+    TargetBandClass,
 )
 from material_agent.research.flatband_execution import (
     EvidenceLinkReceiptV1,
@@ -66,7 +66,6 @@ from material_agent.research.flatband_experts import (
     assert_expert_registry_covers_split,
     assert_expert_registry_covers_split_v2,
 )
-
 
 MAX_REVIEWER_EXCERPT_CHARS = 1_200
 MASKING_STATEMENT = "IDENTITY_MASKED_NOT_PERFECT_BLINDING"
@@ -99,7 +98,7 @@ class EvidenceRedistributionPolicy(StrEnum):
 
 def _require_timestamp(value: str) -> str:
     try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        parsed = datetime.fromisoformat(value)
     except ValueError as exc:
         raise ValueError("timestamp must be RFC3339-compatible") from exc
     if parsed.tzinfo is None or parsed.utcoffset() is None:
@@ -174,7 +173,7 @@ class EvidenceExcerptV1(StrictModel):
     redistribution_policy: EvidenceRedistributionPolicy
 
     @model_validator(mode="after")
-    def validate_excerpt(self) -> "EvidenceExcerptV1":
+    def validate_excerpt(self) -> EvidenceExcerptV1:
         if self.source_span_char_count != len(self.source_span_text):
             raise ValueError("source span char count does not match source text")
         if self.source_span_sha256 != _text_sha256(self.source_span_text):
@@ -220,7 +219,7 @@ class EvidenceExcerptV2(EvidenceExcerptV1):
     span_locator_sha256: Sha256
 
     @model_validator(mode="after")
-    def validate_v2_preimage_shape(self) -> "EvidenceExcerptV2":
+    def validate_v2_preimage_shape(self) -> EvidenceExcerptV2:
         encoded = self.source_span_text.encode("utf-8")
         if self.span_end_byte - self.span_start_byte != len(encoded):
             raise ValueError("V2 excerpt byte offsets do not match its source span")
@@ -248,7 +247,7 @@ class ReviewerEvidenceSpanV1(StrictModel):
     redistribution_policy: EvidenceRedistributionPolicy
 
     @model_validator(mode="after")
-    def validate_content(self) -> "ReviewerEvidenceSpanV1":
+    def validate_content(self) -> ReviewerEvidenceSpanV1:
         if self.excerpt_char_count != len(self.excerpt):
             raise ValueError("reviewer excerpt char count does not match text")
         semantic = self.model_dump(mode="python", exclude={"content_sha256"})
@@ -290,7 +289,7 @@ class ReviewerCaseProjectionV1(StrictModel):
     scientific_conclusion: Literal[False] = False
 
     @model_validator(mode="after")
-    def validate_projection(self) -> "ReviewerCaseProjectionV1":
+    def validate_projection(self) -> ReviewerCaseProjectionV1:
         for values, label in (
             (self.hard_constraints, "hard constraints"),
             (self.soft_preferences, "soft preferences"),
@@ -350,7 +349,7 @@ class ReviewerHypothesisPacketV1(StrictModel):
     scientific_conclusion: Literal[False] = False
 
     @model_validator(mode="after")
-    def validate_packet(self) -> "ReviewerHypothesisPacketV1":
+    def validate_packet(self) -> ReviewerHypothesisPacketV1:
         evidence_ids = tuple(item.reviewer_evidence_id for item in self.evidence)
         if len(evidence_ids) != len(set(evidence_ids)):
             raise ValueError("reviewer evidence IDs must be unique within a packet")
@@ -480,7 +479,7 @@ class ReviewerManifestV1(StrictModel):
         return _require_timestamp(value)
 
     @model_validator(mode="after")
-    def validate_manifest(self) -> "ReviewerManifestV1":
+    def validate_manifest(self) -> ReviewerManifestV1:
         if tuple(item.case_display_order for item in self.case_projections) != tuple(
             range(1, len(self.case_projections) + 1)
         ):
@@ -562,7 +561,7 @@ class PrivateIdentityMapV1(StrictModel):
         return _require_timestamp(value)
 
     @model_validator(mode="after")
-    def validate_map(self) -> "PrivateIdentityMapV1":
+    def validate_map(self) -> PrivateIdentityMapV1:
         case_keys = tuple(item.case_id for item in self.case_entries)
         if case_keys != tuple(sorted(set(case_keys))):
             raise ValueError("private case entries must be case-ID sorted and unique")
@@ -620,7 +619,7 @@ class ReviewerManifestV2(StrictModel):
         return _require_timestamp(value)
 
     @model_validator(mode="after")
-    def validate_manifest(self) -> "ReviewerManifestV2":
+    def validate_manifest(self) -> ReviewerManifestV2:
         if tuple(item.case_display_order for item in self.case_projections) != tuple(
             range(1, len(self.case_projections) + 1)
         ):
@@ -699,7 +698,7 @@ class PrivateIdentityMapV2(StrictModel):
         return _require_timestamp(value)
 
     @model_validator(mode="after")
-    def validate_map(self) -> "PrivateIdentityMapV2":
+    def validate_map(self) -> PrivateIdentityMapV2:
         case_keys = tuple(item.case_id for item in self.case_entries)
         if case_keys != tuple(sorted(set(case_keys))):
             raise ValueError("V2 private case entries must be sorted and unique")
@@ -751,7 +750,7 @@ class PostLabelOriginGuessV1(StrictModel):
         return _require_timestamp(value)
 
     @model_validator(mode="after")
-    def validate_guess(self) -> "PostLabelOriginGuessV1":
+    def validate_guess(self) -> PostLabelOriginGuessV1:
         if (self.guessed_system_id is None) != (self.confidence == 0):
             raise ValueError("an abstention requires zero confidence and vice versa")
         semantic = self.model_dump(
@@ -1167,8 +1166,8 @@ def build_reviewer_release(
         frozen.expert_registry_sha256,
     ) != (registry.registry_id, registry.registry_sha256):
         raise ValueError("eligibility binds a different expert registry")
-    if datetime.fromisoformat(sealed_at.replace("Z", "+00:00")) < datetime.fromisoformat(
-        release.assembled_at.replace("Z", "+00:00")
+    if datetime.fromisoformat(sealed_at) < datetime.fromisoformat(
+        release.assembled_at
     ):
         raise ValueError("reviewer release was sealed before execution assembly")
 
@@ -1560,8 +1559,8 @@ def assert_reviewer_release_exact_coverage(
         if manifest.renderer_sha256 != renderer_sha256:
             raise ValueError("reviewer manifest uses a different renderer")
         if datetime.fromisoformat(
-            manifest.sealed_at.replace("Z", "+00:00")
-        ) < datetime.fromisoformat(release.assembled_at.replace("Z", "+00:00")):
+            manifest.sealed_at
+        ) < datetime.fromisoformat(release.assembled_at):
             raise ValueError("reviewer manifest was sealed before execution assembly")
         if manifest.blinded_reviewer_id in blind_reviewer_ids:
             raise ValueError("reviewer manifests share a blinded reviewer identity")
@@ -2260,8 +2259,8 @@ def _build_reviewer_release_v2_core(
         registry = frozen.expert_registry
     if len(release.execution_matrix.split_manifest.cases) != 30:
         raise ValueError("formal V2 reviewer release requires the 30-case Pilot")
-    if datetime.fromisoformat(sealed_at.replace("Z", "+00:00")) < datetime.fromisoformat(
-        release.assembled_at.replace("Z", "+00:00")
+    if datetime.fromisoformat(sealed_at) < datetime.fromisoformat(
+        release.assembled_at
     ):
         raise ValueError("V2 reviewer release was sealed before execution assembly")
 
@@ -2723,23 +2722,23 @@ def assert_reviewer_release_legacy_v2_upstream_exact_coverage(
 
 
 __all__ = [
+    "MAX_REVIEWER_EXCERPT_CHARS",
     "EvidenceAccessPolicy",
     "EvidenceExcerptV1",
     "EvidenceExcerptV2",
     "EvidenceRedistributionPolicy",
     "EvidenceSpanScope",
     "EvidenceSpanType",
-    "MAX_REVIEWER_EXCERPT_CHARS",
     "PostLabelOriginGuessV1",
     "PrivateCaseMapEntryV1",
+    "PrivateEvidenceMapEntryV2",
     "PrivateIdentityMapV1",
     "PrivateIdentityMapV2",
     "PrivatePositionMapEntryV1",
     "PrivatePositionMapEntryV2",
-    "PrivateEvidenceMapEntryV2",
-    "ReviewerEvidenceSpanV1",
     "ReviewerCaseProjectionV1",
     "ReviewerCaseProjectionV2",
+    "ReviewerEvidenceSpanV1",
     "ReviewerHypothesisPacketV1",
     "ReviewerHypothesisPacketV2",
     "ReviewerManifestV1",

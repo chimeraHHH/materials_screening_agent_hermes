@@ -47,6 +47,6 @@ class DeterministicIdFactory:
         counter = self._counters.get(prefix, 0) + 1
         self._counters[prefix] = counter
         digest = hashlib.sha256(
-            f"{self.seed}:{prefix}:{counter}".encode("utf-8")
+            f"{self.seed}:{prefix}:{counter}".encode()
         ).hexdigest()[:16]
         return f"{prefix}-{digest}"

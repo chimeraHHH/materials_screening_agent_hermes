@@ -11,13 +11,11 @@ import hashlib
 import json
 import math
 from enum import StrEnum
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import Field, StringConstraints, field_validator, model_validator
-from typing_extensions import Annotated
 
 from material_agent.ml_screening.models import ArtifactPointer, StrictFrozenModel
-
 
 PROPERTY_REQUEST_VERSION = "agent02-property-request-v1"
 PROPERTY_REGISTRY_VERSION = "agent02-property-registry-v1"
@@ -73,7 +71,7 @@ class PropertyModelSpec(StrictFrozenModel):
     limitations: list[str] = Field(min_length=1)
 
     @model_validator(mode="after")
-    def validate_deployment(self) -> "PropertyModelSpec":
+    def validate_deployment(self) -> PropertyModelSpec:
         property_ids = [capability.property_id for capability in self.supported_properties]
         if len(property_ids) != len(set(property_ids)):
             raise ValueError("property model capabilities must have unique property IDs")
@@ -99,7 +97,7 @@ class PropertyModelRegistry(StrictFrozenModel):
     models: list[PropertyModelSpec] = Field(min_length=1)
 
     @model_validator(mode="after")
-    def validate_unique_model_ids(self) -> "PropertyModelRegistry":
+    def validate_unique_model_ids(self) -> PropertyModelRegistry:
         model_ids = [model.model_id for model in self.models]
         if len(model_ids) != len(set(model_ids)):
             raise ValueError("property model registry IDs must be unique")
@@ -123,7 +121,7 @@ class PropertyNeed(StrictFrozenModel):
         return value
 
     @model_validator(mode="after")
-    def validate_range(self) -> "PropertyNeed":
+    def validate_range(self) -> PropertyNeed:
         for value in (self.min_value, self.max_value):
             if value is not None and not math.isfinite(value):
                 raise ValueError("property need bounds must be finite")
@@ -157,7 +155,7 @@ class PropertyModelSelection(StrictFrozenModel):
     rejected_models: dict[str, str] = Field(default_factory=dict)
 
     @model_validator(mode="after")
-    def validate_pairing(self) -> "PropertyModelSelection":
+    def validate_pairing(self) -> PropertyModelSelection:
         if (self.selected_model is None) != (self.selected_capability is None):
             raise ValueError("selected model and capability must either both be set or both be null")
         return self

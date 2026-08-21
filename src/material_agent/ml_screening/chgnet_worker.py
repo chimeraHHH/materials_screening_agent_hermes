@@ -37,7 +37,6 @@ from material_agent.ml_screening.evidence import (
 )
 from material_agent.ml_screening.models import (
     ArtifactPointer,
-    EvidenceLevel,
     ExecutionStatus,
     MLCandidateResult,
     MLNumericArtifactMetadata,
@@ -72,7 +71,6 @@ from material_agent.ml_screening.resources import (
 from material_agent.ml_screening.runtime import run_with_mps_fallback
 from material_agent.ml_screening.worker_protocol import validate_worker_inputs
 
-
 _PACKAGE_NAMES = ("chgnet", "torch", "pymatgen", "ase", "numpy")
 
 
@@ -97,7 +95,7 @@ def main(argv: list[str] | None = None) -> int:
                 artifact_root=args.artifact_root,
                 package_lock_path=args.package_lock,
             )
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         # The parent maps nonzero exit and this bounded public diagnostic.  A
         # traceback is intentionally not exposed through the protocol.
         print(
@@ -207,8 +205,8 @@ def execute_request(
         candidate_result=result,
         produced_artifacts=produced,
         warnings=[
-            "CHGNet values are MLIP predictions, not formation energies, "
-            "convex-hull stability, DFT, or experimental evidence."
+            ("CHGNet values are MLIP predictions, not formation energies, "
+            "convex-hull stability, DFT, or experimental evidence.")
         ],
     )
     response.validate_against_request(request)
@@ -637,7 +635,7 @@ def _run_chgnet(structure: Structure, device: str) -> tuple[Any, Any]:
 def _clear_mps_cache() -> None:
     try:
         torch.mps.empty_cache()
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         # Cache cleanup is best-effort; the subsequent CPU execution remains
         # the sole fallback attempt and will surface any failure itself.
         pass

@@ -10,18 +10,18 @@ from typing import Any
 
 from pydantic import ValidationError
 
+from material_agent.integration.generic_research import (
+    GENERIC_RESEARCH_TOOL_NAME,
+    GenericMaterialsResearchService,
+    GenericResearchRunRequestV1,
+    generic_research_tool_manifest,
+)
 from material_agent.integration.research_pipeline import (
     RESEARCH_PIPELINE_SCHEMA_VERSION,
     RESEARCH_PIPELINE_TOOL_NAME,
     ResearchPipelineRunRequestV1,
     ResearchPipelineService,
     research_pipeline_tool_manifest,
-)
-from material_agent.integration.generic_research import (
-    GENERIC_RESEARCH_TOOL_NAME,
-    GenericMaterialsResearchService,
-    GenericResearchRunRequestV1,
-    generic_research_tool_manifest,
 )
 
 
@@ -69,7 +69,7 @@ class ResearchPipelineDispatcher:
                 if callable(submit)
                 else selected_service.run(request)
             )
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             code = getattr(exc, "code", None) or getattr(exc, "category", None)
             label = str(code or type(exc).__name__)
             raise ResearchPipelineDispatchError(

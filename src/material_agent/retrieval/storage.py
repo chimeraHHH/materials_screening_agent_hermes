@@ -7,8 +7,9 @@ import hashlib
 import json
 import os
 import tempfile
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 from material_agent.retrieval.models import ArtifactRef
 

@@ -24,7 +24,6 @@ from material_agent.inspiration.models import (
     deterministic_id,
 )
 
-
 SOURCE_CATALOG_V1_SHA256 = (
     "57c24de8f0cf616205b03ef16231def711f2dfa9fcac86d94beede9c01b0bb1f"
 )
@@ -202,7 +201,7 @@ class ExpertRole(StrEnum):
 
 def _require_rfc3339(value: str) -> str:
     try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        parsed = datetime.fromisoformat(value)
     except ValueError as exc:
         raise ValueError("timestamp must be RFC3339-compatible") from exc
     if parsed.tzinfo is None or parsed.utcoffset() is None:
@@ -269,7 +268,7 @@ class FlatBandEvidenceV1(StrictModel):
     scientific_conclusion: Literal[False] = False
 
     @model_validator(mode="after")
-    def validate_evidence(self) -> "FlatBandEvidenceV1":
+    def validate_evidence(self) -> FlatBandEvidenceV1:
         quantitative = self.bandwidth_e_v is not None
         if quantitative != (self.fermi_distance_e_v is not None):
             raise ValueError("bandwidth and Fermi distance must be present together")
@@ -331,7 +330,7 @@ class FlatBandBenchmarkCaseV1(StrictModel):
     scientific_conclusion: Literal[False] = False
 
     @model_validator(mode="after")
-    def validate_case(self) -> "FlatBandBenchmarkCaseV1":
+    def validate_case(self) -> FlatBandBenchmarkCaseV1:
         source_keys = tuple(
             (item.source_id, item.source_record_id) for item in self.source_records
         )
@@ -431,7 +430,7 @@ class HypothesisPacketV1(StrictModel):
     scientific_conclusion: Literal[False] = False
 
     @model_validator(mode="after")
-    def validate_packet(self) -> "HypothesisPacketV1":
+    def validate_packet(self) -> HypothesisPacketV1:
         for label, values in (
             ("required conditions", self.required_conditions),
             ("breaking conditions", self.breaking_conditions),
@@ -480,7 +479,7 @@ class SystemRankingV1(StrictModel):
     cost_ledger_sha256: Sha256
 
     @model_validator(mode="after")
-    def validate_ranking(self) -> "SystemRankingV1":
+    def validate_ranking(self) -> SystemRankingV1:
         ranks = tuple(item.selection_rank for item in self.ranked_packets)
         if ranks != tuple(range(1, len(self.ranked_packets) + 1)):
             raise ValueError("ranking positions must be contiguous from one")
@@ -526,7 +525,7 @@ class BlindedEvaluationUnitV1(StrictModel):
     ]
 
     @model_validator(mode="after")
-    def validate_contributions(self) -> "BlindedEvaluationUnitV1":
+    def validate_contributions(self) -> BlindedEvaluationUnitV1:
         keys = tuple(
             (
                 item.system_id,
@@ -549,7 +548,7 @@ class EvidenceJudgmentV1(StrictModel):
     reason_code: EvidenceReasonCode
 
     @model_validator(mode="after")
-    def validate_relation(self) -> "EvidenceJudgmentV1":
+    def validate_relation(self) -> EvidenceJudgmentV1:
         allowed_reasons = {
             ExpertEvidenceRelation.VALID_SUPPORT: {
                 EvidenceReasonCode.DIRECT_SCOPE_MATCH
@@ -600,7 +599,7 @@ class BridgeJudgmentV1(StrictModel):
     overall: BridgeVerdict
 
     @model_validator(mode="after")
-    def validate_overall(self) -> "BridgeJudgmentV1":
+    def validate_overall(self) -> BridgeJudgmentV1:
         core = (
             self.source_mechanism,
             self.shared_invariant,
@@ -680,15 +679,15 @@ class RawExpertAnnotationV1(StrictModel):
         return _require_rfc3339(value)
 
     @model_validator(mode="after")
-    def validate_annotation(self) -> "RawExpertAnnotationV1":
+    def validate_annotation(self) -> RawExpertAnnotationV1:
         link_ids = tuple(item.evidence_link_id for item in self.evidence_judgments)
         if link_ids != tuple(sorted(set(link_ids))):
             raise ValueError("evidence judgments must be link-ID sorted and unique")
         reason_values = tuple(item.value for item in self.hard_fail_reasons)
         if reason_values != tuple(sorted(set(reason_values))):
             raise ValueError("hard-fail reasons must be enum-value sorted and unique")
-        if datetime.fromisoformat(self.submitted_at.replace("Z", "+00:00")) < datetime.fromisoformat(
-            self.started_at.replace("Z", "+00:00")
+        if datetime.fromisoformat(self.submitted_at) < datetime.fromisoformat(
+            self.started_at
         ):
             raise ValueError("annotation submission precedes start")
 
@@ -809,7 +808,7 @@ class ExpertAdjudicationV1(StrictModel):
         return _require_rfc3339(value)
 
     @model_validator(mode="after")
-    def validate_adjudication(self) -> "ExpertAdjudicationV1":
+    def validate_adjudication(self) -> ExpertAdjudicationV1:
         annotation_keys = tuple(
             (item.reviewer_id, item.annotation_id, item.annotation_sha256)
             for item in self.raw_annotations
@@ -923,7 +922,7 @@ class SplitCaseRefV1(StrictModel):
     ]
 
     @model_validator(mode="after")
-    def validate_groups(self) -> "SplitCaseRefV1":
+    def validate_groups(self) -> SplitCaseRefV1:
         _require_sorted_unique(self.leakage_group_ids, "case leakage groups")
         return self
 
@@ -952,7 +951,7 @@ class BenchmarkSplitManifestV1(StrictModel):
     ] = ()
 
     @model_validator(mode="after")
-    def validate_manifest(self) -> "BenchmarkSplitManifestV1":
+    def validate_manifest(self) -> BenchmarkSplitManifestV1:
         case_ids = tuple(item.case_id for item in self.cases)
         if case_ids != tuple(sorted(set(case_ids))):
             raise ValueError("split cases must be case-ID sorted and unique")
@@ -984,7 +983,7 @@ class BenchmarkSplitManifestV1(StrictModel):
             split: tuple(case for case in self.cases if case.split is split)
             for split in actual
         }
-        for split, split_cases in cases_by_split.items():
+        for split_cases in cases_by_split.values():
             half = len(split_cases) // 2
             target_counts = {
                 value: sum(case.target_class is value for case in split_cases)
@@ -1064,7 +1063,7 @@ def mechanism_holdout_taxonomy_group_id(
     """
 
     if not isinstance(mechanism, MechanismFamily):
-        raise ValueError("mechanism holdout taxonomy requires MechanismFamily")
+        raise ValueError("mechanism holdout taxonomy requires MechanismFamily")  # noqa: TRY004
     return deterministic_id(
         "mechanism-holdout-taxonomy",
         {"mechanism_family": mechanism.value},
@@ -1095,7 +1094,7 @@ class SplitCaseRefV2(StrictModel):
     ] = ()
 
     @model_validator(mode="after")
-    def validate_groups(self) -> "SplitCaseRefV2":
+    def validate_groups(self) -> SplitCaseRefV2:
         _require_sorted_unique(
             self.independence_group_ids, "case independence groups"
         )
@@ -1155,7 +1154,7 @@ class BenchmarkSplitManifestV2(StrictModel):
     ] = ()
 
     @model_validator(mode="after")
-    def validate_manifest(self) -> "BenchmarkSplitManifestV2":
+    def validate_manifest(self) -> BenchmarkSplitManifestV2:
         case_ids = tuple(item.case_id for item in self.cases)
         if case_ids != tuple(sorted(set(case_ids))):
             raise ValueError("split cases must be case-ID sorted and unique")
@@ -1326,7 +1325,7 @@ class BlindingManifestV1(StrictModel):
         return _require_rfc3339(value)
 
     @model_validator(mode="after")
-    def validate_manifest(self) -> "BlindingManifestV1":
+    def validate_manifest(self) -> BlindingManifestV1:
         _require_sorted_unique(self.reviewer_ids, "blinded reviewer IDs")
         if self.adjudicator_id in self.reviewer_ids:
             raise ValueError("blinded adjudicator must differ from both reviewers")
@@ -1444,7 +1443,7 @@ class SourceRequestAllocationV1(StrictModel):
     cache_hits: Annotated[int, Field(ge=0, le=1_000)] = 0
 
     @model_validator(mode="after")
-    def validate_requests(self) -> "SourceRequestAllocationV1":
+    def validate_requests(self) -> SourceRequestAllocationV1:
         if self.actual_physical_requests > self.max_physical_requests:
             raise ValueError("actual source requests exceed their frozen allocation")
         return self
@@ -1466,7 +1465,7 @@ class LlmUseRecordV1(StrictModel):
     metadata_packet_limit: Annotated[int, Field(ge=0, le=20)] = 0
 
     @model_validator(mode="after")
-    def validate_llm(self) -> "LlmUseRecordV1":
+    def validate_llm(self) -> LlmUseRecordV1:
         identities = (
             self.provider,
             self.model,
@@ -1508,7 +1507,7 @@ class LocalSemanticModelUseV1(StrictModel):
     input_tokens: Annotated[int, Field(ge=0, le=1_000_000)] = 0
 
     @model_validator(mode="after")
-    def validate_local_model(self) -> "LocalSemanticModelUseV1":
+    def validate_local_model(self) -> LocalSemanticModelUseV1:
         identities = (
             self.bundle_sha256,
             self.tokenizer_sha256,
@@ -1563,7 +1562,7 @@ class ResearchRunLedgerV1(StrictModel):
         return _require_rfc3339(value)
 
     @model_validator(mode="after")
-    def validate_ledger(self) -> "ResearchRunLedgerV1":
+    def validate_ledger(self) -> ResearchRunLedgerV1:
         source_ids = tuple(item.source_id for item in self.source_allocations)
         if source_ids != tuple(sorted(set(source_ids))):
             raise ValueError("source allocations must be source-ID sorted and unique")
@@ -1618,7 +1617,7 @@ class ExpertRegistrationV1(StrictModel):
         return _require_rfc3339(value)
 
     @model_validator(mode="after")
-    def validate_registration(self) -> "ExpertRegistrationV1":
+    def validate_registration(self) -> ExpertRegistrationV1:
         _require_sorted_unique(self.domain_expertise, "expertise entries")
         _require_sorted_unique(self.conflict_disclosures, "conflict disclosures")
         return self
@@ -1638,7 +1637,7 @@ class ExpertRegistryV1(StrictModel):
     public_identity_mode: Literal["PSEUDONYMOUS"] = "PSEUDONYMOUS"
 
     @model_validator(mode="after")
-    def validate_registry(self) -> "ExpertRegistryV1":
+    def validate_registry(self) -> ExpertRegistryV1:
         expert_ids = tuple(item.expert_id for item in self.experts)
         if expert_ids != tuple(sorted(set(expert_ids))):
             raise ValueError("experts must be expert-ID sorted and unique")

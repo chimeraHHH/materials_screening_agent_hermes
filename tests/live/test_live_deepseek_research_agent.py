@@ -15,7 +15,6 @@ from material_agent.integration.generic_research import (
 )
 from material_agent.orchestrator.models import StrictModel
 
-
 pytestmark = pytest.mark.live_llm
 
 

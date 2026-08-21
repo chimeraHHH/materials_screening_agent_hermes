@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import hashlib
 import json
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal, TypeVar
 
@@ -18,16 +18,21 @@ from material_agent.inspiration.models import (
     deterministic_id,
 )
 from material_agent.research.flatband_cases import (
+    _SOURCE_CATALOG_POLICY_V1,
+    STRUCTURE_UNION_OWNER_CALIBRATION_V3,
+    STRUCTURE_UNION_OWNER_CURRENT_R1_FULL_POOL_V3,
+    STRUCTURE_UNION_OWNER_CURRENT_R2_FULL_POOL_V3,
+    STRUCTURE_UNION_OWNER_PRIOR_R1_FULL_POOL_V3,
     CandidateEligibilityAssignmentReleaseV3,
     CandidateEligibilityAssignmentV3,
     CandidatePoolReleaseV3,
-    CaseSourcePolicyAttestationV2,
     CaseEligibilityReasonCode,
     CaseEligibilityStatus,
+    CaseSourcePolicyAttestationV2,
     DerivativeEligibilityClassV3,
     DerivativeEvidenceRefV3,
-    EligibilityDecisionV1,
     EligibilityAdjudicationV3,
+    EligibilityDecisionV1,
     EligibilityRawAuditV3,
     FrozenCaseCandidateV1,
     FrozenCaseReleaseV1,
@@ -38,25 +43,18 @@ from material_agent.research.flatband_cases import (
     PreRunEligibilityReleaseV2,
     PreRunEligibilityReleaseV3,
     SourceUseRole,
-    STRUCTURE_UNION_OWNER_CALIBRATION_V3,
-    STRUCTURE_UNION_OWNER_CURRENT_R1_FULL_POOL_V3,
-    STRUCTURE_UNION_OWNER_CURRENT_R2_FULL_POOL_V3,
-    STRUCTURE_UNION_OWNER_PRIOR_R1_FULL_POOL_V3,
-    _SOURCE_CATALOG_POLICY_V1,
     assert_case_source_policy_v2,
     assert_pre_run_eligibility_ready,
     assert_pre_run_eligibility_ready_v2,
     assert_pre_run_eligibility_ready_v3,
     assert_pre_run_eligibility_sealed_before,
-    build_case_source_policy_attestation_v2,
     build_calibration_leakage_context_v3,
     build_candidate_eligibility_assignment_release_v3,
     build_candidate_pool_leakage_context_v3,
-    build_candidate_eligibility_assignment_v3,
     build_candidate_pool_release_v3,
-    build_eligibility_decision,
+    build_case_source_policy_attestation_v2,
     build_eligibility_adjudication_v3,
-    build_eligibility_raw_audit_v3,
+    build_eligibility_decision,
     build_frozen_case_candidate,
     build_frozen_case_candidate_v3,
     build_frozen_case_release,
@@ -67,6 +65,93 @@ from material_agent.research.flatband_cases import (
     build_pre_run_eligibility_release_v2,
     build_pre_run_eligibility_release_v3,
     frozen_case_slot_id,
+)
+from material_agent.research.flatband_contracts import (
+    SOURCE_CATALOG_V1_SHA256,
+    BandwidthScope,
+    BenchmarkSplit,
+    BenchmarkSplitManifestV1,
+    BenchmarkSplitManifestV2,
+    Dimensionality,
+    EvidenceClaimType,
+    ExpertRole,
+    FlatBandBenchmarkCaseV1,
+    FlatBandEvidenceV1,
+    MagneticOrder,
+    MechanismFamily,
+    ObservedBandClass,
+    SocState,
+    SourceRecordRefV1,
+    SplitCaseRefV1,
+    SplitCaseRefV2,
+    SplitManifestKind,
+    TargetBandClass,
+)
+from material_agent.research.flatband_derivative_screening import (
+    DerivativeClass,
+    build_derivative_screening_assignment_v3,
+    build_derivative_screening_policy_v3,
+    build_derivative_screening_raw_review_v3,
+    build_derivative_screening_release_v3,
+    build_derivative_screening_reviewer_roster_v3,
+    build_derivative_source_evidence_ref_v3,
+)
+from material_agent.research.flatband_experts import (
+    CalibrationCompletionV1,
+    CalibrationCompletionV2,
+    CalibrationSetManifestV2,
+    CaseConflictAssessmentV1,
+    CaseExpertAssignmentV1,
+    ConflictReasonCode,
+    ConflictStatus,
+    ExpertProfileV1,
+    ExpertStudyRegistryV1,
+    ExpertStudyRegistryV2,
+    PrivateNaturalPersonBindingV2,
+    PublicExpertIdentityReleaseV2,
+    PublicExpertIdentityV2,
+    build_calibration_completion_v2,
+    build_calibration_set_manifest_v2,
+    build_expert_study_registry_v2,
+    build_private_expert_identity_attestation_v2,
+    build_public_expert_identity_release_v2,
+)
+from material_agent.research.flatband_leakage import (
+    LeakageAxis,
+    LeakageComponentReleaseV1,
+    LeakageComponentReleaseV3,
+    LeakageMembershipV1,
+    LeakageRoundClosureContextV3,
+    MechanismLineageAssignmentCurationReleaseV3,
+    MechanismLineageAssignmentDecisionV3,
+    MechanismLineageAssignmentV3,
+    MechanismLineageCurationReleaseV3,
+    MechanismLineageCuratorDeclarationV3,
+    MechanismLineageEvidenceRefV3,
+    MechanismLineageReviewDecisionV3,
+    StructureGroupingAlgorithmV2,
+    StructureGroupingAssignmentV2,
+    StructureGroupingRunV2,
+    build_leakage_component_release,
+    build_leakage_component_release_v3,
+    build_mechanism_lineage_assignment_candidate_universe_v3,
+    build_mechanism_lineage_assignment_curation_policy_v3,
+    build_mechanism_lineage_assignment_curation_release_v3,
+    build_mechanism_lineage_assignment_proposal_v3,
+    build_mechanism_lineage_assignment_review_manifest_v3,
+    build_mechanism_lineage_assignment_review_v3,
+    build_mechanism_lineage_assignment_reviewer_roster_v3,
+    build_mechanism_lineage_assignment_v3,
+    build_mechanism_lineage_curation_policy_v3,
+    build_mechanism_lineage_curation_release_v3,
+    build_mechanism_lineage_curator_roster_v3,
+    build_mechanism_lineage_definition_review_v3,
+    build_mechanism_lineage_definition_v3,
+    build_mechanism_lineage_evidence_review_manifest_v3,
+    build_mechanism_lineage_registry_v3,
+    derive_formal_mechanism_lineage_assignments_v3,
+    derive_leakage_group_ids_v3,
+    structure_grouping_case_universe_sha256_v2,
 )
 from material_agent.research.flatband_structure_grouping import (
     PreGroupCandidatePreimageV2,
@@ -80,94 +165,6 @@ from material_agent.research.flatband_structure_grouping import (
     run_structure_grouping_computation_v2,
     seal_structure_grouping_input_manifest_v2,
 )
-from material_agent.research.flatband_contracts import (
-    BenchmarkSplit,
-    BenchmarkSplitManifestV1,
-    BenchmarkSplitManifestV2,
-    BandwidthScope,
-    Dimensionality,
-    ExpertRole,
-    EvidenceClaimType,
-    FlatBandEvidenceV1,
-    FlatBandBenchmarkCaseV1,
-    MechanismFamily,
-    MagneticOrder,
-    ObservedBandClass,
-    SourceRecordRefV1,
-    SplitCaseRefV1,
-    SplitCaseRefV2,
-    SplitManifestKind,
-    SocState,
-    TargetBandClass,
-    SOURCE_CATALOG_V1_SHA256,
-)
-from material_agent.research.flatband_experts import (
-    CalibrationCompletionV2,
-    CalibrationSetManifestV2,
-    CalibrationCompletionV1,
-    CaseConflictAssessmentV1,
-    CaseExpertAssignmentV1,
-    ConflictReasonCode,
-    ConflictStatus,
-    ExpertProfileV1,
-    ExpertStudyRegistryV1,
-    ExpertStudyRegistryV2,
-    PrivateNaturalPersonBindingV2,
-    PublicExpertIdentityV2,
-    PublicExpertIdentityReleaseV2,
-    build_calibration_completion_v2,
-    build_calibration_set_manifest_v2,
-    build_expert_study_registry_v2,
-    build_private_expert_identity_attestation_v2,
-    build_public_expert_identity_release_v2,
-)
-from material_agent.research.flatband_derivative_screening import (
-    DerivativeClass,
-    build_derivative_screening_assignment_v3,
-    build_derivative_screening_policy_v3,
-    build_derivative_screening_raw_review_v3,
-    build_derivative_screening_release_v3,
-    build_derivative_screening_reviewer_roster_v3,
-    build_derivative_source_evidence_ref_v3,
-)
-from material_agent.research.flatband_leakage import (
-    LeakageAxis,
-    LeakageComponentReleaseV3,
-    LeakageRoundClosureContextV3,
-    LeakageComponentReleaseV1,
-    LeakageMembershipV1,
-    MechanismLineageAssignmentV3,
-    MechanismLineageAssignmentCurationReleaseV3,
-    MechanismLineageAssignmentDecisionV3,
-    MechanismLineageCurationReleaseV3,
-    MechanismLineageCuratorDeclarationV3,
-    MechanismLineageReviewDecisionV3,
-    MechanismLineageEvidenceRefV3,
-    StructureGroupingAlgorithmV2,
-    StructureGroupingAssignmentV2,
-    StructureGroupingRunV2,
-    build_leakage_component_release_v3,
-    build_leakage_component_release,
-    build_mechanism_lineage_assignment_candidate_universe_v3,
-    build_mechanism_lineage_assignment_curation_policy_v3,
-    build_mechanism_lineage_assignment_curation_release_v3,
-    build_mechanism_lineage_assignment_proposal_v3,
-    build_mechanism_lineage_assignment_review_manifest_v3,
-    build_mechanism_lineage_assignment_review_v3,
-    build_mechanism_lineage_assignment_reviewer_roster_v3,
-    build_mechanism_lineage_assignment_v3,
-    build_mechanism_lineage_curation_policy_v3,
-    build_mechanism_lineage_curation_release_v3,
-    build_mechanism_lineage_curator_roster_v3,
-    build_mechanism_lineage_definition_v3,
-    build_mechanism_lineage_definition_review_v3,
-    build_mechanism_lineage_evidence_review_manifest_v3,
-    build_mechanism_lineage_registry_v3,
-    derive_leakage_group_ids_v3,
-    derive_formal_mechanism_lineage_assignments_v3,
-    structure_grouping_case_universe_sha256_v2,
-)
-
 
 ModelT = TypeVar("ModelT", bound=StrictModel)
 SHA_A = "a" * 64
@@ -2109,7 +2106,7 @@ def _formal_v3_study(
         assignments=assignments,
         sealed_at="2026-08-09T20:17:00+08:00",
     )
-    assignment_by_candidate = {
+    {
         item.candidate_id: item for item in assignment_release.assignments
     }
     primary_candidate = next(
@@ -3077,7 +3074,10 @@ def test_formal_v3_r2_prebudget_rejects_overlapping_full_candidate_pool() -> Non
     r1 = _formal_v3_study()
     with pytest.raises(
         (ValidationError, ValueError),
-        match="appears in more than one|crosses benchmark universes",
+        match=(
+            "appears in more than one|crosses benchmark universes|"
+            "cross-release STRUCTURE_PROTOTYPE"
+        ),
     ):
         _formal_v3_study(
             study_phase="PILOT_R2",

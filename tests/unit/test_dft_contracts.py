@@ -6,8 +6,12 @@ import pytest
 from pydantic import ValidationError
 
 from material_agent.dft.models import (
-    ArtifactRef, ClaimResult, ClaimStatus, DFTTaskSpec, ExecutionMode,
-    ResourceEstimate, TaskType,
+    ArtifactRef,
+    ClaimResult,
+    ClaimStatus,
+    DFTTaskSpec,
+    ResourceEstimate,
+    TaskType,
 )
 
 

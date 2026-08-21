@@ -14,7 +14,7 @@ from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from enum import IntEnum, StrEnum
 from html.parser import HTMLParser
-from typing import Any
+from typing import Any, ClassVar
 from xml.etree import ElementTree
 
 from material_agent.inspiration.models import PassageLocatorKind, SearchHitV1
@@ -910,7 +910,7 @@ class _HTMLBlock:
 
 
 class _ArticleHTMLParser(HTMLParser):
-    _SKIP_TAGS = {
+    _SKIP_TAGS: ClassVar[set[str]] = {
         "script",
         "style",
         "nav",

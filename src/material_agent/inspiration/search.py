@@ -14,17 +14,16 @@ import json
 import math
 import os
 import re
-import socket
 import threading
 import time
 from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, replace
-from datetime import timezone
+from datetime import UTC
 from email.utils import parsedate_to_datetime
 from html.parser import HTMLParser
 from pathlib import Path
-from typing import Any, Literal, Protocol
+from typing import TYPE_CHECKING, Any, Literal, Protocol
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode, urljoin, urlsplit, urlunsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
@@ -39,6 +38,9 @@ from material_agent.inspiration.models import (
     canonical_sha256,
     deterministic_id,
 )
+
+if TYPE_CHECKING:
+    from material_agent.inspiration.policy import SearchBudgetV1
 
 _TRANSIENT_HTTP_STATUSES = frozenset({408, 429, 500, 502, 503, 504})
 _MAX_RETRIES = 5
@@ -73,7 +75,6 @@ class _RejectRedirectHandler(HTTPRedirectHandler):
         newurl,
     ):
         del req, fp, code, msg, headers, newurl
-        return None
 
 
 _NO_REDIRECT_OPENER = build_opener(_RejectRedirectHandler())
@@ -87,7 +88,7 @@ def urlopen(request: Request, *, timeout: float):  # type: ignore[no-untyped-def
     are handled explicitly by :class:`UrlLibBoundedTransport`.
     """
 
-    return _NO_REDIRECT_OPENER.open(request, timeout=timeout)  # noqa: S310
+    return _NO_REDIRECT_OPENER.open(request, timeout=timeout)
 
 
 @dataclass(frozen=True, slots=True)
@@ -380,7 +381,7 @@ class UrlLibBoundedTransport:
         allowed_media_types: frozenset[str] | None = None,
     ) -> None:
         if not callable(monotonic_clock):
-            raise ValueError("monotonic_clock must be callable")
+            raise ValueError("monotonic_clock must be callable")  # noqa: TRY004
         self.monotonic_clock = monotonic_clock
         if allowed_hosts is not None:
             if not allowed_hosts or any(
@@ -482,7 +483,7 @@ class UrlLibBoundedTransport:
                     )
                 request_timeout = min(request_timeout, remaining)
             try:
-                with urlopen(request, timeout=request_timeout) as response:  # noqa: S310
+                with urlopen(request, timeout=request_timeout) as response:
                     try:
                         resolved_url = _validated_metadata_url(
                             response.geturl(),
@@ -652,7 +653,7 @@ class UrlLibBoundedTransport:
                     retry_after=retry_after,
                     physical_hops=failed_hops,
                 ) from error
-            except (TimeoutError, socket.timeout, URLError, OSError) as error:
+            except (TimeoutError, URLError, OSError) as error:
                 failed_hops = (
                     *physical_hops,
                     PhysicalSearchHop(
@@ -712,7 +713,7 @@ def _parse_retry_after_seconds(
         if parsed_date is None:
             return None
         if parsed_date.tzinfo is None:
-            parsed_date = parsed_date.replace(tzinfo=timezone.utc)
+            parsed_date = parsed_date.replace(tzinfo=UTC)
         delta = parsed_date.timestamp() - _read_finite_clock(wall_clock, "wall_clock")
     except (OverflowError, TypeError, ValueError):
         return None
@@ -874,13 +875,12 @@ class CrossrefPublicAdapter:
             raise ValueError("max_results must be between 1 and 20")
         if not 1 <= timeout_seconds <= 120:
             raise ValueError("timeout_seconds must be between 1 and 120")
-        if contact_email is not None:
-            if (
-                len(contact_email) > 254
-                or "@" not in contact_email
-                or any(character.isspace() for character in contact_email)
-            ):
-                raise ValueError("contact_email must be a bounded email address")
+        if contact_email is not None and (
+            len(contact_email) > 254
+            or "@" not in contact_email
+            or any(character.isspace() for character in contact_email)
+        ):
+            raise ValueError("contact_email must be a bounded email address")
         if type(max_retries) is not int or not 0 <= max_retries <= _MAX_RETRIES:
             raise ValueError(f"max_retries must be between 0 and {_MAX_RETRIES}")
         _validate_bounded_seconds(
@@ -917,11 +917,11 @@ class CrossrefPublicAdapter:
                 f"{required_interval:g} for the Crossref {pool} pool"
             )
         if not callable(sleeper):
-            raise ValueError("sleeper must be callable")
+            raise ValueError("sleeper must be callable")  # noqa: TRY004
         if not callable(wall_clock):
-            raise ValueError("wall_clock must be callable")
+            raise ValueError("wall_clock must be callable")  # noqa: TRY004
         if not callable(monotonic_clock):
-            raise ValueError("monotonic_clock must be callable")
+            raise ValueError("monotonic_clock must be callable")  # noqa: TRY004
         _validate_publication_year_range(
             publication_year_from,
             publication_year_to,
@@ -1311,9 +1311,9 @@ class ArxivPublicAdapter:
                 "min_request_interval_seconds must be at least 3 for arXiv"
             )
         if not callable(sleeper):
-            raise ValueError("sleeper must be callable")
+            raise ValueError("sleeper must be callable")  # noqa: TRY004
         if not callable(monotonic_clock):
-            raise ValueError("monotonic_clock must be callable")
+            raise ValueError("monotonic_clock must be callable")  # noqa: TRY004
         self.max_results = max_results
         self.timeout_seconds = timeout_seconds
         self.publication_year_from = publication_year_from
@@ -1540,7 +1540,7 @@ class OpenAlexPublicAdapter:
         if api_key_resolver is not None and not callable(api_key_resolver):
             raise ValueError("api_key_resolver must be callable")
         if not callable(monotonic_clock):
-            raise ValueError("monotonic_clock must be callable")
+            raise ValueError("monotonic_clock must be callable")  # noqa: TRY004
         self.max_results = max_results
         self.timeout_seconds = timeout_seconds
         self.publication_year_from = publication_year_from
@@ -1727,7 +1727,7 @@ class OstiPublicAdapter:
             publication_year_to,
         )
         if not callable(monotonic_clock):
-            raise ValueError("monotonic_clock must be callable")
+            raise ValueError("monotonic_clock must be callable")  # noqa: TRY004
         self.max_results = max_results
         self.timeout_seconds = timeout_seconds
         self.publication_year_from = publication_year_from
@@ -2054,7 +2054,7 @@ def _adapter_provider_label(adapter: SearchAdapter) -> str:
         return explicit
     component_id = adapter.component.component_id
     suffix = "-public-adapter"
-    return component_id[: -len(suffix)] if component_id.endswith(suffix) else component_id
+    return component_id.removesuffix(suffix)
 
 
 def _renumber_attempts(
@@ -2069,7 +2069,7 @@ def _renumber_attempts(
 
 def public_search_adapter_from_environment(
     *,
-    budget: "SearchBudgetV1",
+    budget: SearchBudgetV1,
     environment: Mapping[str, str] | None = None,
     crossref_transport: BoundedHttpTransport | None = None,
     openalex_transport: BoundedHttpTransport | None = None,

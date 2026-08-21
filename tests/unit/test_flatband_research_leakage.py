@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import json
 from collections import defaultdict
 from itertools import combinations
-import json
 from typing import Any, TypeVar
 
 import pytest
@@ -41,13 +41,7 @@ from material_agent.research.flatband_leakage import (
     LeakageMembershipV1,
     LeakageRoundClosureContextV3,
     LeakageUnsplitCaseUniverseContextV3,
-    MechanismLineageAssignmentAdjudicationV3,
-    MechanismLineageAssignmentCandidateUniverseV3,
-    MechanismLineageAssignmentCurationReleaseV3,
     MechanismLineageAssignmentDecisionV3,
-    MechanismLineageAssignmentProposalV3,
-    MechanismLineageAssignmentReviewV3,
-    MechanismLineageAssignmentReviewerRosterV3,
     MechanismLineageAssignmentV3,
     MechanismLineageCurationReleaseV3,
     MechanismLineageCuratorDeclarationV3,
@@ -58,20 +52,18 @@ from material_agent.research.flatband_leakage import (
     StructureGroupingAlgorithmV2,
     StructureGroupingAssignmentV2,
     StructureGroupingRunV2,
-    assert_leakage_split_closure_v2,
-    assert_leakage_split_closure_v3,
     assert_cross_round_leakage_disjoint_v3,
     assert_formal_mechanism_lineage_assignment_curation_v3,
     assert_formal_mechanism_lineage_registry_v3,
+    assert_leakage_releases_disjoint,
+    assert_leakage_split_closure,
+    assert_leakage_split_closure_v2,
     assert_main_leakage_v3,
     assert_pilot_leakage_v2,
     assert_pilot_leakage_v3,
-    assert_leakage_split_closure,
-    assert_leakage_releases_disjoint,
     build_leakage_component_release,
     build_leakage_component_release_v2,
     build_leakage_component_release_v3,
-    build_mechanism_lineage_assignment_v3,
     build_mechanism_lineage_assignment_adjudication_v3,
     build_mechanism_lineage_assignment_candidate_universe_v3,
     build_mechanism_lineage_assignment_curation_policy_v3,
@@ -80,12 +72,13 @@ from material_agent.research.flatband_leakage import (
     build_mechanism_lineage_assignment_review_manifest_v3,
     build_mechanism_lineage_assignment_review_v3,
     build_mechanism_lineage_assignment_reviewer_roster_v3,
+    build_mechanism_lineage_assignment_v3,
     build_mechanism_lineage_curation_policy_v3,
     build_mechanism_lineage_curation_release_v3,
     build_mechanism_lineage_curator_roster_v3,
     build_mechanism_lineage_definition_adjudication_v3,
-    build_mechanism_lineage_definition_v3,
     build_mechanism_lineage_definition_review_v3,
+    build_mechanism_lineage_definition_v3,
     build_mechanism_lineage_evidence_review_manifest_v3,
     build_mechanism_lineage_registry_v3,
     component_assignments,
@@ -97,7 +90,6 @@ from material_agent.research.flatband_leakage import (
     derive_leakage_group_ids_v3,
     structure_grouping_case_universe_sha256_v2,
 )
-
 
 ModelT = TypeVar("ModelT", bound=StrictModel)
 SHA_A = "a" * 64

@@ -11,7 +11,6 @@ from dataclasses import dataclass
 
 from .models import canonical_hash
 
-
 RESEARCH_CATALOG_VERSION = "many-body-solver-research/v1"
 
 

@@ -1,20 +1,28 @@
 from __future__ import annotations
 
-import hashlib
-import json
 import shutil
 from datetime import UTC, datetime
 from pathlib import Path
 
-import pytest
-
 from material_agent.ml_screening.adapters import FakeMLModelAdapter, FakeMLWorker
-from material_agent.ml_screening.resources import default_policy, fake_health_snapshot, fake_model_spec
+from material_agent.ml_screening.resources import (
+    default_policy,
+    fake_health_snapshot,
+    fake_model_spec,
+)
 from material_agent.ml_screening.runner import Agent02RunnerAdapter
-from material_agent.orchestrator.models import ArtifactPointer, StageCapability, StageExecutionContext, StageId, StageStatus
-from material_agent.orchestrator.runners import StageRunnerRegistry, default_capabilities
+from material_agent.orchestrator.models import (
+    ArtifactPointer,
+    StageCapability,
+    StageExecutionContext,
+    StageId,
+    StageStatus,
+)
+from material_agent.orchestrator.runners import (
+    StageRunnerRegistry,
+    default_capabilities,
+)
 from material_agent.retrieval.storage import LocalArtifactStore
-
 
 FIXTURE = Path(__file__).parents[1] / "fixtures/contracts/agent02-v1"
 
@@ -89,7 +97,7 @@ def _setup(tmp_path: Path, count: int = 1, *, fail_once: set[str] | None = None)
 
 
 def test_adapter_validates_real_artifacts_and_reuses_prepare(tmp_path):
-    store, adapter, context = _setup(tmp_path)
+    _store, adapter, context = _setup(tmp_path)
     assert adapter.validate_input(context).valid
     first = adapter.prepare(context)
     second = adapter.prepare(context)
@@ -118,7 +126,7 @@ def test_adapter_writes_real_hashes_and_reuses_completed_start(tmp_path):
 
 
 def test_adapter_preserves_partial_failure_and_rejects_tampered_plan(tmp_path):
-    store, adapter, context = _setup(tmp_path, count=2, fail_once={"cand-2"})
+    _store, adapter, context = _setup(tmp_path, count=2, fail_once={"cand-2"})
     prepared = adapter.prepare(context)
     outcome = adapter.start(context, prepared, "b" * 64)
     assert outcome.status is StageStatus.PARTIAL

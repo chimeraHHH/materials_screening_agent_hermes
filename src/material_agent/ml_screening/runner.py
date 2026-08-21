@@ -10,45 +10,39 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from collections.abc import Callable
 from datetime import UTC, datetime
-from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from material_agent.ml_screening.models import (
     ArtifactPointer as MLArtifactPointer,
+)
+from material_agent.ml_screening.models import (
+    ArtifactRef as MLArtifactRef,
+)
+from material_agent.ml_screening.models import (
     CandidateProperty,
     EvidenceLevel,
     ExecutionStatus,
     MLCandidateInput,
     MLCandidateManifestRecord,
-    ArtifactRef as MLArtifactRef,
+    MLCandidateResult,
     MLDecision,
     MLModelRegistry,
-    MLRequirementView,
+    MLRelaxationResult,
     MLScreeningRequest,
     MLStagePlan,
     MLStageResultEnvelope,
     NativeStageStatus,
-    NativeOutcomeType,
-    StructureRef,
-    MLCandidateResult,
-    MLRelaxationResult,
     RelaxationStatus,
-    SelectionStatus,
-    StructureLineage,
-)
-from material_agent.ml_screening.evidence import (
-    recommended_downstream_structure_id,
+    StructureRef,
 )
 from material_agent.ml_screening.planner import build_ml_stage_plan
+from material_agent.ml_screening.reporting import render_stage_report
 from material_agent.ml_screening.requirement import requirement_view_from_payload
 from material_agent.ml_screening.resources import (
-    artifact_pointer,
     default_policy,
-    fake_health_snapshot,
-    fake_registry,
 )
-from material_agent.ml_screening.reporting import render_stage_report
 from material_agent.ml_screening.worker_client import (
     Agent02Worker,
     WorkerProcessError,
@@ -68,7 +62,6 @@ from material_agent.orchestrator.models import (
     operation_input_sha256_for,
 )
 from material_agent.orchestrator.runners import (
-    _require_input_snapshot,
     _validate_prepared_plan_context,
 )
 from material_agent.retrieval.storage import LocalArtifactStore
@@ -272,7 +265,7 @@ class Agent02RunnerAdapter:
                     "artifacts": {"candidate_manifest": {"uri": result.candidate_manifest.uri, "sha256": result.candidate_manifest.sha256}},
                 },
             )
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             return ControlStageOutcome(
                 stage=context.stage, agent_id=context.agent_id,
                 outcome=ControlOutcomeType.FAILED,
@@ -394,7 +387,7 @@ class Agent02RunnerAdapter:
                         record_payload = record.model_dump(mode="json")
                         record_hash = hashlib.sha256(json.dumps(record_payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()).hexdigest()
                         self.store.write_json(complete_uri, {"schema_version": "agent02-candidate-operation-v1", "candidate_operation_key": key, "record_sha256": record_hash, "record": record_payload}, immutable=True)
-                    except Exception as exc:
+                    except Exception as exc:  # noqa: BLE001
                         if isinstance(exc, WorkerProcessError) and exc.category in {
                             "WORKER_TIMEOUT",
                             "WORKER_START_FAILED",
@@ -426,7 +419,7 @@ class Agent02RunnerAdapter:
         # Build the strict envelope only after deterministic summaries/counts are known.
         from material_agent.ml_screening.models import MLCandidateResultSummary
         summaries = [MLCandidateResultSummary.from_result(r.candidate) for r in records]
-        counts = dict(sorted({d.value: sum(r.candidate.decision is d for r in records) for d in set(r.candidate.decision for r in records)}.items()))
+        counts = dict(sorted({d.value: sum(r.candidate.decision is d for r in records) for d in {r.candidate.decision for r in records}}.items()))
         manifest_native_ref = MLArtifactRef.model_validate(manifest_ref.model_dump(mode="json"))
         report_native_ref = MLArtifactRef.model_validate(report_ref.model_dump(mode="json"))
         envelope = MLStageResultEnvelope(project_id=plan.project_id, run_id=plan.run_id, status=status, operation_key=operation_key, plan=MLArtifactPointer(uri=prepared.native_plan_uri, sha256=prepared.native_plan_sha256), execution_identity=plan.execution_identity, candidate_manifest=manifest_native_ref, output_artifacts=[report_native_ref], candidate_ids=[r.candidate.candidate_id for r in records], candidate_summaries=summaries, status_counts=counts, errors=errors, started_at=plan.created_at, finished_at=self.now(), provenance={"is_mock": plan.execution_identity.is_mock})

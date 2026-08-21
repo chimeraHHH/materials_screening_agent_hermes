@@ -14,7 +14,6 @@ from urllib.request import urlopen
 
 import pytest
 
-
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 HERMES = REPOSITORY_ROOT / ".venv-hermes" / "bin" / "hermes"
 HERMES_PYTHON = REPOSITORY_ROOT / ".venv-hermes" / "bin" / "python"
@@ -25,9 +24,10 @@ PROFILE_SOURCE = (
 SCRIPTS = REPOSITORY_ROOT / "integrations" / "hermes" / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
-import production_ops  # noqa: E402
-import production_runtime  # noqa: E402
-from material_agent.gateway.job_queue import (  # noqa: E402
+import production_ops
+import production_runtime
+
+from material_agent.gateway.job_queue import (
     JOB_QUEUE_SCHEMA_VERSION,
     SqliteGatewayJobQueue,
 )
@@ -37,7 +37,7 @@ class _DashboardHealthHandler(BaseHTTPRequestHandler):
     def log_message(self, _format: str, *_arguments: object) -> None:
         return
 
-    def do_GET(self) -> None:  # noqa: N802 - stdlib handler contract
+    def do_GET(self) -> None:
         if self.path != "/api/health":
             self.send_response(404)
             self.end_headers()

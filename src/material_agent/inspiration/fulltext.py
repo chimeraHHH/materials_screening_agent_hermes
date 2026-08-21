@@ -274,7 +274,7 @@ class UrllibLocalGrobidTransport:
                 "User-Agent": "materials-screening-agent/0.1 (local-grobid)",
             },
         )
-        with urlopen(request, timeout=self.timeout_seconds) as response:  # noqa: S310
+        with urlopen(request, timeout=self.timeout_seconds) as response:
             payload = response.read(max_response_bytes + 1)
         if len(payload) > max_response_bytes:
             raise ValueError("GROBID TEI exceeded the response byte budget")

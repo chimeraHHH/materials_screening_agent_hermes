@@ -47,19 +47,27 @@ from material_agent.softchem import (
     softchem_registry_sha256,
 )
 from material_agent.softchem.operations import (
+    CarrierDopingParametersV1,
+    ConditionOperationPriorResultV1,
+    ElectrostaticGateParametersV1,
     EquivalentSiteVacancyParametersV1,
     HomogeneousStrainParametersV1,
+    MagneticProximityParametersV1,
+    ReasonedConditionPlanV1,
     ReasonedIntercalationParametersV1,
     ReasonedLayerSlideParametersV1,
     ReasonedSubstitutionParametersV1,
     StructureOperationExecutionRequestV2,
     StructureOperationPlanV2,
+    VdwHeterostructureParametersV1,
     bind_compile_prior,
+    evaluate_condition_operation_prior,
     evaluate_structure_operation_prior,
     freeze_run_local_operator_spec,
     largest_c_gap,
     layer_groups,
     layer_partition_sha256,
+    make_condition_plan,
     make_operation_plan,
     preview_structure_operation,
 )
@@ -82,7 +90,14 @@ class CompileReasonedOperationArgsV3(StrictModel):
         "VACANCY",
         "INTERCALATION",
         "LAYER_SLIDE",
+        "CARRIER_DOPING",
+        "ELECTROSTATIC_GATE",
+        "MAGNETIC_PROXIMITY",
+        "VDW_HETEROSTRUCTURE",
     ]
+    partner_database_candidate_id: str | None = Field(
+        default=None, pattern=r"^db-candidate-[0-9a-f]{24}$"
+    )
     source_element: str | None = Field(default=None, max_length=2)
     target_element: str | None = Field(default=None, max_length=2)
     target_oxidation_state: float | None = Field(default=None, ge=-8.0, le=8.0)
@@ -102,6 +117,30 @@ class CompileReasonedOperationArgsV3(StrictModel):
     layer_from_top: int | None = Field(default=None, ge=1, le=8)
     slide_a_fraction: float | None = None
     slide_b_fraction: float | None = None
+    carrier_type: Literal["ELECTRON", "HOLE"] | None = None
+    carriers_per_primitive_cell: float | None = Field(
+        default=None, gt=0.0, le=2.0
+    )
+    sample_charge_states: tuple[float, ...] | None = Field(
+        default=None, min_length=2, max_length=16
+    )
+    electric_field_v_per_angstrom: float | None = Field(
+        default=None, ge=-1.0, le=1.0
+    )
+    field_direction: Literal["C_POSITIVE", "C_NEGATIVE"] | None = None
+    minimum_vacuum_angstrom: float | None = Field(default=None, ge=12.0, le=50.0)
+    interface_separation_angstrom: float | None = Field(
+        default=None, ge=2.0, le=8.0
+    )
+    relative_twist_degrees: float | None = Field(default=None, ge=-30.0, le=30.0)
+    maximum_lattice_mismatch_percent: float | None = Field(
+        default=None, gt=0.0, le=10.0
+    )
+    maximum_supercell_area_factor: int | None = Field(default=None, ge=1, le=64)
+    magnetization_alignment: Literal[
+        "PARALLEL", "ANTIPARALLEL", "SCAN_BOTH"
+    ] | None = None
+    interface_registry: str | None = Field(default=None, min_length=1, max_length=64)
     scientific_rationale: str = Field(min_length=10, max_length=2_000)
     expected_mechanism: str = Field(min_length=5, max_length=1_000)
     chemical_prior_rationale: str = Field(min_length=5, max_length=1_000)
@@ -150,6 +189,32 @@ class CompileReasonedOperationArgsV3(StrictModel):
                 and self.slide_a_fraction is not None
                 and self.slide_b_fraction is not None
             ),
+            "CARRIER_DOPING": (
+                self.carrier_type is not None
+                and self.carriers_per_primitive_cell is not None
+                and self.sample_charge_states is not None
+            ),
+            "ELECTROSTATIC_GATE": (
+                self.electric_field_v_per_angstrom is not None
+                and self.field_direction is not None
+                and self.minimum_vacuum_angstrom is not None
+            ),
+            "MAGNETIC_PROXIMITY": (
+                self.partner_database_candidate_id is not None
+                and self.interface_separation_angstrom is not None
+                and self.relative_twist_degrees is not None
+                and self.maximum_lattice_mismatch_percent is not None
+                and self.magnetization_alignment is not None
+                and self.interface_registry is not None
+            ),
+            "VDW_HETEROSTRUCTURE": (
+                self.partner_database_candidate_id is not None
+                and self.interface_separation_angstrom is not None
+                and self.relative_twist_degrees is not None
+                and self.maximum_lattice_mismatch_percent is not None
+                and self.maximum_supercell_area_factor is not None
+                and self.interface_registry is not None
+            ),
         }
         if not selected[self.operation_kind]:
             raise ValueError("selected operation is missing its reasoned parameters")
@@ -170,7 +235,18 @@ class CompileReasonedOperationArgsV3(StrictModel):
         slide = (self.slide_a_fraction, self.slide_b_fraction)
         if any(value is not None and abs(value) > 1.0 for value in slide):
             raise ValueError("slide vector exceeds the executor safety envelope")
+        if (
+            self.partner_database_candidate_id is not None
+            and self.partner_database_candidate_id == self.database_candidate_id
+        ):
+            raise ValueError("interface operations require two distinct parents")
         return self
+
+
+class ConditionPriorRejected(ValueError):
+    def __init__(self, prior: ConditionOperationPriorResultV1) -> None:
+        self.prior = prior
+        super().__init__(",".join(prior.reason_codes))
 
 
 def _bare_element(site: Any) -> str | None:
@@ -314,8 +390,11 @@ def compile_reasoned_structure_operation_plans(
     parent_structure: Structure,
     parent_artifact_bytes: bytes,
     proposal: CompileReasonedOperationArgsV3,
+    partner_database_candidate: DatabaseCandidateV1 | None = None,
+    partner_structure: Structure | None = None,
+    partner_artifact_bytes: bytes | None = None,
     operator_registry: SoftChemOperatorRegistryV2 = DEFAULT_SOFTCHEM_OPERATOR_REGISTRY_V2,
-) -> tuple[StructureOperationPlanV2, ...]:
+) -> tuple[StructureOperationPlanV2 | ReasonedConditionPlanV1, ...]:
     """Freeze one DeepSeek-proposed spec and derive its executable structure details."""
 
     pointer = _parent_pointer(database_candidate, parent_artifact_bytes)
@@ -327,6 +406,12 @@ def compile_reasoned_structure_operation_plans(
     }
     proposal_payload = proposal.model_dump(mode="python")
     registry_sha256 = softchem_registry_sha256(operator_registry)
+    partner_pointer = (
+        _parent_pointer(partner_database_candidate, partner_artifact_bytes)
+        if partner_database_candidate is not None
+        and partner_artifact_bytes is not None
+        else None
+    )
 
     def freeze(
         operator_id: Any,
@@ -344,7 +429,7 @@ def compile_reasoned_structure_operation_plans(
             decisive_falsification_test=proposal.decisive_falsification_test,
         )
 
-    plans: list[StructureOperationPlanV2] = []
+    plans: list[StructureOperationPlanV2 | ReasonedConditionPlanV1] = []
     if proposal.operation_kind == "SUBSTITUTION":
         operator_registry.resolve("SUBSTITUTE_EQUIVALENT_SITE_V1", "1")
         assert proposal.source_element is not None
@@ -533,6 +618,171 @@ def compile_reasoned_structure_operation_plans(
                 ),
             )
         )
+    elif proposal.operation_kind == "CARRIER_DOPING":
+        operator_id = "APPLY_CARRIER_DOPING_V1"
+        registry_spec = operator_registry.resolve(operator_id, "1")
+        assert proposal.carrier_type is not None
+        assert proposal.carriers_per_primitive_cell is not None
+        assert proposal.sample_charge_states is not None
+        parameters = CarrierDopingParametersV1(
+            operator_spec_id="pending-spec",
+            carrier_type=proposal.carrier_type,
+            carriers_per_primitive_cell=proposal.carriers_per_primitive_cell,
+            sample_charge_states=proposal.sample_charge_states,
+        )
+        spec, parameters = freeze(operator_id, parameters)
+        assert isinstance(parameters, CarrierDopingParametersV1)
+        prior = evaluate_condition_operation_prior(
+            operator_id=operator_id,
+            parameters=parameters,
+            parent_structure=parent_structure,
+        )
+        if prior.decision.value == "REJECT":
+            raise ConditionPriorRejected(prior)
+        plans.append(
+            make_condition_plan(
+                **common,
+                partner_candidate_id=None,
+                partner_structure_id=None,
+                partner_pointer=None,
+                operator_id=operator_id,
+                operator_spec=spec,
+                parameters=parameters,
+                preserved_features=("parent CIF", "composition", "site geometry"),
+                changed_features=(
+                    f"electronic occupation by {proposal.carriers_per_primitive_cell} {proposal.carrier_type.casefold()} carriers per primitive cell",
+                ),
+                prior=prior,
+                validator_ids=registry_spec.validator_ids,
+            )
+        )
+    elif proposal.operation_kind == "ELECTROSTATIC_GATE":
+        operator_id = "APPLY_ELECTROSTATIC_GATE_V1"
+        registry_spec = operator_registry.resolve(operator_id, "1")
+        assert proposal.electric_field_v_per_angstrom is not None
+        assert proposal.field_direction is not None
+        assert proposal.minimum_vacuum_angstrom is not None
+        parameters = ElectrostaticGateParametersV1(
+            operator_spec_id="pending-spec",
+            electric_field_v_per_angstrom=proposal.electric_field_v_per_angstrom,
+            field_direction=proposal.field_direction,
+            minimum_vacuum_angstrom=proposal.minimum_vacuum_angstrom,
+        )
+        spec, parameters = freeze(operator_id, parameters)
+        assert isinstance(parameters, ElectrostaticGateParametersV1)
+        prior = evaluate_condition_operation_prior(
+            operator_id=operator_id,
+            parameters=parameters,
+            parent_structure=parent_structure,
+        )
+        if prior.decision.value == "REJECT":
+            raise ConditionPriorRejected(prior)
+        plans.append(
+            make_condition_plan(
+                **common,
+                partner_candidate_id=None,
+                partner_structure_id=None,
+                partner_pointer=None,
+                operator_id=operator_id,
+                operator_spec=spec,
+                parameters=parameters,
+                preserved_features=("parent CIF", "composition", "site geometry"),
+                changed_features=(
+                    f"external field {proposal.electric_field_v_per_angstrom} V/angstrom with dipole correction",
+                ),
+                prior=prior,
+                validator_ids=registry_spec.validator_ids,
+            )
+        )
+    elif proposal.operation_kind in {"MAGNETIC_PROXIMITY", "VDW_HETEROSTRUCTURE"}:
+        if (
+            partner_database_candidate is None
+            or partner_structure is None
+            or partner_pointer is None
+        ):
+            raise ValueError("interface operation is missing its resolved partner")
+        assert proposal.partner_database_candidate_id is not None
+        assert proposal.interface_separation_angstrom is not None
+        assert proposal.relative_twist_degrees is not None
+        assert proposal.maximum_lattice_mismatch_percent is not None
+        assert proposal.interface_registry is not None
+        if proposal.operation_kind == "MAGNETIC_PROXIMITY":
+            operator_id = "PLAN_MAGNETIC_PROXIMITY_V1"
+            assert proposal.magnetization_alignment is not None
+            parameters = MagneticProximityParametersV1(
+                operator_spec_id="pending-spec",
+                partner_database_candidate_id=(
+                    proposal.partner_database_candidate_id
+                ),
+                interface_separation_angstrom=(
+                    proposal.interface_separation_angstrom
+                ),
+                relative_twist_degrees=proposal.relative_twist_degrees,
+                maximum_lattice_mismatch_percent=(
+                    proposal.maximum_lattice_mismatch_percent
+                ),
+                magnetization_alignment=proposal.magnetization_alignment,
+                interface_registry=proposal.interface_registry,
+            )
+            changed = "planned magnetic-proximity interface and alignment scan"
+        else:
+            operator_id = "PLAN_VDW_HETEROSTRUCTURE_V1"
+            assert proposal.maximum_supercell_area_factor is not None
+            parameters = VdwHeterostructureParametersV1(
+                operator_spec_id="pending-spec",
+                partner_database_candidate_id=(
+                    proposal.partner_database_candidate_id
+                ),
+                interface_separation_angstrom=(
+                    proposal.interface_separation_angstrom
+                ),
+                relative_twist_degrees=proposal.relative_twist_degrees,
+                maximum_lattice_mismatch_percent=(
+                    proposal.maximum_lattice_mismatch_percent
+                ),
+                maximum_supercell_area_factor=(
+                    proposal.maximum_supercell_area_factor
+                ),
+                interface_registry=proposal.interface_registry,
+            )
+            changed = "planned commensurate vdW interface construction"
+        registry_spec = operator_registry.resolve(operator_id, "1")
+        spec, parameters = freeze(operator_id, parameters)
+        assert isinstance(
+            parameters,
+            MagneticProximityParametersV1 | VdwHeterostructureParametersV1,
+        )
+        prior = evaluate_condition_operation_prior(
+            operator_id=operator_id,
+            parameters=parameters,
+            parent_structure=parent_structure,
+            partner_structure=partner_structure,
+        )
+        if prior.decision.value == "REJECT":
+            raise ConditionPriorRejected(prior)
+        plans.append(
+            make_condition_plan(
+                **common,
+                partner_candidate_id=(
+                    partner_database_candidate.database_candidate_id
+                ),
+                partner_structure_id=(
+                    partner_database_candidate.canonical_structure_id
+                ),
+                partner_pointer=partner_pointer,
+                operator_id=operator_id,
+                operator_spec=spec,
+                parameters=parameters,
+                preserved_features=(
+                    "both hash-bound parent CIFs",
+                    "both parent compositions",
+                    "both parent intralayer geometries",
+                ),
+                changed_features=(changed,),
+                prior=prior,
+                validator_ids=registry_spec.validator_ids,
+            )
+        )
     else:
         raise KeyError(f"unsupported reasoned operation: {proposal.operation_kind}")
     return tuple(plans)
@@ -621,7 +871,12 @@ class OperatorPlanningToolState:
         self.operator_registry = operator_registry
         self.substitution_registry = substitution_registry
         self._calls = 0
-        self._plans: dict[str, TransformationPlanV1 | StructureOperationPlanV2] = {}
+        self._plans: dict[
+            str,
+            TransformationPlanV1
+            | StructureOperationPlanV2
+            | ReasonedConditionPlanV1,
+        ] = {}
         self._bindings: dict[str, TransformationPlanBindingV1] = {}
         self._rejections: list[TransformationCompileRejectionV3] = []
         self._lock = threading.Lock()
@@ -631,8 +886,10 @@ class OperatorPlanningToolState:
             name="compile_reasoned_operation",
             description=(
                 "Propose a material-specific minimal operation using native scientific "
-                "reasoning. Choose substitution/oxidation, strain tensor, vacancy element/fraction, intercalant/"
-                "in-plane site/gap, or layer/vector and provide mechanism, chemistry prior, "
+                "reasoning. Choose substitution/oxidation, strain tensor, vacancy element/"
+                "fraction, intercalant/in-plane site/gap, layer/vector, carrier doping, "
+                "electrostatic gating, magnetic proximity, or a two-parent vdW interface; "
+                "provide mechanism, chemistry prior, "
                 "and falsifier. Local code freezes a run-local hash-pinned spec, derives "
                 "sites/coordinates from the CIF, and applies safety/chemistry validators. "
                 "Set fields for other operation kinds to null. No fixed scientific rule "
@@ -705,6 +962,19 @@ class OperatorPlanningToolState:
         parent = candidates.get(arguments.database_candidate_id)
         if parent is None:
             return self._reject(arguments, "UNKNOWN_DATABASE_CANDIDATE")
+        partner = (
+            candidates.get(arguments.partner_database_candidate_id)
+            if isinstance(arguments, CompileReasonedOperationArgsV3)
+            and arguments.partner_database_candidate_id is not None
+            else None
+        )
+        if (
+            isinstance(arguments, CompileReasonedOperationArgsV3)
+            and arguments.operation_kind
+            in {"MAGNETIC_PROXIMITY", "VDW_HETEROSTRUCTURE"}
+            and partner is None
+        ):
+            return self._reject(arguments, "UNKNOWN_PARTNER_DATABASE_CANDIDATE")
         legacy_substitution = isinstance(arguments, CompileRegisteredSubstitutionArgsV1)
         operation_kind = "SUBSTITUTION" if legacy_substitution else arguments.operation_kind
         rule_id = arguments.substitution_rule_id if legacy_substitution else None
@@ -717,6 +987,17 @@ class OperatorPlanningToolState:
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
                 structure = Structure.from_str(payload.decode("utf-8"), fmt="cif")
+            partner_payload = None
+            partner_structure = None
+            if partner is not None:
+                partner_payload = self.store.read_bytes(
+                    partner.structure_artifact_uri
+                )
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    partner_structure = Structure.from_str(
+                        partner_payload.decode("utf-8"), fmt="cif"
+                    )
             if legacy_substitution:
                 plans = compile_registered_substitution_plans(
                     candidate_id=arguments.candidate_id,
@@ -733,8 +1014,17 @@ class OperatorPlanningToolState:
                     parent_structure=structure,
                     parent_artifact_bytes=payload,
                     proposal=arguments,
+                    partner_database_candidate=partner,
+                    partner_structure=partner_structure,
+                    partner_artifact_bytes=partner_payload,
                     operator_registry=self.operator_registry,
                 )
+        except ConditionPriorRejected as exc:
+            return self._reject(
+                arguments,
+                "OPERATION_PRIOR_REJECTED",
+                detail=",".join(exc.prior.reason_codes),
+            )
         except (KeyError, UnicodeDecodeError, ValueError) as exc:
             return self._reject(
                 arguments,
@@ -748,7 +1038,11 @@ class OperatorPlanningToolState:
             }.get(operation_kind, "NO_COMPLETE_EQUIVALENCE_CLASS")
             return self._reject(arguments, reason)
         compile_priors: dict[str, Mapping[str, Any]] = {}
-        accepted_plans: list[TransformationPlanV1 | StructureOperationPlanV2] = []
+        accepted_plans: list[
+            TransformationPlanV1
+            | StructureOperationPlanV2
+            | ReasonedConditionPlanV1
+        ] = []
         rejected_prior_reasons: list[str] = []
         try:
             for plan in plans:
@@ -771,6 +1065,13 @@ class OperatorPlanningToolState:
                         prior,
                         validator_ids=spec.validator_ids,
                     )
+                elif isinstance(plan, ReasonedConditionPlanV1):
+                    compile_priors[plan.plan_id] = {
+                        "decision": plan.compile_prior_decision,
+                        "reason_codes": plan.compile_prior_reason_codes,
+                        "evidence_level": "INPUT_AND_GEOMETRY_PRIOR_ONLY",
+                        "scientific_conclusion": False,
+                    }
                 accepted_plans.append(plan)
         except (KeyError, TypeError, ValueError) as exc:
             return self._reject(
@@ -809,7 +1110,11 @@ class OperatorPlanningToolState:
             ),
             "plans": tuple(item.model_dump(mode="json") for item in plans),
             "compile_priors": compile_priors,
-            "execution_boundary": "PLANNED_NOT_EXECUTED_OR_PROPERTY_VERIFIED",
+            "execution_boundary": (
+                "SPECIALIZED_COMPUTATION_OR_INTERFACE_BUILDER_REQUIRED"
+                if any(isinstance(item, ReasonedConditionPlanV1) for item in plans)
+                else "PLANNED_NOT_EXECUTED_OR_PROPERTY_VERIFIED"
+            ),
         }
 
     def _reject(

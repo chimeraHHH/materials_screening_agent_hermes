@@ -45,25 +45,10 @@ from material_agent.research.flatband_contracts import (
     Dimensionality,
     ExpertRole,
     FlatBandBenchmarkCaseV1,
-    TargetBandClass,
     SplitCaseRefV1,
     SplitCaseRefV2,
+    TargetBandClass,
     _require_rfc3339,
-)
-from material_agent.research.flatband_source_policy import (
-    CaseSourcePolicyAttestationV2,
-    SourceCatalogDecision,
-    SourceUseRole,
-    _RECORD_LEVEL_COMPATIBLE_LICENSES,
-    _SOURCE_CATALOG_POLICY_V1,
-    assert_case_source_policy_v2,
-    build_case_source_policy_attestation_v2,
-)
-from material_agent.research.flatband_structure_grouping import (
-    StructureGroupingPrivateEvidenceReleaseV2,
-    StructureGroupingUnionReplayReleaseV2,
-    assert_structure_grouping_release_exact_replay_v2,
-    assert_structure_grouping_union_replay_release_exact_v2,
 )
 from material_agent.research.flatband_experts import (
     CalibrationCompletionV2,
@@ -83,23 +68,37 @@ from material_agent.research.flatband_leakage import (
     LeakageComponentReleaseV3,
     LeakageRoundClosureContextV3,
     LeakageUnsplitCaseUniverseContextV3,
-    MechanismLineageAssignmentV3,
     MechanismLineageAssignmentCurationReleaseV3,
+    MechanismLineageAssignmentV3,
     MechanismLineageCurationReleaseV3,
     MechanismLineageRegistryV3,
     StructureGroupingAlgorithmV2,
     StructureGroupingAssignmentV2,
     StructureGroupingRunV2,
-    assert_leakage_split_closure,
-    assert_leakage_split_closure_v3,
     assert_cross_round_leakage_disjoint_v3,
     assert_formal_mechanism_lineage_assignment_curation_v3,
     assert_formal_mechanism_lineage_registry_v3,
+    assert_leakage_split_closure,
+    assert_leakage_split_closure_v3,
     assert_pilot_leakage_v3,
     derive_leakage_group_ids_v3,
     structure_grouping_case_universe_sha256_v2,
 )
-
+from material_agent.research.flatband_source_policy import (
+    _RECORD_LEVEL_COMPATIBLE_LICENSES,
+    _SOURCE_CATALOG_POLICY_V1,
+    CaseSourcePolicyAttestationV2,
+    SourceCatalogDecision,
+    SourceUseRole,
+    assert_case_source_policy_v2,
+    build_case_source_policy_attestation_v2,
+)
+from material_agent.research.flatband_structure_grouping import (
+    StructureGroupingPrivateEvidenceReleaseV2,
+    StructureGroupingUnionReplayReleaseV2,
+    assert_structure_grouping_release_exact_replay_v2,
+    assert_structure_grouping_union_replay_release_exact_v2,
+)
 
 ModelT = TypeVar("ModelT", bound=StrictModel)
 
@@ -110,7 +109,7 @@ STRUCTURE_UNION_OWNER_CURRENT_R2_FULL_POOL_V3 = "CURRENT_R2_FULL_POOL"
 
 
 def _timestamp(value: str) -> datetime:
-    return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    return datetime.fromisoformat(value)
 
 
 def _revalidate(value: ModelT, model_type: type[ModelT]) -> ModelT:
@@ -273,7 +272,7 @@ class FrozenCaseCandidateV1(StrictModel):
         return _require_rfc3339(value)
 
     @model_validator(mode="after")
-    def validate_candidate(self) -> "FrozenCaseCandidateV1":
+    def validate_candidate(self) -> FrozenCaseCandidateV1:
         case = _revalidate(self.case, FlatBandBenchmarkCaseV1)
         expected_role = (
             FrozenCandidateRole.PRIMARY
@@ -493,7 +492,7 @@ class FrozenCaseReleaseV1(StrictModel):
         return _require_rfc3339(value)
 
     @model_validator(mode="after")
-    def validate_release(self) -> "FrozenCaseReleaseV1":
+    def validate_release(self) -> FrozenCaseReleaseV1:
         manifest = _revalidate(self.split_manifest, BenchmarkSplitManifestV1)
         candidates = tuple(
             _revalidate(item, FrozenCaseCandidateV1) for item in self.candidates
@@ -782,7 +781,7 @@ class FrozenCaseReleaseV2(StrictModel):
         return _require_rfc3339(value)
 
     @model_validator(mode="after")
-    def validate_release(self) -> "FrozenCaseReleaseV2":
+    def validate_release(self) -> FrozenCaseReleaseV2:
         manifest = _revalidate(self.split_manifest, BenchmarkSplitManifestV2)
         leakage = _revalidate(self.leakage_release, LeakageComponentReleaseV3)
         expert = _revalidate(self.expert_registry, ExpertStudyRegistryV2)
@@ -1186,7 +1185,7 @@ class EligibilityDecisionV1(StrictModel):
         return _require_rfc3339(value)
 
     @model_validator(mode="after")
-    def validate_decision(self) -> "EligibilityDecisionV1":
+    def validate_decision(self) -> EligibilityDecisionV1:
         reason_values = tuple(item.value for item in self.reason_codes)
         if reason_values != tuple(sorted(set(reason_values))):
             raise ValueError("eligibility reasons must be sorted and unique")
@@ -1250,7 +1249,7 @@ class ActiveCaseSelectionV1(StrictModel):
     replacement_activated: bool
 
     @model_validator(mode="after")
-    def validate_selection(self) -> "ActiveCaseSelectionV1":
+    def validate_selection(self) -> ActiveCaseSelectionV1:
         values = (
             self.selected_candidate_id,
             self.selected_candidate_sha256,
@@ -1337,7 +1336,7 @@ class PreRunEligibilityReleaseV1(StrictModel):
         return _require_rfc3339(value)
 
     @model_validator(mode="after")
-    def validate_release(self) -> "PreRunEligibilityReleaseV1":
+    def validate_release(self) -> PreRunEligibilityReleaseV1:
         frozen = _revalidate(self.frozen_case_release, FrozenCaseReleaseV1)
         decisions = tuple(
             _revalidate(item, EligibilityDecisionV1) for item in self.decisions
@@ -1604,7 +1603,7 @@ class PreRunEligibilityReleaseV2(StrictModel):
         return _require_rfc3339(value)
 
     @model_validator(mode="after")
-    def validate_release(self) -> "PreRunEligibilityReleaseV2":
+    def validate_release(self) -> PreRunEligibilityReleaseV2:
         frozen = _revalidate(self.frozen_case_release, FrozenCaseReleaseV2)
         decisions = tuple(
             _revalidate(item, EligibilityDecisionV1) for item in self.decisions
@@ -1873,7 +1872,7 @@ class CandidatePoolReleaseV3(StrictModel):
         return _require_rfc3339(value)
 
     @model_validator(mode="after")
-    def validate_release(self) -> "CandidatePoolReleaseV3":
+    def validate_release(self) -> CandidatePoolReleaseV3:
         registry = _revalidate(
             self.mechanism_lineage_registry, MechanismLineageRegistryV3
         )
@@ -2041,7 +2040,7 @@ class CandidatePoolReleaseV3(StrictModel):
                 for record in candidate.case.source_records
             ):
                 raise ValueError("every V3 candidate source requires a raw SHA-256")
-        for slot_id, slot_candidates in by_slot.items():
+        for slot_candidates in by_slot.values():
             priorities = tuple(item.priority for item in slot_candidates)
             if priorities != tuple(range(len(slot_candidates))):
                 raise ValueError("V3 candidate priorities must be contiguous from zero")
@@ -2522,7 +2521,7 @@ class CandidateEligibilityAssignmentV3(StrictModel):
         return _require_rfc3339(value)
 
     @model_validator(mode="after")
-    def validate_assignment(self) -> "CandidateEligibilityAssignmentV3":
+    def validate_assignment(self) -> CandidateEligibilityAssignmentV3:
         if self.reviewer_ids != tuple(sorted(set(self.reviewer_ids))):
             raise ValueError("V3 eligibility reviewers must be sorted and distinct")
         if self.adjudicator_id in self.reviewer_ids:
@@ -2712,7 +2711,7 @@ class CandidateEligibilityAssignmentReleaseV3(StrictModel):
         return _require_rfc3339(value)
 
     @model_validator(mode="after")
-    def validate_release(self) -> "CandidateEligibilityAssignmentReleaseV3":
+    def validate_release(self) -> CandidateEligibilityAssignmentReleaseV3:
         pool = _revalidate(
             self.candidate_pool_release, CandidatePoolReleaseV3
         )
@@ -3029,7 +3028,7 @@ class EligibilityRawAuditV3(StrictModel):
         return _require_rfc3339(value)
 
     @model_validator(mode="after")
-    def validate_audit(self) -> "EligibilityRawAuditV3":
+    def validate_audit(self) -> EligibilityRawAuditV3:
         evidence_keys = tuple(
             (
                 item.source_id,
@@ -3175,7 +3174,7 @@ class EligibilityAuditRefV3(StrictModel):
     ]
 
     @model_validator(mode="after")
-    def validate_ref(self) -> "EligibilityAuditRefV3":
+    def validate_ref(self) -> EligibilityAuditRefV3:
         _validate_eligibility_outcome_v3(
             status=self.status,
             reason_codes=self.reason_codes,
@@ -3237,7 +3236,7 @@ class EligibilityAdjudicationV3(StrictModel):
         return _require_rfc3339(value)
 
     @model_validator(mode="after")
-    def validate_adjudication(self) -> "EligibilityAdjudicationV3":
+    def validate_adjudication(self) -> EligibilityAdjudicationV3:
         refs = tuple(
             _revalidate(item, EligibilityAuditRefV3)
             for item in self.raw_audit_refs
@@ -3366,7 +3365,7 @@ class EligibilityDecisionV3(StrictModel):
         return _require_rfc3339(value)
 
     @model_validator(mode="after")
-    def validate_decision(self) -> "EligibilityDecisionV3":
+    def validate_decision(self) -> EligibilityDecisionV3:
         refs = tuple(
             _revalidate(item, EligibilityAuditRefV3)
             for item in self.raw_audit_refs
@@ -3682,7 +3681,7 @@ class PreRunEligibilityReleaseV3(StrictModel):
         return _require_rfc3339(value)
 
     @model_validator(mode="after")
-    def validate_release(self) -> "PreRunEligibilityReleaseV3":
+    def validate_release(self) -> PreRunEligibilityReleaseV3:
         assignments = _revalidate(
             self.assignment_release, CandidateEligibilityAssignmentReleaseV3
         )
@@ -3897,7 +3896,7 @@ class FrozenCaseReleaseV3(StrictModel):
         return _require_rfc3339(value)
 
     @model_validator(mode="after")
-    def validate_release(self) -> "FrozenCaseReleaseV3":
+    def validate_release(self) -> FrozenCaseReleaseV3:
         eligibility = _revalidate(
             self.pre_run_eligibility_release, PreRunEligibilityReleaseV3
         )
@@ -4239,7 +4238,7 @@ class PilotPreBudgetClosureReleaseV3(StrictModel):
         return _require_rfc3339(value)
 
     @model_validator(mode="after")
-    def validate_release(self) -> "PilotPreBudgetClosureReleaseV3":
+    def validate_release(self) -> PilotPreBudgetClosureReleaseV3:
         frozen = _revalidate(self.frozen_case_release, FrozenCaseReleaseV3)
         context = _revalidate(
             self.current_leakage_context, LeakageRoundClosureContextV3
@@ -4621,19 +4620,25 @@ def assert_pre_run_eligibility_precedes_execution_v3(
 
 
 __all__ = [
+    "STRUCTURE_UNION_OWNER_CALIBRATION_V3",
+    "STRUCTURE_UNION_OWNER_CURRENT_R1_FULL_POOL_V3",
+    "STRUCTURE_UNION_OWNER_CURRENT_R2_FULL_POOL_V3",
+    "STRUCTURE_UNION_OWNER_PRIOR_R1_FULL_POOL_V3",
+    "_RECORD_LEVEL_COMPATIBLE_LICENSES",
+    "_SOURCE_CATALOG_POLICY_V1",
     "ActiveCaseSelectionV1",
     "CandidateEligibilityAssignmentReleaseV3",
     "CandidateEligibilityAssignmentV3",
     "CandidatePoolReleaseV3",
-    "CaseSourcePolicyAttestationV2",
     "CaseEligibilityReasonCode",
     "CaseEligibilityStatus",
-    "DerivativeEvidenceRefV3",
+    "CaseSourcePolicyAttestationV2",
     "DerivativeEligibilityClassV3",
-    "EligibilityDecisionV1",
-    "EligibilityDecisionV3",
+    "DerivativeEvidenceRefV3",
     "EligibilityAdjudicationV3",
     "EligibilityAuditRefV3",
+    "EligibilityDecisionV1",
+    "EligibilityDecisionV3",
     "EligibilityRawAuditV3",
     "FrozenCandidateRole",
     "FrozenCaseCandidateV1",
@@ -4646,29 +4651,23 @@ __all__ = [
     "PreRunEligibilityReleaseV3",
     "SourceCatalogDecision",
     "SourceUseRole",
-    "STRUCTURE_UNION_OWNER_CALIBRATION_V3",
-    "STRUCTURE_UNION_OWNER_CURRENT_R1_FULL_POOL_V3",
-    "STRUCTURE_UNION_OWNER_CURRENT_R2_FULL_POOL_V3",
-    "STRUCTURE_UNION_OWNER_PRIOR_R1_FULL_POOL_V3",
-    "_RECORD_LEVEL_COMPATIBLE_LICENSES",
-    "_SOURCE_CATALOG_POLICY_V1",
     "assert_case_source_policy_v2",
+    "assert_frozen_case_ready_v3",
     "assert_pre_run_eligibility_precedes_execution",
     "assert_pre_run_eligibility_precedes_execution_v2",
     "assert_pre_run_eligibility_precedes_execution_v3",
     "assert_pre_run_eligibility_ready",
     "assert_pre_run_eligibility_ready_v2",
     "assert_pre_run_eligibility_ready_v3",
-    "assert_frozen_case_ready_v3",
     "assert_pre_run_eligibility_sealed_before",
-    "build_case_source_policy_attestation_v2",
     "build_calibration_leakage_context_v3",
     "build_candidate_eligibility_assignment_release_v3",
     "build_candidate_eligibility_assignment_v3",
     "build_candidate_pool_leakage_context_v3",
     "build_candidate_pool_release_v3",
-    "build_eligibility_decision",
+    "build_case_source_policy_attestation_v2",
     "build_eligibility_adjudication_v3",
+    "build_eligibility_decision",
     "build_eligibility_raw_audit_v3",
     "build_frozen_case_candidate",
     "build_frozen_case_candidate_v3",

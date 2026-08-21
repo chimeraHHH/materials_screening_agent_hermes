@@ -5,7 +5,11 @@ from typing import Any, TypeVar
 
 import pytest
 
-from material_agent.inspiration.models import StrictModel, canonical_sha256, deterministic_id
+from material_agent.inspiration.models import (
+    StrictModel,
+    canonical_sha256,
+    deterministic_id,
+)
 from material_agent.research.flatband_contracts import (
     Assessability,
     BenchmarkSplit,
@@ -24,7 +28,6 @@ from material_agent.research.flatband_leakage import (
     LeakageMembershipV1,
     build_leakage_component_release,
 )
-
 from material_agent.research.flatband_metrics import (
     EXPONENTIAL_IDEAL_DCG_AT_5,
     LINEAR_IDEAL_DCG_AT_5,
@@ -36,7 +39,6 @@ from material_agent.research.flatband_metrics import (
     strong_success_at_5,
     success_at_5,
 )
-
 
 ModelT = TypeVar("ModelT", bound=StrictModel)
 
@@ -64,8 +66,8 @@ from material_agent.research.flatband_statistics import (
     MONTE_CARLO_SIGN_ASSIGNMENTS,
     AssessabilityUnit,
     ComponentRatedUnit,
-    PairedEstimand,
     PairedCaseScore,
+    PairedEstimand,
     RatedUnit,
     assessability_agreement_gate,
     case_cluster_bootstrap_alpha,

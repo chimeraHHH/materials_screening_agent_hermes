@@ -11,10 +11,10 @@ It is a deterministic boundary around human/model-visible structured input.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from datetime import datetime
 import hashlib
 import json
+from collections.abc import Mapping
+from datetime import datetime
 from typing import Annotated, Literal, TypeVar
 
 from pydantic import Field, TypeAdapter, ValidationError, model_validator
@@ -27,9 +27,9 @@ from material_agent.inspiration.models import (
     deterministic_id,
 )
 from material_agent.research.flatband_contracts import (
+    SOURCE_CATALOG_V1_SHA256,
     ExpertAdjudicationV1,
     RawExpertAnnotationV1,
-    SOURCE_CATALOG_V1_SHA256,
 )
 from material_agent.research.flatband_gold import (
     DuplicatePartitionAdjudicationV2,
@@ -39,7 +39,6 @@ from material_agent.research.flatband_source_policy import (
     SourceCatalogDecision,
     SourceUseRole,
 )
-
 
 ModelT = TypeVar("ModelT", bound=StrictModel)
 SOURCE_CATALOG_SCHEMA_V1_SHA256 = (
@@ -51,7 +50,7 @@ SOURCE_AUDIT_V1_SHA256 = (
 
 
 def _timestamp(value: str) -> datetime:
-    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    parsed = datetime.fromisoformat(value)
     if parsed.tzinfo is None or parsed.utcoffset() is None:
         raise ValueError("timestamp must include a UTC offset")
     return parsed
@@ -67,7 +66,7 @@ class SourceCatalogRowCommitmentV1(StrictModel):
     ]
 
     @model_validator(mode="after")
-    def validate_row(self) -> "SourceCatalogRowCommitmentV1":
+    def validate_row(self) -> SourceCatalogRowCommitmentV1:
         if tuple(item.value for item in self.roles) != tuple(
             sorted({item.value for item in self.roles})
         ):
@@ -103,7 +102,7 @@ class SourceCatalogCheckpointReleaseV1(StrictModel):
     scientific_conclusion: Literal[False] = False
 
     @model_validator(mode="after")
-    def validate_checkpoint(self) -> "SourceCatalogCheckpointReleaseV1":
+    def validate_checkpoint(self) -> SourceCatalogCheckpointReleaseV1:
         _timestamp(self.audited_at)
         source_ids = tuple(item.source_id for item in self.rows)
         if source_ids != tuple(sorted(set(source_ids))):
@@ -277,7 +276,7 @@ def build_source_catalog_checkpoint_release_v1(
             raise ValueError("source catalog contains an unknown row schema")
         licenses = raw.get("licenses")
         if not isinstance(licenses, list):
-            raise ValueError("source catalog row has no license list")
+            raise ValueError("source catalog row has no license list")  # noqa: TRY004
         rows.append(
             SourceCatalogRowCommitmentV1(
                 source_id=raw.get("source_id"),

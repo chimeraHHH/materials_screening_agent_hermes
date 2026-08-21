@@ -34,7 +34,6 @@ from material_agent.dft.workflows import (
     WorkflowTemplateRegistry,
 )
 
-
 NOW = datetime(2026, 7, 30, tzinfo=UTC)
 
 

@@ -138,7 +138,10 @@ CLI 运行示例以 README 为准。真实 Materials Project 测试仅在明确�
 .venv/bin/python -m pytest tests/live -m live_mp --run-live-mp
 ```
 
-仓库当前未配置 lint、自动格式化或静态类型检查工具。Materials Inspiration 已有
+仓库以 `ruff==0.16.3` 和 `pyproject.toml` 中显式的高信号规则集运行
+`.venv/bin/ruff check src tests`；有意保留的第三方异常封装、兼容异常类型和异步测试文件
+边界必须使用精确到行的 `noqa`，不得新增全局 ignore。仓库仍未配置自动格式化或静态类型
+检查工具。Materials Inspiration 已有
 `.github/workflows/materials-inspiration-production.yml` 离线 CI workflow，但仓库尚无
 protected branch 或 required-check 证据；不要把 workflow 文件误述为平台发布门已生效，
 也不要虚构未配置的命令。新增此类工具属于依赖/配置变更，必须单独明确范围。

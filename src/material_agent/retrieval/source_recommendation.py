@@ -16,7 +16,6 @@ from pydantic import Field, model_validator
 from material_agent.retrieval.models import Requirement, SourceDatabase, StrictModel
 from material_agent.retrieval.query import validate_requirement_contract
 
-
 SOURCE_RECOMMENDATION_PROMPT_VERSION = "agent01-source-recommendation-v1"
 RECOMMENDABLE_SOURCES = frozenset(
     {
@@ -49,7 +48,7 @@ class SourceRecommendation(StrictModel):
     llm_audit: dict[str, Any]
 
     @model_validator(mode="after")
-    def allow_only_recommendable_sources(self) -> "SourceRecommendation":
+    def allow_only_recommendable_sources(self) -> SourceRecommendation:
         if self.source_database not in RECOMMENDABLE_SOURCES:
             raise ValueError("source recommendation must select exactly one supported database")
         return self

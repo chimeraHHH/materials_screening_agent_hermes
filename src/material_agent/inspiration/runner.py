@@ -378,7 +378,7 @@ class InspirationRunner:
         monotonic_clock: Callable[[], float] = time.monotonic,
     ) -> None:
         if not callable(monotonic_clock):
-            raise ValueError("monotonic_clock must be callable")
+            raise ValueError("monotonic_clock must be callable")  # noqa: TRY004
         self.store = store
         self.search_adapter = search_adapter
         self.transformation_engine = transformation_engine
@@ -826,8 +826,8 @@ class InspirationRunner:
         )
         if not selected_candidates and not review_items:
             review_items = (
-                "Review the rejected or absent transformation records; no "
-                "structure-qualified candidate entered selection.",
+                ("Review the rejected or absent transformation records; no "
+                "structure-qualified candidate entered selection."),
             )
             warnings.append("REVIEW_REQUIRED:NO_ELIGIBLE_CANDIDATE")
         warnings.extend(
@@ -1630,11 +1630,9 @@ class InspirationRunner:
                     )
                     fetch_timeout_seconds = min(
                         policy.fetch.timeout_seconds,
-                        int(
-                            math.floor(
+                        math.floor(
                                 remaining_fetch_walltime / remaining_requests
-                            )
-                        ),
+                            ),
                     )
                     if fetch_timeout_seconds < 1:
                         raise InspirationRunnerError(

@@ -12,13 +12,13 @@ from material_agent.inspiration.models import (
     deterministic_id,
 )
 from material_agent.research.flatband_blinding import (
+    MAX_REVIEWER_EXCERPT_CHARS,
     EvidenceAccessPolicy,
     EvidenceExcerptV1,
     EvidenceExcerptV2,
     EvidenceRedistributionPolicy,
     EvidenceSpanScope,
     EvidenceSpanType,
-    MAX_REVIEWER_EXCERPT_CHARS,
     PostLabelOriginGuessV1,
     PrivateIdentityMapV1,
     PrivateIdentityMapV2,
@@ -31,34 +31,28 @@ from material_agent.research.flatband_blinding import (
     assert_reviewer_release_exact_coverage_v2,
     assert_reviewer_release_legacy_v2_upstream_exact_coverage,
     build_reviewer_release,
-    build_reviewer_release_v2,
     build_reviewer_release_legacy_v2_upstream,
-)
-from material_agent.research.flatband_cases import (
-    build_frozen_case_release_v2,
-    build_pre_run_eligibility_release_v2,
+    build_reviewer_release_v2,
 )
 from material_agent.research.flatband_execution import (
-    BudgetManifestV1,
     BudgetManifestV2,
     ExecutionPhase,
     ResearchSystemId,
     RunCellStatus,
     TerminalRunResultV1,
-    assemble_execution_release_v3,
     assemble_execution_release_v2,
+    assemble_execution_release_v3,
     build_budget_manifest_v2,
     build_execution_matrix_v2,
     replay_source_usage,
 )
 from material_agent.research.flatband_experts import (
+    ExpertRole,
+    PrivateNaturalPersonBindingV2,
     assert_formal_pilot_expert_closure_legacy_v2_upstream,
     assert_formal_pilot_expert_closure_v3,
     build_private_expert_identity_attestation_v2,
-    ExpertRole,
-    PrivateNaturalPersonBindingV2,
 )
-
 
 ModelT = TypeVar("ModelT", bound=StrictModel)
 
@@ -159,8 +153,8 @@ def _excerpt(
 def _release_fixture():
     # Reuse the already-validated execution/expert test factories instead of
     # maintaining a second 30-case scientific design fixture here.
-    import test_flatband_research_execution as execution_fixture
-    from test_flatband_research_cases import _study
+    from tests.unit import test_flatband_research_execution as execution_fixture
+    from tests.unit.test_flatband_research_cases import _study
 
     study = _study()
 
@@ -267,9 +261,9 @@ def _formal_v2_release_fixture(
 ) -> dict[str, object]:
     """One real 30-case chain producing V2 reviewer artifacts."""
 
-    import test_flatband_research_cases as cases_fixture
-    import test_flatband_research_execution as execution_fixture
-    import test_flatband_research_experts as experts_fixture
+    from tests.unit import test_flatband_research_cases as cases_fixture
+    from tests.unit import test_flatband_research_execution as execution_fixture
+    from tests.unit import test_flatband_research_experts as experts_fixture
 
     if authoritative_v3:
         upstream = cases_fixture._formal_v3_study()

@@ -74,7 +74,7 @@ from material_agent.retrieval.storage import LocalArtifactStore
 GENERIC_RESEARCH_TOOL_NAME = "materials_generic_research_run"
 GENERIC_RESEARCH_REQUEST_SCHEMA_VERSION = "materials-generic-research-run-v1"
 GENERIC_RESEARCH_RESULT_SCHEMA_VERSION = "materials-generic-research-run-v7"
-GENERIC_RESEARCH_IMPLEMENTATION_REVISION = "generic-research-20260821-r18"
+GENERIC_RESEARCH_IMPLEMENTATION_REVISION = "generic-research-20260822-r19"
 
 
 def research_role_budget(
@@ -102,6 +102,7 @@ def research_role_budget(
         "skeptic",
         "hypothesis_reasoner",
         "synthesist",
+        "contract_repair",
     }
     if role not in known_roles:
         raise ValueError(f"unknown research role: {role}")
@@ -121,6 +122,8 @@ def research_role_budget(
         role_rounds = requested_rounds
     elif role == "synthesist":
         role_rounds = min(requested_rounds, 8)
+    elif role == "contract_repair":
+        role_rounds = min(requested_rounds, 4)
     else:
         role_rounds = min(requested_rounds, 6)
     return DeepSeekAgentBudgetV1(
@@ -207,7 +210,7 @@ class GenericResearchRunResultV7(StrictModel):
     schema_version: Literal["materials-generic-research-run-v7"] = (
         GENERIC_RESEARCH_RESULT_SCHEMA_VERSION
     )
-    implementation_revision: Literal["generic-research-20260821-r18"] = (
+    implementation_revision: Literal["generic-research-20260822-r19"] = (
         GENERIC_RESEARCH_IMPLEMENTATION_REVISION
     )
     run_id: str
@@ -393,9 +396,14 @@ class GenericMaterialsResearchService:
             schema_hash = hashlib.sha256(
                 canonical_json_bytes(final_model.model_json_schema())
             ).hexdigest()[:16]
-            uris = (
-                f"artifact://generic_research/{run_id}/roles/{role}-{schema_hash}.json",
-                f"artifact://generic_research/{run_id}/roles/{role}.json",
+            checkpoint_roles = (f"{role}-repaired", role)
+            uris = tuple(
+                uri
+                for checkpoint_role in checkpoint_roles
+                for uri in (
+                    f"artifact://generic_research/{run_id}/roles/{checkpoint_role}-{schema_hash}.json",
+                    f"artifact://generic_research/{run_id}/roles/{checkpoint_role}.json",
+                )
             )
             for uri in uris:
                 if not self.store.exists(uri):
@@ -423,14 +431,15 @@ class GenericMaterialsResearchService:
             return None
 
         def checkpoint_save(role, result):
+            base_role = role.split("-repair", maxsplit=1)[0]
             schema_hash = hashlib.sha256(
                 canonical_json_bytes(type(result.final).model_json_schema())
             ).hexdigest()[:16]
             payload = {
                 "agent_result": result.model_dump(mode="json"),
                 "tool_snapshot": (
-                    snapshot_states[role].checkpoint_snapshot()
-                    if role
+                    snapshot_states[base_role].checkpoint_snapshot()
+                    if base_role
                     in {
                         "evidence_researcher",
                         "database_scout",
@@ -441,9 +450,9 @@ class GenericMaterialsResearchService:
                         item.model_dump(mode="json")
                         if hasattr(item, "model_dump")
                         else dict(item)
-                        for item in snapshot_states[role].snapshot()
+                        for item in snapshot_states[base_role].snapshot()
                     ]
-                    if role in snapshot_states
+                    if base_role in snapshot_states
                     else []
                 ),
             }

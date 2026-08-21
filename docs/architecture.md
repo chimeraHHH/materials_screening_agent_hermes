@@ -821,9 +821,16 @@ normalization，不得冒充旧证据仍有效。为容纳联邦候选扩展后�
 JSON，DeepSeek agent 的单轮 completion ceiling 为 32768 tokens，总 token、轮次和 walltime
 仍由每角色预算分别限制。
 
+requirements、query strategist 或 native-search review 若分别触发约束族覆盖、精确
+constraint-ID 覆盖或 lead-ID 引用门禁，系统不会直接放宽校验，也不会无限重跑原角色。独立
+`contract_repair` 角色最多尝试两次，只读取原无效对象、确定性错误和允许的真实 ID 集；每次
+保留前后 SHA-256、DeepSeek receipt 和独立 checkpoint，并重新调用同一个校验器。两次仍不
+合法则保持 fail-closed。修复角色不得修改用户阈值、创造证据或新增科学结论。
+
 机理化学角色若提出具体最小结构操作，必须调用 `compile_reasoned_operation`；自由文本操作名
 不能进入 `proposed_registered_transformations`。DeepSeek 通过原生推理提交材料相关的应变张量、
-替换元素/目标价态、空位元素/浓度上限、插层元素/价态/面内分数位置/间隙阈值或目标层/滑移向量，并同时给出机理、化学
+替换元素/目标价态、空位元素/浓度上限、插层元素/价态/面内分数位置/间隙阈值、目标层/滑移向量、载流子
+浓度扫描、静电场、磁近邻双母体或 vdW 异质结构参数，并同时给出机理、化学
 先验依据和决定性证伪实验；它不能提交未验证的坐标或代码。编译器从 hash-verified CIF 本地推导晶体学等价位点、
 层分组和最大 c 向间隙中心，将 DeepSeek 提出的面内位置与本地推导的 gap 中点组合后执行周期边界、最小距离及结构 delta
 验证，并对所有 reasoned 操作（包括未在旧 substitution registry
@@ -841,6 +848,10 @@ hash、全局 kernel registry hash、科学依据和证伪测试。每个 kernel
 任何结构可写性都不能代替价态、稳定性、弛豫或目标能带验证。通用研究阶段仍只编译、不执行。
 编译阶段会先运行不需要外部计算的同一组结构/化学 preflight，`REJECT` 路线不会获得 plan ID；
 保留下来的 v2 plan 则固化 `PASS/REQUIRES_REVIEW` 原因和 validator contract，供报告和重放审计。
+其中五类确定性结构 kernel 可生成 `StructureOperationPlanV2`；载流子掺杂与栅控只生成
+`ReasonedConditionPlanV1` 计算边界，磁近邻与异质结构计划还必须绑定两个 hash-verified 二维
+父结构并通过保守面内失配检查。后四类不会伪造 CIF，统一标记
+`COMPUTATION_OR_INTERFACE_BUILDER_REQUIRED`，等待专用电子结构计算或界面构造器。
 
 通用研究终态同时生成独立 Markdown 图文报告。报告对每个联邦候选从 hash-verified CIF
 本地绘制沿 a/b/c 晶轴的三视图，并按 source record 汇总形成能、凸包距离和带隙；source

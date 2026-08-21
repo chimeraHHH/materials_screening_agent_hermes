@@ -32,9 +32,9 @@ from material_agent.research.flatband_derivative_screening import (
     assert_derivative_screening_release_exact_replay_v3,
 )
 from material_agent.research.flatband_leakage import (
-    LeakageComponentV1,
     LeakageComponentReleaseV2,
     LeakageComponentReleaseV3,
+    LeakageComponentV1,
     LeakageGroupDefinitionV3,
     LeakageMembershipV3,
     MechanismLineageAssignmentV3,
@@ -56,7 +56,6 @@ from material_agent.research.flatband_structure_grouping import (
     StructureGroupingPrivateEvidenceReleaseV2,
     assert_structure_grouping_release_exact_replay_v2,
 )
-
 
 ModelT = TypeVar("ModelT", bound=StrictModel)
 
@@ -85,7 +84,7 @@ class ExpertProfileV1(StrictModel):
     pseudonymous: Literal[True] = True
 
     @model_validator(mode="after")
-    def validate_profile(self) -> "ExpertProfileV1":
+    def validate_profile(self) -> ExpertProfileV1:
         if self.domain_expertise != tuple(sorted(set(self.domain_expertise))):
             raise ValueError("expertise entries must be sorted and unique")
         return self
@@ -114,7 +113,7 @@ class CalibrationCompletionV1(StrictModel):
         return _require_rfc3339(value)
 
     @model_validator(mode="after")
-    def validate_completion(self) -> "CalibrationCompletionV1":
+    def validate_completion(self) -> CalibrationCompletionV1:
         semantic = self.model_dump(
             mode="python", exclude={"completion_id", "completion_sha256"}
         )
@@ -144,7 +143,7 @@ class CaseConflictAssessmentV1(StrictModel):
         return _require_rfc3339(value)
 
     @model_validator(mode="after")
-    def validate_conflict(self) -> "CaseConflictAssessmentV1":
+    def validate_conflict(self) -> CaseConflictAssessmentV1:
         if self.status is ConflictStatus.CLEAR:
             if self.reason_code is not ConflictReasonCode.NO_CONFLICT:
                 raise ValueError("clear assessment requires NO_CONFLICT")
@@ -162,7 +161,7 @@ class CaseExpertAssignmentV1(StrictModel):
     adjudicator_id: Identifier
 
     @model_validator(mode="after")
-    def validate_assignment(self) -> "CaseExpertAssignmentV1":
+    def validate_assignment(self) -> CaseExpertAssignmentV1:
         if self.reviewer_ids != tuple(sorted(set(self.reviewer_ids))):
             raise ValueError("reviewer IDs must be sorted and distinct")
         if self.adjudicator_id in self.reviewer_ids:
@@ -201,9 +200,9 @@ class ExpertStudyRegistryV1(StrictModel):
         return _require_rfc3339(value)
 
     @model_validator(mode="after")
-    def validate_registry(self) -> "ExpertStudyRegistryV1":
+    def validate_registry(self) -> ExpertStudyRegistryV1:
         registered_at = datetime.fromisoformat(
-            self.registered_at.replace("Z", "+00:00")
+            self.registered_at
         )
         profile_ids = tuple(item.expert_id for item in self.profiles)
         if profile_ids != tuple(sorted(set(profile_ids))):
@@ -231,7 +230,7 @@ class ExpertStudyRegistryV1(StrictModel):
             ):
                 raise ValueError("calibration completion binds a different guide or set")
             if datetime.fromisoformat(
-                completion.completed_at.replace("Z", "+00:00")
+                completion.completed_at
             ) > registered_at:
                 raise ValueError("expert calibration completion follows registry seal")
 
@@ -255,7 +254,7 @@ class ExpertStudyRegistryV1(StrictModel):
         if set(assessment_map) != expected_conflicts:
             raise ValueError("conflict map must exactly cover every case x expert")
         if any(
-            datetime.fromisoformat(item.assessed_at.replace("Z", "+00:00"))
+            datetime.fromisoformat(item.assessed_at)
             > registered_at
             for item in self.conflict_assessments
         ):
@@ -324,7 +323,7 @@ def assert_expert_registry_covers_split(
 
 
 def _timestamp_v2(value: str) -> datetime:
-    return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    return datetime.fromisoformat(value)
 
 
 def _revalidate_v2(value: ModelT, model_type: type[ModelT]) -> ModelT:
@@ -384,7 +383,7 @@ class CalibrationSourceRecordV2(StrictModel):
     source_record_sha256: Sha256
 
     @model_validator(mode="after")
-    def validate_record(self) -> "CalibrationSourceRecordV2":
+    def validate_record(self) -> CalibrationSourceRecordV2:
         record = _revalidate_v2(self.source_record, SourceRecordRefV1)
         expected = canonical_sha256(
             {
@@ -519,7 +518,7 @@ class CalibrationSetManifestV2(StrictModel):
         return _require_rfc3339(value)
 
     @model_validator(mode="after")
-    def validate_manifest(self) -> "CalibrationSetManifestV2":
+    def validate_manifest(self) -> CalibrationSetManifestV2:
         cases = _validated_calibration_cases_v2(self.cases)
         structure_release = _revalidate_v2(
             self.structure_grouping_release,
@@ -863,7 +862,7 @@ class PrivateExpertIdentityCustodianAttestationV2(StrictModel):
     @model_validator(mode="after")
     def validate_attestation(
         self,
-    ) -> "PrivateExpertIdentityCustodianAttestationV2":
+    ) -> PrivateExpertIdentityCustodianAttestationV2:
         bindings = tuple(
             _revalidate_v2(item, PrivateNaturalPersonBindingV2)
             for item in self.bindings
@@ -943,7 +942,7 @@ class PublicExpertIdentityReleaseV2(StrictModel):
         return _require_rfc3339(value)
 
     @model_validator(mode="after")
-    def validate_release(self) -> "PublicExpertIdentityReleaseV2":
+    def validate_release(self) -> PublicExpertIdentityReleaseV2:
         experts = tuple(
             _revalidate_v2(item, PublicExpertIdentityV2)
             for item in self.experts
@@ -1120,7 +1119,7 @@ class CalibrationCompletionV2(StrictModel):
         return _require_rfc3339(value)
 
     @model_validator(mode="after")
-    def validate_completion(self) -> "CalibrationCompletionV2":
+    def validate_completion(self) -> CalibrationCompletionV2:
         if self.raw_answers_sha256 in {
             self.calibration_manifest_sha256,
             self.annotation_guide_sha256,
@@ -1242,7 +1241,7 @@ class ExpertStudyRegistryV2(StrictModel):
         return _require_rfc3339(value)
 
     @model_validator(mode="after")
-    def validate_registry(self) -> "ExpertStudyRegistryV2":
+    def validate_registry(self) -> ExpertStudyRegistryV2:
         registered_at = _timestamp_v2(self.registered_at)
         experts = tuple(
             _revalidate_v2(item, PublicExpertIdentityV2)
@@ -2039,7 +2038,7 @@ def assert_formal_pilot_expert_closure_v3(
     if pre_run_eligibility_release != eligibility:
         raise ValueError("expert closure receives a foreign eligibility V3 release")
     if not isinstance(frozen, FrozenCaseReleaseV3):  # pragma: no cover
-        raise ValueError("expert closure requires FrozenCaseReleaseV3")
+        raise ValueError("expert closure requires FrozenCaseReleaseV3")  # noqa: TRY004
 
     split = _revalidate_v2(split_manifest, BenchmarkSplitManifestV2)
     if split.manifest_kind not in {
@@ -2226,13 +2225,13 @@ __all__ = [
     "assert_calibration_completion_replays_manifest_v2",
     "assert_calibration_disjoint_from_benchmarks_v2",
     "assert_distinct_natural_person_assignments_v2",
-    "assert_legacy_v2_calibration_disjointness_unavailable",
     "assert_expert_registry_covers_split",
     "assert_expert_registry_covers_split_v2",
     "assert_expert_registry_precedes_execution_v2",
     "assert_expert_registry_sealed_before_budgets_v2",
     "assert_formal_pilot_expert_closure_legacy_v2_upstream",
     "assert_formal_pilot_expert_closure_v3",
+    "assert_legacy_v2_calibration_disjointness_unavailable",
     "assert_private_identity_attestation_matches_public_v2",
     "build_calibration_completion_v2",
     "build_calibration_set_manifest_v2",

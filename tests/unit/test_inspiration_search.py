@@ -1,20 +1,27 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from email.message import Message
+from typing import Self
 from urllib.error import HTTPError
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
 
-from material_agent.inspiration import search as inspiration_search
 from material_agent.inspiration import (
     ArtifactPointerV1,
     ComponentSnapshotV1,
     SearchQueryKind,
     SearchQueryV1,
 )
+from material_agent.inspiration import search as inspiration_search
+from material_agent.inspiration.policy import (
+    InspirationPolicyV1,
+    SearchBudgetV1,
+    SearchExecutionMode,
+)
+from material_agent.inspiration.runner import public_inspiration_runner_from_environment
 from material_agent.inspiration.search import (
     ArxivPublicAdapter,
     CrossrefPublicAdapter,
@@ -37,12 +44,6 @@ from material_agent.inspiration.search import (
     parse_osti_page,
     public_search_adapter_from_environment,
 )
-from material_agent.inspiration.policy import (
-    InspirationPolicyV1,
-    SearchBudgetV1,
-    SearchExecutionMode,
-)
-from material_agent.inspiration.runner import public_inspiration_runner_from_environment
 from material_agent.retrieval.storage import LocalArtifactStore
 
 
@@ -141,7 +142,7 @@ def arxiv_response_bytes(*, published_year: int = 2024) -> bytes:
     <category term="cond-mat.str-el" />
     <arxiv:doi>10.1000/ABC</arxiv:doi>
   </entry>
-</feed>""".encode("utf-8")
+</feed>""".encode()
 
 
 def osti_response_bytes(*, published_year: int = 1987) -> bytes:
@@ -275,7 +276,7 @@ class _HttpResponse:
             self.headers["Content-Length"] = content_length
         self.read_sizes: list[int] = []
 
-    def __enter__(self) -> _HttpResponse:
+    def __enter__(self) -> Self:
         return self
 
     def __exit__(self, *args: object) -> None:
@@ -295,7 +296,7 @@ class _UrlOpenSequence:
         self.calls: list[tuple[str, float]] = []
 
     def __call__(self, request: object, *, timeout: float) -> _HttpResponse:
-        self.calls.append((str(getattr(request, "full_url")), timeout))
+        self.calls.append((str(request.full_url), timeout))
         outcome = self.outcomes.pop(0)
         if isinstance(outcome, HTTPError):
             raise outcome
@@ -985,7 +986,7 @@ def test_retry_after_http_date_uses_injected_wall_clock() -> None:
     wall_time = 1_700_000_000.0
     retry_date = datetime.fromtimestamp(
         wall_time + 4,
-        tz=timezone.utc,
+        tz=UTC,
     ).strftime("%a, %d %b %Y %H:%M:%S GMT")
     payload = crossref_response_bytes()
     transport = _SequenceTransport(
@@ -1384,8 +1385,8 @@ def test_arxiv_adapter_builds_bounded_atom_query_and_paces_requests() -> None:
     assert parameters["start"] == ["0"]
     assert parameters["sortBy"] == ["relevance"]
     assert parameters["search_query"] == [
-        'all:"flat band compact localized state" AND '
-        "submittedDate:[199001010000 TO 202512312359]"
+        ('all:"flat band compact localized state" AND '
+        "submittedDate:[199001010000 TO 202512312359]")
     ]
     assert transport.calls[0]["headers"] == {
         "Accept": "application/atom+xml",
@@ -1890,7 +1891,7 @@ def test_public_runner_factory_binds_opt_in_multi_source_policy(tmp_path) -> Non
 
     assert isinstance(runner.search_adapter, MultiSourceSearchAdapter)
     assert all(
-        getattr(adapter, "publication_year_from") == 1960
-        and getattr(adapter, "publication_year_to") == 1990
+        adapter.publication_year_from == 1960
+        and adapter.publication_year_to == 1990
         for adapter in runner.search_adapter.adapters
     )

@@ -23,7 +23,6 @@ from material_agent.ml_screening.benchmark_metrics import (
 )
 from material_agent.ml_screening.models import Sha256, StrictFrozenModel
 
-
 BENCHMARK_SUMMARY_VERSION = "agent02-benchmark-summary-v1"
 
 
@@ -232,9 +231,9 @@ def render_synthetic_benchmark_summary(
     lines = [
         "# Agent02 Synthetic Benchmark Summary",
         "",
-        "> **TEST ONLY / SYNTHETIC:** no real reference data was used. This "
+        ("> **TEST ONLY / SYNTHETIC:** no real reference data was used. This "
         "summary is not evidence of model accuracy and cannot expand the "
-        "Agent02 applicability domain.",
+        "Agent02 applicability domain."),
         "",
         f"- Status: `{result.status.value}`",
         f"- Completed: `{result.completed_case_count}`",

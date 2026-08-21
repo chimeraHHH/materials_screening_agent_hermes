@@ -23,7 +23,6 @@ from material_agent.research.flatband_runtime_ingress import (
     ingest_runtime_artifact_v1,
 )
 
-
 SHA_A = "a" * 64
 SHA_B = "b" * 64
 SHA_C = "c" * 64

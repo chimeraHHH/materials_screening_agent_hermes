@@ -11,15 +11,18 @@ from material_agent.gateway.companion import (
     CompanionAdapterError,
     OfflineInspirationCompanionAdapter,
 )
-from material_agent.gateway.mcp_server import GatewayServerSettings, GatewayToolDispatcher
+from material_agent.gateway.mcp_server import (
+    GatewayServerSettings,
+    GatewayToolDispatcher,
+)
 from material_agent.gateway.models import (
     ApproveActionV1,
     InspirationBudgetV1,
     InspirationConstraintsV1,
 )
 from material_agent.gateway.persistence import SqliteGatewayRepository
-from material_agent.integration.hermes_service import create_hermes_inspiration_service
 from material_agent.inspiration.search import SearchAdapterError
+from material_agent.integration.hermes_service import create_hermes_inspiration_service
 
 
 class StaticCrossrefTransport:

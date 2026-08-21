@@ -14,10 +14,8 @@ from material_agent.ml_screening.adapters import (
 )
 from material_agent.ml_screening.models import (
     ArtifactRef,
-    EvidenceLevel,
     MLCandidateResult,
     MLCandidateResultSummary,
-    MLDecision,
     MLScreeningRequest,
     MLStagePlan,
     MLStageResultEnvelope,

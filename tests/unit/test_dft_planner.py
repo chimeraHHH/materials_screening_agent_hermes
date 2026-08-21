@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import pytest
 
-from material_agent.dft.planner import DFTPlanner, StageInputValidator, build_approval_payload
+from material_agent.dft.planner import (
+    DFTPlanner,
+    StageInputValidator,
+    build_approval_payload,
+)
 
 
 def payload(claim: str = "workflow_lifecycle") -> dict:

@@ -22,7 +22,6 @@ from material_agent.inspiration.semantic_rag import (
     semantic_rag_judge_from_environment,
 )
 
-
 pytestmark = pytest.mark.live_semantic_rag
 
 

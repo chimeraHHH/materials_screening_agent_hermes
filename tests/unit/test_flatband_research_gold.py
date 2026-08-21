@@ -6,7 +6,12 @@ from typing import Any, TypeVar
 import pytest
 from pydantic import ValidationError
 
-from material_agent.inspiration.models import StrictModel, canonical_sha256, deterministic_id
+from material_agent.inspiration.models import (
+    StrictModel,
+    canonical_sha256,
+    deterministic_id,
+)
+from material_agent.research.flatband_blinding import build_reviewer_release
 from material_agent.research.flatband_contracts import (
     AdjudicationReasonCode,
     AdjudicationStatus,
@@ -46,20 +51,18 @@ from material_agent.research.flatband_experts import (
     ExpertProfileV1,
     ExpertStudyRegistryV1,
 )
-from material_agent.research.flatband_blinding import build_reviewer_release
 from material_agent.research.flatband_gold import (
     AdjudicationRefV1,
-    DuplicatePartitionAdjudicationRefV2,
     DuplicatePartitionAdjudicationV2,
     DuplicatePartitionProvenance,
     DuplicatePartitionRefV1,
+    DuplicatePartitionRefV2,
     ExpertDuplicateClusterV1,
     ExpertDuplicatePartitionV1,
-    FinalExpertJudgmentV1,
-    FinalGoldReleaseV1,
-    DuplicatePartitionRefV2,
     FinalDuplicatePartitionV2,
+    FinalExpertJudgmentV1,
     FinalExpertJudgmentV2,
+    FinalGoldReleaseV1,
     FinalGoldReleaseV2,
     GoldProvenance,
     PooledDuplicateClusterV2,
@@ -74,7 +77,6 @@ from material_agent.research.flatband_gold import (
     build_final_gold_release_legacy_v2_upstream,
     build_final_gold_release_v2,
 )
-
 
 ModelT = TypeVar("ModelT", bound=StrictModel)
 SHA_A = "a" * 64
@@ -892,7 +894,7 @@ def _formal_v2_gold_fixture(
     partition_disagreement: bool = False,
     authoritative_v3: bool = False,
 ) -> dict[str, object]:
-    from test_flatband_research_blinding import _formal_v2_release_fixture
+    from tests.unit.test_flatband_research_blinding import _formal_v2_release_fixture
 
     upstream = _formal_v2_release_fixture(
         all_systems_failed_case=all_systems_failed_case,
@@ -916,7 +918,7 @@ def _formal_v2_gold_fixture(
         entry.pooled_unit_id: entry
         for entry in identity_maps[0].entries
     }
-    first_pool = sorted(pool_meta)[0]
+    first_pool = min(pool_meta)
     raw_annotations: list[RawExpertAnnotationV1] = []
     adjudications: list[ExpertAdjudicationV1] = []
     for pool_id in sorted(pool_meta):
@@ -1505,19 +1507,19 @@ def test_v2_30_case_execution_rejects_one_unit_gold_subset() -> None:
     import sys
     import types
 
-    import test_flatband_research_execution as execution_fixture
-    import test_flatband_research_experts as experts_fixture
-    import test_flatband_research_cases as cases_fixture
+    from tests.unit import test_flatband_research_cases as cases_fixture
+    from tests.unit import test_flatband_research_execution as execution_fixture
+    from tests.unit import test_flatband_research_experts as experts_fixture
 
     tests_package = sys.modules.setdefault("tests", types.ModuleType("tests"))
     unit_package = sys.modules.setdefault("tests.unit", types.ModuleType("tests.unit"))
-    setattr(tests_package, "unit", unit_package)
+    tests_package.unit = unit_package
     sys.modules.setdefault(
         "tests.unit.test_flatband_research_execution", execution_fixture
     )
     sys.modules.setdefault("tests.unit.test_flatband_research_experts", experts_fixture)
     sys.modules.setdefault("tests.unit.test_flatband_research_cases", cases_fixture)
-    from test_flatband_research_blinding import _release_fixture
+    from tests.unit.test_flatband_research_blinding import _release_fixture
 
     execution, eligibility, registry, excerpts = _release_fixture()
     manifests, identity_maps = build_reviewer_release(

@@ -45,9 +45,9 @@ from material_agent.gateway.models import (
     InspirationRunRequestV1,
     ReadableEvidenceSetV1,
     ReadableEvidenceV1,
+    artifact_closure_sha256,
     inspiration_report_uri,
     inspiration_request_sha256,
-    artifact_closure_sha256,
 )
 from material_agent.gateway.persistence import SqliteGatewayRepository
 from material_agent.gateway.service import MaterialsGatewayService
@@ -107,7 +107,6 @@ from material_agent.integration.request_compiler import (
     HermesRequestCompilationError,
 )
 from material_agent.retrieval.storage import LocalArtifactStore, canonical_json_bytes
-
 
 HERMES_FIXTURE_GOAL = (
     "Find bounded mechanism-guided structure proposals for a layered "
@@ -1153,7 +1152,7 @@ class HermesFixtureProjector:
             for line in lines:
                 record = json.loads(line)
                 if not isinstance(record, dict):
-                    raise ValueError("fetch manifest row must be an object")
+                    raise ValueError("fetch manifest row must be an object")  # noqa: TRY004
                 if record.get("schema_version") != "inspiration-fetch-manifest-v1":
                     raise ValueError("unsupported fetch manifest schema")
                 document_id = record.get("document_id")

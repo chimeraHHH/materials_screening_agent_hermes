@@ -5,10 +5,14 @@ from typing import Any, TypeVar
 import pytest
 from pydantic import ValidationError
 
-from material_agent.inspiration.models import StrictModel, canonical_sha256, deterministic_id
+from material_agent.inspiration.models import (
+    StrictModel,
+    canonical_sha256,
+    deterministic_id,
+)
 from material_agent.research.flatband_contracts import (
-    AdjudicationStatus,
     AdjudicationReasonCode,
+    AdjudicationStatus,
     AnnotationRefV1,
     AssertedEvidenceRelation,
     Assessability,
@@ -35,10 +39,10 @@ from material_agent.research.flatband_contracts import (
     FlatBandEvidenceV1,
     HardFailReason,
     HypothesisPacketV1,
+    LlmUseRecordV1,
+    LocalSemanticModelUseV1,
     MagneticOrder,
     MechanismFamily,
-    LocalSemanticModelUseV1,
-    LlmUseRecordV1,
     ObservedBandClass,
     RankedPacketRefV1,
     RankingContributionV1,
@@ -46,8 +50,8 @@ from material_agent.research.flatband_contracts import (
     ResearchRunLedgerV1,
     ResearchRunOutcome,
     SocState,
-    SourceRequestAllocationV1,
     SourceRecordRefV1,
+    SourceRequestAllocationV1,
     SplitCaseRefV1,
     SplitManifestKind,
     SystemRankingV1,
@@ -57,7 +61,6 @@ from material_agent.research.flatband_contracts import (
     assert_manifests_case_disjoint,
     observed_band_class,
 )
-
 
 ModelT = TypeVar("ModelT", bound=StrictModel)
 SHA_A = "a" * 64

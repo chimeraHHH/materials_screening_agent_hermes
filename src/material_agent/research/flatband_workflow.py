@@ -13,8 +13,8 @@ No hidden model reasoning or chain-of-thought is represented here.
 
 from __future__ import annotations
 
-from datetime import datetime
 import hashlib
+from datetime import datetime
 from typing import Annotated, Literal, TypeVar
 
 from pydantic import Field, model_validator
@@ -70,13 +70,12 @@ from material_agent.research.flatband_leakage import (
 )
 from material_agent.research.flatband_pilot import assert_formal_pilot_closure_v3
 
-
 ModelT = TypeVar("ModelT", bound=StrictModel)
 
 
 def _timestamp(value: str) -> datetime:
     try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        parsed = datetime.fromisoformat(value)
     except ValueError as exc:  # pragma: no cover - pydantic reports the field
         raise ValueError("timestamp must be RFC3339-compatible") from exc
     if parsed.tzinfo is None or parsed.utcoffset() is None:
@@ -164,7 +163,7 @@ class PilotRoundArtifactsV3(StrictModel):
     scientific_conclusion: Literal[False] = False
 
     @model_validator(mode="after")
-    def validate_bundle(self) -> "PilotRoundArtifactsV3":
+    def validate_bundle(self) -> PilotRoundArtifactsV3:
         _timestamp(self.assembled_at)
         source_checkpoint = _revalidate(
             self.source_catalog_checkpoint, SourceCatalogCheckpointReleaseV1

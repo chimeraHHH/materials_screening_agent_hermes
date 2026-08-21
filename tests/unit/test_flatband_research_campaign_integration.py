@@ -21,6 +21,7 @@ import pytest
 import material_agent.research.flatband_campaign as campaign
 import material_agent.research.flatband_lifecycle as lifecycle
 import material_agent.research.flatband_main_gold as main_gold
+import material_agent.research.flatband_workflow as pilot_workflow
 from material_agent.inspiration.models import (
     StrictModel,
     canonical_sha256,
@@ -39,19 +40,20 @@ from material_agent.research.flatband_analysis_v2 import (
     derive_development_metric_rows_v2,
     derive_locked_result_family_v2,
 )
-from material_agent.research.flatband_arm_runtime import ArmExecutionScope
-from material_agent.research.flatband_arm_runtime import build_arm_execution_trace
+from material_agent.research.flatband_arm_runtime import (
+    ArmExecutionScope,
+    build_arm_execution_trace,
+)
 from material_agent.research.flatband_campaign import (
     FlatBandCampaignReleaseV1,
     LocalSensitivityNotRunReleaseV1,
-    LockedExecutionPlanV1,
     LockedExecutionPlannedArmV1,
+    LockedExecutionPlanV1,
     _assert_identity_registry_join_v1,
     assemble_flatband_campaign_release_v1,
     assert_flatband_campaign_release_exact_v1,
     build_locked_execution_plan_v1,
 )
-from material_agent.research.flatband_contracts import BenchmarkSplit
 from material_agent.research.flatband_execution import (
     BudgetManifestV1,
     ExecutionMatrixV2,
@@ -108,14 +110,11 @@ from material_agent.research.flatband_main_gold import (
     build_main_reviewer_materials,
 )
 from material_agent.research.flatband_workflow import PilotRoundArtifactsV3
-import material_agent.research.flatband_workflow as pilot_workflow
-
-import test_flatband_research_analysis_v2 as analysis_fixture
-import test_flatband_research_arm_runtime as arm_fixture
-import test_flatband_research_main as main_fixture
-import test_flatband_research_main_gold as gold_fixture
-import test_flatband_research_pilot as pilot_fixture
-
+from tests.unit import test_flatband_research_analysis_v2 as analysis_fixture
+from tests.unit import test_flatband_research_arm_runtime as arm_fixture
+from tests.unit import test_flatband_research_main as main_fixture
+from tests.unit import test_flatband_research_main_gold as gold_fixture
+from tests.unit import test_flatband_research_pilot as pilot_fixture
 
 ModelT = TypeVar("ModelT", bound=StrictModel)
 GUIDE_SHA = canonical_sha256("campaign-integration-annotation-guide")
@@ -171,8 +170,8 @@ def upstream_scientific_fixture_seam(
                     module, helper_name, lambda value, _model_type: value
                 )
     for test_module_name in (
-        "test_flatband_research_blinding",
-        "test_flatband_research_gold",
+        "tests.unit.test_flatband_research_blinding",
+        "tests.unit.test_flatband_research_gold",
     ):
         test_module = importlib.import_module(test_module_name)
         for helper_name in tuple(vars(test_module)):

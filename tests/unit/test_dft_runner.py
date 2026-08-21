@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import shutil
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -15,7 +14,6 @@ from material_agent.orchestrator.models import (
 )
 from material_agent.orchestrator.runners import StageRunnerRegistry
 from material_agent.retrieval.storage import LocalArtifactStore
-
 
 FIXTURE = Path(__file__).parents[1] / "fixtures/contracts/agent01-v1"
 

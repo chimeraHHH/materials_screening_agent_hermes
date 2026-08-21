@@ -14,7 +14,6 @@ from material_agent.ml_screening.real_resources import (
 )
 from material_agent.ml_screening.resources import sha256_payload
 
-
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 
 

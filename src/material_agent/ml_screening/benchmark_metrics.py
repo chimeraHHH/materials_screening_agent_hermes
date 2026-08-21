@@ -19,7 +19,6 @@ from pydantic import Field, field_validator, model_validator
 from material_agent.ml_screening.benchmark import BenchmarkMetric
 from material_agent.ml_screening.models import Sha256, StrictFrozenModel
 
-
 BENCHMARK_METRIC_INPUT_VERSION = "agent02-benchmark-metric-input-v1"
 BENCHMARK_METRIC_RESULT_VERSION = "agent02-benchmark-metric-result-v1"
 
@@ -265,7 +264,7 @@ def _require_shape(value: Any, shape: tuple[int, ...], name: str) -> None:
 
 def _numeric_shape(value: Any) -> tuple[int, ...]:
     if isinstance(value, bool):
-        raise ValueError("benchmark numeric values cannot be bool")
+        raise ValueError("benchmark numeric values cannot be bool")  # noqa: TRY004
     if isinstance(value, (int, float)):
         return ()
     if not isinstance(value, (list, tuple)) or not value:
@@ -278,7 +277,7 @@ def _numeric_shape(value: Any) -> tuple[int, ...]:
 
 def _numeric_values(value: Any) -> list[float]:
     if isinstance(value, bool):
-        raise ValueError("benchmark numeric values cannot be bool")
+        raise ValueError("benchmark numeric values cannot be bool")  # noqa: TRY004
     if isinstance(value, (int, float)):
         number = float(value)
         if not math.isfinite(number):

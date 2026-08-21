@@ -24,7 +24,10 @@ from material_agent.inspiration.deepseek_agent import (
 )
 from material_agent.inspiration.models import TransformationPlanV1, canonical_json_bytes
 from material_agent.orchestrator.models import StrictModel
-from material_agent.softchem.operations import StructureOperationPlanV2
+from material_agent.softchem.operations import (
+    ReasonedConditionPlanV1,
+    StructureOperationPlanV2,
+)
 
 MATERIALS_RESEARCH_GRAPH_VERSION = "materials-inspiration-research-graph-v7"
 
@@ -394,7 +397,10 @@ class RegisteredTransformationAuditV3(StrictModel):
         default=None, pattern=r"^[0-9a-f]{64}$"
     )
     compile_attempt_count: int = Field(default=0, ge=0, le=32)
-    plans: tuple[TransformationPlanV1 | StructureOperationPlanV2, ...] = Field(
+    plans: tuple[
+        TransformationPlanV1 | StructureOperationPlanV2 | ReasonedConditionPlanV1,
+        ...,
+    ] = Field(
         default=(), max_length=64
     )
     bindings: tuple[TransformationPlanBindingV1, ...] = Field(default=(), max_length=64)
@@ -591,6 +597,27 @@ class ResearchRoleRecordV1(StrictModel):
     receipt: DeepSeekAgentReceiptV1
 
 
+class ResearchRepairRecordV1(StrictModel):
+    """Auditable receipt for one bounded contract-repair attempt."""
+
+    target_role: Literal[
+        "requirements_analyst",
+        "query_strategist",
+        "native_search_scout",
+    ]
+    defect_code: Literal[
+        "CONSTRAINT_COVERAGE",
+        "QUERY_CONSTRAINT_REFERENCES",
+        "NATIVE_LEAD_REFERENCES",
+    ]
+    attempt: int = Field(ge=1, le=2)
+    status: Literal["ACCEPTED", "REJECTED"]
+    invalid_output_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    repaired_output_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    validation_error: str = Field(min_length=1, max_length=1_000)
+    receipt: DeepSeekAgentReceiptV1
+
+
 class MaterialsResearchGraphResultV7(StrictModel):
     schema_version: Literal["materials-inspiration-research-graph-v7"] = (
         MATERIALS_RESEARCH_GRAPH_VERSION
@@ -615,6 +642,7 @@ class MaterialsResearchGraphResultV7(StrictModel):
     inference_review: ScientificInferenceReviewV1
     synthesis: ResearchSynthesisV1
     roles: tuple[ResearchRoleRecordV1, ...] = Field(min_length=9, max_length=9)
+    repairs: tuple[ResearchRepairRecordV1, ...] = Field(default=(), max_length=6)
     deterministic_normalizations: tuple[str, ...] = Field(default=(), max_length=16)
 
 
@@ -646,11 +674,12 @@ class ReadStateArgsV1(StrictModel):
             "inference_review",
             "inference_context",
             "synthesis_context",
+            "repair_context",
         ],
         ...,
     ] = Field(
         min_length=1,
-        max_length=13,
+        max_length=14,
         description="One or more required_state_sections to read in a single call.",
     )
 
@@ -713,18 +742,39 @@ class MaterialsResearchDirector:
             raise ValueError("research goal must contain 10 to 4000 characters")
         state: dict[str, Any] = {"goal": {"text": selected_goal}}
         records: list[ResearchRoleRecordV1] = []
+        repairs: list[ResearchRepairRecordV1] = []
         deterministic_normalizations: list[str] = []
 
         constraints = self._run_role(
             "requirements_analyst", ConstraintGraphV1, state, records
         )
-        _validate_goal_constraint_coverage(selected_goal, constraints)
+        constraints = self._repair_invalid_role_output(
+            target_role="requirements_analyst",
+            defect_code="CONSTRAINT_COVERAGE",
+            final_model=ConstraintGraphV1,
+            value=constraints,
+            validator=lambda item: _validate_goal_constraint_coverage(
+                selected_goal, item
+            ),
+            authoritative_context={"goal": selected_goal},
+            repairs=repairs,
+        )
         self._commit_checkpoint("requirements_analyst")
         state["constraints"] = constraints.model_dump(mode="json")
         query_plan = self._run_role(
             "query_strategist", ResearchQueryPlanV1, state, records
         )
-        _validate_query_constraint_refs(query_plan, constraints)
+        query_plan = self._repair_invalid_role_output(
+            target_role="query_strategist",
+            defect_code="QUERY_CONSTRAINT_REFERENCES",
+            final_model=ResearchQueryPlanV1,
+            value=query_plan,
+            validator=lambda item: _validate_query_constraint_refs(item, constraints),
+            authoritative_context={
+                "constraints": constraints.model_dump(mode="json")
+            },
+            repairs=repairs,
+        )
         self._commit_checkpoint("query_strategist")
         state["query_plan"] = query_plan.model_dump(mode="json")
 
@@ -736,7 +786,15 @@ class MaterialsResearchDirector:
             tools=(self.native_search_tool,),
         )
         native_leads = tuple(self.native_leads_snapshot())
-        _validate_native_lead_refs(discovery, native_leads)
+        discovery = self._repair_invalid_role_output(
+            target_role="native_search_scout",
+            defect_code="NATIVE_LEAD_REFERENCES",
+            final_model=DiscoveryReviewV1,
+            value=discovery,
+            validator=lambda item: _validate_native_lead_refs(item, native_leads),
+            authoritative_context={"native_leads": native_leads},
+            repairs=repairs,
+        )
         self._commit_checkpoint("native_search_scout")
         state["native_leads"] = native_leads
 
@@ -902,7 +960,99 @@ class MaterialsResearchDirector:
             inference_review=inference,
             synthesis=synthesis,
             roles=tuple(records),
+            repairs=tuple(repairs),
             deterministic_normalizations=tuple(deterministic_normalizations),
+        )
+
+    def _repair_invalid_role_output(
+        self,
+        *,
+        target_role: Literal[
+            "requirements_analyst",
+            "query_strategist",
+            "native_search_scout",
+        ],
+        defect_code: Literal[
+            "CONSTRAINT_COVERAGE",
+            "QUERY_CONSTRAINT_REFERENCES",
+            "NATIVE_LEAD_REFERENCES",
+        ],
+        final_model: type[StrictModel],
+        value: Any,
+        validator: Callable[[Any], None],
+        authoritative_context: Mapping[str, Any],
+        repairs: list[ResearchRepairRecordV1],
+    ) -> Any:
+        try:
+            validator(value)
+            return value
+        except ValueError as exc:
+            validation_error = str(exc)[:1_000]
+
+        current = value
+        for attempt in range(1, 3):
+            repair_state: dict[str, Any] = {
+                "repair_context": {
+                    "target_role": target_role,
+                    "defect_code": defect_code,
+                    "validation_error": validation_error,
+                    "invalid_output": current.model_dump(mode="json"),
+                    "authoritative_context": authoritative_context,
+                    "repair_policy": (
+                        "Change only fields needed to satisfy the stated contract. "
+                        "Preserve the user threshold and every already-valid identifier. "
+                        "Do not add scientific claims or evidence."
+                    ),
+                }
+            }
+            runner = self.runner_factory(
+                "contract_repair", (self._state_tool(repair_state),)
+            )
+            result = runner.run(
+                system_prompt=_role_prompt("contract_repair", final_model),
+                user_payload={
+                    "role": "contract_repair",
+                    "available_state_sections": ("repair_context",),
+                    "required_state_sections": ("repair_context",),
+                    "output_schema": final_model.model_json_schema(),
+                    "evidence_policy": (
+                        "Contract repair cannot create evidence or relax a hard constraint."
+                    ),
+                },
+                prompt_version="materials-research-contract-repair-v1",
+                final_model=final_model,
+                require_tool_call=True,
+            )
+            repaired = result.final
+            try:
+                validator(repaired)
+                status = "ACCEPTED"
+            except ValueError as exc:
+                status = "REJECTED"
+                validation_error = str(exc)[:1_000]
+            repairs.append(
+                ResearchRepairRecordV1(
+                    target_role=target_role,
+                    defect_code=defect_code,
+                    attempt=attempt,
+                    status=status,
+                    invalid_output_sha256=_strict_model_sha256(current),
+                    repaired_output_sha256=_strict_model_sha256(repaired),
+                    validation_error=validation_error,
+                    receipt=result.receipt,
+                )
+            )
+            if self.checkpoint_save is not None:
+                self.checkpoint_save(
+                    f"{target_role}-repair-attempt-{attempt}", result
+                )
+            if status == "ACCEPTED":
+                if self.checkpoint_save is not None:
+                    self.checkpoint_save(f"{target_role}-repaired", result)
+                return repaired
+            current = repaired
+        raise ValueError(
+            f"contract repair exhausted for {target_role}: {validation_error}"
         )
 
     def _run_role(
@@ -987,7 +1137,17 @@ class MaterialsResearchDirector:
 
 
 def _role_prompt(role: str, model: type[StrictModel]) -> str:
-    if role == "database_scout":
+    if role == "contract_repair":
+        role_specific = (
+            "This is a bounded contract repair, not a new scientific role. Read the "
+            "repair_context and correct only the stated validation defect. Preserve all "
+            "valid constraints, thresholds, queries, classifications, and identifiers. "
+            "For constraint coverage, add the missing explicit family without merging it "
+            "into OTHER. For query coverage, reference every and only supplied constraint "
+            "ID at least once. For native leads, retain only supplied lead IDs. Never "
+            "invent evidence, candidates, properties, or a looser scientific requirement. "
+        )
+    elif role == "database_scout":
         role_specific = (
             "Use the federated candidate tool for every chemically meaningful query. "
             "One tool call automatically fans out to every enabled database; inspect its "
@@ -1010,8 +1170,12 @@ def _role_prompt(role: str, model: type[StrictModel]) -> str:
             "Use compile_reasoned_operation for every concrete minimal structure route. "
             "Use native scientific reasoning to choose material-specific strain tensor, "
             "vacancy element/fraction, intercalant/oxidation/site/gap, or layer/vector, "
+            "carrier-density scan, electrostatic field, magnetic-proximity partner, or "
+            "two-parent vdW interface parameters, "
             "and provide mechanism, chemistry-prior rationale, and decisive falsifier. "
             "Local code freezes a run-local spec and remains the sole execution authority. "
+            "Condition/interface plans do not create CIFs and require a specialized builder "
+            "or electronic-structure calculation. "
             "Copy only returned plan_id values into proposed_registered_transformations; "
             "never place operation names, prose, or invented IDs there. A rejected or "
             "inapplicable route remains a scientific hypothesis without a plan ID. "
@@ -1087,8 +1251,13 @@ def _required_state_sections(role: str, available: tuple[str, ...]) -> tuple[str
         ),
         "hypothesis_reasoner": ("inference_context",),
         "synthesist": ("synthesis_context",),
+        "contract_repair": ("repair_context",),
     }[role]
     return tuple(section for section in requested if section in available)
+
+
+def _strict_model_sha256(value: StrictModel) -> str:
+    return hashlib.sha256(canonical_json_bytes(value)).hexdigest()
 
 
 def _build_inference_context(

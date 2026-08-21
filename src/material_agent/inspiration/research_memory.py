@@ -12,7 +12,7 @@ import sqlite3
 from collections.abc import Callable, Iterator
 from enum import StrEnum
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated, Literal, Self
 
 from pydantic import Field, model_validator
 
@@ -20,7 +20,6 @@ from material_agent.inspiration.literature_budget import LiteratureQueryFamily
 from material_agent.inspiration.models import (
     ArtifactPointerV1,
     Identifier,
-    Sha256,
     ShortText,
     StrictModel,
     canonical_json_bytes,
@@ -32,7 +31,6 @@ from material_agent.inspiration.query_context import (
     LiteratureAnchorV2,
     ReviewedQueryHintsV2,
 )
-
 
 INSPIRATION_MEMORY_EVENT_VERSION = "inspiration-memory-event-v1"
 INSPIRATION_MEMORY_SNAPSHOT_VERSION = "inspiration-memory-snapshot-v1"
@@ -276,7 +274,7 @@ class InspirationMemoryStore:
         )
         self._connection.commit()
 
-    def __enter__(self) -> InspirationMemoryStore:
+    def __enter__(self) -> Self:
         return self
 
     def __exit__(self, *_args: object) -> None:
@@ -440,7 +438,7 @@ def compile_memory_snapshot_v1(
         elif isinstance(payload, DownstreamOutcomeMemoryV1):
             downstream.append(payload)
         else:  # pragma: no cover - the discriminated union is closed above
-            raise AssertionError("unsupported memory payload")
+            raise AssertionError("unsupported memory payload")  # noqa: TRY004
 
     values = {
         "schema_version": INSPIRATION_MEMORY_SNAPSHOT_VERSION,

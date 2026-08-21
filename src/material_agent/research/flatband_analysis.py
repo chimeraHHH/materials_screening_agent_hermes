@@ -21,9 +21,9 @@ assembler lands, that function always raises ``FormalAnalysisPrerequisiteError``
 
 from __future__ import annotations
 
+import hashlib
 from datetime import datetime
 from enum import StrEnum
-import hashlib
 from typing import Annotated, Literal, NoReturn, TypeVar
 
 from pydantic import Field, field_validator, model_validator
@@ -35,6 +35,13 @@ from material_agent.inspiration.models import (
     canonical_sha256,
     deterministic_id,
 )
+from material_agent.research.flatband_blinding import (
+    EvidenceExcerptV2,
+    PrivateIdentityMapV2,
+    PrivatePositionMapEntryV2,
+    ReviewerManifestV2,
+    assert_reviewer_release_exact_coverage_v2,
+)
 from material_agent.research.flatband_cases import (
     FrozenCaseReleaseV2,
     FrozenCaseReleaseV3,
@@ -42,13 +49,6 @@ from material_agent.research.flatband_cases import (
     PreRunEligibilityReleaseV3,
     assert_pre_run_eligibility_precedes_execution_v2,
     assert_pre_run_eligibility_precedes_execution_v3,
-)
-from material_agent.research.flatband_blinding import (
-    EvidenceExcerptV2,
-    PrivateIdentityMapV2,
-    PrivatePositionMapEntryV2,
-    ReviewerManifestV2,
-    assert_reviewer_release_exact_coverage_v2,
 )
 from material_agent.research.flatband_contracts import (
     Assessability,
@@ -70,7 +70,6 @@ from material_agent.research.flatband_execution import (
 )
 from material_agent.research.flatband_experts import (
     ExpertStudyRegistryV2,
-    assert_expert_registry_covers_split_v2,
 )
 from material_agent.research.flatband_gold import FinalGoldReleaseV2
 from material_agent.research.flatband_leakage import (
@@ -98,7 +97,6 @@ from material_agent.research.flatband_statistics import (
     case_component_bootstrap_alpha,
 )
 
-
 ModelT = TypeVar("ModelT", bound=StrictModel)
 
 
@@ -121,7 +119,7 @@ class FormalAnalysisPrerequisiteError(RuntimeError):
 
 def _timestamp(value: str) -> datetime:
     try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        parsed = datetime.fromisoformat(value)
     except ValueError as exc:
         raise ValueError("timestamp must be RFC3339-compatible") from exc
     if parsed.tzinfo is None or parsed.utcoffset() is None:
@@ -184,7 +182,7 @@ class AnalysisPositionV1(StrictModel):
     missing_reason: MissingPositionReason | None = None
 
     @model_validator(mode="after")
-    def validate_position(self) -> "AnalysisPositionV1":
+    def validate_position(self) -> AnalysisPositionV1:
         identity_values = (
             self.packet_id,
             self.packet_sha256,
@@ -289,7 +287,7 @@ class CaseSystemMetricProjectionV1(StrictModel):
     ]
 
     @model_validator(mode="after")
-    def validate_projection(self) -> "CaseSystemMetricProjectionV1":
+    def validate_projection(self) -> CaseSystemMetricProjectionV1:
         if tuple(item.position for item in self.positions) != (1, 2, 3, 4, 5):
             raise ValueError("analysis projection requires positions one through five")
         present = tuple(item for item in self.positions if item.packet_id is not None)
@@ -461,7 +459,7 @@ class CaseSystemAnalysisRowV1(StrictModel):
     metrics: CaseSystemMetricProjectionV1
 
     @model_validator(mode="after")
-    def validate_row(self) -> "CaseSystemAnalysisRowV1":
+    def validate_row(self) -> CaseSystemAnalysisRowV1:
         if self.status is RunCellStatus.SUCCEEDED and self.metrics.returned_count != 5:
             raise ValueError("successful analysis row requires all five positions")
         if self.status is RunCellStatus.FAILED and self.metrics.returned_count != 0:
@@ -485,7 +483,7 @@ class RawReviewerLabelRefV1(StrictModel):
     bridge_verdict: BridgeVerdict | None
 
     @model_validator(mode="after")
-    def validate_label(self) -> "RawReviewerLabelRefV1":
+    def validate_label(self) -> RawReviewerLabelRefV1:
         if self.assessability is Assessability.CASE_INVALID:
             if any(
                 value is not None
@@ -532,7 +530,7 @@ class PilotAgreementUnitV1(StrictModel):
     grade_alpha_included: bool
 
     @model_validator(mode="after")
-    def validate_unit(self) -> "PilotAgreementUnitV1":
+    def validate_unit(self) -> PilotAgreementUnitV1:
         reviewer_ids = tuple(item.reviewer_id for item in self.raw_labels)
         if reviewer_ids != tuple(sorted(set(reviewer_ids))):
             raise ValueError("Pilot agreement requires two reviewer-sorted labels")
@@ -596,7 +594,7 @@ class FormalPilotCaseBindingV1(StrictModel):
     ]
 
     @model_validator(mode="after")
-    def validate_case(self) -> "FormalPilotCaseBindingV1":
+    def validate_case(self) -> FormalPilotCaseBindingV1:
         if self.reviewer_ids != tuple(sorted(set(self.reviewer_ids))):
             raise ValueError("formal Pilot case requires two sorted reviewers")
         return self
@@ -615,7 +613,7 @@ class FormalPilotRawLabelRefV1(StrictModel):
     relevance_grade: Annotated[int, Field(ge=0, le=3)] | None
 
     @model_validator(mode="after")
-    def validate_label(self) -> "FormalPilotRawLabelRefV1":
+    def validate_label(self) -> FormalPilotRawLabelRefV1:
         if self.assessability is Assessability.CASE_INVALID:
             if self.relevance_grade is not None:
                 raise ValueError("CASE_INVALID cannot carry an ordinal grade")
@@ -646,7 +644,7 @@ class FormalPilotAgreementUnitV1(StrictModel):
     round_fail_closed: bool
 
     @model_validator(mode="after")
-    def validate_unit(self) -> "FormalPilotAgreementUnitV1":
+    def validate_unit(self) -> FormalPilotAgreementUnitV1:
         reviewers = tuple(item.reviewer_id for item in self.raw_labels)
         if reviewers != tuple(sorted(set(reviewers))):
             raise ValueError("formal Pilot unit requires two reviewer-sorted labels")
@@ -738,7 +736,7 @@ class FormalPilotAgreementReleaseV1(StrictModel):
         return value
 
     @model_validator(mode="after")
-    def validate_release(self) -> "FormalPilotAgreementReleaseV1":
+    def validate_release(self) -> FormalPilotAgreementReleaseV1:
         if self.review_round != (
             1 if self.execution_phase is ExecutionPhase.PILOT_R1 else 2
         ):
@@ -940,7 +938,7 @@ class FormalPilotAgreementGateReleaseV1(StrictModel):
         return value
 
     @model_validator(mode="after")
-    def validate_gate(self) -> "FormalPilotAgreementGateReleaseV1":
+    def validate_gate(self) -> FormalPilotAgreementGateReleaseV1:
         if self.review_round != (
             1 if self.execution_phase is ExecutionPhase.PILOT_R1 else 2
         ):
@@ -1091,7 +1089,7 @@ class AnalysisInputReleaseV1(StrictModel):
         return value
 
     @model_validator(mode="after")
-    def validate_release(self) -> "AnalysisInputReleaseV1":
+    def validate_release(self) -> AnalysisInputReleaseV1:
         case_keys = tuple(item.case_id for item in self.cases)
         if case_keys != tuple(sorted(set(case_keys))):
             raise ValueError("analysis cases must be case-ID sorted and unique")
@@ -1279,7 +1277,7 @@ def _assert_private_evidence_exact(
     packet: object,
     authoritative_receipts: dict[tuple[str, str, str], object],
 ) -> None:
-    links = tuple(getattr(packet, "evidence_links"))
+    links = tuple(packet.evidence_links)
     expected_ids = tuple(sorted(item.evidence_link_id for item in links))
     evidence_by_id = {item.evidence_link_id: item for item in entry.evidence_map}
     if tuple(sorted(evidence_by_id)) != expected_ids:
@@ -1617,7 +1615,7 @@ def build_formal_pilot_agreement_release(
     if (
         len(manifest_pairs) != len(set(manifest_pairs))
         or len(manifest_by_id) != len(manifests)
-        or set(item[0] for item in manifest_pairs) != set(manifest_by_id)
+        or {item[0] for item in manifest_pairs} != set(manifest_by_id)
     ):
         raise ValueError("public manifests and private maps must be one-to-one")
     map_by_reviewer = {item.expert_id: item for item in maps}
@@ -2583,6 +2581,10 @@ def assert_formal_analysis_input_exact_closure(
 
 
 __all__ = [
+    "PILOT_ALPHA_BOOTSTRAP_REPLICATES",
+    "PILOT_ALPHA_BOOTSTRAP_SEED",
+    "PILOT_ALPHA_PASS_THRESHOLD",
+    "PILOT_ALPHA_R1_REVISION_FLOOR",
     "AnalysisCaseBindingV1",
     "AnalysisClosureStatus",
     "AnalysisInputReleaseV1",
@@ -2596,10 +2598,6 @@ __all__ = [
     "FormalPilotAgreementUnitV1",
     "FormalPilotCaseBindingV1",
     "FormalPilotRawLabelRefV1",
-    "PILOT_ALPHA_BOOTSTRAP_REPLICATES",
-    "PILOT_ALPHA_BOOTSTRAP_SEED",
-    "PILOT_ALPHA_PASS_THRESHOLD",
-    "PILOT_ALPHA_R1_REVISION_FLOOR",
     "PilotAgreementGateDecision",
     "PilotAgreementUnitV1",
     "PilotPrivateMapRefV1",

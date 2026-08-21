@@ -11,12 +11,12 @@ from material_agent.orchestrator.identity import (
     FixedClock,
 )
 from material_agent.orchestrator.models import (
+    LEGACY_ORCHESTRATOR_CONTRACT_VERSION,
+    P01_ORCHESTRATOR_CONTRACT_VERSION,
     CancelOutcome,
     ControlOutcomeType,
     ControlStageOutcome,
     ExternalJobStatus,
-    LEGACY_ORCHESTRATOR_CONTRACT_VERSION,
-    P01_ORCHESTRATOR_CONTRACT_VERSION,
     PreparedStagePlan,
     RunStatus,
     StageCapability,
@@ -30,8 +30,10 @@ from material_agent.orchestrator.runners import (
     FixtureStageRunner,
     StageRunnerRegistry,
 )
-from material_agent.orchestrator.runtime import OrchestratorRuntime
-from material_agent.orchestrator.runtime import CheckpointCompatibilityError
+from material_agent.orchestrator.runtime import (
+    CheckpointCompatibilityError,
+    OrchestratorRuntime,
+)
 from material_agent.orchestrator.storage import RepositoryConflictError
 from material_agent.retrieval.storage import LocalArtifactStore
 

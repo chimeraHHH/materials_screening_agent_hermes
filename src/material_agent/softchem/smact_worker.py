@@ -64,7 +64,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         if result.worker_lock_sha256 is not None:
             raise ValueError("local SMACT result cannot claim worker provenance")
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         print(
             f"SMACT prior worker failed: {type(exc).__name__}",
             file=sys.stderr,

@@ -48,8 +48,8 @@ from material_agent.research.flatband_execution import (
     ResearchRankingV1,
     ResearchSystemId,
     RunCellStatus,
-    SourceReceiptBundleV1,
     SourceBudgetV1,
+    SourceReceiptBundleV1,
     SourceVariant,
     SystemConfigV1,
     TerminalRunResultV1,
@@ -60,7 +60,6 @@ from material_agent.research.flatband_execution import (
 from material_agent.research.flatband_lifecycle import (
     VerifiedPayloadKind,
 )
-
 
 ModelT = TypeVar("ModelT", bound=StrictModel)
 SHA_A = "a" * 64

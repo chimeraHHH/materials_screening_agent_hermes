@@ -11,7 +11,6 @@ from material_agent.inspiration.transformations import (
     SubstitutionRuleV1,
 )
 
-
 RUNTIME_TRANSFORMATION_MODELS = (
     SubstitutionRuleV1,
     SubstitutionRegistryV1,

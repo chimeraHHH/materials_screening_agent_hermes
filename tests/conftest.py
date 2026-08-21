@@ -7,8 +7,6 @@ from pathlib import Path
 
 import pytest
 
-from material_agent.retrieval.adapters import InMemoryMaterialsAdapter
-from material_agent.retrieval.models import Requirement, RetrievalPolicy
 from material_agent.ml_screening.models import (
     CandidateProperty,
     EvidenceLevel,
@@ -20,13 +18,18 @@ from material_agent.ml_screening.models import (
 from material_agent.ml_screening.planner import build_ml_stage_plan
 from material_agent.ml_screening.requirement import requirement_view_from_payload
 from material_agent.ml_screening.resources import (
-    default_policy as default_ml_policy,
     artifact_pointer as ml_artifact_pointer,
+)
+from material_agent.ml_screening.resources import (
+    default_policy as default_ml_policy,
+)
+from material_agent.ml_screening.resources import (
     fake_health_snapshot,
     fake_model_spec,
     fake_registry,
 )
-
+from material_agent.retrieval.adapters import InMemoryMaterialsAdapter
+from material_agent.retrieval.models import Requirement, RetrievalPolicy
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures"
 

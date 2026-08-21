@@ -18,7 +18,6 @@ from material_agent.orchestrator.llm import LLMProvider
 from material_agent.orchestrator.models import LLMCallAudit, StrictModel
 from material_agent.retrieval.storage import LocalArtifactStore
 
-
 RESEARCH_ADVICE_VERSION = "research-advice-v1"
 RESEARCH_ADVICE_PROMPT_VERSION = "research-advice-deepseek-v1"
 MAX_CANDIDATE_CARDS = 50
@@ -56,7 +55,7 @@ class ResearchActionProposal(StrictModel):
     execution_allowed: bool = False
 
     @model_validator(mode="after")
-    def forbid_execution(self) -> "ResearchActionProposal":
+    def forbid_execution(self) -> ResearchActionProposal:
         if self.execution_allowed:
             raise ValueError("research advice actions are proposals only")
         return self
@@ -98,7 +97,7 @@ class ResearchAdvice(StrictModel):
     scientific_conclusion: bool = False
 
     @model_validator(mode="after")
-    def validate_narrative_scope(self) -> "ResearchAdvice":
+    def validate_narrative_scope(self) -> ResearchAdvice:
         action_ids = {action.action_id for action in self.snapshot.actions}
         if set(self.narrative.action_explanations) - action_ids:
             raise ValueError("narrative referenced an action absent from the policy snapshot")
@@ -119,13 +118,13 @@ def build_research_snapshot(
         raise ValueError("orchestrator report failed integrity validation")
     report = store.read_json(report_uri)
     if not isinstance(report, dict):
-        raise ValueError("orchestrator report must be a JSON object")
+        raise ValueError("orchestrator report must be a JSON object")  # noqa: TRY004
     required = {"project_id", "run_id", "status", "stages", "evidence_statement"}
     if not required.issubset(report):
         raise ValueError("orchestrator report lacks research-advice fields")
     stages = report["stages"]
     if not isinstance(stages, dict):
-        raise ValueError("orchestrator report stages must be an object")
+        raise ValueError("orchestrator report stages must be an object")  # noqa: TRY004
 
     evidence_gaps: list[ResearchEvidenceGap] = []
     candidate_cards: list[ResearchCandidateCard] = []

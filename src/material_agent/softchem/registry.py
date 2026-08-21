@@ -42,8 +42,12 @@ SOFTCHEM_OPERATOR_REGISTRY_SCHEMA_VERSION = "softchem-operator-registry-v1"
 SOFTCHEM_OPERATOR_REGISTRY_V2_SCHEMA_VERSION = "softchem-operator-registry-v2"
 
 SoftChemOperatorIdV2 = Literal[
+    "APPLY_CARRIER_DOPING_V1",
+    "APPLY_ELECTROSTATIC_GATE_V1",
     "APPLY_HOMOGENEOUS_STRAIN_V1",
     "INTERCALATE_REASONED_GAP_SITE_V1",
+    "PLAN_MAGNETIC_PROXIMITY_V1",
+    "PLAN_VDW_HETEROSTRUCTURE_V1",
     "REMOVE_EQUIVALENT_SITE_CLASS_V1",
     "SLIDE_REASONED_LAYER_V1",
     "SUBSTITUTE_EQUIVALENT_SITE_V1",
@@ -147,6 +151,10 @@ class SoftChemOperatorSpecV2(StrictModel):
         "reasoned-layer-slide-parameters-v1",
         "substitution-parameters-v1",
         "reasoned-substitution-parameters-v1",
+        "carrier-doping-parameters-v1",
+        "electrostatic-gate-parameters-v1",
+        "magnetic-proximity-parameters-v1",
+        "vdw-heterostructure-parameters-v1",
     ]
     executor_id: Literal[
         "pymatgen-homogeneous-strain-v1",
@@ -154,6 +162,10 @@ class SoftChemOperatorSpecV2(StrictModel):
         "pymatgen-equivalent-site-vacancy-v1",
         "pymatgen-reasoned-layer-slide-v1",
         "pymatgen-equivalent-site-substitution-v1",
+        "planning-carrier-doping-v1",
+        "planning-electrostatic-gate-v1",
+        "planning-magnetic-proximity-v1",
+        "planning-vdw-heterostructure-v1",
     ]
     permitted_changes: Annotated[
         tuple[Identifier, ...], Field(min_length=1, max_length=8)
@@ -229,6 +241,37 @@ _COMMON_INVARIANTS = (
 DEFAULT_SOFTCHEM_OPERATOR_REGISTRY_V2 = SoftChemOperatorRegistryV2(
     operators=(
         SoftChemOperatorSpecV2(
+            operator_id="APPLY_CARRIER_DOPING_V1",
+            parameter_schema_id="carrier-doping-parameters-v1",
+            executor_id="planning-carrier-doping-v1",
+            permitted_changes=("electronic_occupation_boundary_condition",),
+            required_invariants=tuple(
+                sorted((*_COMMON_INVARIANTS, "parent_structure_unchanged"))
+            ),
+            prior_ids=("bounded-carrier-density-prior-v1",),
+            validator_ids=(
+                "carrier-density-validator-v1",
+                "charge-compensation-validator-v1",
+                "parent-hash-validator-v1",
+            ),
+        ),
+        SoftChemOperatorSpecV2(
+            operator_id="APPLY_ELECTROSTATIC_GATE_V1",
+            parameter_schema_id="electrostatic-gate-parameters-v1",
+            executor_id="planning-electrostatic-gate-v1",
+            permitted_changes=("external_electric_field_boundary_condition",),
+            required_invariants=tuple(
+                sorted((*_COMMON_INVARIANTS, "parent_structure_unchanged"))
+            ),
+            prior_ids=("bounded-electric-field-prior-v1",),
+            validator_ids=(
+                "dipole-correction-validator-v1",
+                "electric-field-validator-v1",
+                "parent-hash-validator-v1",
+                "vacuum-thickness-validator-v1",
+            ),
+        ),
+        SoftChemOperatorSpecV2(
             operator_id="APPLY_HOMOGENEOUS_STRAIN_V1",
             parameter_schema_id="homogeneous-strain-parameters-v1",
             executor_id="pymatgen-homogeneous-strain-v1",
@@ -261,6 +304,45 @@ DEFAULT_SOFTCHEM_OPERATOR_REGISTRY_V2 = SoftChemOperatorRegistryV2(
             validator_ids=(
                 "common-structure-validator-v2",
                 "intercalation-delta-validator-v1",
+            ),
+        ),
+        SoftChemOperatorSpecV2(
+            operator_id="PLAN_MAGNETIC_PROXIMITY_V1",
+            parameter_schema_id="magnetic-proximity-parameters-v1",
+            executor_id="planning-magnetic-proximity-v1",
+            permitted_changes=("planned_magnetic_interface",),
+            required_invariants=tuple(
+                sorted((*_COMMON_INVARIANTS, "both_parent_structures_unchanged"))
+            ),
+            prior_ids=(
+                "bounded-interface-separation-prior-v1",
+                "two-dimensional-parent-prior-v1",
+            ),
+            validator_ids=(
+                "interface-registry-validator-v1",
+                "lattice-mismatch-validator-v1",
+                "magnetic-parent-validator-v1",
+                "parent-hash-validator-v1",
+            ),
+        ),
+        SoftChemOperatorSpecV2(
+            operator_id="PLAN_VDW_HETEROSTRUCTURE_V1",
+            parameter_schema_id="vdw-heterostructure-parameters-v1",
+            executor_id="planning-vdw-heterostructure-v1",
+            permitted_changes=("planned_vdw_interface",),
+            required_invariants=tuple(
+                sorted((*_COMMON_INVARIANTS, "both_parent_structures_unchanged"))
+            ),
+            prior_ids=(
+                "bounded-interface-separation-prior-v1",
+                "bounded-lattice-mismatch-prior-v1",
+                "two-dimensional-parent-prior-v1",
+            ),
+            validator_ids=(
+                "commensurate-supercell-validator-v1",
+                "interface-registry-validator-v1",
+                "lattice-mismatch-validator-v1",
+                "parent-hash-validator-v1",
             ),
         ),
         SoftChemOperatorSpecV2(

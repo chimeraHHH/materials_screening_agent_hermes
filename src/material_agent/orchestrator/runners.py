@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from datetime import UTC, datetime
 import hashlib
 import os
+from collections.abc import Callable
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
 from material_agent.orchestrator.models import (
+    STAGE_TO_AGENT,
     ArtifactPointer,
     CancelOutcome,
     ControlError,
@@ -22,7 +23,6 @@ from material_agent.orchestrator.models import (
     StageId,
     StageInputValidation,
     StageStatus,
-    STAGE_TO_AGENT,
     operation_input_sha256_for,
 )
 from material_agent.retrieval.models import (
@@ -32,12 +32,15 @@ from material_agent.retrieval.models import (
     RetrievalStageContext,
     RetrievalStageInput,
     RetrievalStagePlan,
+)
+from material_agent.retrieval.models import (
     StageOutcomeType as NativeOutcomeType,
+)
+from material_agent.retrieval.models import (
     StageStatus as NativeStageStatus,
 )
 from material_agent.retrieval.runner import RetrievalStageRunner
 from material_agent.retrieval.storage import LocalArtifactStore
-
 
 RunnerFactory = Callable[[StageExecutionContext], "StageRunner"]
 
@@ -392,7 +395,7 @@ class Agent01RunnerAdapter:
             )
             _validate_native_plan_context(plan, context)
             native = self.native_runner.start(plan, plan.idempotency_key)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             return runner_exception_outcome(
                 context,
                 idempotency_key,

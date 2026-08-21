@@ -17,7 +17,6 @@ from material_agent.softchem.prior import (
     smact_prior_policy_sha256,
 )
 
-
 SMACT_WORKER_BASE_LOCK_SHA256 = (
     "bdb5e87aab01d446aa6889dd6f753145cddc8f386df0282d4e80b61abbd3a03c"
 )
@@ -154,8 +153,7 @@ class SmactPriorSubprocessClient:
             process = subprocess.run(
                 command,
                 input=request.model_dump_json().encode("utf-8"),
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+                capture_output=True,
                 timeout=self.timeout_seconds,
                 check=False,
                 shell=False,

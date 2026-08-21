@@ -10,7 +10,6 @@ from material_agent.orchestrator.parser import (
 )
 from material_agent.retrieval.models import Requirement
 
-
 pytestmark = pytest.mark.live_llm
 
 

@@ -5,9 +5,9 @@ from collections.abc import Mapping, Sequence
 import pytest
 from pydantic import ValidationError
 
+import material_agent.research.flatband_lifecycle as lifecycle
 from material_agent.inspiration.models import canonical_sha256
 from material_agent.research.flatband_execution import ResearchSystemId
-import material_agent.research.flatband_lifecycle as lifecycle
 
 
 def _sha(label: str) -> str:
@@ -30,7 +30,7 @@ def _attestation(
     # The lifecycle module intentionally has no producer for this artifact: in
     # production it must come from the AnalysisInputV2 formal verifier.  This
     # helper creates a syntactically exact upstream fixture only.
-    return lifecycle._build_addressed(  # noqa: SLF001 - exact fixture seam
+    return lifecycle._build_addressed(
         lifecycle.FormalVerifierAttestationRefV1,
         id_field="attestation_id",
         sha_field="attestation_sha256",
@@ -917,7 +917,7 @@ def test_scientific_review_rejects_readdressed_approve_tampering() -> None:
     }
     payload["decision"] = lifecycle.ScientificReviewerDecision.APPROVE
     payload["required_limitation_codes"] = ()
-    readdressed_tamper = lifecycle._build_addressed(  # noqa: SLF001
+    readdressed_tamper = lifecycle._build_addressed(
         lifecycle.ScientificReviewerAttestationV1,
         id_field="attestation_id",
         sha_field="attestation_sha256",

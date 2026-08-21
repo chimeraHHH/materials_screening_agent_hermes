@@ -72,7 +72,7 @@ class _McpFixtureCompanion:
     ) -> CompanionTransitionV1:
         del request, state
         if not isinstance(action, ApproveActionV1):
-            raise AssertionError("the MCP fixture accepts only exact approval")
+            raise AssertionError("the MCP fixture accepts only exact approval")  # noqa: TRY004
         report_payload = b"# MCP fixture inspiration report\n"
         report_uri = inspiration_report_uri(run_id)
         report_sha256 = hashlib.sha256(report_payload).hexdigest()
@@ -287,7 +287,7 @@ class GatewayMcpStdioTest(unittest.TestCase):
             env=environment,
         )
 
-        with open(os.devnull, "w", encoding="utf-8") as error_log:
+        with open(os.devnull, "w", encoding="utf-8") as error_log:  # noqa: ASYNC230
             async with stdio_client(parameters, errlog=error_log) as streams:
                 async with ClientSession(*streams) as session:
                     await session.initialize()

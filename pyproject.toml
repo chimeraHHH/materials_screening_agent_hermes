@@ -22,6 +22,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
   "pytest==9.1.1",
+  "ruff==0.16.3",
 ]
 gateway = [
   "mcp==1.28.1",
@@ -55,4 +56,42 @@ markers = [
   "real_ml: opt-in Agent02 CPU test using the independent CHGNet environment",
   "slow_real_ml: opt-in Agent02 standard 200-step relaxation test",
   "mps_ml: opt-in Agent02 target-Mac MPS parity and fallback test",
+]
+
+[tool.ruff]
+target-version = "py311"
+
+[tool.ruff.lint]
+select = [
+  "ASYNC230",
+  "B008",
+  "B018",
+  "B023",
+  "BLE001",
+  "C401",
+  "C408",
+  "C409",
+  "F401",
+  "F821",
+  "F841",
+  "FURB162",
+  "FURB192",
+  "I001",
+  "ISC004",
+  "PERF102",
+  "PIE810",
+  "PLR0124",
+  "PYI034",
+  "PYI061",
+  "RUF007",
+  "RUF012",
+  "RUF046",
+  "RUF059",
+  "S110",
+  "SIM102",
+  "SIM117",
+  "TRY004",
+  "UP022",
+  "UP035",
+  "UP037",
 ]

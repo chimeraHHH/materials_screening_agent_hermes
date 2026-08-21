@@ -16,7 +16,6 @@ from enum import StrEnum
 from material_agent.inspiration.models import canonical_sha256
 from material_agent.inspiration.semantic_embedding import SemanticEmbeddingResultV1
 
-
 HYBRID_SIMILARITY_SCHEMA_VERSION = "lexical-semantic-hybrid-similarity-v1"
 
 

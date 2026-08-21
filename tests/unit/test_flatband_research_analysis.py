@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from functools import lru_cache
 import hashlib
 import sys
+from functools import lru_cache
 from typing import Any, TypeVar
 
 import pytest
@@ -14,6 +14,8 @@ from material_agent.inspiration.models import (
     deterministic_id,
 )
 from material_agent.research.flatband_analysis import (
+    PILOT_ALPHA_BOOTSTRAP_REPLICATES,
+    PILOT_ALPHA_BOOTSTRAP_SEED,
     AnalysisCaseBindingV1,
     AnalysisInputReleaseV1,
     AnalysisPositionV1,
@@ -23,8 +25,6 @@ from material_agent.research.flatband_analysis import (
     FormalAnalysisPrerequisiteError,
     FormalPilotAgreementGateReleaseV1,
     FormalPilotAgreementReleaseV1,
-    PILOT_ALPHA_BOOTSTRAP_REPLICATES,
-    PILOT_ALPHA_BOOTSTRAP_SEED,
     PilotAgreementGateDecision,
     PilotAgreementUnitV1,
     RawReviewerLabelRefV1,
@@ -45,7 +45,6 @@ from material_agent.research.flatband_blinding import (
     PrivateIdentityMapV1,
     PrivateIdentityMapV2,
     PrivatePositionMapEntryV1,
-    ReviewerManifestV2,
     assert_reviewer_release_exact_coverage_v2,
     build_reviewer_release_v2,
 )
@@ -76,7 +75,6 @@ from material_agent.research.flatband_metrics import (
     GainKind,
     absolute_ndcg_at_5,
 )
-
 
 ModelT = TypeVar("ModelT", bound=StrictModel)
 SHA_A = "a" * 64
@@ -620,14 +618,14 @@ def _formal_raw_annotations(
 
 @lru_cache(maxsize=1)
 def _formal_r1_study() -> Any:
-    import test_flatband_research_execution as execution_fixture
+    from tests.unit import test_flatband_research_execution as execution_fixture
 
     return execution_fixture._formal_v3_upstream_fixture()
 
 
 @lru_cache(maxsize=2)
 def _formal_round_fixture(round_number: int) -> dict[str, Any]:
-    import test_flatband_research_execution as execution_fixture
+    from tests.unit import test_flatband_research_execution as execution_fixture
 
     if round_number == 1:
         study = _formal_r1_study()
@@ -846,7 +844,7 @@ def _formal_r2_fixture() -> dict[str, Any]:
 
 @lru_cache(maxsize=1)
 def _foreign_lineage_curation() -> Any:
-    import test_flatband_research_leakage as leakage_fixture
+    from tests.unit import test_flatband_research_leakage as leakage_fixture
 
     study = _formal_pilot_fixture()["study"]
     _registry, curation = leakage_fixture._v3_formal_registry(

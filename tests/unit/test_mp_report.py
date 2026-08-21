@@ -4,7 +4,11 @@ import json
 from pathlib import Path
 
 from material_agent.retrieval.adapters import InMemoryMaterialsAdapter
-from material_agent.retrieval.models import Requirement, RetrievalStageInput, StageStatus
+from material_agent.retrieval.models import (
+    Requirement,
+    RetrievalStageInput,
+    StageStatus,
+)
 from material_agent.retrieval.runner import RetrievalStageRunner
 from material_agent.retrieval.storage import LocalArtifactStore
 

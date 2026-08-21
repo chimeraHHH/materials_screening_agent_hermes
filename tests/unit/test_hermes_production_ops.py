@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import hashlib
 import asyncio
+import hashlib
 import json
 import os
 import signal
@@ -15,17 +15,17 @@ from pathlib import Path
 
 import pytest
 
-
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 SCRIPTS_ROOT = REPOSITORY_ROOT / "integrations" / "hermes" / "scripts"
 sys.path.insert(0, str(SCRIPTS_ROOT))
 
-import production_ops  # noqa: E402
-import production_monitor  # noqa: E402
-import production_runtime  # noqa: E402
-import managed_checkout  # noqa: E402
-import managed_dashboard  # noqa: E402
-from material_agent.gateway.job_queue import SqliteGatewayJobQueue  # noqa: E402
+import managed_checkout
+import managed_dashboard
+import production_monitor
+import production_ops
+import production_runtime
+
+from material_agent.gateway.job_queue import SqliteGatewayJobQueue
 
 
 def _gateway_database(path: Path) -> None:
@@ -1065,9 +1065,8 @@ def test_lifecycle_lock_rejects_concurrent_process_and_is_reusable(
         with pytest.raises(
             production_runtime.ProductionRuntimeError,
             match="another production lifecycle operation",
-        ):
-            with production_runtime._lifecycle_lock(settings):
-                pytest.fail("concurrent lifecycle lock was acquired")
+        ), production_runtime._lifecycle_lock(settings):
+            pytest.fail("concurrent lifecycle lock was acquired")
     finally:
         if holder.stdin is not None:
             try:
@@ -1090,13 +1089,11 @@ def test_repository_bootstrap_lock_is_fail_fast_and_reusable(
     lock_path = tmp_path / "repository-bootstrap.lock"
     monkeypatch.setattr(production_runtime, "BOOTSTRAP_LOCK", lock_path)
 
-    with production_runtime._bootstrap_lock():
-        with pytest.raises(
-            production_runtime.ProductionRuntimeError,
-            match="another production bootstrap",
-        ):
-            with production_runtime._bootstrap_lock():
-                pytest.fail("nested bootstrap lock was acquired")
+    with production_runtime._bootstrap_lock(), pytest.raises(
+        production_runtime.ProductionRuntimeError,
+        match="another production bootstrap",
+    ), production_runtime._bootstrap_lock():
+        pytest.fail("nested bootstrap lock was acquired")
 
     with production_runtime._bootstrap_lock():
         assert lock_path.is_file()
@@ -1114,13 +1111,11 @@ def test_lifecycle_ownership_cannot_be_aliased_by_ops_directory(
     assert production_runtime._runtime_binding(aliased) != (
         production_runtime._runtime_binding(settings)
     )
-    with production_runtime._lifecycle_lock(settings):
-        with pytest.raises(
-            production_runtime.ProductionRuntimeError,
-            match="another production lifecycle operation",
-        ):
-            with production_runtime._lifecycle_lock(aliased):
-                pytest.fail("ops-dir alias bypassed canonical project lock")
+    with production_runtime._lifecycle_lock(settings), pytest.raises(
+        production_runtime.ProductionRuntimeError,
+        match="another production lifecycle operation",
+    ), production_runtime._lifecycle_lock(aliased):
+        pytest.fail("ops-dir alias bypassed canonical project lock")
 
 
 def test_atomic_json_fsyncs_parent_directory(

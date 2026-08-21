@@ -22,7 +22,6 @@ from material_agent.inspiration.models import (
     deterministic_id,
 )
 
-
 LITERATURE_BUDGET_POLICY_VERSION = "literature-budget-policy-v2"
 LITERATURE_BUDGET_PLAN_VERSION = "literature-budget-plan-v2"
 LITERATURE_QUERY_CANDIDATE_VERSION = "literature-query-candidate-v2"

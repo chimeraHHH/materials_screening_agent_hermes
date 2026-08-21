@@ -13,10 +13,10 @@ validators are replayed by their containing model.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
-import json
 from typing import TypeAlias
 
 from pydantic import TypeAdapter
@@ -50,7 +50,6 @@ from material_agent.research.flatband_execution import (
     TerminalRunResultV1,
     Top5ProjectionV1,
 )
-
 
 RuntimeArtifactV1: TypeAlias = (
     SystemConfigV1
@@ -293,7 +292,7 @@ def _parse_json_object(
     except json.JSONDecodeError as exc:
         raise ValueError("runtime ingress payload is not valid JSON") from exc
     if not isinstance(document, dict):
-        raise ValueError("runtime ingress payload root must be a JSON object")
+        raise ValueError("runtime ingress payload root must be a JSON object")  # noqa: TRY004
     return document
 
 

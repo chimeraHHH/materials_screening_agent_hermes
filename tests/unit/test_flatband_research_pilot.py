@@ -11,7 +11,6 @@ from material_agent.research.flatband_analysis import (
     build_formal_pilot_agreement_gate,
     build_formal_pilot_agreement_release,
 )
-
 from material_agent.research.flatband_cases import (
     FrozenCaseReleaseV3,
     PilotPreBudgetClosureReleaseV3,
@@ -28,7 +27,6 @@ from material_agent.research.flatband_leakage import (
 from material_agent.research.flatband_pilot import (
     assert_formal_pilot_closure_v3,
 )
-
 
 SHA_A = "a" * 64
 SHA_B = "b" * 64
@@ -102,7 +100,7 @@ def _shallow_required_call(**updates: object) -> dict[str, object]:
 def _authoritative_v3_r1_closure() -> dict[str, Any]:
     """Reuse one synthetic authoritative graph from Gold through the Gate."""
 
-    import test_flatband_research_gold as gold_fixture
+    from tests.unit import test_flatband_research_gold as gold_fixture
 
     fixture = gold_fixture._formal_v2_gold_fixture(authoritative_v3=True)
     frozen = fixture["frozen"]

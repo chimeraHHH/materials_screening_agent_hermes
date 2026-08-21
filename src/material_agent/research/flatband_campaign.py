@@ -82,9 +82,9 @@ from material_agent.research.flatband_lifecycle import (
     ReleaseAuthorityRoleV1,
     ReleaseControlAttestationV1,
     ReleaseControlKindV1,
-    ScientificReviewReleaseV1,
     ScientificReviewerAttestationV1,
     ScientificReviewerIdentityAttestationV1,
+    ScientificReviewReleaseV1,
     VerifiedPayloadKind,
     append_locked_unseal_ledger_v1,
     assert_claim_support_release_exact_replay_v1,
@@ -94,16 +94,16 @@ from material_agent.research.flatband_lifecycle import (
     assert_locked_annotation_unseal_exact_replay_v1,
     assert_locked_label_seal_exact_replay_v1,
     assert_locked_test_authorization_exact_replay_v1,
+    assert_protocol_deviation_exact_replay_v1,
     assert_public_benchmark_projection_exact_replay_v1,
     assert_public_benchmark_result_release_exact_replay_v1,
     assert_public_release_authorization_exact_replay_v1,
-    assert_protocol_deviation_exact_replay_v1,
     assert_release_control_attestation_exact_replay_v1,
     assert_scientific_review_release_exact_replay_v1,
     assert_scientific_reviewer_attestation_exact_replay_v1,
     assert_scientific_reviewer_identity_attestation_exact_replay_v1,
-    build_release_authority_policy_v1,
     build_locked_unseal_ledger_genesis_v1,
+    build_release_authority_policy_v1,
 )
 from material_agent.research.flatband_main import (
     MainCandidatePoolReleaseV1,
@@ -119,6 +119,12 @@ from material_agent.research.flatband_main import (
     assert_main_pre_budget_closure_exact_v1,
     assert_main_sampling_policy_exact_v1,
 )
+from material_agent.research.flatband_main_execution import (
+    MainPhaseExecutionReleaseV1,
+    assert_main_phase_execution_exact_v1,
+    build_analysis_trace_evidence_index_from_main_v1,
+    main_gold_execution_cells_from_main_v1,
+)
 from material_agent.research.flatband_main_gold import (
     MainGoldFormalVerifierAttestationV1,
     MainGoldReleaseV1,
@@ -130,15 +136,6 @@ from material_agent.research.flatband_workflow import (
     PilotRoundArtifactsV3,
     assert_formal_pilot_round_artifacts_v3,
 )
-
-
-from material_agent.research.flatband_main_execution import (
-    MainPhaseExecutionReleaseV1,
-    assert_main_phase_execution_exact_v1,
-    build_analysis_trace_evidence_index_from_main_v1,
-    main_gold_execution_cells_from_main_v1,
-)
-
 
 ModelT = TypeVar("ModelT", bound=StrictModel)
 
@@ -199,7 +196,7 @@ _LOCKED_COMPONENT_SYSTEM_ORDER = tuple(
 
 def _timestamp(value: str) -> datetime:
     try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        parsed = datetime.fromisoformat(value)
     except ValueError as exc:
         raise ValueError("timestamp must be RFC3339-compatible") from exc
     if parsed.tzinfo is None or parsed.utcoffset() is None:
@@ -274,7 +271,7 @@ class LocalSensitivityNotRunReleaseV1(StrictModel):
         return value
 
     @model_validator(mode="after")
-    def validate_release(self) -> "LocalSensitivityNotRunReleaseV1":
+    def validate_release(self) -> LocalSensitivityNotRunReleaseV1:
         if (
             self.phase_authorization.execution_phase
             is not ExecutionPhase.DEVELOPMENT_LOCAL_SENSITIVITY
@@ -335,7 +332,7 @@ class LockedExecutionPlannedArmV1(StrictModel):
     system_config: SystemConfigV1
 
     @model_validator(mode="after")
-    def validate_arm(self) -> "LockedExecutionPlannedArmV1":
+    def validate_arm(self) -> LockedExecutionPlannedArmV1:
         expected_phase = _LOCKED_PLAN_SOURCE_PHASE.get(self.role)
         if expected_phase is None or self.source_execution_phase is not expected_phase:
             raise ValueError("locked plan role/source phase is not preregistered")
@@ -393,7 +390,7 @@ class LockedExecutionPlanV1(StrictModel):
         return value
 
     @model_validator(mode="after")
-    def validate_plan(self) -> "LockedExecutionPlanV1":
+    def validate_plan(self) -> LockedExecutionPlanV1:
         component_auth = self.locked_component_authorization
         primary_auth = self.locked_primary_authorization
         if (
@@ -662,7 +659,7 @@ class FlatBandCampaignReleaseV1(StrictModel):
         return value
 
     @model_validator(mode="after")
-    def validate_campaign(self) -> "FlatBandCampaignReleaseV1":
+    def validate_campaign(self) -> FlatBandCampaignReleaseV1:
         _assert_campaign_structural_links_v1(self)
         _assert_addressed(
             self,
@@ -2165,13 +2162,13 @@ def assemble_flatband_campaign_release_v1(
 
 __all__ = [
     "FlatBandCampaignReleaseV1",
+    "LocalSensitivityNotRunReleaseV1",
     "LockedExecutionPlanV1",
     "LockedExecutionPlannedArmV1",
-    "LocalSensitivityNotRunReleaseV1",
     "assemble_flatband_campaign_release_v1",
     "assert_flatband_campaign_release_exact_v1",
-    "assert_locked_execution_plan_exact_v1",
     "assert_local_sensitivity_not_run_exact_v1",
-    "build_locked_execution_plan_v1",
+    "assert_locked_execution_plan_exact_v1",
     "build_local_sensitivity_not_run_release_v1",
+    "build_locked_execution_plan_v1",
 ]

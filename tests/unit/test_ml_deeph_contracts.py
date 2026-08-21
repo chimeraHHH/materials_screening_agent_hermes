@@ -6,20 +6,20 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
+from material_agent.ml_screening.adapters import (
+    FakeMLModelAdapter,
+    FakeMLWorker,
+)
+from material_agent.ml_screening.deeph_handoff import (
+    deeph_request_from_chgnet_result,
+)
 from material_agent.ml_screening.deeph_models import (
     DeepHArtifactBundle,
     DeepHArtifactFile,
     DeepHCompatibility,
     DeepHInferenceRequest,
 )
-from material_agent.ml_screening.deeph_handoff import (
-    deeph_request_from_chgnet_result,
-)
 from material_agent.ml_screening.deeph_planner import build_deeph_plan
-from material_agent.ml_screening.adapters import (
-    FakeMLModelAdapter,
-    FakeMLWorker,
-)
 from material_agent.ml_screening.models import (
     MLCandidateResult,
 )

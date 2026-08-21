@@ -23,6 +23,8 @@ from material_agent.dft.models import (
     DFTResultEnvelope,
     ExternalJobRef,
     JobStatus,
+)
+from material_agent.dft.models import (
     canonical_hash as dft_canonical_hash,
 )
 from material_agent.dft.preflight import (
@@ -82,7 +84,6 @@ from material_agent.softchem.registry import (
     SoftChemOperatorRegistryV1,
     softchem_registry_bytes,
 )
-
 
 SOFTCHEM_DOWNSTREAM_PLAN_VERSION = "softchem-downstream-plan-v1"
 SOFTCHEM_DOWNSTREAM_RESULT_VERSION = "softchem-downstream-result-v1"
@@ -274,20 +275,20 @@ def build_softchem_downstream_plan(
     chgnet_hash = canonical_sha256(chgnet_plan) if chgnet_plan is not None else None
     deeph_hash = canonical_sha256(deeph_request) if deeph_request is not None else None
     dft_hash = _dft_preflight_hash(dft_preflight) if dft_preflight is not None else None
-    identity = dict(
-        parent_candidate_id=transformation.plan.parent_candidate_id,
-        transformation_plan_id=transformation.plan.plan_id,
-        transformation_route_sha256=transformation.plan.route_sha256,
-        operator_registry_artifact=operator_registry_artifact,
-        operator_id=transformation.plan.operator_id,
-        operator_version=transformation.plan.operator_version,
-        proposed_structure=transformation.plan.output_structure_artifact,
-        chgnet_plan_sha256=chgnet_hash,
-        deeph_intent=deeph_intent,
-        deeph_request_sha256=deeph_hash,
-        dft_intent=dft_intent,
-        dft_preflight_sha256=dft_hash,
-    )
+    identity = {
+        "parent_candidate_id": transformation.plan.parent_candidate_id,
+        "transformation_plan_id": transformation.plan.plan_id,
+        "transformation_route_sha256": transformation.plan.route_sha256,
+        "operator_registry_artifact": operator_registry_artifact,
+        "operator_id": transformation.plan.operator_id,
+        "operator_version": transformation.plan.operator_version,
+        "proposed_structure": transformation.plan.output_structure_artifact,
+        "chgnet_plan_sha256": chgnet_hash,
+        "deeph_intent": deeph_intent,
+        "deeph_request_sha256": deeph_hash,
+        "dft_intent": dft_intent,
+        "dft_preflight_sha256": dft_hash,
+    }
     return SoftChemDownstreamPlanV1(
         operation_key=_downstream_operation_key(**identity),
         **identity,
@@ -504,7 +505,7 @@ class SoftChemDownstreamRunner:
             request = worker.request_for_candidate(native, candidate_id)
             response = worker.run(request)
             response.validate_against_request(request)
-        except Exception:
+        except Exception:  # noqa: BLE001
             return (
                 StageOutcomeV1(
                     stage_id="chgnet",
@@ -532,7 +533,7 @@ class SoftChemDownstreamRunner:
         result = response.candidate_result
         try:
             relaxed = self._validated_relaxed_structure(result, proposed)
-        except Exception:
+        except Exception:  # noqa: BLE001
             return (
                 StageOutcomeV1(
                     stage_id="chgnet",
@@ -609,7 +610,7 @@ class SoftChemDownstreamRunner:
                 )
                 model_spec = registry.resolve(plan.model_id)
                 model_spec.validate_execution_identity(identity)
-            except Exception:
+            except Exception:  # noqa: BLE001
                 issues.append("CHGNET_MODEL_NOT_REGISTERED")
         if "CHGNET_HEALTH_ARTIFACT_INVALID" not in issues:
             try:
@@ -623,13 +624,13 @@ class SoftChemDownstreamRunner:
                     or health.expires_at.astimezone(UTC) <= now.astimezone(UTC)
                 ):
                     raise ValueError("health not ready")
-            except Exception:
+            except Exception:  # noqa: BLE001
                 issues.append("CHGNET_HEALTH_NOT_READY")
         if type(worker) is SubprocessWorkerClient:
             try:
                 if sha256_file(worker.package_lock_path) != identity.package_lock_sha256:
                     raise ValueError("lock mismatch")
-            except Exception:
+            except Exception:  # noqa: BLE001
                 issues.append("CHGNET_WORKER_LOCK_MISMATCH")
 
         matches = []
@@ -775,7 +776,7 @@ class SoftChemDownstreamRunner:
             else:
                 try:
                     build_deeph_plan(request, artifact_root=self.store.root)
-                except Exception:
+                except Exception:  # noqa: BLE001
                     issues.append("DEEPH_INPUT_ARTIFACTS_NOT_VERIFIED")
         if issues:
             return (
@@ -790,7 +791,7 @@ class SoftChemDownstreamRunner:
         try:
             assert request is not None and runner is not None
             result = runner.execute(request)
-        except Exception:
+        except Exception:  # noqa: BLE001
             return (
                 StageOutcomeV1(
                     stage_id="deeph",
@@ -866,7 +867,7 @@ class SoftChemDownstreamRunner:
                 preflight = evaluate_real_preflight(current_check)
                 if preflight.status is not PreflightStatus.READY:
                     issues.extend(issue.code for issue in preflight.issues)
-            except Exception:
+            except Exception:  # noqa: BLE001
                 issues.append("DFT_PREFLIGHT_INVALID")
             if not issues:
                 try:
@@ -878,7 +879,7 @@ class SoftChemDownstreamRunner:
                         or live_health.status != "READY"
                     ):
                         raise ValueError("backend is not currently ready")
-                except Exception:
+                except Exception:  # noqa: BLE001
                     issues.append("DFT_LIVE_BACKEND_HEALTH_NOT_READY")
         if issues:
             return (
@@ -893,13 +894,13 @@ class SoftChemDownstreamRunner:
         assert preflight_input is not None and backend is not None
         request = preflight_input.request
         idempotency_key = hashlib.sha256(
-            f"{plan.operation_key}:{dft_canonical_hash(request)}".encode("utf-8")
+            f"{plan.operation_key}:{dft_canonical_hash(request)}".encode()
         ).hexdigest()
         try:
             if not backend.validate_input(request):
                 raise ValueError("backend rejected input")
             job = backend.submit(request, idempotency_key)
-        except Exception:
+        except Exception:  # noqa: BLE001
             return (
                 StageOutcomeV1(
                     stage_id="dft",

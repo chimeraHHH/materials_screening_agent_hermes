@@ -7,6 +7,8 @@ import re
 from collections.abc import Mapping, Sequence
 from enum import Enum
 
+from material_agent.inspiration.feedback import TagFeedbackReviewV1
+from material_agent.inspiration.fetch import FetchAttemptRecord
 from material_agent.inspiration.models import (
     ArtifactPointerV1,
     BridgePacketV1,
@@ -18,10 +20,7 @@ from material_agent.inspiration.models import (
     SearchQueryV1,
     TransformationPlanV1,
 )
-from material_agent.inspiration.feedback import TagFeedbackReviewV1
-from material_agent.inspiration.fetch import FetchAttemptRecord
 from material_agent.inspiration.search import SearchAttemptRecord
-
 
 PROPERTY_STATUS_UNKNOWN = "UNKNOWN"
 _NOT_RECORDED = "not recorded"
@@ -80,14 +79,14 @@ def _append_input_provenance(
             "## Frozen input provenance",
             "",
             f"- Requirement revision: `{inspiration_input.requirement_revision}`",
-            "- Search adapter snapshot: "
+            ("- Search adapter snapshot: "
             f"{_code(inspiration_input.search_adapter.component_id)} / "
             f"{_code(inspiration_input.search_adapter.version)} / "
-            f"{_code(inspiration_input.search_adapter.implementation_sha256)}",
-            "- Vectorizer snapshot: "
+            f"{_code(inspiration_input.search_adapter.implementation_sha256)}"),
+            ("- Vectorizer snapshot: "
             f"{_code(inspiration_input.vectorizer.component_id)} / "
             f"{_code(inspiration_input.vectorizer.version)} / "
-            f"{_code(inspiration_input.vectorizer.implementation_sha256)}",
+            f"{_code(inspiration_input.vectorizer.implementation_sha256)}"),
         )
     )
     _artifact_lines(
@@ -119,8 +118,8 @@ def _append_input_provenance(
     for parent in inspiration_input.parent_candidates:
         lines.extend(
             (
-                f"- Candidate {_code(parent.candidate_id)} / structure "
-                f"{_code(parent.structure_id)}",
+                (f"- Candidate {_code(parent.candidate_id)} / structure "
+                f"{_code(parent.structure_id)}"),
                 f"  - Artifact URI: {_code(parent.structure_artifact.uri)}",
                 f"  - Artifact SHA-256: {_code(parent.structure_artifact.sha256)}",
                 f"  - Artifact bytes: {_code(parent.structure_artifact.size_bytes)}",
@@ -163,22 +162,22 @@ def _append_execution_funnel(
             f"- Physical body-fetch attempts (ledger): `{ledger.fetch_requests}`",
             f"- Body-fetch response bytes (ledger): `{ledger.fetch_response_bytes}`",
             f"- Fetch attempt records attached: `{len(fetch_attempts)}`",
-            "- Successfully fetched bounded documents: "
-            f"`{sum(attempt.outcome == 'success' for attempt in fetch_attempts)}`",
+            ("- Successfully fetched bounded documents: "
+            f"`{sum(attempt.outcome == 'success' for attempt in fetch_attempts)}`"),
             f"- Evidence cards supplied: `{len(evidence_cards)}`",
             f"- Search-supported bridge packets supplied: `{len(bridge_packets)}`",
             f"- Generated plans (ledger): `{ledger.generated_plans}`",
             f"- Rejected plans (ledger): `{ledger.rejected_plans}`",
             f"- Transformation records supplied: `{len(transformation_plans)}`",
-            "- Candidates after run-internal identity deduplication "
-            f"(ledger): `{ledger.candidates_after_internal_dedup}`",
+            ("- Candidates after run-internal identity deduplication "
+            f"(ledger): `{ledger.candidates_after_internal_dedup}`"),
             f"- Selected candidates: `{len(bundle.selected_candidates)}`",
             "- PDF full-text reads: `0`",
             f"- LLM calls: `{ledger.llm_calls}`",
             "",
-            "Ledger values are authoritative cost counters. Supplied-record counts are "
+            ("Ledger values are authoritative cost counters. Supplied-record counts are "
             "shown separately so a missing report attachment cannot silently look like "
-            "a zero-cost operation.",
+            "a zero-cost operation."),
             "",
         )
     )
@@ -242,9 +241,9 @@ def _append_selection_audit(
     lines.extend(
         (
             "",
-            "Exact-output merging happens before selection and retains every "
+            ("Exact-output merging happens before selection and retains every "
             "hash-distinct physical route. Strict structure groups and parent-family "
-            "caps are never relaxed to fill Top-K.",
+            "caps are never relaxed to fill Top-K."),
             "",
         )
     )
@@ -257,8 +256,8 @@ def _append_attempts(
     if not search_attempts:
         lines.extend(
             (
-                "No per-attempt records were attached to this report. See the complete "
-                "cost ledger for the authoritative aggregate request count.",
+                ("No per-attempt records were attached to this report. See the complete "
+                "cost ledger for the authoritative aggregate request count."),
                 "",
             )
         )
@@ -266,17 +265,17 @@ def _append_attempts(
     for ordinal, attempt in enumerate(search_attempts, start=1):
         lines.extend(
             (
-                f"### Attempt {ordinal}: {_code(attempt.query_id)} / "
-                f"{attempt.attempt_number}",
+                (f"### Attempt {ordinal}: {_code(attempt.query_id)} / "
+                f"{attempt.attempt_number}"),
                 "",
                 f"- Outcome: {_code(attempt.outcome)}",
                 f"- Error code: {_code(attempt.error_code)}",
                 f"- HTTP status: {_code(attempt.http_status)}",
                 f"- Provider response bytes: `{attempt.response_bytes}`",
-                "- Pre-attempt pacing delay (seconds): "
-                f"{_code(attempt.pacing_delay_seconds)}",
-                "- Post-error retry delay (seconds): "
-                f"{_code(attempt.retry_delay_seconds)}",
+                ("- Pre-attempt pacing delay (seconds): "
+                f"{_code(attempt.pacing_delay_seconds)}"),
+                ("- Post-error retry delay (seconds): "
+                f"{_code(attempt.retry_delay_seconds)}"),
                 "",
             )
         )
@@ -289,8 +288,8 @@ def _append_fetch_attempts(
     if not fetch_attempts:
         lines.extend(
             (
-                "No physical body-fetch request was made. The run remained "
-                "metadata-only.",
+                ("No physical body-fetch request was made. The run remained "
+                "metadata-only."),
                 "",
             )
         )
@@ -298,8 +297,8 @@ def _append_fetch_attempts(
     for ordinal, attempt in enumerate(fetch_attempts, start=1):
         lines.extend(
             (
-                f"### Fetch attempt {ordinal}: {_code(attempt.request_id)} / "
-                f"{attempt.attempt_number}",
+                (f"### Fetch attempt {ordinal}: {_code(attempt.request_id)} / "
+                f"{attempt.attempt_number}"),
                 "",
                 f"- Document: {_code(attempt.document_id)}",
                 f"- Outcome: {_code(attempt.outcome)}",
@@ -326,10 +325,10 @@ def _append_tag_feedback(
     lines.extend(
         (
             f"- Feedback ID: {_code(feedback.feedback_id)}",
-            "- Compiler: "
+            ("- Compiler: "
             f"{_code(feedback.compiler.component_id)} / "
             f"{_code(feedback.compiler.version)} / "
-            f"{_code(feedback.compiler.implementation_sha256)}",
+            f"{_code(feedback.compiler.implementation_sha256)}"),
             f"- Input fingerprint SHA-256: {_code(feedback.input_fingerprint_sha256)}",
             f"- Aggregation: {_code(feedback.aggregation_semantics)}",
             f"- Expert review status: {_code(feedback.expert_status)}",
@@ -337,15 +336,15 @@ def _append_tag_feedback(
             f"- Applies to the curated TagGraph: {_code(feedback.applies_to_tag_graph)}",
             f"- Scientific conclusion: {_code(feedback.scientific_conclusion)}",
             "",
-            "Rows below use inclusive, non-additive attribution. Shared documents, "
+            ("Rows below use inclusive, non-additive attribution. Shared documents, "
             "fetches, and vectors can appear in multiple rows; only the complete cost "
-            "ledger is additive.",
+            "ledger is additive."),
             "",
             "### Query yield",
             "",
-            "| Query | Kind | Executed | Hits | Documents | Passages | Vectors | "
+            ("| Query | Kind | Executed | Hits | Documents | Passages | Vectors | "
             "Evidence | Bridges | Search requests/bytes | Fetch requests/bytes | "
-            "Embedding tokens |",
+            "Embedding tokens |"),
             "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
         )
     )
@@ -366,8 +365,8 @@ def _append_tag_feedback(
             "",
             "### Tag yield",
             "",
-            "| Tag | Kind | Planned/executed queries | Hits | Documents | Passages | "
-            "Vectors | Evidence | Bridges | Fetch requests/bytes | Embedding tokens |",
+            ("| Tag | Kind | Planned/executed queries | Hits | Documents | Passages | "
+            "Vectors | Evidence | Bridges | Fetch requests/bytes | Embedding tokens |"),
             "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
         )
     )
@@ -389,21 +388,21 @@ def _append_tag_feedback(
             (
                 f"#### {_code(row.bridge_rule_id)}",
                 "",
-                f"- Rule version / activation: {_code(row.rule_version)} / "
-                f"{_code(row.activation)}",
+                (f"- Rule version / activation: {_code(row.rule_version)} / "
+                f"{_code(row.activation)}"),
                 f"- Evidence status: {_code(row.status)}",
                 f"- Expert status: {_code(row.expert_status)}",
                 f"- Required evidence tags: {_items(row.required_evidence_tag_ids)}",
                 f"- Observed SUPPORT tags: {_items(row.observed_support_tag_ids)}",
-                "- Missing required evidence tags: "
-                f"{_items(row.missing_required_evidence_tag_ids)}",
-                f"- Evidence cards / packets: {row.inclusive_evidence_card_count} / "
-                f"{row.inclusive_bridge_packet_count}",
-                f"- Inclusive fetch requests / bytes: {row.fetch_request_count} / "
-                f"{row.fetch_response_bytes}",
-                f"- Inclusive vectors / embedding tokens: "
+                ("- Missing required evidence tags: "
+                f"{_items(row.missing_required_evidence_tag_ids)}"),
+                (f"- Evidence cards / packets: {row.inclusive_evidence_card_count} / "
+                f"{row.inclusive_bridge_packet_count}"),
+                (f"- Inclusive fetch requests / bytes: {row.fetch_request_count} / "
+                f"{row.fetch_response_bytes}"),
+                (f"- Inclusive vectors / embedding tokens: "
                 f"{row.inclusive_vectorized_passage_count} / "
-                f"{row.embedding_input_tokens}",
+                f"{row.embedding_input_tokens}"),
                 "",
             )
         )
@@ -435,9 +434,9 @@ def _append_documents(lines: list[str], *, hits: Sequence[SearchHitV1]) -> None:
         return
     lines.extend(
         (
-            "Each entry is a raw query hit. Repeated document IDs intentionally retain "
+            ("Each entry is a raw query hit. Repeated document IDs intentionally retain "
             "all query and raw-response lineage after document-level processing "
-            "deduplication.",
+            "deduplication."),
             "",
         )
     )
@@ -446,8 +445,8 @@ def _append_documents(lines: list[str], *, hits: Sequence[SearchHitV1]) -> None:
             (
                 f"### {_code(hit.hit_id)} — document {_code(hit.document_id)}",
                 "",
-                f"- Provider / record: {_code(hit.provider)} / "
-                f"{_code(hit.provider_record_id)}",
+                (f"- Provider / record: {_code(hit.provider)} / "
+                f"{_code(hit.provider_record_id)}"),
                 f"- Provider rank: `{hit.provider_rank}`",
                 f"- Title: {_code(hit.title)}",
                 f"- Published year: {_code(hit.published_year)}",
@@ -472,9 +471,9 @@ def _append_passages(lines: list[str], *, passages: Sequence[PassageV1]) -> None
         return
     lines.extend(
         (
-            "Passage text is deliberately omitted from this report. Locator, exact "
+            ("Passage text is deliberately omitted from this report. Locator, exact "
             "normalized-text hash, bounded size, tags, and source artifact are "
-            "retained for audit without duplicating source text.",
+            "retained for audit without duplicating source text."),
             "",
         )
     )
@@ -489,8 +488,8 @@ def _append_passages(lines: list[str], *, passages: Sequence[PassageV1]) -> None
             (
                 f"### {_code(passage.passage_id)}",
                 "",
-                f"- Hit / document: {_code(passage.hit_id)} / "
-                f"{_code(passage.document_id)}",
+                (f"- Hit / document: {_code(passage.hit_id)} / "
+                f"{_code(passage.document_id)}"),
                 f"- Locator kind: {_code(locator.kind)}",
                 f"- Locator selector: {_code(locator.selector)}",
                 f"- Section heading: {_code(locator.section_heading)}",
@@ -500,10 +499,10 @@ def _append_passages(lines: list[str], *, passages: Sequence[PassageV1]) -> None
                 f"- Character count: `{passage.char_count}`",
                 f"- Estimated token count: `{passage.estimated_token_count}`",
                 f"- Lexical score: {_code(passage.lexical_score)}",
-                "- Normalizer: "
+                ("- Normalizer: "
                 f"{_code(passage.normalizer.component_id)} version "
                 f"{_code(passage.normalizer.version)} / "
-                f"{_code(passage.normalizer.implementation_sha256)}",
+                f"{_code(passage.normalizer.implementation_sha256)}"),
             )
         )
         _artifact_lines(
@@ -523,9 +522,9 @@ def _append_evidence_cards(
         return
     lines.extend(
         (
-            "EvidenceCards preserve bounded source assertions; they are not validated "
+            ("EvidenceCards preserve bounded source assertions; they are not validated "
             "property findings. Assertion text is omitted here and represented by an "
-            "exact UTF-8 hash plus its authoritative passage lineage.",
+            "exact UTF-8 hash plus its authoritative passage lineage."),
             "",
         )
     )
@@ -535,8 +534,8 @@ def _append_evidence_cards(
             (
                 f"### {_code(card.evidence_card_id)}",
                 "",
-                f"- Relation / scope: {_code(card.relation)} / "
-                f"{_code(card.evidence_scope)}",
+                (f"- Relation / scope: {_code(card.relation)} / "
+                f"{_code(card.evidence_scope)}"),
                 f"- Assertion text SHA-256: {_code(claim_sha256)}",
                 f"- Assertion character count: `{len(card.claim_text)}`",
                 f"- Mechanism tag IDs: {_items(card.mechanism_tag_ids)}",
@@ -557,9 +556,9 @@ def _append_bridges(
         return
     lines.extend(
         (
-            "The following invariant and control fields come from curated bridge "
+            ("The following invariant and control fields come from curated bridge "
             "rules. SEARCH_SUPPORTED means bounded source-assertion lineage exists; "
-            "it is not a validated material-property conclusion.",
+            "it is not a validated material-property conclusion."),
             "",
         )
     )
@@ -597,17 +596,17 @@ def _append_transformations(
                 f"### {_code(plan.plan_id)}",
                 "",
                 f"- Status: {_code(plan.status)}",
-                "- Scientific conclusion: "
-                f"{_code(str(plan.scientific_conclusion).lower())}",
+                ("- Scientific conclusion: "
+                f"{_code(str(plan.scientific_conclusion).lower())}"),
                 f"- Parent candidate ID: {_code(plan.parent_candidate_id)}",
                 f"- Parent structure ID: {_code(plan.parent_structure_id)}",
-                f"- Operator / version: {_code(plan.operator_id)} / "
-                f"{_code(plan.operator_version)}",
+                (f"- Operator / version: {_code(plan.operator_id)} / "
+                f"{_code(plan.operator_version)}"),
                 f"- Route SHA-256: {_code(plan.route_sha256)}",
-                "- Equivalent-site indices: "
-                f"{_items(parameters.equivalent_site_indices)}",
-                f"- Species substitution: {_code(parameters.source_species)} → "
-                f"{_code(parameters.target_species)}",
+                ("- Equivalent-site indices: "
+                f"{_items(parameters.equivalent_site_indices)}"),
+                (f"- Species substitution: {_code(parameters.source_species)} → "
+                f"{_code(parameters.target_species)}"),
                 f"- Preserved features: {_items(plan.preserved_features)}",
                 f"- Changed features: {_items(plan.changed_features)}",
                 f"- Falsification tests: {_items(plan.falsification_tests)}",
@@ -653,22 +652,22 @@ def _append_candidates(lines: list[str], *, bundle: InspirationBundleV1) -> None
                 f"- Parent candidate IDs: {_items(candidate.parent_candidate_ids)}",
                 f"- Mechanism tags: {_items(candidate.mechanism_tag_ids)}",
                 f"- EvidenceCard lineage: {_items(candidate.evidence_card_ids)}",
-                "- Hypothesis identity signature SHA-256: "
-                f"{_code(candidate.hypothesis_signature_sha256)}",
+                ("- Hypothesis identity signature SHA-256: "
+                f"{_code(candidate.hypothesis_signature_sha256)}"),
                 f"- Property status: `{PROPERTY_STATUS_UNKNOWN}`",
-                "- Scientific conclusion: "
-                f"{_code(str(candidate.scientific_conclusion).lower())}",
-                f"- Score policy / version: {_code(scores.policy_id)} / "
-                f"{_code(scores.score_version)}",
+                ("- Scientific conclusion: "
+                f"{_code(str(candidate.scientific_conclusion).lower())}"),
+                (f"- Score policy / version: {_code(scores.policy_id)} / "
+                f"{_code(scores.score_version)}"),
                 f"- Quality score: {_code(scores.quality)}",
                 f"- Evidence-coverage score: {_code(scores.evidence_coverage)}",
                 f"- Redundancy penalty: {_code(scores.redundancy_penalty)}",
-                f"- Score weights (quality / coverage / redundancy): "
+                (f"- Score weights (quality / coverage / redundancy): "
                 f"{_code(scores.quality_weight)} / {_code(scores.coverage_weight)} / "
-                f"{_code(scores.redundancy_weight)}",
+                f"{_code(scores.redundancy_weight)}"),
                 f"- Selection score: {_code(scores.selection_score)}",
-                "- Next falsification step: "
-                f"{_code(candidate.next_falsification_step)}",
+                ("- Next falsification step: "
+                f"{_code(candidate.next_falsification_step)}"),
             )
         )
         _artifact_lines(
@@ -680,8 +679,8 @@ def _append_candidates(lines: list[str], *, bundle: InspirationBundleV1) -> None
         for route in candidate.merged_routes:
             lines.extend(
                 (
-                    f"  - Plan {_code(route.plan_id)} / route "
-                    f"{_code(route.route_sha256)}",
+                    (f"  - Plan {_code(route.plan_id)} / route "
+                    f"{_code(route.route_sha256)}"),
                     f"    - Parent candidate: {_code(route.parent_candidate_id)}",
                     f"    - Mechanism tags: {_items(route.mechanism_tag_ids)}",
                     f"    - Bridge packets: {_items(route.bridge_packet_ids)}",
@@ -717,18 +716,18 @@ def render_inspiration_report(
         f"- Request: {_code(inspiration_input.request_id)}",
         f"- Run: {_code(inspiration_input.run_id)}",
         f"- Outcome: {_code(bundle.outcome)}",
-        "- Scientific conclusion: "
-        f"{_code(str(bundle.scientific_conclusion).lower())}",
+        ("- Scientific conclusion: "
+        f"{_code(str(bundle.scientific_conclusion).lower())}"),
         f"- Target property status: `{PROPERTY_STATUS_UNKNOWN}`",
         "",
-        "The target property was not computed in this stage. Every structure is a "
+        ("The target property was not computed in this stage. Every structure is a "
         "proposal that requires downstream validation. Metadata source assertions, "
         "bridge-rule matches, structure checks, and ranking scores do not establish "
-        "material-property validity.",
+        "material-property validity."),
         "",
-        "Only bounded selected metadata/body passages were vectorized; no complete "
+        ("Only bounded selected metadata/body passages were vectorized; no complete "
         "page or PDF entered the vectorizer. Source text remains untrusted data and "
-        "was not used as an instruction surface.",
+        "was not used as an instruction surface."),
         "",
     ]
     _append_input_provenance(lines, inspiration_input=inspiration_input)

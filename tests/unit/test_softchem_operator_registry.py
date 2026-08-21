@@ -28,8 +28,8 @@ from material_agent.inspiration.transformations import (
 )
 from material_agent.retrieval.storage import LocalArtifactStore
 from material_agent.softchem import (
-    DEFAULT_SOFTCHEM_OPERATOR_REGISTRY_V1,
     DEFAULT_SMACT_PRIOR_POLICY_V1,
+    DEFAULT_SOFTCHEM_OPERATOR_REGISTRY_V1,
     SMACT_WORKER_LOCK_SHA256,
     DownstreamIntent,
     ElementStoichiometryV1,
@@ -41,8 +41,8 @@ from material_agent.softchem import (
     SoftChemOperatorRegistryV1,
     StageStatus,
     build_softchem_downstream_plan,
-    execute_registered_softchem_operator,
     evaluate_smact_substitution_prior,
+    execute_registered_softchem_operator,
     smact_prior_policy_sha256,
     softchem_registry_bytes,
     softchem_registry_sha256,
@@ -623,12 +623,12 @@ def test_requested_deeph_and_dft_require_explicit_real_bindings(tmp_path) -> Non
         artifact_store=LocalArtifactStore(tmp_path)
     )
 
-    deeph, deeph_result = runner._run_deeph(  # noqa: SLF001 - gate unit test
+    deeph, deeph_result = runner._run_deeph(
         plan,
         SoftChemExecutionBindings(),
         relaxed,
     )
-    dft, dft_job = runner._run_dft(  # noqa: SLF001 - gate unit test
+    dft, dft_job = runner._run_dft(
         plan,
         SoftChemExecutionBindings(),
         relaxed,
@@ -672,7 +672,7 @@ def test_mock_deeph_request_is_blocked_before_subprocess_start(tmp_path) -> None
 
     outcome, result = SoftChemDownstreamRunner(
         artifact_store=store
-    )._run_deeph(  # noqa: SLF001 - gate unit test
+    )._run_deeph(
         plan,
         SoftChemExecutionBindings(
             deeph_request=request,
@@ -739,7 +739,7 @@ def test_dft_approval_failure_blocks_before_live_backend_contact(tmp_path) -> No
 
     outcome, job = SoftChemDownstreamRunner(
         artifact_store=LocalArtifactStore(tmp_path)
-    )._run_dft(  # noqa: SLF001 - gate unit test
+    )._run_dft(
         plan,
         SoftChemExecutionBindings(
             dft_preflight=preflight,

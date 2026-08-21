@@ -7,12 +7,12 @@ from material_agent.retrieval.models import (
     CandidateAuditRecord,
     Decision,
     EvidenceLevel,
+    MaterialsProjectConstraints,
     PropertyOrigin,
     PropertyValue,
     ProvenanceStatus,
     RankingMode,
     RankingPreference,
-    MaterialsProjectConstraints,
     SourceSpecificConstraints,
 )
 from material_agent.retrieval.ranking import rank_and_publish

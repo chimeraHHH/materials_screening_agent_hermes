@@ -9,7 +9,14 @@ from enum import StrEnum
 from hashlib import sha256
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StringConstraints,
+    field_validator,
+    model_validator,
+)
 
 AGENT04_CONTRACT_VERSION = "agent04-many-body-domain-v1"
 Sha256 = Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")]

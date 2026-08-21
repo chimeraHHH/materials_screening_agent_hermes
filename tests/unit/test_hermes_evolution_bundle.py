@@ -9,7 +9,6 @@ from pathlib import Path
 
 import pytest
 
-
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 HERMES_ROOT = REPOSITORY_ROOT / "integrations" / "hermes"
 VERIFIER_PATH = HERMES_ROOT / "scripts" / "verify_evolution_bundle.py"

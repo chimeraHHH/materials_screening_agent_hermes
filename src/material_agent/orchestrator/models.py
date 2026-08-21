@@ -10,7 +10,6 @@ from typing import Any, Literal, TypedDict
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-
 LEGACY_ORCHESTRATOR_CONTRACT_VERSION = "orchestrator-p0-v1"
 P01_ORCHESTRATOR_CONTRACT_VERSION = "orchestrator-p0.1-v2"
 ORCHESTRATOR_CONTRACT_VERSION = "orchestrator-p0.2-v3"

@@ -6,6 +6,8 @@ import pytest
 from pydantic import ValidationError
 
 from material_agent.inspiration import (
+    REQUIRED_STRUCTURE_NONFAIL_CHECK_IDS,
+    REQUIRED_STRUCTURE_PASS_CHECK_IDS,
     ArtifactPointerV1,
     BridgePacketV1,
     BridgeRuleV1,
@@ -20,8 +22,6 @@ from material_agent.inspiration import (
     PassageLocatorKind,
     PassageLocatorV1,
     PassageV1,
-    REQUIRED_STRUCTURE_NONFAIL_CHECK_IDS,
-    REQUIRED_STRUCTURE_PASS_CHECK_IDS,
     SearchQueryKind,
     SearchQueryV1,
     SubstitutionParametersV1,

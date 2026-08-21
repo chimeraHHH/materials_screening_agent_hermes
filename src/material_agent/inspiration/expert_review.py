@@ -49,7 +49,7 @@ class TagGraphReleaseKind(StrEnum):
 
 def _require_timestamp(value: str) -> str:
     try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        parsed = datetime.fromisoformat(value)
     except ValueError as exc:
         raise ValueError("timestamp must be RFC3339-compatible") from exc
     if parsed.tzinfo is None or parsed.utcoffset() is None:

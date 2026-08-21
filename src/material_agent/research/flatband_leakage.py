@@ -18,15 +18,16 @@ fails closed rather than claiming that cross-source leakage is resolved.
 
 from __future__ import annotations
 
+import json
+import re
+import unicodedata
 from collections import defaultdict, deque
+from collections.abc import Iterable
 from datetime import datetime
 from enum import StrEnum
 from fractions import Fraction
 from math import gcd, lcm
-import json
-import re
-import unicodedata
-from typing import Annotated, Iterable, Literal
+from typing import Annotated, Literal
 from urllib.parse import unquote, urlparse
 
 from pydantic import Field, field_validator, model_validator
@@ -49,8 +50,8 @@ from material_agent.research.flatband_contracts import (
     OodHoldoutAxis,
     SourceRecordRefV1,
     SplitManifestKind,
-    mechanism_holdout_taxonomy_group_id,
     _require_rfc3339,
+    mechanism_holdout_taxonomy_group_id,
 )
 
 
@@ -78,7 +79,7 @@ class LeakageComponentV1(StrictModel):
     case_ids: Annotated[tuple[Identifier, ...], Field(min_length=1, max_length=120)]
 
     @model_validator(mode="after")
-    def validate_component(self) -> "LeakageComponentV1":
+    def validate_component(self) -> LeakageComponentV1:
         if self.case_ids != tuple(sorted(set(self.case_ids))):
             raise ValueError("component case IDs must be sorted and unique")
         expected = deterministic_id("leakage-component", {"case_ids": self.case_ids})
@@ -111,7 +112,7 @@ class LeakageComponentReleaseV1(StrictModel):
         return _require_rfc3339(value)
 
     @model_validator(mode="after")
-    def validate_release(self) -> "LeakageComponentReleaseV1":
+    def validate_release(self) -> LeakageComponentReleaseV1:
         membership_keys = tuple(
             (item.case_id, item.axis.value, item.group_id, item.provenance_sha256)
             for item in self.memberships
@@ -432,7 +433,7 @@ class StructureGroupingAlgorithmV2(StrictModel):
     scientific_conclusion: Literal[False] = False
 
     @model_validator(mode="after")
-    def validate_algorithm(self) -> "StructureGroupingAlgorithmV2":
+    def validate_algorithm(self) -> StructureGroupingAlgorithmV2:
         if self.axis not in STRUCTURE_LEAKAGE_AXES:
             raise ValueError("structure grouping algorithm has a non-structure axis")
         _assert_addressed_v2(
@@ -468,12 +469,12 @@ class StructureGroupingRunV2(StrictModel):
         return _require_rfc3339(value)
 
     @model_validator(mode="after")
-    def validate_run(self) -> "StructureGroupingRunV2":
+    def validate_run(self) -> StructureGroupingRunV2:
         if self.axis not in STRUCTURE_LEAKAGE_AXES:
             raise ValueError("structure grouping run has a non-structure axis")
-        started = datetime.fromisoformat(self.started_at.replace("Z", "+00:00"))
+        started = datetime.fromisoformat(self.started_at)
         completed = datetime.fromisoformat(
-            self.completed_at.replace("Z", "+00:00")
+            self.completed_at
         )
         if completed < started:
             raise ValueError("structure grouping run completes before it starts")
@@ -506,7 +507,7 @@ class StructureGroupingAssignmentV2(StrictModel):
     scientific_conclusion: Literal[False] = False
 
     @model_validator(mode="after")
-    def validate_assignment(self) -> "StructureGroupingAssignmentV2":
+    def validate_assignment(self) -> StructureGroupingAssignmentV2:
         if self.axis not in STRUCTURE_LEAKAGE_AXES:
             raise ValueError("structure assignment has a non-structure axis")
         _assert_addressed_v2(
@@ -577,7 +578,7 @@ class LeakageGroupDefinitionV2(StrictModel):
     canonical_preimage: Annotated[str, Field(min_length=2, max_length=2_048)]
 
     @model_validator(mode="after")
-    def validate_definition(self) -> "LeakageGroupDefinitionV2":
+    def validate_definition(self) -> LeakageGroupDefinitionV2:
         _validate_group_preimage_v2(self.axis, self.canonical_preimage)
         semantic = self.model_dump(
             mode="python", exclude={"group_id", "definition_sha256"}
@@ -606,7 +607,7 @@ class LeakageMembershipV2(StrictModel):
     provenance_sha256: Sha256
 
     @model_validator(mode="after")
-    def validate_membership(self) -> "LeakageMembershipV2":
+    def validate_membership(self) -> LeakageMembershipV2:
         has_id = self.structure_assignment_id is not None
         has_sha = self.structure_assignment_sha256 is not None
         if has_id != has_sha:
@@ -658,7 +659,7 @@ class LeakageComponentReleaseV2(StrictModel):
         return _require_rfc3339(value)
 
     @model_validator(mode="after")
-    def validate_release(self) -> "LeakageComponentReleaseV2":
+    def validate_release(self) -> LeakageComponentReleaseV2:
         algorithm_axes = tuple(item.axis.value for item in self.grouping_algorithms)
         if algorithm_axes != tuple(sorted(axis.value for axis in STRUCTURE_LEAKAGE_AXES)):
             raise ValueError("V2 requires one sorted algorithm for each structure axis")
@@ -666,11 +667,11 @@ class LeakageComponentReleaseV2(StrictModel):
         if run_axes != algorithm_axes:
             raise ValueError("V2 requires one sorted run for each structure axis")
         release_time = datetime.fromisoformat(
-            self.created_at.replace("Z", "+00:00")
+            self.created_at
         )
         if any(
             release_time
-            < datetime.fromisoformat(item.completed_at.replace("Z", "+00:00"))
+            < datetime.fromisoformat(item.completed_at)
             for item in self.grouping_runs
         ):
             raise ValueError("V2 release predates a referenced grouping run")
@@ -736,11 +737,7 @@ class LeakageComponentReleaseV2(StrictModel):
 
 
 _ELEMENT_SYMBOLS = frozenset(
-    "H He Li Be B C N O F Ne Na Mg Al Si P S Cl Ar K Ca Sc Ti V Cr Mn Fe Co Ni "
-    "Cu Zn Ga Ge As Se Br Kr Rb Sr Y Zr Nb Mo Tc Ru Rh Pd Ag Cd In Sn Sb Te I "
-    "Xe Cs Ba La Ce Pr Nd Pm Sm Eu Gd Tb Dy Ho Er Tm Yb Lu Hf Ta W Re Os Ir Pt "
-    "Au Hg Tl Pb Bi Po At Rn Fr Ra Ac Th Pa U Np Pu Am Cm Bk Cf Es Fm Md No Lr "
-    "Rf Db Sg Bh Hs Mt Ds Rg Cn Nh Fl Mc Lv Ts Og".split()
+    ["H", "He", "Li", "Be", "B", "C", "N", "O", "F", "Ne", "Na", "Mg", "Al", "Si", "P", "S", "Cl", "Ar", "K", "Ca", "Sc", "Ti", "V", "Cr", "Mn", "Fe", "Co", "Ni", "Cu", "Zn", "Ga", "Ge", "As", "Se", "Br", "Kr", "Rb", "Sr", "Y", "Zr", "Nb", "Mo", "Tc", "Ru", "Rh", "Pd", "Ag", "Cd", "In", "Sn", "Sb", "Te", "I", "Xe", "Cs", "Ba", "La", "Ce", "Pr", "Nd", "Pm", "Sm", "Eu", "Gd", "Tb", "Dy", "Ho", "Er", "Tm", "Yb", "Lu", "Hf", "Ta", "W", "Re", "Os", "Ir", "Pt", "Au", "Hg", "Tl", "Pb", "Bi", "Po", "At", "Rn", "Fr", "Ra", "Ac", "Th", "Pa", "U", "Np", "Pu", "Am", "Cm", "Bk", "Cf", "Es", "Fm", "Md", "No", "Lr", "Rf", "Db", "Sg", "Bh", "Hs", "Mt", "Ds", "Rg", "Cn", "Nh", "Fl", "Mc", "Lv", "Ts", "Og"]
 )
 _FORMULA_TOKEN = re.compile(r"[A-Z][a-z]?|(?:\d+(?:\.\d*)?|\.\d+)|[()\[\]]")
 _FORMULA_SUBSCRIPTS = str.maketrans("₀₁₂₃₄₅₆₇₈₉", "0123456789")
@@ -1486,7 +1483,7 @@ class MechanismLineageDefinitionV3(StrictModel):
         return _canonical_scientific_text_v3(value)
 
     @model_validator(mode="after")
-    def validate_definition(self) -> "MechanismLineageDefinitionV3":
+    def validate_definition(self) -> MechanismLineageDefinitionV3:
         evidence_keys = tuple(
             (item.source_id, item.source_record_id, item.source_record_raw_sha256)
             for item in self.taxonomy_evidence_refs
@@ -1548,7 +1545,7 @@ class MechanismLineageCurationPolicyV3(StrictModel):
         return _require_rfc3339(value)
 
     @model_validator(mode="after")
-    def validate_policy(self) -> "MechanismLineageCurationPolicyV3":
+    def validate_policy(self) -> MechanismLineageCurationPolicyV3:
         if self.definition_review_criteria != tuple(
             sorted(set(self.definition_review_criteria))
         ):
@@ -1602,7 +1599,7 @@ class MechanismLineageCuratorRosterV3(StrictModel):
         return _require_rfc3339(value)
 
     @model_validator(mode="after")
-    def validate_roster(self) -> "MechanismLineageCuratorRosterV3":
+    def validate_roster(self) -> MechanismLineageCuratorRosterV3:
         curator_ids = tuple(item.curator_id for item in self.curators)
         if curator_ids != tuple(sorted(set(curator_ids))):
             raise ValueError("lineage curators must be ID-sorted and unique")
@@ -1665,7 +1662,7 @@ class MechanismLineageDefinitionReviewV3(StrictModel):
         return _require_rfc3339(value)
 
     @model_validator(mode="after")
-    def validate_review(self) -> "MechanismLineageDefinitionReviewV3":
+    def validate_review(self) -> MechanismLineageDefinitionReviewV3:
         evidence_keys = tuple(
             (item.source_id, item.source_record_id, item.source_record_raw_sha256)
             for item in self.taxonomy_evidence_refs
@@ -1710,7 +1707,7 @@ class MechanismLineageDefinitionAdjudicationV3(StrictModel):
         return _require_rfc3339(value)
 
     @model_validator(mode="after")
-    def validate_adjudication(self) -> "MechanismLineageDefinitionAdjudicationV3":
+    def validate_adjudication(self) -> MechanismLineageDefinitionAdjudicationV3:
         if self.review_refs != tuple(sorted(set(self.review_refs))):
             raise ValueError("lineage adjudication review refs must be sorted and unique")
         _assert_addressed_v2(
@@ -1752,7 +1749,7 @@ class MechanismLineageEvidenceReviewManifestV3(StrictModel):
         return _require_rfc3339(value)
 
     @model_validator(mode="after")
-    def validate_manifest(self) -> "MechanismLineageEvidenceReviewManifestV3":
+    def validate_manifest(self) -> MechanismLineageEvidenceReviewManifestV3:
         review_keys = tuple(
             (item.lineage_id, item.curator_id, item.review_id) for item in self.reviews
         )
@@ -1807,12 +1804,12 @@ class MechanismLineageEvidenceReviewManifestV3(StrictModel):
                 raise ValueError("lineage adjudication does not bind its exact raw reviews")
         if set(adjudication_by_lineage) - set(by_lineage):
             raise ValueError("lineage adjudication has no reviewed definition")
-        sealed = datetime.fromisoformat(self.sealed_at.replace("Z", "+00:00"))
+        sealed = datetime.fromisoformat(self.sealed_at)
         if any(
-            sealed < datetime.fromisoformat(item.reviewed_at.replace("Z", "+00:00"))
+            sealed < datetime.fromisoformat(item.reviewed_at)
             for item in self.reviews
         ) or any(
-            sealed < datetime.fromisoformat(item.adjudicated_at.replace("Z", "+00:00"))
+            sealed < datetime.fromisoformat(item.adjudicated_at)
             for item in self.adjudications
         ):
             raise ValueError("lineage review manifest predates a raw decision")
@@ -1850,7 +1847,7 @@ class MechanismLineageCurationReleaseV3(StrictModel):
         return _require_rfc3339(value)
 
     @model_validator(mode="after")
-    def validate_release(self) -> "MechanismLineageCurationReleaseV3":
+    def validate_release(self) -> MechanismLineageCurationReleaseV3:
         if (self.roster.policy_id, self.roster.policy_sha256) != (
             self.policy.policy_id,
             self.policy.policy_sha256,
@@ -1868,9 +1865,9 @@ class MechanismLineageCurationReleaseV3(StrictModel):
             self.roster.roster_sha256,
         ):
             raise ValueError("lineage review manifest binds foreign governance")
-        assembled = datetime.fromisoformat(self.assembled_at.replace("Z", "+00:00"))
+        assembled = datetime.fromisoformat(self.assembled_at)
         if assembled < datetime.fromisoformat(
-            self.review_manifest.sealed_at.replace("Z", "+00:00")
+            self.review_manifest.sealed_at
         ):
             raise ValueError("lineage curation release predates its review manifest")
         _assert_addressed_v2(
@@ -1907,7 +1904,7 @@ class MechanismLineageRegistryV3(StrictModel):
         return _require_rfc3339(value)
 
     @model_validator(mode="after")
-    def validate_registry(self) -> "MechanismLineageRegistryV3":
+    def validate_registry(self) -> MechanismLineageRegistryV3:
         definition_keys = tuple(
             (item.lineage_id, item.lineage_sha256) for item in self.definitions
         )
@@ -1955,7 +1952,7 @@ class MechanismLineageAssignmentV3(StrictModel):
         return _require_rfc3339(value)
 
     @model_validator(mode="after")
-    def validate_assignment(self) -> "MechanismLineageAssignmentV3":
+    def validate_assignment(self) -> MechanismLineageAssignmentV3:
         evidence_keys = tuple(
             (item.source_id, item.source_record_id, item.source_record_raw_sha256)
             for item in self.case_evidence_refs
@@ -2007,7 +2004,7 @@ class MechanismLineageAssignmentCurationPolicyV3(StrictModel):
         return _require_rfc3339(value)
 
     @model_validator(mode="after")
-    def validate_policy(self) -> "MechanismLineageAssignmentCurationPolicyV3":
+    def validate_policy(self) -> MechanismLineageAssignmentCurationPolicyV3:
         if self.assignment_review_criteria != tuple(
             sorted(set(self.assignment_review_criteria))
         ):
@@ -2051,7 +2048,7 @@ class MechanismLineageAssignmentReviewerRosterV3(StrictModel):
         return _require_rfc3339(value)
 
     @model_validator(mode="after")
-    def validate_roster(self) -> "MechanismLineageAssignmentReviewerRosterV3":
+    def validate_roster(self) -> MechanismLineageAssignmentReviewerRosterV3:
         reviewer_ids = tuple(item.curator_id for item in self.reviewers)
         adjudicator_ids = tuple(item.curator_id for item in self.adjudicators)
         if reviewer_ids != tuple(sorted(set(reviewer_ids))):
@@ -2115,7 +2112,7 @@ class MechanismLineageAssignmentProposalV3(StrictModel):
         return _require_rfc3339(value)
 
     @model_validator(mode="after")
-    def validate_proposal(self) -> "MechanismLineageAssignmentProposalV3":
+    def validate_proposal(self) -> MechanismLineageAssignmentProposalV3:
         evidence_keys = tuple(
             (item.source_id, item.source_record_id, item.source_record_raw_sha256)
             for item in self.case_evidence_refs
@@ -2165,7 +2162,7 @@ class MechanismLineageAssignmentCandidateUniverseV3(StrictModel):
         return _require_rfc3339(value)
 
     @model_validator(mode="after")
-    def validate_universe(self) -> "MechanismLineageAssignmentCandidateUniverseV3":
+    def validate_universe(self) -> MechanismLineageAssignmentCandidateUniverseV3:
         order = tuple(
             (item.candidate_id, item.case.case_id, item.proposal_id)
             for item in self.proposals
@@ -2216,7 +2213,7 @@ class MechanismLineageAssignmentReviewV3(StrictModel):
         return _require_rfc3339(value)
 
     @model_validator(mode="after")
-    def validate_review(self) -> "MechanismLineageAssignmentReviewV3":
+    def validate_review(self) -> MechanismLineageAssignmentReviewV3:
         if self.criterion_findings != tuple(sorted(set(self.criterion_findings))):
             raise ValueError(
                 "lineage-assignment review findings must be sorted and unique"
@@ -2261,7 +2258,7 @@ class MechanismLineageAssignmentAdjudicationV3(StrictModel):
         return _require_rfc3339(value)
 
     @model_validator(mode="after")
-    def validate_adjudication(self) -> "MechanismLineageAssignmentAdjudicationV3":
+    def validate_adjudication(self) -> MechanismLineageAssignmentAdjudicationV3:
         if self.review_refs != tuple(sorted(set(self.review_refs))):
             raise ValueError(
                 "lineage-assignment adjudication review refs must be sorted and unique"
@@ -2306,7 +2303,7 @@ class MechanismLineageAssignmentReviewManifestV3(StrictModel):
         return _require_rfc3339(value)
 
     @model_validator(mode="after")
-    def validate_manifest(self) -> "MechanismLineageAssignmentReviewManifestV3":
+    def validate_manifest(self) -> MechanismLineageAssignmentReviewManifestV3:
         review_order = tuple(
             (item.proposal_id, item.reviewer_id, item.review_id)
             for item in self.reviews
@@ -2366,13 +2363,13 @@ class MechanismLineageAssignmentReviewManifestV3(StrictModel):
                 )
         if set(adjudication_by_proposal) - set(reviews_by_proposal):
             raise ValueError("lineage-assignment adjudication has no raw reviews")
-        sealed = datetime.fromisoformat(self.sealed_at.replace("Z", "+00:00"))
+        sealed = datetime.fromisoformat(self.sealed_at)
         if any(
-            sealed < datetime.fromisoformat(item.reviewed_at.replace("Z", "+00:00"))
+            sealed < datetime.fromisoformat(item.reviewed_at)
             for item in self.reviews
         ) or any(
             sealed
-            < datetime.fromisoformat(item.adjudicated_at.replace("Z", "+00:00"))
+            < datetime.fromisoformat(item.adjudicated_at)
             for item in self.adjudications
         ):
             raise ValueError("lineage-assignment manifest predates a decision")
@@ -2413,7 +2410,7 @@ class MechanismLineageAssignmentCurationReleaseV3(StrictModel):
         return _require_rfc3339(value)
 
     @model_validator(mode="after")
-    def validate_release(self) -> "MechanismLineageAssignmentCurationReleaseV3":
+    def validate_release(self) -> MechanismLineageAssignmentCurationReleaseV3:
         if (
             self.policy.registry_id,
             self.policy.registry_sha256,
@@ -2468,9 +2465,9 @@ class MechanismLineageAssignmentCurationReleaseV3(StrictModel):
             self.candidate_universe.universe_sha256,
         ):
             raise ValueError("lineage-assignment manifest binds foreign governance")
-        assembled = datetime.fromisoformat(self.assembled_at.replace("Z", "+00:00"))
+        assembled = datetime.fromisoformat(self.assembled_at)
         if assembled <= datetime.fromisoformat(
-            self.review_manifest.sealed_at.replace("Z", "+00:00")
+            self.review_manifest.sealed_at
         ):
             raise ValueError("lineage-assignment release does not follow its manifest")
         _assert_addressed_v2(
@@ -2489,7 +2486,7 @@ class LeakageGroupDefinitionV3(StrictModel):
     canonical_preimage: Annotated[str, Field(min_length=2, max_length=4_096)]
 
     @model_validator(mode="after")
-    def validate_definition(self) -> "LeakageGroupDefinitionV3":
+    def validate_definition(self) -> LeakageGroupDefinitionV3:
         try:
             decoded = json.loads(self.canonical_preimage)
         except (TypeError, ValueError) as exc:
@@ -2569,7 +2566,7 @@ class LeakageMembershipV3(StrictModel):
     provenance_sha256: Sha256
 
     @model_validator(mode="after")
-    def validate_membership(self) -> "LeakageMembershipV3":
+    def validate_membership(self) -> LeakageMembershipV3:
         structure_ref = (
             self.structure_assignment_id is not None,
             self.structure_assignment_sha256 is not None,
@@ -2625,7 +2622,7 @@ class LeakageComponentReleaseV3(StrictModel):
     created_at: Annotated[str, Field(min_length=20, max_length=40)]
     broad_mechanism_component_edges_allowed: Literal[False] = False
     caller_supplied_memberships_allowed: Literal[False] = False
-    canonical_work_registry_id: Literal[None] = None
+    canonical_work_registry_id: Literal[None] = None  # noqa: PYI061 -- schema const
     uncanonicalized_cross_source_doi_alias_count: Literal[0] = 0
     scientific_conclusion: Literal[False] = False
 
@@ -2635,7 +2632,7 @@ class LeakageComponentReleaseV3(StrictModel):
         return _require_rfc3339(value)
 
     @model_validator(mode="after")
-    def validate_release(self) -> "LeakageComponentReleaseV3":
+    def validate_release(self) -> LeakageComponentReleaseV3:
         algorithm_axes = tuple(item.axis.value for item in self.grouping_algorithms)
         expected_axes = tuple(sorted(axis.value for axis in STRUCTURE_LEAKAGE_AXES))
         if algorithm_axes != expected_axes:
@@ -2694,16 +2691,16 @@ class LeakageComponentReleaseV3(StrictModel):
             raise ValueError("V3 components must be component-ID sorted and unique")
         if self.components != _components_from_memberships_v3(self.memberships):
             raise ValueError("V3 components do not replay from memberships")
-        created = datetime.fromisoformat(self.created_at.replace("Z", "+00:00"))
+        created = datetime.fromisoformat(self.created_at)
         if any(
-            created < datetime.fromisoformat(item.completed_at.replace("Z", "+00:00"))
+            created < datetime.fromisoformat(item.completed_at)
             for item in self.grouping_runs
         ):
             raise ValueError("V3 release predates a structure grouping run")
         if created < datetime.fromisoformat(
-            self.mechanism_lineage_registry.sealed_at.replace("Z", "+00:00")
+            self.mechanism_lineage_registry.sealed_at
         ) or any(
-            created < datetime.fromisoformat(item.assigned_at.replace("Z", "+00:00"))
+            created < datetime.fromisoformat(item.assigned_at)
             for item in self.mechanism_lineage_assignments
         ):
             raise ValueError("V3 release predates frozen mechanism lineage artifacts")
@@ -3200,11 +3197,11 @@ def assert_formal_mechanism_lineage_registry_v3(
     ):
         raise ValueError("lineage curator roster does not replay from policy")
     if datetime.fromisoformat(
-        curation.policy.sealed_at.replace("Z", "+00:00")
-    ) > datetime.fromisoformat(curation.roster.sealed_at.replace("Z", "+00:00")):
+        curation.policy.sealed_at
+    ) > datetime.fromisoformat(curation.roster.sealed_at):
         raise ValueError("lineage curator roster predates the curation policy")
     roster_sealed = datetime.fromisoformat(
-        curation.roster.sealed_at.replace("Z", "+00:00")
+        curation.roster.sealed_at
     )
 
     definition_by_id = {item.lineage_id: item for item in registry_value.definitions}
@@ -3213,7 +3210,7 @@ def assert_formal_mechanism_lineage_registry_v3(
     criteria = set(curation.policy.definition_review_criteria)
     for review in curation.review_manifest.reviews:
         if datetime.fromisoformat(
-            review.reviewed_at.replace("Z", "+00:00")
+            review.reviewed_at
         ) <= roster_sealed:
             raise ValueError("lineage raw review does not follow the sealed roster")
         definition = definition_by_id.get(review.lineage_id)
@@ -3252,9 +3249,9 @@ def assert_formal_mechanism_lineage_registry_v3(
         if adjudication is None:
             raise ValueError("lineage review disagreement lacks adjudication")
         if datetime.fromisoformat(
-            adjudication.adjudicated_at.replace("Z", "+00:00")
+            adjudication.adjudicated_at
         ) <= max(
-            datetime.fromisoformat(item.reviewed_at.replace("Z", "+00:00"))
+            datetime.fromisoformat(item.reviewed_at)
             for item in reviews
         ):
             raise ValueError("lineage adjudication does not follow both raw reviews")
@@ -3265,14 +3262,14 @@ def assert_formal_mechanism_lineage_registry_v3(
         if adjudication.final_decision is not MechanismLineageReviewDecisionV3.INCLUDE:
             raise ValueError("adjudicated-rejected lineage appears in public registry")
     registry_sealed = datetime.fromisoformat(
-        registry_value.sealed_at.replace("Z", "+00:00")
+        registry_value.sealed_at
     )
     if registry_sealed < datetime.fromisoformat(
-        curation.review_manifest.sealed_at.replace("Z", "+00:00")
+        curation.review_manifest.sealed_at
     ):
         raise ValueError("public lineage registry predates private definition review")
     if datetime.fromisoformat(
-        curation.assembled_at.replace("Z", "+00:00")
+        curation.assembled_at
     ) < registry_sealed:
         raise ValueError("lineage curation release assembly predates registry seal")
 
@@ -3325,8 +3322,8 @@ def build_mechanism_lineage_assignment_v3(
     if not assignment_sources <= case_sources:
         raise ValueError("case-specific lineage evidence is not a subset of case sources")
     assigned = _require_rfc3339(assigned_at)
-    if datetime.fromisoformat(assigned.replace("Z", "+00:00")) < datetime.fromisoformat(
-        value.sealed_at.replace("Z", "+00:00")
+    if datetime.fromisoformat(assigned) < datetime.fromisoformat(
+        value.sealed_at
     ):
         raise ValueError("lineage assignment predates sealed registry")
     values = {
@@ -3378,8 +3375,8 @@ def build_mechanism_lineage_assignment_curation_policy_v3(
         curation_release=definition_curation,
     )
     sealed = _require_rfc3339(sealed_at)
-    if datetime.fromisoformat(sealed.replace("Z", "+00:00")) <= datetime.fromisoformat(
-        definition_curation.assembled_at.replace("Z", "+00:00")
+    if datetime.fromisoformat(sealed) <= datetime.fromisoformat(
+        definition_curation.assembled_at
     ):
         raise ValueError("lineage-assignment policy does not follow definition curation")
     return _build_addressed_v3(
@@ -3434,8 +3431,8 @@ def build_mechanism_lineage_assignment_reviewer_roster_v3(
         )
     )
     sealed = _require_rfc3339(sealed_at)
-    if datetime.fromisoformat(sealed.replace("Z", "+00:00")) <= datetime.fromisoformat(
-        policy_value.sealed_at.replace("Z", "+00:00")
+    if datetime.fromisoformat(sealed) <= datetime.fromisoformat(
+        policy_value.sealed_at
     ):
         raise ValueError("lineage-assignment roster does not follow policy")
     return _build_addressed_v3(
@@ -3511,8 +3508,8 @@ def build_mechanism_lineage_assignment_proposal_v3(
     if definition.broad_mechanism_family is not full_case.primary_mechanism_stratum:
         raise ValueError("lineage-assignment proposal crosses broad sampling strata")
     proposed = _require_rfc3339(proposed_at)
-    if datetime.fromisoformat(proposed.replace("Z", "+00:00")) < datetime.fromisoformat(
-        definition_curation.assembled_at.replace("Z", "+00:00")
+    if datetime.fromisoformat(proposed) < datetime.fromisoformat(
+        definition_curation.assembled_at
     ):
         raise ValueError("lineage-assignment proposal predates definition curation")
     return _build_addressed_v3(
@@ -3601,18 +3598,18 @@ def build_mechanism_lineage_assignment_candidate_universe_v3(
     ):
         raise ValueError("lineage-assignment universe received a foreign roster")
     roster_sealed = datetime.fromisoformat(
-        roster_value.sealed_at.replace("Z", "+00:00")
+        roster_value.sealed_at
     )
     if any(
-        datetime.fromisoformat(item.proposed_at.replace("Z", "+00:00"))
+        datetime.fromisoformat(item.proposed_at)
         <= roster_sealed
         for item in ordered
     ):
         raise ValueError("lineage-assignment proposal does not follow sealed roster")
     sealed = _require_rfc3339(sealed_at)
-    sealed_time = datetime.fromisoformat(sealed.replace("Z", "+00:00"))
+    sealed_time = datetime.fromisoformat(sealed)
     if any(
-        datetime.fromisoformat(item.proposed_at.replace("Z", "+00:00"))
+        datetime.fromisoformat(item.proposed_at)
         >= sealed_time
         for item in ordered
     ):
@@ -3681,8 +3678,8 @@ def build_mechanism_lineage_assignment_review_v3(
     if reviewer_id not in {item.curator_id for item in roster_value.reviewers}:
         raise ValueError("lineage-assignment review comes from outside roster")
     reviewed = _require_rfc3339(reviewed_at)
-    if datetime.fromisoformat(reviewed.replace("Z", "+00:00")) <= datetime.fromisoformat(
-        universe.sealed_at.replace("Z", "+00:00")
+    if datetime.fromisoformat(reviewed) <= datetime.fromisoformat(
+        universe.sealed_at
     ):
         raise ValueError("lineage-assignment review does not follow universe seal")
     return _build_addressed_v3(
@@ -3778,8 +3775,8 @@ def build_mechanism_lineage_assignment_adjudication_v3(
     }:
         raise ValueError("lineage-assignment adjudicator comes from outside roster")
     adjudicated = _require_rfc3339(adjudicated_at)
-    if datetime.fromisoformat(adjudicated.replace("Z", "+00:00")) <= max(
-        datetime.fromisoformat(item.reviewed_at.replace("Z", "+00:00"))
+    if datetime.fromisoformat(adjudicated) <= max(
+        datetime.fromisoformat(item.reviewed_at)
         for item in review_values
     ):
         raise ValueError("lineage-assignment adjudication does not follow raw reviews")
@@ -3962,12 +3959,12 @@ def derive_formal_mechanism_lineage_assignments_v3(
     universe = release.candidate_universe
     manifest = release.review_manifest
     definition_assembled = datetime.fromisoformat(
-        definition_curation.assembled_at.replace("Z", "+00:00")
+        definition_curation.assembled_at
     )
-    policy_sealed = datetime.fromisoformat(policy.sealed_at.replace("Z", "+00:00"))
-    roster_sealed = datetime.fromisoformat(roster.sealed_at.replace("Z", "+00:00"))
+    policy_sealed = datetime.fromisoformat(policy.sealed_at)
+    roster_sealed = datetime.fromisoformat(roster.sealed_at)
     universe_sealed = datetime.fromisoformat(
-        universe.sealed_at.replace("Z", "+00:00")
+        universe.sealed_at
     )
     if not (definition_assembled < policy_sealed < roster_sealed < universe_sealed):
         raise ValueError("lineage-assignment governance timestamps are inverted")
@@ -3990,7 +3987,7 @@ def derive_formal_mechanism_lineage_assignments_v3(
         ):
             raise ValueError("lineage-assignment proposal binds foreign definition roots")
         proposal_time = datetime.fromisoformat(
-            proposal.proposed_at.replace("Z", "+00:00")
+            proposal.proposed_at
         )
         if not (roster_sealed < proposal_time < universe_sealed):
             raise ValueError("lineage-assignment proposal is outside prereview window")
@@ -4040,7 +4037,7 @@ def derive_formal_mechanism_lineage_assignments_v3(
                 "lineage-assignment raw review does not cover frozen criteria"
             )
         if datetime.fromisoformat(
-            review.reviewed_at.replace("Z", "+00:00")
+            review.reviewed_at
         ) <= universe_sealed:
             raise ValueError("lineage-assignment raw review predates universe seal")
         reviews_by_proposal[review.proposal_id].append(review)
@@ -4093,9 +4090,9 @@ def derive_formal_mechanism_lineage_assignments_v3(
                     "lineage-assignment adjudication comes from outside roster"
                 )
             if datetime.fromisoformat(
-                adjudication.adjudicated_at.replace("Z", "+00:00")
+                adjudication.adjudicated_at
             ) <= max(
-                datetime.fromisoformat(item.reviewed_at.replace("Z", "+00:00"))
+                datetime.fromisoformat(item.reviewed_at)
                 for item in reviews
             ):
                 raise ValueError(
@@ -4407,7 +4404,7 @@ def _validate_lineage_artifacts_v3(
     if {item.case_id for item in ordered} != set(case_by_id):
         raise ValueError("V3 lineage assignments do not exactly cover full cases")
     definition_by_id = {item.lineage_id: item for item in value.definitions}
-    registry_sealed = datetime.fromisoformat(value.sealed_at.replace("Z", "+00:00"))
+    registry_sealed = datetime.fromisoformat(value.sealed_at)
     assignment_by_case: dict[str, MechanismLineageAssignmentV3] = {}
     for assignment in ordered:
         case = case_by_id[assignment.case_id]
@@ -4437,7 +4434,7 @@ def _validate_lineage_artifacts_v3(
                 "V3 case-specific lineage evidence is not a subset of assigned case sources"
             )
         if datetime.fromisoformat(
-            assignment.assigned_at.replace("Z", "+00:00")
+            assignment.assigned_at
         ) < registry_sealed:
             raise ValueError("V3 lineage assignment predates sealed registry")
         assignment_by_case[assignment.case_id] = assignment

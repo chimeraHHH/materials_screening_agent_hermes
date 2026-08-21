@@ -13,8 +13,8 @@ from material_agent.gateway.authorization import SqliteOneTimeActionGrantStore
 from material_agent.gateway.companion import CompanionAdapterError
 from material_agent.gateway.errors import ActionAuthorizationError
 from material_agent.gateway.job_queue import GatewayJobStatus, SqliteGatewayJobQueue
-from material_agent.gateway.memory import InMemoryArtifactStore
 from material_agent.gateway.mcp_server import GatewayToolDispatcher
+from material_agent.gateway.memory import InMemoryArtifactStore
 from material_agent.gateway.models import (
     ApprovalInteractionV1,
     ApproveActionV1,
@@ -25,8 +25,8 @@ from material_agent.gateway.models import (
     InspirationRunRequestV1,
     InteractionRequiredStateV1,
     RejectActionV1,
-    RunningStateV1,
     RunActionV1,
+    RunningStateV1,
     RunStateV1,
 )
 from material_agent.gateway.persistence import SqliteGatewayRepository

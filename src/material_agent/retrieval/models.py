@@ -8,7 +8,6 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-
 AGENT01_CONTRACT_VERSION = "agent01-contract-v1"
 AGENT01_MULTI_SOURCE_CONTRACT_VERSION = "agent01-contract-v2"
 
@@ -120,7 +119,7 @@ class HardConstraints(StrictModel):
     is_metal: bool | None = None
     dimensionality: Literal[0, 1, 2, 3] | None = None
     max_num_sites: int | None = Field(default=None, ge=1)
-    source_constraints: "SourceSpecificConstraints" = Field(
+    source_constraints: SourceSpecificConstraints = Field(
         default_factory=lambda: SourceSpecificConstraints()
     )
 
@@ -248,7 +247,7 @@ class RetrievalPolicy(StrictModel):
     canonical_float_digits: int = Field(default=12, ge=6, le=16)
     dimensionality_policy_version: str = "dimensionality-larsen-crystalnn-v1"
     canonicalization_policy_version: str = "canonical-structure-v1"
-    mp_report: "MaterialsProjectReportPolicy" = Field(
+    mp_report: MaterialsProjectReportPolicy = Field(
         default_factory=lambda: MaterialsProjectReportPolicy()
     )
 

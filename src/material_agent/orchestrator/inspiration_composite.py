@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from enum import StrEnum
 from pathlib import Path
-from typing import Any, Literal, Protocol, TypedDict
+from typing import Any, Literal, Protocol, Self, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 from pydantic import Field
@@ -29,11 +29,12 @@ from material_agent.inspiration.policy import (
     InspirationPolicyV1,
     SearchExecutionMode,
 )
-from material_agent.orchestrator.models import ArtifactPointer, StrictModel
 from material_agent.orchestrator.models import (
+    ArtifactPointer,
     ControlStageOutcome,
     StageId,
     StageStatus,
+    StrictModel,
 )
 from material_agent.orchestrator.storage import OrchestratorRepository
 from material_agent.retrieval.models import (
@@ -43,7 +44,6 @@ from material_agent.retrieval.models import (
     Requirement,
 )
 from material_agent.retrieval.storage import LocalArtifactStore
-
 
 INSPIRATION_COMPOSITE_VERSION = "orchestrator-composite-inspiration-v2"
 _STRUCTURE_PREFIX = "artifact://candidates/structures/"
@@ -199,7 +199,7 @@ class InspirationCompositeGraphV2:
             )
         except InspirationCompositeError as exc:
             return {"result": self._failure(exc.code, str(exc))}
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             return {
                 "result": self._failure(
                     "INVALID_COMPOSITE_INPUT",
@@ -252,7 +252,7 @@ class InspirationCompositeGraphV2:
             )
             self._verify_v1_pointer(run_result.stage_result_artifact)
             self._verify_v1_pointer(run_result.stage_result.bundle_artifact)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             code = getattr(exc, "code", "INSPIRATION_EXECUTION_FAILED")
             return {
                 "result": self._failure(
@@ -520,7 +520,7 @@ class InspirationCompositeRuntimeV2:
             store=self.store, runner=runner
         ).compile()
 
-    def __enter__(self) -> InspirationCompositeRuntimeV2:
+    def __enter__(self) -> Self:
         return self
 
     def __exit__(self, *_args: object) -> None:

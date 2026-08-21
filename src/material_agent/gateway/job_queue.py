@@ -10,20 +10,21 @@ workers that resume after their lease expired.
 from __future__ import annotations
 
 import hashlib
+import itertools
 import os
 import re
 import secrets
 import sqlite3
 import time
+from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 from threading import RLock
-from typing import Any, Callable, Iterator, Mapping
+from typing import Any, Self
 
 from material_agent.gateway.models import canonical_json_bytes
-
 
 JOB_QUEUE_SCHEMA_VERSION = 2
 MAX_PAYLOAD_BYTES = 1_000_000
@@ -221,7 +222,7 @@ class SqliteGatewayJobQueue:
         with self._lock:
             self.connection.close()
 
-    def __enter__(self) -> SqliteGatewayJobQueue:
+    def __enter__(self) -> Self:
         return self
 
     def __exit__(self, *_args: object) -> None:
@@ -711,7 +712,7 @@ class SqliteGatewayJobQueue:
             if value is not None
         )
         if not attempt.clock_anomaly and any(
-            later < earlier for earlier, later in zip(ordered, ordered[1:])
+            later < earlier for earlier, later in itertools.pairwise(ordered)
         ):
             raise JobQueuePersistenceError(
                 "persisted Gateway attempt timestamps move backwards"

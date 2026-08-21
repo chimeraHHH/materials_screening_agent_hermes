@@ -8,13 +8,11 @@ import pytest
 
 from material_agent.retrieval.adapters import NomadAdapter
 from material_agent.retrieval.models import (
-    Decision,
     RetrievalPolicy,
     RetrievalStageInput,
     SourceDatabase,
     StageStatus,
 )
-from material_agent.retrieval.normalizer import candidate_id_for
 from material_agent.retrieval.query import (
     ELECTRON_VOLT_JOULE,
     build_query_plan,

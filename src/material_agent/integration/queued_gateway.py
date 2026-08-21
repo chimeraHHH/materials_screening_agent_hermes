@@ -17,8 +17,8 @@ import time
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
-from material_agent.gateway.authorization import SqliteOneTimeActionGrantStore
 from material_agent.gateway.action_supervisor import GatewayActionProcessSupervisor
+from material_agent.gateway.authorization import SqliteOneTimeActionGrantStore
 from material_agent.gateway.job_queue import SqliteGatewayJobQueue
 from material_agent.gateway.service import (
     GatewayActionWorker,
@@ -210,15 +210,19 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.mcp_host is not None:
         from material_agent.gateway.mcp_server import (
             GatewayToolDispatcher,
+        )
+        from material_agent.gateway.mcp_server import (
             create_mcp_server as create_gateway_mcp_server,
         )
-        from material_agent.integration.mcp_http import MCPHttpHub
         from material_agent.integration.generic_research import (
             GenericMaterialsResearchService,
         )
+        from material_agent.integration.mcp_http import MCPHttpHub
         from material_agent.integration.research_pipeline import ResearchPipelineService
         from material_agent.integration.research_pipeline_mcp import (
             ResearchPipelineDispatcher,
+        )
+        from material_agent.integration.research_pipeline_mcp import (
             create_mcp_server as create_research_mcp_server,
         )
 
@@ -263,7 +267,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     worker_id=worker_id,
                     stop_requested=lambda: stopped,
                 )
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001
                 print(
                     json.dumps(
                         {

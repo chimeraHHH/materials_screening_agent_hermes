@@ -16,8 +16,6 @@ from material_agent.many_body.models import (
 )
 from material_agent.many_body.registry import DEFAULT_REGISTRY, build_registry
 from material_agent.many_body.routing import route_model
-from material_agent.many_body.validation import ValidationStatus
-
 
 ROOT = Path(__file__).parents[1] / "fixtures/contracts/agent04-v1"
 

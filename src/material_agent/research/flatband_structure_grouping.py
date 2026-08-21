@@ -31,13 +31,14 @@ import base64
 import binascii
 import ctypes
 import hashlib
+import itertools
 import json
 import math
 import platform
 import time
 from collections import OrderedDict, defaultdict, deque
 from collections.abc import Iterable, Sequence
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import StrEnum
 from importlib import metadata, util
 from pathlib import Path
@@ -189,23 +190,23 @@ class StructureGroupingParametersV2(StrictModel):
 
 
 def _require_rfc3339(value: str) -> str:
-    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    parsed = datetime.fromisoformat(value)
     if parsed.tzinfo is None or parsed.utcoffset() is None:
         raise ValueError("timestamp must include a UTC offset")
     return value
 
 
 def _now_rfc3339() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="microseconds")
+    return datetime.now(UTC).isoformat(timespec="microseconds")
 
 
 def _now_strictly_after_v2(previous: str) -> str:
     """Return a real UTC observation strictly later than ``previous``."""
 
-    previous_time = datetime.fromisoformat(previous.replace("Z", "+00:00"))
-    observed = datetime.now(timezone.utc)
+    previous_time = datetime.fromisoformat(previous)
+    observed = datetime.now(UTC)
     if observed <= previous_time:
-        observed = datetime.now(timezone.utc)
+        observed = datetime.now(UTC)
     if observed <= previous_time:
         raise ValueError("local UTC clock does not postdate the preceding artifact")
     return observed.isoformat(timespec="microseconds")
@@ -213,7 +214,7 @@ def _now_strictly_after_v2(previous: str) -> str:
 
 def _assert_computation_chronology_v2(
     *,
-    manifest: "StructureGroupingInputManifestV2",
+    manifest: StructureGroupingInputManifestV2,
     started_at: str,
     started_monotonic_ns: int,
     completed_at: str | None = None,
@@ -223,10 +224,10 @@ def _assert_computation_chronology_v2(
     """Require a sealed input before any formal grouping computation."""
 
     sealed = datetime.fromisoformat(
-        _require_rfc3339(manifest.sealed_at).replace("Z", "+00:00")
+        _require_rfc3339(manifest.sealed_at)
     )
     started = datetime.fromisoformat(
-        _require_rfc3339(started_at).replace("Z", "+00:00")
+        _require_rfc3339(started_at)
     )
     if sealed >= started:
         raise ValueError("structure run start must strictly follow the input seal")
@@ -238,7 +239,7 @@ def _assert_computation_chronology_v2(
     completed: datetime | None = None
     if completed_at is not None:
         completed = datetime.fromisoformat(
-            _require_rfc3339(completed_at).replace("Z", "+00:00")
+            _require_rfc3339(completed_at)
         )
         if started > completed:
             raise ValueError("structure run completes before it starts")
@@ -249,7 +250,7 @@ def _assert_computation_chronology_v2(
         raise ValueError("structure run monotonic clock regressed")
     if created_at is not None:
         created = datetime.fromisoformat(
-            _require_rfc3339(created_at).replace("Z", "+00:00")
+            _require_rfc3339(created_at)
         )
         if (completed or started) > created:
             raise ValueError("structure computation release predates run completion")
@@ -338,7 +339,7 @@ class RawStructureArtifactV2(StrictModel):
     scientific_conclusion: Literal[False] = False
 
     @model_validator(mode="after")
-    def validate_raw_artifact(self) -> "RawStructureArtifactV2":
+    def validate_raw_artifact(self) -> RawStructureArtifactV2:
         suffix = self.private_artifact_uri.removeprefix("artifact://private/")
         if "\\" in suffix or any(part in {"", ".", ".."} for part in suffix.split("/")):
             raise ValueError("private artifact URI is not a safe opaque path")
@@ -413,7 +414,7 @@ class NormalizedOrderedSiteV2(StrictModel):
     fractional_coordinates: Vector3
 
     @model_validator(mode="after")
-    def validate_site(self) -> "NormalizedOrderedSiteV2":
+    def validate_site(self) -> NormalizedOrderedSiteV2:
         if any(value < 0.0 or value >= 1.0 for value in self.fractional_coordinates):
             raise ValueError("fractional coordinates must be in [0, 1)")
         if tuple(_quantize(value) for value in self.fractional_coordinates) != (
@@ -436,7 +437,7 @@ class NormalizedStructurePayloadV2(StrictModel):
     ]
 
     @model_validator(mode="after")
-    def validate_payload(self) -> "NormalizedStructurePayloadV2":
+    def validate_payload(self) -> NormalizedStructurePayloadV2:
         flattened = tuple(value for row in self.lattice_matrix_angstrom for value in row)
         if tuple(_quantize(value) for value in flattened) != flattened:
             raise ValueError("lattice differs from fixed normalization")
@@ -460,7 +461,7 @@ class AxisVacuumGapEvidenceV2(StrictModel):
     passes_minimum_gap: bool
 
     @model_validator(mode="after")
-    def validate_axis(self) -> "AxisVacuumGapEvidenceV2":
+    def validate_axis(self) -> AxisVacuumGapEvidenceV2:
         if self.crystallographic_height_angstrom <= 0.0:
             raise ValueError("crystallographic height must be positive")
         if not 0.0 <= self.maximum_cyclic_gap_fraction <= 1.0:
@@ -511,7 +512,7 @@ class AperiodicAxisEvidenceV2(StrictModel):
     )
 
     @model_validator(mode="after")
-    def validate_evidence(self) -> "AperiodicAxisEvidenceV2":
+    def validate_evidence(self) -> AperiodicAxisEvidenceV2:
         if tuple(item.axis for item in self.axes) != (0, 1, 2):
             raise ValueError("aperiodic-axis evidence must cover axes 0, 1, 2")
         expected = tuple(item.axis for item in self.axes if item.passes_minimum_gap)
@@ -627,7 +628,7 @@ def _build_aperiodic_axis_evidence_v2(
         positions = sorted(
             float(site.fractional_coordinates[axis]) for site in validated.sites
         )
-        gaps = [right - left for left, right in zip(positions, positions[1:])]
+        gaps = [right - left for left, right in itertools.pairwise(positions)]
         gaps.append(positions[0] + 1.0 - positions[-1])
         gap_fraction = max(gaps)
         gap_angstrom = height * gap_fraction
@@ -704,7 +705,7 @@ class NormalizedStructureArtifactV2(StrictModel):
     scientific_conclusion: Literal[False] = False
 
     @model_validator(mode="after")
-    def validate_artifact(self) -> "NormalizedStructureArtifactV2":
+    def validate_artifact(self) -> NormalizedStructureArtifactV2:
         replayed_payload = _parse_raw_structure_payload_v2(self.raw_artifact)
         if replayed_payload != self.payload:
             raise ValueError("normalized payload does not replay from exact raw bytes")
@@ -853,7 +854,7 @@ class PreGroupCandidatePreimageV2(StrictModel):
     public_release_allowed: bool
 
     @model_validator(mode="after")
-    def validate_preimage(self) -> "PreGroupCandidatePreimageV2":
+    def validate_preimage(self) -> PreGroupCandidatePreimageV2:
         if self.dimensionality is StructureDimensionalityV2.TWO_D:
             if self.aperiodic_axis is None:
                 raise ValueError("2D input requires replayable aperiodic-axis evidence")
@@ -894,7 +895,7 @@ class StructureGroupingCaseInputV2(StrictModel):
     preimage: PreGroupCandidatePreimageV2
 
     @model_validator(mode="after")
-    def validate_input(self) -> "StructureGroupingCaseInputV2":
+    def validate_input(self) -> StructureGroupingCaseInputV2:
         preimage_sha256 = canonical_sha256(self.preimage.model_dump(mode="python"))
         expected_candidate = deterministic_id(
             "pre-group-candidate",
@@ -951,7 +952,7 @@ class StructureGroupingRuntimeIdentityV2(StrictModel):
     parameters_sha256: Sha256
 
     @model_validator(mode="after")
-    def validate_runtime(self) -> "StructureGroupingRuntimeIdentityV2":
+    def validate_runtime(self) -> StructureGroupingRuntimeIdentityV2:
         _assert_addressed(
             self,
             id_field="runtime_id",
@@ -1083,7 +1084,7 @@ class StructureGroupingInputRootV2(StrictModel):
     input_root_sha256: Sha256
 
     @model_validator(mode="after")
-    def validate_root(self) -> "StructureGroupingInputRootV2":
+    def validate_root(self) -> StructureGroupingInputRootV2:
         if self.input_root_sha256 != canonical_sha256(
             self.model_dump(mode="python", exclude={"input_root_sha256"})
         ):
@@ -1145,7 +1146,7 @@ class StructureGroupingInputManifestV2(StrictModel):
         return _require_rfc3339(value)
 
     @model_validator(mode="after")
-    def validate_manifest(self) -> "StructureGroupingInputManifestV2":
+    def validate_manifest(self) -> StructureGroupingInputManifestV2:
         keys = tuple(item.candidate_key for item in self.case_inputs)
         if keys != tuple(sorted(set(keys))):
             raise ValueError("case inputs must be candidate-key sorted and unique")
@@ -1263,7 +1264,7 @@ class AnonymousWyckoffRoleV2(StrictModel):
     orbits: Annotated[tuple[WyckoffOrbitRoleV2, ...], Field(min_length=1)]
 
     @model_validator(mode="after")
-    def validate_role(self) -> "AnonymousWyckoffRoleV2":
+    def validate_role(self) -> AnonymousWyckoffRoleV2:
         keys = tuple(
             (item.site_symmetry_symbol, item.multiplicity)
             for item in self.orbits
@@ -1285,7 +1286,7 @@ class SymmetrySignatureV2(StrictModel):
     ]
 
     @model_validator(mode="after")
-    def validate_signature(self) -> "SymmetrySignatureV2":
+    def validate_signature(self) -> SymmetrySignatureV2:
         if self.symmetry_kind == "LAYER_GROUP_2D" and self.group_number > 80:
             raise ValueError("layer-group number must be in 1..80")
         keys = tuple(
@@ -1310,7 +1311,7 @@ class PrototypeThresholdEvidenceV2(StrictModel):
     signature_sha256: Sha256
 
     @model_validator(mode="after")
-    def validate_threshold(self) -> "PrototypeThresholdEvidenceV2":
+    def validate_threshold(self) -> PrototypeThresholdEvidenceV2:
         if self.signature_sha256 != canonical_sha256(
             self.signature.model_dump(mode="python")
         ):
@@ -1350,7 +1351,7 @@ class PrototypeCaseEvidenceV2(StrictModel):
     scientific_conclusion: Literal[False] = False
 
     @model_validator(mode="after")
-    def validate_evidence(self) -> "PrototypeCaseEvidenceV2":
+    def validate_evidence(self) -> PrototypeCaseEvidenceV2:
         thresholds = tuple(item.symprec_angstrom for item in self.threshold_evidence)
         if thresholds != tuple(sorted(set(thresholds))):
             raise ValueError("prototype threshold evidence must be sorted and unique")
@@ -1375,7 +1376,7 @@ class PrototypeComponentEvidenceV2(StrictModel):
     scientific_conclusion: Literal[False] = False
 
     @model_validator(mode="after")
-    def validate_component(self) -> "PrototypeComponentEvidenceV2":
+    def validate_component(self) -> PrototypeComponentEvidenceV2:
         if self.candidate_keys != tuple(sorted(set(self.candidate_keys))):
             raise ValueError("prototype component candidate keys must be sorted")
         if len(self.candidate_keys) != len(self.structure_sha256s):
@@ -1425,7 +1426,7 @@ class FingerprintPairEvidenceV2(StrictModel):
     scientific_conclusion: Literal[False] = False
 
     @model_validator(mode="after")
-    def validate_pair(self) -> "FingerprintPairEvidenceV2":
+    def validate_pair(self) -> FingerprintPairEvidenceV2:
         if self.left_candidate_key >= self.right_candidate_key:
             raise ValueError("fingerprint pair keys must be strictly ordered")
         if self.fit_anonymous != (
@@ -1465,7 +1466,7 @@ class FingerprintComponentEvidenceV2(StrictModel):
     scientific_conclusion: Literal[False] = False
 
     @model_validator(mode="after")
-    def validate_component(self) -> "FingerprintComponentEvidenceV2":
+    def validate_component(self) -> FingerprintComponentEvidenceV2:
         if self.candidate_keys != tuple(sorted(set(self.candidate_keys))):
             raise ValueError("fingerprint component candidate keys must be sorted")
         if len(self.candidate_keys) != len(self.structure_sha256s):
@@ -1496,7 +1497,7 @@ class StructureGroupingOutputRootV2(StrictModel):
     output_root_sha256: Sha256
 
     @model_validator(mode="after")
-    def validate_root(self) -> "StructureGroupingOutputRootV2":
+    def validate_root(self) -> StructureGroupingOutputRootV2:
         if self.output_root_sha256 != canonical_sha256(
             self.model_dump(mode="python", exclude={"output_root_sha256"})
         ):
@@ -1534,7 +1535,7 @@ class StructureGroupingFormalRunEvidenceV2(StrictModel):
         return _require_rfc3339(value)
 
     @model_validator(mode="after")
-    def validate_run(self) -> "StructureGroupingFormalRunEvidenceV2":
+    def validate_run(self) -> StructureGroupingFormalRunEvidenceV2:
         if datetime.fromisoformat(self.completed_at) < datetime.fromisoformat(
             self.started_at
         ):
@@ -1583,7 +1584,7 @@ class StructureGroupingComputationReleaseV2(StrictModel):
         return _require_rfc3339(value)
 
     @model_validator(mode="after")
-    def validate_computation(self) -> "StructureGroupingComputationReleaseV2":
+    def validate_computation(self) -> StructureGroupingComputationReleaseV2:
         _assert_computation_chronology_v2(
             manifest=self.input_manifest,
             started_at=self.formal_run.started_at,
@@ -1718,7 +1719,7 @@ class FinalCaseProjectionV2(StrictModel):
     structure_sha256: Sha256
 
     @model_validator(mode="after")
-    def validate_projection(self) -> "FinalCaseProjectionV2":
+    def validate_projection(self) -> FinalCaseProjectionV2:
         _assert_addressed(
             self,
             id_field="projection_id",
@@ -1764,7 +1765,7 @@ class StructureGroupingPrivateEvidenceReleaseV2(StrictModel):
         return _require_rfc3339(value)
 
     @model_validator(mode="after")
-    def validate_release(self) -> "StructureGroupingPrivateEvidenceReleaseV2":
+    def validate_release(self) -> StructureGroupingPrivateEvidenceReleaseV2:
         completed = datetime.fromisoformat(self.computation.formal_run.completed_at)
         declared = datetime.fromisoformat(self.final_cases_declared_at)
         created = datetime.fromisoformat(self.created_at)
@@ -1842,7 +1843,7 @@ class StructureGroupingUnionMemberRefV2(StrictModel):
         return _require_rfc3339(value)
 
     @model_validator(mode="after")
-    def validate_ref(self) -> "StructureGroupingUnionMemberRefV2":
+    def validate_ref(self) -> StructureGroupingUnionMemberRefV2:
         if self.candidate_keys != tuple(sorted(set(self.candidate_keys))):
             raise ValueError("union member candidate keys must be sorted and unique")
         _assert_addressed(
@@ -1869,7 +1870,7 @@ class StructureGroupingUnionCandidateOwnerV2(StrictModel):
     member_release_sha256: Sha256
 
     @model_validator(mode="after")
-    def validate_owner(self) -> "StructureGroupingUnionCandidateOwnerV2":
+    def validate_owner(self) -> StructureGroupingUnionCandidateOwnerV2:
         _assert_addressed(
             self,
             id_field="owner_projection_id",
@@ -1916,7 +1917,7 @@ class StructureGroupingUnionReplayReleaseV2(StrictModel):
         return _require_rfc3339(value)
 
     @model_validator(mode="after")
-    def validate_release(self) -> "StructureGroupingUnionReplayReleaseV2":
+    def validate_release(self) -> StructureGroupingUnionReplayReleaseV2:
         _assert_union_replay_model_closure_v2(self)
         _assert_addressed(
             self,
@@ -2037,7 +2038,7 @@ def _canonicalize_structure_v2(
     z_values = sorted(float(value % 1.0) for value in permuted_coordinates[:, 2])
     gap_rows = [
         (right - left, right)
-        for left, right in zip(z_values, z_values[1:])
+        for left, right in itertools.pairwise(z_values)
     ]
     gap_rows.append((z_values[0] + 1.0 - z_values[-1], z_values[0]))
     maximum_gap = max(item[0] for item in gap_rows)
@@ -3494,14 +3495,14 @@ def _assert_union_replay_model_closure_v2(
         release.member_refs
     ):
         raise ValueError("union replay aliases one member release")
-    verified = datetime.fromisoformat(release.verified_at.replace("Z", "+00:00"))
+    verified = datetime.fromisoformat(release.verified_at)
     union_sealed = datetime.fromisoformat(
-        release.union_input_sealed_at.replace("Z", "+00:00")
+        release.union_input_sealed_at
     )
     if any(
         union_sealed
         <= datetime.fromisoformat(
-            item.member_release_created_at.replace("Z", "+00:00")
+            item.member_release_created_at
         )
         for item in release.member_refs
     ):
@@ -3582,12 +3583,12 @@ def _assert_union_replay_model_closure_v2(
     ):
         raise ValueError("union roots differ from the merged computation")
     formal_run = computation.formal_run
-    started = datetime.fromisoformat(formal_run.started_at.replace("Z", "+00:00"))
+    started = datetime.fromisoformat(formal_run.started_at)
     completed = datetime.fromisoformat(
-        formal_run.completed_at.replace("Z", "+00:00")
+        formal_run.completed_at
     )
     computation_created = datetime.fromisoformat(
-        computation.created_at.replace("Z", "+00:00")
+        computation.created_at
     )
     if computation.input_manifest.sealed_at != release.union_input_sealed_at:
         raise ValueError("merged manifest seal differs from union release chronology")
@@ -3696,7 +3697,7 @@ def _build_structure_grouping_union_replay_release_v2(
         ):
             _require_rfc3339(value)
         frozen_times = tuple(
-            datetime.fromisoformat(value.replace("Z", "+00:00"))
+            datetime.fromisoformat(value)
             for value in (
                 union_input_sealed_at,
                 run_started_at,
@@ -3706,7 +3707,7 @@ def _build_structure_grouping_union_replay_release_v2(
             )
         )
         latest_member = max(
-            datetime.fromisoformat(release.created_at.replace("Z", "+00:00"))
+            datetime.fromisoformat(release.created_at)
             for _owner, release in ordered_members
         )
         if not (
@@ -3741,7 +3742,7 @@ def _build_structure_grouping_union_replay_release_v2(
 
     latest_member_created_at = max(
         (release.created_at for _owner, release in ordered_members),
-        key=lambda value: datetime.fromisoformat(value.replace("Z", "+00:00")),
+        key=lambda value: datetime.fromisoformat(value),
     )
     actual_union_sealed_at = (
         union_input_sealed_at
@@ -4063,8 +4064,8 @@ __all__ = [
     "StructureGroupingUnionCandidateOwnerV2",
     "StructureGroupingUnionMemberRefV2",
     "StructureGroupingUnionReplayReleaseV2",
-    "assert_structure_grouping_input_manifest_exact_replay_v2",
     "assert_structure_grouping_computation_exact_replay_v2",
+    "assert_structure_grouping_input_manifest_exact_replay_v2",
     "assert_structure_grouping_release_exact_replay_v2",
     "assert_structure_grouping_releases_disjoint_v2",
     "assert_structure_grouping_union_replay_release_exact_v2",

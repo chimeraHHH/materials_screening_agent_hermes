@@ -8,13 +8,13 @@ serialize blind keys, credentials, tokens or hidden reasoning fields.
 
 from __future__ import annotations
 
-from datetime import datetime
 import json
 import os
-from pathlib import Path
 import re
 import stat
 import tempfile
+from datetime import datetime
+from pathlib import Path
 from typing import Annotated, Literal, TypeVar
 
 from pydantic import Field, model_validator
@@ -26,7 +26,6 @@ from material_agent.inspiration.models import (
     canonical_sha256,
     deterministic_id,
 )
-
 
 ModelT = TypeVar("ModelT", bound=StrictModel)
 _FORBIDDEN_SECRET_KEYS = frozenset(
@@ -86,7 +85,7 @@ _SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 
 
 def _timestamp(value: str) -> datetime:
-    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    parsed = datetime.fromisoformat(value)
     if parsed.tzinfo is None or parsed.utcoffset() is None:
         raise ValueError("timestamp must include a UTC offset")
     return parsed
@@ -178,7 +177,7 @@ class PrivateArtifactEnvelopeV1(StrictModel):
     scientific_conclusion: Literal[False] = False
 
     @model_validator(mode="after")
-    def validate_envelope(self) -> "PrivateArtifactEnvelopeV1":
+    def validate_envelope(self) -> PrivateArtifactEnvelopeV1:
         _timestamp(self.sealed_at)
         if _secret_paths(self.payload):
             raise ValueError("private artifact payload contains a forbidden secret field")
@@ -224,10 +223,10 @@ def seal_private_artifact_envelope_v1(
     artifact_id = getattr(value, id_field, None)
     artifact_sha = getattr(value, sha_field, None)
     if not isinstance(artifact_id, str) or not isinstance(artifact_sha, str):
-        raise ValueError("artifact lacks the requested content identity fields")
+        raise ValueError("artifact lacks the requested content identity fields")  # noqa: TRY004
     schema_version = getattr(value, "schema_version", None)
     if not isinstance(schema_version, str):
-        raise ValueError("artifact has no explicit schema version")
+        raise ValueError("artifact has no explicit schema version")  # noqa: TRY004
     values: dict[str, object] = {
         "artifact_model": f"{type(value).__module__}.{type(value).__qualname__}",
         "artifact_schema_version": schema_version,

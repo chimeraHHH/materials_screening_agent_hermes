@@ -30,7 +30,6 @@ from material_agent.inspiration.retrieval_quality import (
     select_and_allocate_query_candidates,
 )
 
-
 CURATED_FLAT_BAND_GRAPH_ID = "flat-band-cross-domain-v1"
 _ALLOWED_TEMPLATE_FIELDS = {"source", "target", "evidence"}
 

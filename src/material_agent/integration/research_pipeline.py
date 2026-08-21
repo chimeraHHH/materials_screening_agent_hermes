@@ -20,7 +20,7 @@ from collections.abc import Mapping
 from contextlib import contextmanager
 from enum import StrEnum
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Literal
 
 from pydantic import Field, model_validator
 from pymatgen.core import Structure
@@ -70,6 +70,8 @@ from material_agent.integration.request_compiler import (
 )
 from material_agent.ml_screening.models import (
     ArtifactPointer as MLArtifactPointer,
+)
+from material_agent.ml_screening.models import (
     EvidenceLevel,
     MLCandidateInput,
     MLDecision,
@@ -100,7 +102,6 @@ from material_agent.softchem import (
     execute_registered_softchem_operator,
     softchem_registry_bytes,
 )
-
 
 RESEARCH_PIPELINE_SCHEMA_VERSION = "materials-research-pipeline-v1"
 RESEARCH_PIPELINE_TOOL_NAME = "materials_research_pipeline_run"
@@ -170,7 +171,7 @@ class ResearchPipelineRunRequestV1(StrictModel):
     skip_many_body: Literal[True] = True
 
     @model_validator(mode="after")
-    def validate_years(self) -> "ResearchPipelineRunRequestV1":
+    def validate_years(self) -> ResearchPipelineRunRequestV1:
         if self.publication_year_from > self.publication_year_to:
             raise ValueError("publication_year_from must not exceed publication_year_to")
         return self
@@ -393,7 +394,6 @@ class ResearchPipelineService:
             self._identity(request)
         )
         result_path = f"research_pipeline/{run_id}/result.json"
-        result_uri = f"artifact://{result_path}"
         stages: list[ResearchStageRecordV1] = []
         selected_ids: tuple[str, ...] = ()
         inspiration_bundle: InspirationBundleV1 | None = None
@@ -415,7 +415,7 @@ class ResearchPipelineService:
             )
         except ResearchPipelineInProgress:
             raise
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             self._seal_agent01_failure(source_run_id, exc)
             stages.append(self._failure_stage("agent01", exc))
             return self._finish(
@@ -473,7 +473,7 @@ class ResearchPipelineService:
                     ),
                 )
             )
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             stages.append(self._failure_stage("literature_inspiration", exc))
             self._append_skipped_tail(stages, from_stage="semantic_rag")
             return self._finish(
@@ -504,7 +504,7 @@ class ResearchPipelineService:
                         ),
                     )
                 )
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001
                 stages.append(self._failure_stage("semantic_rag", exc))
         else:
             stages.append(
@@ -564,7 +564,7 @@ class ResearchPipelineService:
                     ),
                 )
             )
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             stages.append(self._failure_stage("smact_softchem", exc))
             stages.append(self._blocked("chgnet", "SOFTCHEM_OUTPUT_UNAVAILABLE"))
             stages.append(self._blocked("deeph", "CHGNET_OUTPUT_UNAVAILABLE"))
@@ -1334,9 +1334,7 @@ class ResearchPipelineService:
                 plan.status is TransformationStatus.REQUIRES_REVIEW
                 and not failed
                 and unknown == ("charge_or_oxidation",)
-            ):
-                result.append(plan.plan_id)
-            elif plan.status is TransformationStatus.STRUCTURE_VALID:
+            ) or plan.status is TransformationStatus.STRUCTURE_VALID:
                 result.append(plan.plan_id)
             if len(result) >= limit:
                 break

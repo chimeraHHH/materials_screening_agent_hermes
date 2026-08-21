@@ -22,7 +22,6 @@ from material_agent.inspiration.models import (
     deterministic_id,
 )
 
-
 MOOSE_SHADOW_EVALUATION_VERSION = "moose-star-shadow-evaluation-v1"
 
 

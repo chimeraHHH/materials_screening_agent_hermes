@@ -28,7 +28,6 @@ from material_agent.ml_screening.benchmark_summary import (
     render_synthetic_benchmark_summary,
 )
 
-
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 METRIC_INPUT_PATH = (
     REPOSITORY_ROOT

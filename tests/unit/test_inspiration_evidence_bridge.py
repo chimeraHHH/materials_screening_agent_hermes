@@ -15,11 +15,11 @@ from material_agent.inspiration.evidence import (
     build_evidence_cards,
     classify_evidence_relation,
 )
+from material_agent.inspiration.policy import SearchBudgetV1
 from material_agent.inspiration.tag_graph import (
     curated_flat_band_tag_graph,
     plan_tag_queries,
 )
-from material_agent.inspiration.policy import SearchBudgetV1
 
 
 def artifact(name: str, digest: str) -> ArtifactPointerV1:

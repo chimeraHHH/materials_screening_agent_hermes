@@ -8,8 +8,8 @@ import json
 import os
 import re
 import subprocess
-from copy import deepcopy
 from collections.abc import Callable, Mapping
+from copy import deepcopy
 from typing import Any, Protocol, runtime_checkable
 
 from pydantic import Field, ValidationError, field_validator
@@ -28,18 +28,17 @@ from material_agent.orchestrator.models import ParseResult
 from material_agent.retrieval.models import Requirement, StrictModel
 from material_agent.retrieval.mp_screening import (
     MP_CAPABILITY_CATALOG,
-    MappingStatus,
     MappedClause,
+    MappingStatus,
+    MPScreeningSpec,
     ScreeningIntent,
     UnmappedClause,
-    MPScreeningSpec,
     make_spec,
 )
 from material_agent.retrieval.query import (
     QueryPlanningError,
     validate_requirement_contract,
 )
-
 
 LLM_REQUIREMENT_PROMPT_VERSION = "stage0-requirement-deepseek-v1"
 LLM_CLARIFICATION_PROMPT_VERSION = "stage0-clarification-deepseek-v1"
@@ -190,7 +189,7 @@ class OfflineRequirementParser:
         elif isinstance(response.get("changes"), dict):
             candidate = _deep_merge(deepcopy(current), response["changes"])
         else:
-            raise ValueError(
+            raise ValueError(  # noqa: TRY004
                 "clarification response must contain 'requirement' or 'changes'"
             )
         candidate["requirement_id"] = current["requirement_id"]
@@ -627,7 +626,7 @@ def _build_mp_screening_spec(
             unmapped_clauses=unmapped,
             deep_screen_limit=deep_limit,
         )
-    except (TypeError, ValueError, KeyError) as exc:
+    except (TypeError, ValueError, KeyError):
         unmapped.append(UnmappedClause(
             clause_id="invalid-mapping-budget",
             source_text="LLM deep-screen budget",

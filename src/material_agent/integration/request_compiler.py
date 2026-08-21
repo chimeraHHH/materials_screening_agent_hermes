@@ -17,6 +17,7 @@ from material_agent.gateway.models import (
     InspirationRunRequestV1,
     canonical_sha256,
 )
+from material_agent.inspiration.parent_catalog import FLAT_BAND_PARENT_CATALOG_ID
 from material_agent.inspiration.policy import (
     BridgeSearchPolicyV1,
     EmbeddingBudgetV1,
@@ -29,8 +30,6 @@ from material_agent.inspiration.policy import (
     SelectionPolicyV1,
     TransformationBudgetV1,
 )
-from material_agent.inspiration.parent_catalog import FLAT_BAND_PARENT_CATALOG_ID
-
 
 PUBLIC_TARGET_TAG_IDS = ("electronic-flat-band",)
 PUBLIC_PARENT_CATALOG_ID = FLAT_BAND_PARENT_CATALOG_ID

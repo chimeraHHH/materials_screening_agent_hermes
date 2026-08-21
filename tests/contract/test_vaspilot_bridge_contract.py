@@ -9,7 +9,6 @@ from material_agent.dft.bridge_models import (
     BridgeWorkflowRecord,
 )
 from material_agent.dft.models import canonical_hash
-
 from tests.contract.test_dft_mock_backend import make_request
 
 

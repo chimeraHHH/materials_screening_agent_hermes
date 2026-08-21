@@ -42,7 +42,6 @@ from material_agent.gateway import (
 )
 from material_agent.gateway.models import RunActionV1, RunStateV1
 
-
 StartFactory = Callable[[str, InspirationRunRequestV1], CompanionTransitionV1 | dict]
 ActionFactory = Callable[
     [str, InspirationRunRequestV1, RunStateV1, RunActionV1],

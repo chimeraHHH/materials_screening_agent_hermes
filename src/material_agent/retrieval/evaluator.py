@@ -20,13 +20,12 @@ from material_agent.retrieval.models import (
     ScientificTargetEvaluation,
 )
 from material_agent.retrieval.mp_screening import (
-    MPScreeningSpec,
     MP_CAPABILITY_CATALOG,
-    ScreeningIntent,
     TRANSITION_METAL_ELEMENTS,
+    MPScreeningSpec,
+    ScreeningIntent,
 )
 from material_agent.retrieval.source_capabilities import source_property_coverage
-
 
 SUPPORTED_TARGET_PROPERTIES = {
     "band_gap": "band_gap",
@@ -312,9 +311,7 @@ def _evaluate_mp_clauses(
         property_name = aliases.get(clause.capability_id, capability.field or clause.capability_id)
         prop = _property(candidate, property_name)
         observed = prop.value if prop else None
-        if clause.capability_id == "elements.include":
-            observed = candidate.elements
-        elif clause.capability_id == "elements.exclude":
+        if clause.capability_id == "elements.include" or clause.capability_id == "elements.exclude":
             observed = candidate.elements
         elif clause.capability_id == "structure.num_sites":
             observed = candidate.num_sites

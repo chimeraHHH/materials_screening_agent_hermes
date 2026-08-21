@@ -21,6 +21,7 @@ without weakening the closure defined here.
 from __future__ import annotations
 
 import hashlib
+import itertools
 from datetime import datetime
 from enum import StrEnum
 from typing import Annotated, Literal, TypeVar
@@ -35,6 +36,13 @@ from material_agent.inspiration.models import (
     canonical_sha256,
     deterministic_id,
 )
+from material_agent.research.flatband_cases import (
+    FrozenCaseReleaseV3,
+    PilotPreBudgetClosureReleaseV3,
+    PreRunEligibilityReleaseV3,
+    assert_frozen_case_ready_v3,
+    assert_pre_run_eligibility_ready_v3,
+)
 from material_agent.research.flatband_contracts import (
     SOURCE_CATALOG_V1_SHA256,
     BenchmarkSplit,
@@ -43,13 +51,6 @@ from material_agent.research.flatband_contracts import (
     HypothesisPacketV1,
     SplitCaseRefV1,
     SplitCaseRefV2,
-)
-from material_agent.research.flatband_cases import (
-    FrozenCaseReleaseV3,
-    PilotPreBudgetClosureReleaseV3,
-    PreRunEligibilityReleaseV3,
-    assert_frozen_case_ready_v3,
-    assert_pre_run_eligibility_ready_v3,
 )
 
 
@@ -237,7 +238,7 @@ def source_policy_values(source_id: str) -> dict[str, object]:
 
 def _require_timestamp(value: str) -> str:
     try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        parsed = datetime.fromisoformat(value)
     except ValueError as exc:
         raise ValueError("timestamp must be RFC3339-compatible") from exc
     if parsed.tzinfo is None or parsed.utcoffset() is None:
@@ -246,7 +247,7 @@ def _require_timestamp(value: str) -> str:
 
 
 def _timestamp(value: str) -> datetime:
-    return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    return datetime.fromisoformat(value)
 
 
 def _require_sorted_unique(values: tuple[str, ...], label: str) -> None:
@@ -376,7 +377,7 @@ class SourceBudgetV1(StrictModel):
     source_field_projection_sha256: Sha256
 
     @model_validator(mode="after")
-    def validate_budget(self) -> "SourceBudgetV1":
+    def validate_budget(self) -> SourceBudgetV1:
         _require_sorted_unique(self.allowed_request_hosts, "allowed request hosts")
         expected = source_policy_values(self.source_id)
         if self.retrieval_identity_sha256 != expected["retrieval_identity_sha256"]:
@@ -494,7 +495,7 @@ class SystemConfigV1(StrictModel):
     scientific_conclusion: Literal[False] = False
 
     @model_validator(mode="after")
-    def validate_config(self) -> "SystemConfigV1":
+    def validate_config(self) -> SystemConfigV1:
         budgets = tuple(
             _revalidate(item, SourceBudgetV1) for item in self.source_budgets
         )
@@ -611,7 +612,7 @@ class ExecutionCellV1(StrictModel):
     system_config_sha256: Sha256
 
     @model_validator(mode="after")
-    def validate_cell(self) -> "ExecutionCellV1":
+    def validate_cell(self) -> ExecutionCellV1:
         _assert_identity(
             self,
             id_field="cell_id",
@@ -698,7 +699,7 @@ class ExecutionMatrixV1(StrictModel):
     scientific_conclusion: Literal[False] = False
 
     @model_validator(mode="after")
-    def validate_matrix(self) -> "ExecutionMatrixV1":
+    def validate_matrix(self) -> ExecutionMatrixV1:
         manifest = _revalidate(self.split_manifest, BenchmarkSplitManifestV1)
         configs = tuple(
             _revalidate(item, SystemConfigV1) for item in self.system_configs
@@ -756,7 +757,7 @@ class ExecutionMatrixV2(StrictModel):
     scientific_conclusion: Literal[False] = False
 
     @model_validator(mode="after")
-    def validate_matrix(self) -> "ExecutionMatrixV2":
+    def validate_matrix(self) -> ExecutionMatrixV2:
         manifest = _revalidate(self.split_manifest, BenchmarkSplitManifestV2)
         configs = tuple(
             _revalidate(item, SystemConfigV1) for item in self.system_configs
@@ -983,7 +984,7 @@ class BudgetManifestV1(StrictModel):
         return _require_timestamp(value)
 
     @model_validator(mode="after")
-    def validate_manifest(self) -> "BudgetManifestV1":
+    def validate_manifest(self) -> BudgetManifestV1:
         _revalidate(self.system_config, SystemConfigV1)
         _assert_identity(
             self,
@@ -1030,7 +1031,7 @@ class BudgetManifestV2(StrictModel):
         return _require_timestamp(value)
 
     @model_validator(mode="after")
-    def validate_manifest(self) -> "BudgetManifestV2":
+    def validate_manifest(self) -> BudgetManifestV2:
         _revalidate(self.system_config, SystemConfigV1)
         _assert_identity(
             self,
@@ -1157,7 +1158,7 @@ class ResearchRankingV1(StrictModel):
         return _require_timestamp(value)
 
     @model_validator(mode="after")
-    def validate_ranking(self) -> "ResearchRankingV1":
+    def validate_ranking(self) -> ResearchRankingV1:
         ranks = tuple(item.selection_rank for item in self.positions)
         if ranks != tuple(range(1, len(self.positions) + 1)):
             raise ValueError("ranking positions must be contiguous from one")
@@ -1309,7 +1310,7 @@ class PhysicalHopReceiptV1(StrictModel):
         return _require_timestamp(value)
 
     @model_validator(mode="after")
-    def validate_hop(self) -> "PhysicalHopReceiptV1":
+    def validate_hop(self) -> PhysicalHopReceiptV1:
         expected_path = _request_path_identity(
             request_path_template_sha256=self.request_path_template_sha256,
             path_parameters_sha256=self.path_parameters_sha256,
@@ -1372,7 +1373,7 @@ class CacheInventoryEntryV1(StrictModel):
     ] = ()
 
     @model_validator(mode="after")
-    def validate_entry(self) -> "CacheInventoryEntryV1":
+    def validate_entry(self) -> CacheInventoryEntryV1:
         expected_path = _request_path_identity(
             request_path_template_sha256=self.request_path_template_sha256,
             path_parameters_sha256=self.path_parameters_sha256,
@@ -1454,7 +1455,7 @@ class LogicalQueryReceiptV1(StrictModel):
         return _require_timestamp(value)
 
     @model_validator(mode="after")
-    def validate_query(self) -> "LogicalQueryReceiptV1":
+    def validate_query(self) -> LogicalQueryReceiptV1:
         expected_identity = _logical_query_identity(
             source_id=self.source_id,
             query_plan_sha256=self.query_plan_sha256,
@@ -1543,7 +1544,7 @@ class LogicalPageReceiptV1(StrictModel):
         return _require_timestamp(value)
 
     @model_validator(mode="after")
-    def validate_page(self) -> "LogicalPageReceiptV1":
+    def validate_page(self) -> LogicalPageReceiptV1:
         expected_query_id = deterministic_id(
             "logical-query",
             {
@@ -1625,7 +1626,7 @@ class NormalizedMetadataFieldV1(StrictModel):
     public_release_allowed: Literal[False] = False
 
     @model_validator(mode="after")
-    def validate_field(self) -> "NormalizedMetadataFieldV1":
+    def validate_field(self) -> NormalizedMetadataFieldV1:
         if self.json_path != _metadata_json_path(self.field_name):
             raise ValueError("metadata field JSON path must identify its exact top-level field")
         encoded = self.value_utf8.encode("utf-8")
@@ -1672,7 +1673,7 @@ class NormalizedMetadataArtifactV1(StrictModel):
     external_provider_attestation: Literal["NOT_PROVIDED"] = "NOT_PROVIDED"
 
     @model_validator(mode="after")
-    def validate_artifact(self) -> "NormalizedMetadataArtifactV1":
+    def validate_artifact(self) -> NormalizedMetadataArtifactV1:
         fields = tuple(_revalidate(item, NormalizedMetadataFieldV1) for item in self.fields)
         keys = tuple((item.field_name, item.json_path) for item in fields)
         if keys != tuple(sorted(set(keys))):
@@ -1741,7 +1742,7 @@ class MetadataRecordReceiptV1(StrictModel):
     external_provider_attestation: Literal["NOT_PROVIDED"] = "NOT_PROVIDED"
 
     @model_validator(mode="after")
-    def validate_record(self) -> "MetadataRecordReceiptV1":
+    def validate_record(self) -> MetadataRecordReceiptV1:
         expected = canonical_sha256(
             {
                 "source_id": self.source_id,
@@ -1801,7 +1802,7 @@ class MetadataSpanPreimageV1(StrictModel):
     external_provider_attestation: Literal["NOT_PROVIDED"] = "NOT_PROVIDED"
 
     @model_validator(mode="after")
-    def validate_span(self) -> "MetadataSpanPreimageV1":
+    def validate_span(self) -> MetadataSpanPreimageV1:
         encoded = self.span_utf8.encode("utf-8")
         if self.span_utf8_bytes != len(encoded):
             raise ValueError("metadata span byte count does not match its UTF-8 preimage")
@@ -1866,7 +1867,7 @@ class EvidenceLinkReceiptV1(StrictModel):
     external_provider_attestation: Literal["NOT_PROVIDED"] = "NOT_PROVIDED"
 
     @model_validator(mode="after")
-    def validate_evidence(self) -> "EvidenceLinkReceiptV1":
+    def validate_evidence(self) -> EvidenceLinkReceiptV1:
         encoded = self.span_utf8.encode("utf-8")
         if self.span_utf8_bytes != len(encoded):
             raise ValueError("evidence span byte count does not match its UTF-8 preimage")
@@ -1917,7 +1918,7 @@ class ActualSourceUsageV1(StrictModel):
     cache_hits: Annotated[int, Field(ge=0, le=100_000)]
 
     @model_validator(mode="after")
-    def validate_usage(self) -> "ActualSourceUsageV1":
+    def validate_usage(self) -> ActualSourceUsageV1:
         if self.unique_documents > self.records:
             raise ValueError("actual unique documents cannot exceed records")
         if self.cache_hits > self.pages:
@@ -1975,7 +1976,7 @@ class SourceReceiptBundleV1(StrictModel):
     ] = ()
 
     @model_validator(mode="after")
-    def validate_bundle(self) -> "SourceReceiptBundleV1":
+    def validate_bundle(self) -> SourceReceiptBundleV1:
         binding = (
             self.budget_manifest_id,
             self.budget_manifest_sha256,
@@ -2257,7 +2258,7 @@ class SourceReceiptBundleV1(StrictModel):
                 page.request_identity_sha256,
             ):
                 raise ValueError("first physical request differs from logical page request")
-            for current, following in zip(page_hops, page_hops[1:]):
+            for current, following in itertools.pairwise(page_hops):
                 if (
                     current.response_status_code not in _REDIRECT_STATUS_CODES
                     or current.redirect_target_request_sha256
@@ -2503,7 +2504,7 @@ class MetadataModelInputRefV1(StrictModel):
     record_identity_sha256: Sha256
 
     @model_validator(mode="after")
-    def validate_packet(self) -> "MetadataModelInputRefV1":
+    def validate_packet(self) -> MetadataModelInputRefV1:
         expected_sha256 = canonical_sha256(
             {
                 "source_id": self.source_id,
@@ -2563,7 +2564,7 @@ class LlmInvocationReceiptV1(StrictModel):
         return _require_timestamp(value)
 
     @model_validator(mode="after")
-    def validate_invocation(self) -> "LlmInvocationReceiptV1":
+    def validate_invocation(self) -> LlmInvocationReceiptV1:
         keys = tuple(
             (item.source_id, item.record_receipt_id) for item in self.metadata_inputs
         )
@@ -2628,7 +2629,7 @@ class LocalModelInvocationReceiptV1(StrictModel):
         return _require_timestamp(value)
 
     @model_validator(mode="after")
-    def validate_invocation(self) -> "LocalModelInvocationReceiptV1":
+    def validate_invocation(self) -> LocalModelInvocationReceiptV1:
         keys = tuple(
             (item.source_id, item.record_receipt_id) for item in self.metadata_inputs
         )
@@ -2739,7 +2740,7 @@ class TerminalRunResultV1(StrictModel):
         return _require_timestamp(value)
 
     @model_validator(mode="after")
-    def validate_terminal(self) -> "TerminalRunResultV1":
+    def validate_terminal(self) -> TerminalRunResultV1:
         bundles = tuple(
             _revalidate(item, SourceReceiptBundleV1)
             for item in self.source_receipt_bundles
@@ -2872,7 +2873,7 @@ class ProjectedTop5PositionV1(StrictModel):
     missing_reason: MissingPositionReason | None = None
 
     @model_validator(mode="after")
-    def validate_position(self) -> "ProjectedTop5PositionV1":
+    def validate_position(self) -> ProjectedTop5PositionV1:
         present = self.packet_id is not None or self.packet_sha256 is not None
         if (self.packet_id is None) != (self.packet_sha256 is None):
             raise ValueError("projected packet ID and SHA must be present together")
@@ -2910,7 +2911,7 @@ class Top5ProjectionV1(StrictModel):
     scientific_conclusion: Literal[False] = False
 
     @model_validator(mode="after")
-    def validate_projection(self) -> "Top5ProjectionV1":
+    def validate_projection(self) -> Top5ProjectionV1:
         if tuple(item.position for item in self.positions) != (1, 2, 3, 4, 5):
             raise ValueError("Top-5 projection must contain positions one through five")
         if (self.ranking_id is None) != (self.ranking_sha256 is None):
@@ -2949,7 +2950,7 @@ class ExecutionReleaseV1(StrictModel):
         return _require_timestamp(value)
 
     @model_validator(mode="after")
-    def validate_release(self) -> "ExecutionReleaseV1":
+    def validate_release(self) -> ExecutionReleaseV1:
         _validate_release_closure(
             self.execution_matrix,
             self.budget_manifests,
@@ -2998,7 +2999,7 @@ class ExecutionReleaseV2(StrictModel):
         return _require_timestamp(value)
 
     @model_validator(mode="after")
-    def validate_release(self) -> "ExecutionReleaseV2":
+    def validate_release(self) -> ExecutionReleaseV2:
         _validate_release_closure(
             self.execution_matrix,
             self.budget_manifests,
@@ -3058,7 +3059,7 @@ class ExecutionReleaseV3(StrictModel):
         return _require_timestamp(value)
 
     @model_validator(mode="after")
-    def validate_release(self) -> "ExecutionReleaseV3":
+    def validate_release(self) -> ExecutionReleaseV3:
         frozen = _revalidate(self.frozen_case_release, FrozenCaseReleaseV3)
         eligibility = _revalidate(
             self.pre_run_eligibility_release, PreRunEligibilityReleaseV3
@@ -3248,7 +3249,7 @@ def _validate_release_closure(
     git_commit: str,
     runtime_environment_sha256: str,
     analysis_environment_sha256: str,
-    budget_model_type: type[BudgetManifestV1] | type[BudgetManifestV2] = (
+    budget_model_type: type[BudgetManifestV1 | BudgetManifestV2] = (
         BudgetManifestV1
     ),
 ) -> None:
@@ -3257,7 +3258,7 @@ def _validate_release_closure(
     elif isinstance(execution_matrix, ExecutionMatrixV1):
         matrix = _revalidate(execution_matrix, ExecutionMatrixV1)
     else:  # pragma: no cover - runtime callers are type checked by Pydantic
-        raise ValueError("unsupported execution matrix contract")
+        raise ValueError("unsupported execution matrix contract")  # noqa: TRY004
     budgets = tuple(_revalidate(item, budget_model_type) for item in budget_manifests)
     rankings = tuple(_revalidate(item, ResearchRankingV1) for item in rankings)
     packets = tuple(
@@ -3989,14 +3990,14 @@ __all__ = [
     "LlmInvocationReceiptV1",
     "LocalModelExecutionIdentityV1",
     "LocalModelInvocationReceiptV1",
-    "LogicalQueryReceiptV1",
     "LogicalPageReceiptV1",
-    "MetadataSpanPreimageV1",
+    "LogicalQueryReceiptV1",
     "MetadataModelInputRefV1",
     "MetadataRecordReceiptV1",
+    "MetadataSpanPreimageV1",
+    "MissingPositionReason",
     "NormalizedMetadataArtifactV1",
     "NormalizedMetadataFieldV1",
-    "MissingPositionReason",
     "PhysicalHopReceiptV1",
     "ProjectedTop5PositionV1",
     "RankingPositionV1",
@@ -4015,8 +4016,8 @@ __all__ = [
     "build_budget_manifest_v2",
     "build_execution_matrix",
     "build_execution_matrix_v2",
-    "replay_source_usage",
     "replay_llm_usage",
     "replay_local_model_usage",
+    "replay_source_usage",
     "source_policy_values",
 ]

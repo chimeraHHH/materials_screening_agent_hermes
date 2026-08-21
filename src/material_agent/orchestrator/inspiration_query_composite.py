@@ -68,7 +68,6 @@ from material_agent.retrieval.models import (
 )
 from material_agent.retrieval.storage import LocalArtifactStore
 
-
 INSPIRATION_QUERY_COMPOSITE_VERSION = "orchestrator-inspiration-query-v3"
 
 
@@ -253,7 +252,7 @@ class InspirationQueryCompositeGraphV3:
                 "query_context_artifact": _control_pointer(context_pointer),
                 "memory_snapshot_artifact": _control_pointer(memory_pointer),
             }
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             return {
                 "result": self._failure(
                     getattr(exc, "code", "QUERY_CONTEXT_COMPILATION_FAILED"),
@@ -323,7 +322,7 @@ class InspirationQueryCompositeGraphV3:
                 literature_candidate_artifact=_control_pointer(candidate_pointer),
                 literature_budget_plan_artifact=_control_pointer(plan_pointer),
             )
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             return {
                 "result": self._failure(
                     getattr(exc, "code", "LITERATURE_PLANNING_FAILED"),
@@ -416,7 +415,7 @@ class InspirationQueryCompositeGraphV3:
                     ),
                 ).model_dump(mode="json")
             }
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             return {
                 "result": self._failure(
                     getattr(exc, "code", "CONTEXTUAL_INSPIRATION_FAILED"),

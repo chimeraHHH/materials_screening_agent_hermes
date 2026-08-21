@@ -17,9 +17,10 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from collections.abc import Mapping
 from datetime import datetime
 from enum import StrEnum
-from typing import Annotated, Literal, Mapping, TypeVar
+from typing import Annotated, Literal, TypeVar
 
 from pydantic import Field, field_validator, model_validator
 
@@ -90,7 +91,7 @@ _MAX_VISIBLE_JSON_BYTES = 1_000_000
 
 def _require_timestamp(value: str) -> str:
     try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        parsed = datetime.fromisoformat(value)
     except ValueError as exc:
         raise ValueError("timestamp must be RFC3339-compatible") from exc
     if parsed.tzinfo is None or parsed.utcoffset() is None:
@@ -99,7 +100,7 @@ def _require_timestamp(value: str) -> str:
 
 
 def _timestamp(value: str) -> datetime:
-    return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    return datetime.fromisoformat(value)
 
 
 def _utf8_sha256(value: str) -> str:
@@ -132,7 +133,7 @@ def _strict_json_object(value: str, *, label: str) -> dict[str, object]:
     except (json.JSONDecodeError, UnicodeError) as exc:
         raise ValueError(f"{label} must be strict UTF-8 JSON") from exc
     if not isinstance(parsed, dict):
-        raise ValueError(f"{label} must be a top-level JSON object")
+        raise ValueError(f"{label} must be a top-level JSON object")  # noqa: TRY004
     _assert_no_reasoning_trace(parsed)
     return parsed
 
@@ -221,7 +222,7 @@ class ModelNativeRankedOutputV1(StrictModel):
     packet: HypothesisPacketV1
 
     @model_validator(mode="after")
-    def validate_output(self) -> "ModelNativeRankedOutputV1":
+    def validate_output(self) -> ModelNativeRankedOutputV1:
         _revalidate(self.packet, HypothesisPacketV1)
         return self
 
@@ -271,7 +272,7 @@ class ModelNativeReasoningWorkItemV1(StrictModel):
         return _require_timestamp(value)
 
     @model_validator(mode="after")
-    def validate_work_item(self) -> "ModelNativeReasoningWorkItemV1":
+    def validate_work_item(self) -> ModelNativeReasoningWorkItemV1:
         model_identity = _revalidate(
             self.model_identity, LlmExecutionIdentityV1
         )
@@ -302,7 +303,7 @@ class ModelNativeReasoningWorkItemV1(StrictModel):
             raise ValueError("visible request schema version is not frozen")
         binding = document["binding"]
         if not isinstance(binding, dict) or not isinstance(document["task"], dict):
-            raise ValueError("visible request binding and task must be JSON objects")
+            raise ValueError("visible request binding and task must be JSON objects")  # noqa: TRY004
         expected_binding = {
             "budget_manifest_id": self.budget_manifest_id,
             "budget_manifest_sha256": self.budget_manifest_sha256,
@@ -371,7 +372,7 @@ class ModelNativeReasoningResponseV1(StrictModel):
         return _require_timestamp(value)
 
     @model_validator(mode="after")
-    def validate_response(self) -> "ModelNativeReasoningResponseV1":
+    def validate_response(self) -> ModelNativeReasoningResponseV1:
         outputs = tuple(
             _revalidate(item, ModelNativeRankedOutputV1)
             for item in self.ranked_outputs
@@ -473,7 +474,7 @@ class ModelNativeReasoningReceiptV1(StrictModel):
         return _require_timestamp(value)
 
     @model_validator(mode="after")
-    def validate_receipt(self) -> "ModelNativeReasoningReceiptV1":
+    def validate_receipt(self) -> ModelNativeReasoningReceiptV1:
         work = _revalidate(self.work_item, ModelNativeReasoningWorkItemV1)
         response = _revalidate(self.response, ModelNativeReasoningResponseV1)
         if (
@@ -535,7 +536,7 @@ class ArmComponentTraceRefV1(StrictModel):
         return _require_timestamp(value)
 
     @model_validator(mode="after")
-    def validate_component(self) -> "ArmComponentTraceRefV1":
+    def validate_component(self) -> ArmComponentTraceRefV1:
         if self.system_id not in {
             ResearchSystemId.E1,
             ResearchSystemId.E2_A,
@@ -615,7 +616,7 @@ class ArmExecutionTraceV1(StrictModel):
         return _require_timestamp(value)
 
     @model_validator(mode="after")
-    def validate_trace(self) -> "ArmExecutionTraceV1":
+    def validate_trace(self) -> ArmExecutionTraceV1:
         config = _revalidate(self.system_config, SystemConfigV1)
         ranking = _revalidate(self.ranking, ResearchRankingV1)
         packets = tuple(
@@ -699,14 +700,14 @@ class ArmExecutionTraceV1(StrictModel):
             config.system_id is ResearchSystemId.FUSION
             and ResearchSystemId.E1 in config.fusion_components
         )
-        if model_enabled:
-            if config.llm is None or not model_receipts:
-                raise ValueError("E1 intervention requires model-native reasoning receipts")
-        elif model_receipts:
+        if model_enabled and (config.llm is None or not model_receipts):
+            raise ValueError("E1 intervention requires model-native reasoning receipts")
+        if not model_enabled and model_receipts:
             raise ValueError("non-E1 arm cannot report model-native reasoning")
-        if config.system_id is ResearchSystemId.E1:
-            if config.local_semantic_model is not None or local_receipts:
-                raise ValueError("E1 is model-native and cannot use a local model")
+        if config.system_id is ResearchSystemId.E1 and (
+            config.local_semantic_model is not None or local_receipts
+        ):
+            raise ValueError("E1 is model-native and cannot use a local model")
 
         if tuple(item.work_item.call_index for item in model_receipts) != tuple(
             range(1, len(model_receipts) + 1)
@@ -956,7 +957,7 @@ def build_model_native_reasoning_work_item(
         raise ValueError("model-native work item requires metadata inputs")
     task_object = json.loads(_canonical_json_text(dict(task)))
     if not isinstance(task_object, dict):
-        raise ValueError("model-native task must be a JSON object")
+        raise ValueError("model-native task must be a JSON object")  # noqa: TRY004
     _assert_no_reasoning_trace(task_object)
     binding = {
         "budget_manifest_id": budget_manifest_id,
@@ -1072,7 +1073,7 @@ def build_model_native_reasoning_response(
         raise ValueError("visible response status is not registered") from exc
     raw_outputs = document["ranked_outputs"]
     if not isinstance(raw_outputs, list):
-        raise ValueError("visible response ranked_outputs must be a JSON array")
+        raise ValueError("visible response ranked_outputs must be a JSON array")  # noqa: TRY004
     outputs = tuple(_parse_ranked_output(item) for item in raw_outputs)
     reason = document["failure_reason_code"]
     if reason is not None and not isinstance(reason, str):

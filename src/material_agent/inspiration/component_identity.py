@@ -18,7 +18,8 @@ import platform
 import stat
 import sys
 import tomllib
-from importlib.metadata import PackageNotFoundError, version as package_version
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as package_version
 from pathlib import Path
 from types import MappingProxyType
 
@@ -26,7 +27,6 @@ from material_agent.inspiration.models import (
     ComponentSnapshotV1,
     canonical_sha256,
 )
-
 
 EXECUTION_IDENTITY_VERSION = "2"
 

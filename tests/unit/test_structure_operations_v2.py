@@ -29,7 +29,10 @@ from material_agent.softchem import (
     smact_prior_policy_sha256,
 )
 from material_agent.softchem.operations import (
+    CarrierDopingParametersV1,
+    ElectrostaticGateParametersV1,
     HomogeneousStrainParametersV1,
+    ReasonedConditionPlanV1,
     ReasonedIntercalationParametersV1,
 )
 
@@ -135,7 +138,13 @@ _REASONING = {
 
 def test_v2_registry_has_typed_specs_priors_and_validators() -> None:
     registry = DEFAULT_SOFTCHEM_OPERATOR_REGISTRY_V2
-    assert len(registry.operators) == 5
+    assert len(registry.operators) == 9
+    assert {item.operator_id for item in registry.operators} >= {
+        "APPLY_CARRIER_DOPING_V1",
+        "APPLY_ELECTROSTATIC_GATE_V1",
+        "PLAN_MAGNETIC_PROXIMITY_V1",
+        "PLAN_VDW_HETEROSTRUCTURE_V1",
+    }
     for spec in registry.operators:
         assert spec.parameter_schema_id
         assert spec.prior_ids
@@ -161,6 +170,150 @@ def test_parameter_models_reject_unsafe_matrix_and_out_of_cell_site() -> None:
             insertion_frac_coords=(1.25, 0.25, 0.5),
             minimum_parent_gap_angstrom=3.0,
         )
+    with pytest.raises(ValidationError, match="neutral baseline"):
+        CarrierDopingParametersV1(
+            operator_spec_id="operator-spec-test",
+            carrier_type="ELECTRON",
+            carriers_per_primitive_cell=0.25,
+            sample_charge_states=(0.25, 0.5),
+        )
+    with pytest.raises(ValidationError, match="field direction"):
+        ElectrostaticGateParametersV1(
+            operator_spec_id="operator-spec-test",
+            electric_field_v_per_angstrom=-0.2,
+            field_direction="C_POSITIVE",
+            minimum_vacuum_angstrom=18.0,
+        )
+
+
+@pytest.mark.parametrize(
+    ("operation_kind", "parameters", "operator_id"),
+    [
+        (
+            "CARRIER_DOPING",
+            {
+                "carrier_type": "ELECTRON",
+                "carriers_per_primitive_cell": 0.25,
+                "sample_charge_states": (0.0, 0.25, 0.5),
+            },
+            "APPLY_CARRIER_DOPING_V1",
+        ),
+        (
+            "ELECTROSTATIC_GATE",
+            {
+                "electric_field_v_per_angstrom": 0.2,
+                "field_direction": "C_POSITIVE",
+                "minimum_vacuum_angstrom": 18.0,
+            },
+            "APPLY_ELECTROSTATIC_GATE_V1",
+        ),
+    ],
+)
+def test_nonstructural_conditions_compile_without_fake_cif(
+    tmp_path: Path,
+    operation_kind: str,
+    parameters: dict[str, object],
+    operator_id: str,
+) -> None:
+    store = LocalArtifactStore(tmp_path / "artifacts")
+    candidate = _candidate(store, cif=_tis2_cif())
+    state = OperatorPlanningToolState(
+        store=store, database_candidates_snapshot=lambda: (candidate,)
+    )
+    compiled = state.as_tool().handler(
+        CompileReasonedOperationArgsV3(
+            candidate_id=f"candidate-{operation_kind.casefold().replace('_', '-')}",
+            database_candidate_id=candidate.database_candidate_id,
+            operation_kind=operation_kind,
+            **parameters,
+            **_REASONING,
+        )
+    )
+
+    assert compiled["status"] == "COMPILED"
+    assert compiled["execution_boundary"] == (
+        "SPECIALIZED_COMPUTATION_OR_INTERFACE_BUILDER_REQUIRED"
+    )
+    plan = state.audit_snapshot().plans[0]
+    assert isinstance(plan, ReasonedConditionPlanV1)
+    assert plan.operator_id == operator_id
+    assert plan.status == "PLANNED"
+    assert "output_structure_artifact" not in type(plan).model_fields
+
+
+@pytest.mark.parametrize(
+    ("operation_kind", "extra", "operator_id"),
+    [
+        (
+            "MAGNETIC_PROXIMITY",
+            {"magnetization_alignment": "SCAN_BOTH"},
+            "PLAN_MAGNETIC_PROXIMITY_V1",
+        ),
+        (
+            "VDW_HETEROSTRUCTURE",
+            {"maximum_supercell_area_factor": 16},
+            "PLAN_VDW_HETEROSTRUCTURE_V1",
+        ),
+    ],
+)
+def test_two_parent_interface_plans_bind_both_real_cifs(
+    tmp_path: Path,
+    operation_kind: str,
+    extra: dict[str, object],
+    operator_id: str,
+) -> None:
+    store = LocalArtifactStore(tmp_path / "artifacts")
+    first = _candidate(store, cif=_tis2_cif(), suffix="4")
+    second = _candidate(store, cif=_tis2_cif(), suffix="5")
+    state = OperatorPlanningToolState(
+        store=store, database_candidates_snapshot=lambda: (first, second)
+    )
+    compiled = state.as_tool().handler(
+        CompileReasonedOperationArgsV3(
+            candidate_id=f"candidate-{operation_kind.casefold().replace('_', '-')}",
+            database_candidate_id=first.database_candidate_id,
+            partner_database_candidate_id=second.database_candidate_id,
+            operation_kind=operation_kind,
+            interface_separation_angstrom=3.3,
+            relative_twist_degrees=0.0,
+            maximum_lattice_mismatch_percent=2.0,
+            interface_registry="metal-on-hollow",
+            **extra,
+            **_REASONING,
+        )
+    )
+
+    assert compiled["status"] == "COMPILED"
+    plan = state.audit_snapshot().plans[0]
+    assert isinstance(plan, ReasonedConditionPlanV1)
+    assert plan.operator_id == operator_id
+    assert plan.parent_structure_artifact.sha256 == first.structure_artifact_sha256
+    assert plan.partner_structure_artifact is not None
+    assert plan.partner_structure_artifact.sha256 == second.structure_artifact_sha256
+    assert plan.compile_prior_decision == "REQUIRES_REVIEW"
+
+
+def test_interface_plan_rejects_unknown_partner(tmp_path: Path) -> None:
+    store = LocalArtifactStore(tmp_path / "artifacts")
+    candidate = _candidate(store, cif=_tis2_cif())
+    state = OperatorPlanningToolState(
+        store=store, database_candidates_snapshot=lambda: (candidate,)
+    )
+    rejected = state.as_tool().handler(
+        CompileReasonedOperationArgsV3(
+            candidate_id="candidate-unknown-partner",
+            database_candidate_id=candidate.database_candidate_id,
+            partner_database_candidate_id="db-candidate-" + "a" * 24,
+            operation_kind="VDW_HETEROSTRUCTURE",
+            interface_separation_angstrom=3.3,
+            relative_twist_degrees=0.0,
+            maximum_lattice_mismatch_percent=2.0,
+            maximum_supercell_area_factor=16,
+            interface_registry="metal-on-hollow",
+            **_REASONING,
+        )
+    )
+    assert rejected["reason_code"] == "UNKNOWN_PARTNER_DATABASE_CANDIDATE"
 
 
 def test_deepseek_compiler_emits_and_executes_bounded_strain_on_real_cif(

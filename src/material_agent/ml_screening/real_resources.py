@@ -14,7 +14,6 @@ from material_agent.ml_screening.models import (
 )
 from material_agent.ml_screening.resources import sha256_payload
 
-
 CHGNET_PACKAGE_VERSION = "0.4.2"
 CHGNET_MODEL_NAME = "0.3.0"
 CHGNET_MODEL_ID = "chgnet-mptrj-0.3.0"

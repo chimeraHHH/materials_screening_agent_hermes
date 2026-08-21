@@ -19,11 +19,11 @@ def _cases(*, improved: bool, slow: bool = False) -> tuple[RetrievalShadowCaseV1
     for index in range(30):
         relevant = documents[index * 2]
         distractors = [item for item in documents if item != relevant]
-        baseline = tuple((*distractors[:60], relevant, *distractors[60:]))
+        baseline = (*distractors[:60], relevant, *distractors[60:])
         moose = (
-            tuple((relevant, *distractors))
+            (relevant, *distractors)
             if improved
-            else tuple((*distractors[:60], relevant, *distractors[60:]))
+            else (*distractors[:60], relevant, *distractors[60:])
         )
         cases.append(
             RetrievalShadowCaseV1(

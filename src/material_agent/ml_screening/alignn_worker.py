@@ -10,7 +10,11 @@ import sys
 import zipfile
 from pathlib import Path
 
-from material_agent.ml_screening.alignn_models import AlignnArtifact, AlignnWorkerRequest, AlignnWorkerResponse
+from material_agent.ml_screening.alignn_models import (
+    AlignnArtifact,
+    AlignnWorkerRequest,
+    AlignnWorkerResponse,
+)
 
 
 def main() -> int:
@@ -21,7 +25,7 @@ def main() -> int:
         root = args.artifact_root.resolve(strict=True)
         request = AlignnWorkerRequest.model_validate_json(sys.stdin.buffer.read())
         response = execute(request, root)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         print(f"ALIGNN worker failed: {type(exc).__name__}: {exc}", file=sys.stderr)
         return 2
     sys.stdout.write(response.model_dump_json())

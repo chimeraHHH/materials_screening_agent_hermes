@@ -12,7 +12,6 @@ from typing import Any
 
 from material_agent.retrieval.models import SourceDatabase
 
-
 _STRUCTURE_DERIVED = {
     "structural_dimensionality": {
         "kind": "DERIVED",

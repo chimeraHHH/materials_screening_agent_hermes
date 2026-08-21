@@ -8,7 +8,6 @@ from material_agent.orchestrator.runners import (
     configure_agent02_production,
 )
 
-
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 
 

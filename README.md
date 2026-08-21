@@ -138,13 +138,26 @@ evidence boundary explicit. Strict-tool schemas are
 projected onto DeepSeek's supported subset and then revalidated against the full
 local Pydantic model. Transport retries, final-JSON repair, physical-search
 budgets, and schema-hashed role/tool-snapshot checkpoints are all receipt-audited.
+If the requirements, query-planning, or native-lead role fails a deterministic
+reference/coverage gate, a separate bounded contract-repair role gets at most
+two attempts to correct only that contract defect. The original and repaired
+hashes, validation error, model receipt, and repair checkpoint are retained;
+the same validator is rerun and the graph still fails closed after two invalid
+repairs. The repair role cannot relax a threshold or manufacture evidence.
 
 The mechanism/chemistry role cannot turn a prose operation into a structure.
 For a concrete idea it must call `compile_reasoned_operation`. DeepSeek uses
 native scientific reasoning to propose a material-specific substitution and
 target valence, strain tensor, vacancy element/fraction,
-intercalant/oxidation/site/gap, or layer/slide vector,
-plus mechanism, chemistry-prior rationale, and falsifier. Local deterministic
+intercalation, layer slide, carrier-density scan, electrostatic field,
+magnetic-proximity pair, or two-parent vdW heterostructure.
+The nine registered operator families freeze strict parameter models, priors,
+validators, and run-local scientific rationale. Carrier/gate operations create
+calculation-condition plans, while interface operations hash-bind two resolved
+parent CIFs and require a specialized commensurate-interface builder; neither
+class fabricates an output CIF or promotes a target property.
+Every proposal also carries mechanism, chemistry-prior rationale, and a
+falsifier. Local deterministic
 code freezes that proposal as a run-local hash-pinned operator spec and derives
 equivalence classes, layer partitions, and the vdW-gap-centre coordinate from the
 parent CIF; DeepSeek may propose a bounded in-plane intercalation position, which
@@ -1075,7 +1088,12 @@ Run all offline tests without creating repository-local caches:
 PYTHONDONTWRITEBYTECODE=1 \
 MPLCONFIGDIR=/tmp/material-agent-mpl \
 .venv/bin/python -m pytest -q -p no:cacheprovider
+.venv/bin/ruff check src tests
 ```
+
+The repository pins Ruff 0.16.3 and an explicit high-signal rule set. Intentional
+third-party exception boundaries use line-scoped `noqa`; there is no global lint
+ignore.
 
 The historical P0.1/P0.2 and v1-closeout commits are retained for traceability.
 After the closeout, the development branch added the DeepSeek Stage 0 provider,

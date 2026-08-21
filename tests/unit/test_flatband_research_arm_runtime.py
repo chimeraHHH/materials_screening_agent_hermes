@@ -46,7 +46,6 @@ from material_agent.research.flatband_execution import (
     source_policy_values,
 )
 
-
 ModelT = TypeVar("ModelT", bound=StrictModel)
 SHA_A = "a" * 64
 SHA_B = "b" * 64

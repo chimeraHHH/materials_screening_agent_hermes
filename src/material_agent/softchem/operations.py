@@ -74,6 +74,15 @@ OperationIdV2 = Literal[
     "SUBSTITUTE_EQUIVALENT_SITE_V1",
 ]
 
+ConditionOperationIdV1 = Literal[
+    "APPLY_CARRIER_DOPING_V1",
+    "APPLY_ELECTROSTATIC_GATE_V1",
+    "PLAN_MAGNETIC_PROXIMITY_V1",
+    "PLAN_VDW_HETEROSTRUCTURE_V1",
+]
+
+ReasonedOperatorIdV3 = OperationIdV2 | ConditionOperationIdV1
+
 class ReasonedSubstitutionParametersV1(StrictModel):
     parameter_schema_id: Literal["reasoned-substitution-parameters-v1"] = (
         "reasoned-substitution-parameters-v1"
@@ -206,6 +215,83 @@ class ReasonedLayerSlideParametersV1(StrictModel):
         return self
 
 
+class CarrierDopingParametersV1(StrictModel):
+    parameter_schema_id: Literal["carrier-doping-parameters-v1"] = (
+        "carrier-doping-parameters-v1"
+    )
+    operator_spec_id: Identifier
+    carrier_type: Literal["ELECTRON", "HOLE"]
+    carriers_per_primitive_cell: Annotated[float, Field(gt=0.0, le=2.0)]
+    compensation_background: Literal["UNIFORM_JELLIUM"] = "UNIFORM_JELLIUM"
+    sample_charge_states: Annotated[
+        tuple[Annotated[float, Field(ge=0.0, le=2.0)], ...],
+        Field(min_length=2, max_length=16),
+    ]
+
+    @model_validator(mode="after")
+    def canonical_charge_scan(self) -> CarrierDopingParametersV1:
+        if self.sample_charge_states != tuple(
+            sorted(set(self.sample_charge_states))
+        ):
+            raise ValueError("carrier charge-state scan must be sorted and unique")
+        if self.carriers_per_primitive_cell not in self.sample_charge_states:
+            raise ValueError("carrier target must be included in sample_charge_states")
+        if 0.0 not in self.sample_charge_states:
+            raise ValueError("carrier charge-state scan must include the neutral baseline")
+        return self
+
+
+class ElectrostaticGateParametersV1(StrictModel):
+    parameter_schema_id: Literal["electrostatic-gate-parameters-v1"] = (
+        "electrostatic-gate-parameters-v1"
+    )
+    operator_spec_id: Identifier
+    electric_field_v_per_angstrom: Annotated[float, Field(ge=-1.0, le=1.0)]
+    field_direction: Literal["C_POSITIVE", "C_NEGATIVE"]
+    dipole_correction: Literal[True] = True
+    minimum_vacuum_angstrom: Annotated[float, Field(ge=12.0, le=50.0)] = 18.0
+
+    @model_validator(mode="after")
+    def consistent_field_direction(self) -> ElectrostaticGateParametersV1:
+        field = self.electric_field_v_per_angstrom
+        if math.isclose(field, 0.0, abs_tol=1e-12):
+            raise ValueError("electrostatic gate field must be non-zero")
+        expected = "C_POSITIVE" if field > 0.0 else "C_NEGATIVE"
+        if self.field_direction != expected:
+            raise ValueError("field direction must match electric-field sign")
+        return self
+
+
+class MagneticProximityParametersV1(StrictModel):
+    parameter_schema_id: Literal["magnetic-proximity-parameters-v1"] = (
+        "magnetic-proximity-parameters-v1"
+    )
+    operator_spec_id: Identifier
+    partner_database_candidate_id: Annotated[
+        str, Field(pattern=r"^db-candidate-[0-9a-f]{24}$")
+    ]
+    interface_separation_angstrom: Annotated[float, Field(ge=2.0, le=8.0)]
+    relative_twist_degrees: Annotated[float, Field(ge=-30.0, le=30.0)] = 0.0
+    maximum_lattice_mismatch_percent: Annotated[float, Field(gt=0.0, le=10.0)]
+    magnetization_alignment: Literal["PARALLEL", "ANTIPARALLEL", "SCAN_BOTH"]
+    interface_registry: Annotated[str, Field(min_length=1, max_length=64)]
+
+
+class VdwHeterostructureParametersV1(StrictModel):
+    parameter_schema_id: Literal["vdw-heterostructure-parameters-v1"] = (
+        "vdw-heterostructure-parameters-v1"
+    )
+    operator_spec_id: Identifier
+    partner_database_candidate_id: Annotated[
+        str, Field(pattern=r"^db-candidate-[0-9a-f]{24}$")
+    ]
+    interface_separation_angstrom: Annotated[float, Field(ge=2.0, le=8.0)]
+    relative_twist_degrees: Annotated[float, Field(ge=-30.0, le=30.0)] = 0.0
+    maximum_lattice_mismatch_percent: Annotated[float, Field(gt=0.0, le=10.0)]
+    maximum_supercell_area_factor: Annotated[int, Field(ge=1, le=64)] = 16
+    interface_registry: Annotated[str, Field(min_length=1, max_length=64)]
+
+
 StructureOperationParametersV2 = (
     ReasonedSubstitutionParametersV1
     | HomogeneousStrainParametersV1
@@ -214,16 +300,31 @@ StructureOperationParametersV2 = (
     | ReasonedLayerSlideParametersV1
 )
 
+ConditionOperationParametersV1 = (
+    CarrierDopingParametersV1
+    | ElectrostaticGateParametersV1
+    | MagneticProximityParametersV1
+    | VdwHeterostructureParametersV1
+)
 
-def operation_parameter_sha256(parameters: StructureOperationParametersV2) -> str:
+ReasonedOperationParametersV3 = (
+    StructureOperationParametersV2 | ConditionOperationParametersV1
+)
+
+
+def operation_parameter_sha256(parameters: ReasonedOperationParametersV3) -> str:
     return canonical_sha256(
         parameters.model_dump(mode="python", exclude={"operator_spec_id"})
     )
 
 
 _PARAMETER_TYPE_BY_OPERATOR = {
+    "APPLY_CARRIER_DOPING_V1": CarrierDopingParametersV1,
+    "APPLY_ELECTROSTATIC_GATE_V1": ElectrostaticGateParametersV1,
     "APPLY_HOMOGENEOUS_STRAIN_V1": HomogeneousStrainParametersV1,
     "INTERCALATE_REASONED_GAP_SITE_V1": ReasonedIntercalationParametersV1,
+    "PLAN_MAGNETIC_PROXIMITY_V1": MagneticProximityParametersV1,
+    "PLAN_VDW_HETEROSTRUCTURE_V1": VdwHeterostructureParametersV1,
     "REMOVE_EQUIVALENT_SITE_CLASS_V1": EquivalentSiteVacancyParametersV1,
     "SLIDE_REASONED_LAYER_V1": ReasonedLayerSlideParametersV1,
     "SUBSTITUTE_EQUIVALENT_SITE_V1": ReasonedSubstitutionParametersV1,
@@ -249,7 +350,7 @@ class RunLocalOperatorSpecV1(StrictModel):
 
     schema_version: Literal["run-local-operator-spec-v1"] = "run-local-operator-spec-v1"
     operator_spec_id: Identifier
-    operator_id: OperationIdV2
+    operator_id: ReasonedOperatorIdV3
     parent_structure_id: Identifier
     parameter_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
     proposal_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
@@ -394,6 +495,115 @@ class StructureOperationPlanV2(StrictModel):
         return self
 
 
+def condition_route_sha256(
+    *,
+    parent_structure_ids: tuple[str, ...],
+    operator_id: ConditionOperationIdV1,
+    parameters: ConditionOperationParametersV1,
+) -> str:
+    return canonical_sha256(
+        {
+            "parent_structure_ids": parent_structure_ids,
+            "operator_id": operator_id,
+            "operator_version": "1",
+            "parameters": parameters.model_dump(mode="python"),
+        }
+    )
+
+
+class ReasonedConditionPlanV1(StrictModel):
+    """Hash-bound non-structural or interface-builder plan.
+
+    This contract never carries an output CIF. It freezes electronic boundary
+    conditions or a two-parent interface request for a later specialized builder.
+    """
+
+    schema_version: Literal["inspiration-reasoned-condition-plan-v1"] = (
+        "inspiration-reasoned-condition-plan-v1"
+    )
+    plan_id: Identifier
+    parent_candidate_id: Identifier
+    parent_structure_id: Identifier
+    parent_structure_artifact: ArtifactPointerV1
+    partner_candidate_id: Identifier | None = None
+    partner_structure_id: Identifier | None = None
+    partner_structure_artifact: ArtifactPointerV1 | None = None
+    operator_id: ConditionOperationIdV1
+    operator_version: Literal["1"] = "1"
+    operator_spec: RunLocalOperatorSpecV1
+    parameters: ConditionOperationParametersV1
+    preserved_features: Annotated[tuple[str, ...], Field(min_length=1, max_length=16)]
+    changed_features: Annotated[tuple[str, ...], Field(min_length=1, max_length=16)]
+    falsification_tests: Annotated[tuple[str, ...], Field(min_length=1, max_length=16)]
+    bridge_packet_ids: Annotated[
+        tuple[Identifier, ...], Field(min_length=1, max_length=16)
+    ]
+    compile_prior_decision: Literal["PASS", "REQUIRES_REVIEW"]
+    compile_prior_reason_codes: Annotated[
+        tuple[Identifier, ...], Field(min_length=1, max_length=16)
+    ]
+    validator_ids: Annotated[
+        tuple[Identifier, ...], Field(min_length=1, max_length=16)
+    ]
+    route_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    status: Literal[TransformationStatus.PLANNED] = TransformationStatus.PLANNED
+    execution_boundary: Literal[
+        "COMPUTATION_OR_INTERFACE_BUILDER_REQUIRED"
+    ] = "COMPUTATION_OR_INTERFACE_BUILDER_REQUIRED"
+    scientific_conclusion: Literal[False] = False
+
+    @model_validator(mode="after")
+    def validate_plan(self) -> ReasonedConditionPlanV1:
+        expected_type = _PARAMETER_TYPE_BY_OPERATOR[self.operator_id]
+        if not isinstance(self.parameters, expected_type):
+            raise TypeError("condition operator and parameter schema do not match")
+        if self.operator_spec.operator_id != self.operator_id:
+            raise ValueError("operator spec and condition plan do not match")
+        if self.operator_spec.parent_structure_id != self.parent_structure_id:
+            raise ValueError("operator spec and anchor parent do not match")
+        if self.operator_spec.parameter_sha256 != operation_parameter_sha256(
+            self.parameters
+        ):
+            raise ValueError("operator spec does not bind condition parameters")
+        if self.parameters.operator_spec_id != self.operator_spec.operator_spec_id:
+            raise ValueError("parameters do not bind the run-local operator spec")
+        needs_partner = isinstance(
+            self.parameters,
+            MagneticProximityParametersV1 | VdwHeterostructureParametersV1,
+        )
+        partner_values = (
+            self.partner_candidate_id,
+            self.partner_structure_id,
+            self.partner_structure_artifact,
+        )
+        if needs_partner != all(item is not None for item in partner_values):
+            raise ValueError("two-parent condition plans require one complete partner")
+        if not needs_partner and any(item is not None for item in partner_values):
+            raise ValueError("single-parent condition plans cannot carry a partner")
+        if needs_partner and (
+            self.parameters.partner_database_candidate_id
+            != self.partner_candidate_id
+        ):
+            raise ValueError("condition parameters do not bind the partner candidate")
+        parent_ids = (self.parent_structure_id,) + (
+            (self.partner_structure_id,) if self.partner_structure_id is not None else ()
+        )
+        expected_route = condition_route_sha256(
+            parent_structure_ids=parent_ids,
+            operator_id=self.operator_id,
+            parameters=self.parameters,
+        )
+        if self.route_sha256 != expected_route:
+            raise ValueError("route_sha256 does not match the condition plan")
+        for name, values in (
+            ("compile prior reasons", self.compile_prior_reason_codes),
+            ("validator IDs", self.validator_ids),
+        ):
+            if values != tuple(sorted(set(values))):
+                raise ValueError(f"{name} must be sorted and unique")
+        return self
+
+
 class StructureOperationExecutionRequestV2(StrictModel):
     schema_version: Literal["structure-operation-execution-v2"] = (
         STRUCTURE_OPERATION_EXECUTION_SCHEMA_VERSION
@@ -439,6 +649,22 @@ class StructureOperationPriorResultV1(StrictModel):
     parent_gap_angstrom: float | None = Field(default=None, ge=0.0)
     smact_decision: SmactPriorDecision | None = None
     evidence_level: Literal["HEURISTIC_PRIOR_ONLY"] = "HEURISTIC_PRIOR_ONLY"
+    scientific_conclusion: Literal[False] = False
+
+
+class ConditionOperationPriorResultV1(StrictModel):
+    schema_version: Literal["condition-operation-prior-v1"] = (
+        "condition-operation-prior-v1"
+    )
+    operator_id: ConditionOperationIdV1
+    decision: OperationPriorDecision
+    reason_codes: Annotated[tuple[Identifier, ...], Field(min_length=1, max_length=16)]
+    estimated_lattice_mismatch_percent: float | None = Field(
+        default=None, ge=0.0
+    )
+    evidence_level: Literal["INPUT_AND_GEOMETRY_PRIOR_ONLY"] = (
+        "INPUT_AND_GEOMETRY_PRIOR_ONLY"
+    )
     scientific_conclusion: Literal[False] = False
 
 
@@ -751,6 +977,106 @@ def evaluate_structure_operation_prior(
         removed_site_fraction=removed_fraction,
         parent_gap_angstrom=gap,
         smact_decision=smact,
+    )
+
+
+def _primitive_inplane_mismatch_percent(
+    first: Structure, second: Structure
+) -> float:
+    first_lengths = sorted((float(first.lattice.a), float(first.lattice.b)))
+    second_lengths = sorted((float(second.lattice.a), float(second.lattice.b)))
+    return max(
+        abs(left - right) / min(left, right) * 100.0
+        for left, right in zip(first_lengths, second_lengths, strict=True)
+    )
+
+
+def evaluate_condition_operation_prior(
+    *,
+    operator_id: ConditionOperationIdV1,
+    parameters: ConditionOperationParametersV1,
+    parent_structure: Structure,
+    partner_structure: Structure | None = None,
+) -> ConditionOperationPriorResultV1:
+    """Evaluate only bounded input/geometry plausibility, never target properties."""
+
+    reasons: list[str] = []
+    mismatch = None
+    if isinstance(parameters, CarrierDopingParametersV1):
+        decision = (
+            OperationPriorDecision.PASS
+            if parameters.carriers_per_primitive_cell <= 0.5
+            else OperationPriorDecision.REQUIRES_REVIEW
+        )
+        reasons.extend(
+            (
+                "NEUTRAL_BASELINE_INCLUDED",
+                "UNIFORM_COMPENSATING_BACKGROUND_DECLARED",
+                "CARRIER_DENSITY_WITHIN_CONSERVATIVE_BOUND"
+                if decision is OperationPriorDecision.PASS
+                else "HIGH_CARRIER_DENSITY_REQUIRES_REVIEW",
+            )
+        )
+    elif isinstance(parameters, ElectrostaticGateParametersV1):
+        conservative = (
+            abs(parameters.electric_field_v_per_angstrom) <= 0.5
+            and parameters.minimum_vacuum_angstrom >= 15.0
+        )
+        decision = (
+            OperationPriorDecision.PASS
+            if conservative
+            else OperationPriorDecision.REQUIRES_REVIEW
+        )
+        reasons.extend(
+            (
+                "DIPOLE_CORRECTION_DECLARED",
+                "FIELD_AND_VACUUM_WITHIN_CONSERVATIVE_BOUND"
+                if conservative
+                else "FIELD_OR_VACUUM_REQUIRES_REVIEW",
+            )
+        )
+    else:
+        if partner_structure is None:
+            raise ValueError("interface condition prior requires a partner structure")
+        dimensionalities = tuple(
+            calculate_dimensionality(structure) for structure in (parent_structure, partner_structure)
+        )
+        if any(item.error is not None or item.value != 2 for item in dimensionalities):
+            return ConditionOperationPriorResultV1(
+                operator_id=operator_id,
+                decision=OperationPriorDecision.REJECT,
+                reason_codes=("PARENT_DIMENSIONALITY_NOT_TWO",),
+            )
+        mismatch = _primitive_inplane_mismatch_percent(
+            parent_structure, partner_structure
+        )
+        within_mismatch = mismatch <= parameters.maximum_lattice_mismatch_percent
+        separation_conservative = (
+            2.5 <= parameters.interface_separation_angstrom <= 5.0
+        )
+        if not within_mismatch:
+            decision = OperationPriorDecision.REJECT
+            reasons.append("PRIMITIVE_LATTICE_MISMATCH_EXCEEDS_PROPOSED_LIMIT")
+        else:
+            decision = OperationPriorDecision.REQUIRES_REVIEW
+            reasons.extend(
+                (
+                    "BOTH_PARENTS_RESOLVED_AS_TWO_DIMENSIONAL",
+                    "PRIMITIVE_LATTICE_MISMATCH_WITHIN_PROPOSED_LIMIT",
+                    "COMMENSURATE_INTERFACE_BUILDER_REQUIRED",
+                    "INTERFACE_SEPARATION_WITHIN_CONSERVATIVE_BOUND"
+                    if separation_conservative
+                    else "INTERFACE_SEPARATION_REQUIRES_REVIEW",
+                )
+            )
+            if isinstance(parameters, MagneticProximityParametersV1):
+                reasons.append("MAGNETIC_ORDER_AND_EXCHANGE_REQUIRE_CALCULATION")
+
+    return ConditionOperationPriorResultV1(
+        operator_id=operator_id,
+        decision=decision,
+        reason_codes=tuple(sorted(set(reasons))),
+        estimated_lattice_mismatch_percent=mismatch,
     )
 
 
@@ -1212,18 +1538,74 @@ def make_operation_plan(
     )
 
 
+def make_condition_plan(
+    *,
+    candidate_id: str,
+    parent_candidate_id: str,
+    parent_structure_id: str,
+    parent_pointer: ArtifactPointerV1,
+    partner_candidate_id: str | None,
+    partner_structure_id: str | None,
+    partner_pointer: ArtifactPointerV1 | None,
+    operator_id: ConditionOperationIdV1,
+    operator_spec: RunLocalOperatorSpecV1,
+    parameters: ConditionOperationParametersV1,
+    preserved_features: tuple[str, ...],
+    changed_features: tuple[str, ...],
+    prior: ConditionOperationPriorResultV1,
+    validator_ids: tuple[str, ...],
+) -> ReasonedConditionPlanV1:
+    if prior.decision is OperationPriorDecision.REJECT:
+        raise ValueError("rejected condition prior cannot become a plan")
+    parent_ids = (parent_structure_id,) + (
+        (partner_structure_id,) if partner_structure_id is not None else ()
+    )
+    route = condition_route_sha256(
+        parent_structure_ids=parent_ids,
+        operator_id=operator_id,
+        parameters=parameters,
+    )
+    return ReasonedConditionPlanV1(
+        plan_id=deterministic_id(
+            "plan", {"candidate_id": candidate_id, "route_sha256": route}
+        ),
+        parent_candidate_id=parent_candidate_id,
+        parent_structure_id=parent_structure_id,
+        parent_structure_artifact=parent_pointer,
+        partner_candidate_id=partner_candidate_id,
+        partner_structure_id=partner_structure_id,
+        partner_structure_artifact=partner_pointer,
+        operator_id=operator_id,
+        operator_spec=operator_spec,
+        parameters=parameters,
+        preserved_features=preserved_features,
+        changed_features=changed_features,
+        falsification_tests=(
+            "registered input and geometry priors",
+            "registered condition validators",
+            "specialized interface builder or electronic-structure calculation",
+            "target-property calculation",
+        ),
+        bridge_packet_ids=("generic-research-mechanism-v3",),
+        compile_prior_decision=prior.decision.value,
+        compile_prior_reason_codes=prior.reason_codes,
+        validator_ids=tuple(sorted(set(validator_ids))),
+        route_sha256=route,
+    )
+
+
 def freeze_run_local_operator_spec(
     *,
-    operator_id: OperationIdV2,
+    operator_id: ReasonedOperatorIdV3,
     parent_structure_id: str,
-    parameters: StructureOperationParametersV2,
+    parameters: ReasonedOperationParametersV3,
     proposal_payload: dict[str, object],
     operator_registry_sha256: str,
     scientific_rationale: str,
     expected_mechanism: str,
     chemical_prior_rationale: str,
     decisive_falsification_test: str,
-) -> tuple[RunLocalOperatorSpecV1, StructureOperationParametersV2]:
+) -> tuple[RunLocalOperatorSpecV1, ReasonedOperationParametersV3]:
     """Freeze one reasoned proposal and bind its derived executable parameters."""
 
     parameter_sha256 = operation_parameter_sha256(parameters)

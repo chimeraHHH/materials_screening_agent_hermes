@@ -9,7 +9,6 @@ from __future__ import annotations
 import math
 from collections.abc import Sequence
 
-
 ASE_GPA_IN_EV_ANGSTROM3 = 0.006241509125883258
 
 
@@ -82,7 +81,7 @@ def _finite_symmetric_3x3(
 
 def _finite_float(value: float) -> float:
     if isinstance(value, bool):
-        raise ValueError("stress components must be numeric, not bool")
+        raise ValueError("stress components must be numeric, not bool")  # noqa: TRY004
     converted = float(value)
     if not math.isfinite(converted):
         raise ValueError("stress components must be finite")

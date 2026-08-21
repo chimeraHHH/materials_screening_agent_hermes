@@ -2,9 +2,8 @@ from __future__ import annotations
 
 import json
 
-from material_agent.dft.models import JobStatus
 from material_agent.dft.mock_backend import MockDFTBackend
-
+from material_agent.dft.models import JobStatus
 from tests.unit.test_dft_runner import _setup
 
 
@@ -108,7 +107,7 @@ def test_transient_status_and_fetch_errors_retry_without_resubmission(tmp_path):
 
 
 def test_unknown_and_regressing_status_fail_closed(tmp_path):
-    store, runner, context = _setup(tmp_path)
+    _store, runner, context = _setup(tmp_path)
     prepared = runner.prepare(context)
     waiting = runner.start(context, prepared, "bad-status")
     runner.backend.status = lambda _ref: JobStatus.UNKNOWN

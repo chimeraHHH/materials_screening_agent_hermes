@@ -6,7 +6,11 @@ import hashlib
 from datetime import UTC, datetime
 from pathlib import Path
 
-from material_agent.ml_screening.alignn_models import AlignnExecutionPlan, AlignnInferenceRequest, alignn_operation_key
+from material_agent.ml_screening.alignn_models import (
+    AlignnExecutionPlan,
+    AlignnInferenceRequest,
+    alignn_operation_key,
+)
 
 
 def build_alignn_plan(request: AlignnInferenceRequest, *, artifact_root: Path, created_at: datetime | None = None) -> AlignnExecutionPlan:

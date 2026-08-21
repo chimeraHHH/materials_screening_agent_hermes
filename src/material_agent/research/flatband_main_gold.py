@@ -15,11 +15,12 @@ projection.
 
 from __future__ import annotations
 
-from datetime import datetime
-from enum import StrEnum
 import hashlib
 import hmac
-from typing import TYPE_CHECKING, Annotated, Literal, Mapping, TypeVar
+from collections.abc import Mapping
+from datetime import datetime
+from enum import StrEnum
+from typing import TYPE_CHECKING, Annotated, Literal, TypeVar
 
 from pydantic import Field, field_validator, model_validator
 
@@ -30,6 +31,7 @@ from material_agent.inspiration.models import (
     canonical_sha256,
     deterministic_id,
 )
+from material_agent.research.flatband_analysis_v2 import AnalysisTraceRoleV2
 from material_agent.research.flatband_arm_runtime import (
     ArmExecutionScope,
     ArmExecutionTraceV1,
@@ -37,11 +39,9 @@ from material_agent.research.flatband_arm_runtime import (
 from material_agent.research.flatband_contracts import HypothesisPacketV1
 from material_agent.research.flatband_execution import (
     ExecutionPhase,
-    MissingPositionReason,
     ResearchSystemId,
     RunCellStatus,
 )
-from material_agent.research.flatband_analysis_v2 import AnalysisTraceRoleV2
 from material_agent.research.flatband_main_execution import (
     MainPhaseExecutionCellEvidenceV1,
     MainPhaseExecutionReleaseV1,
@@ -84,7 +84,7 @@ class MainDuplicateProvenance(StrEnum):
 
 def _timestamp(value: str) -> datetime:
     try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        parsed = datetime.fromisoformat(value)
     except ValueError as exc:
         raise ValueError("timestamp must be RFC3339-compatible") from exc
     if parsed.tzinfo is None or parsed.utcoffset() is None:
@@ -307,7 +307,7 @@ class MainReviewUnitV1(StrictModel):
     scientific_conclusion: Literal[False] = False
 
     @model_validator(mode="after")
-    def validate_unit(self) -> "MainReviewUnitV1":
+    def validate_unit(self) -> MainReviewUnitV1:
         packet = _revalidate(self.packet, HypothesisPacketV1)
         if (self.case_id, self.case_sha256) != (
             packet.case_id,
@@ -372,7 +372,7 @@ class MainExpertAssignmentV1(StrictModel):
         return value
 
     @model_validator(mode="after")
-    def validate_assignment(self) -> "MainExpertAssignmentV1":
+    def validate_assignment(self) -> MainExpertAssignmentV1:
         if self.phase not in _MAIN_PHASES:
             raise ValueError("expert assignment uses a non-Main phase")
         for values, label in (
@@ -423,7 +423,7 @@ class MainReviewerPacketV1(StrictModel):
     packet: HypothesisPacketV1
 
     @model_validator(mode="after")
-    def validate_packet(self) -> "MainReviewerPacketV1":
+    def validate_packet(self) -> MainReviewerPacketV1:
         _revalidate(self.packet, HypothesisPacketV1)
         _assert_manifest_field_safety(self.model_dump(mode="python"))
         return self
@@ -455,7 +455,7 @@ class MainReviewerManifestV1(StrictModel):
         return value
 
     @model_validator(mode="after")
-    def validate_manifest(self) -> "MainReviewerManifestV1":
+    def validate_manifest(self) -> MainReviewerManifestV1:
         if tuple(item.display_order for item in self.packets) != tuple(
             range(1, len(self.packets) + 1)
         ):
@@ -502,7 +502,7 @@ class MainPrivateUnitMapEntryV1(StrictModel):
     ]
 
     @model_validator(mode="after")
-    def validate_entry(self) -> "MainPrivateUnitMapEntryV1":
+    def validate_entry(self) -> MainPrivateUnitMapEntryV1:
         keys = tuple(
             (
                 item.system_id.value,
@@ -552,7 +552,7 @@ class MainPrivateIdentityMapV1(StrictModel):
         return value
 
     @model_validator(mode="after")
-    def validate_map(self) -> "MainPrivateIdentityMapV1":
+    def validate_map(self) -> MainPrivateIdentityMapV1:
         blind_ids = tuple(item.blinded_unit_id for item in self.entries)
         if blind_ids != tuple(sorted(set(blind_ids))):
             raise ValueError("private entries must be blind-ID sorted and unique")
@@ -615,7 +615,7 @@ class MainRawLabelV1(StrictModel):
         return value
 
     @model_validator(mode="after")
-    def validate_label(self) -> "MainRawLabelV1":
+    def validate_label(self) -> MainRawLabelV1:
         if self.phase not in _MAIN_PHASES:
             raise ValueError("raw Main label uses a non-Main execution phase")
         _validate_label_surface(
@@ -678,7 +678,7 @@ class MainLabelAdjudicationV1(StrictModel):
         return value
 
     @model_validator(mode="after")
-    def validate_adjudication(self) -> "MainLabelAdjudicationV1":
+    def validate_adjudication(self) -> MainLabelAdjudicationV1:
         if self.phase not in _MAIN_PHASES:
             raise ValueError("Main adjudication uses a non-Main phase")
         keys = tuple(
@@ -716,7 +716,7 @@ class MainReviewerDuplicateClusterV1(StrictModel):
     ]
 
     @model_validator(mode="after")
-    def validate_cluster(self) -> "MainReviewerDuplicateClusterV1":
+    def validate_cluster(self) -> MainReviewerDuplicateClusterV1:
         if self.blinded_unit_ids != tuple(sorted(set(self.blinded_unit_ids))):
             raise ValueError("reviewer duplicate members must be sorted and unique")
         return self
@@ -762,7 +762,7 @@ class MainRawDuplicatePartitionV1(StrictModel):
         return value
 
     @model_validator(mode="after")
-    def validate_partition(self) -> "MainRawDuplicatePartitionV1":
+    def validate_partition(self) -> MainRawDuplicatePartitionV1:
         keys = tuple(
             (item.blinded_unit_ids, item.cluster_id) for item in self.clusters
         )
@@ -807,7 +807,7 @@ class MainPooledDuplicateClusterV1(StrictModel):
     ]
 
     @model_validator(mode="after")
-    def validate_cluster(self) -> "MainPooledDuplicateClusterV1":
+    def validate_cluster(self) -> MainPooledDuplicateClusterV1:
         if self.pooled_unit_ids != tuple(sorted(set(self.pooled_unit_ids))):
             raise ValueError("pooled duplicate members must be sorted and unique")
         return self
@@ -851,7 +851,7 @@ class MainDuplicateAdjudicationV1(StrictModel):
         return value
 
     @model_validator(mode="after")
-    def validate_adjudication(self) -> "MainDuplicateAdjudicationV1":
+    def validate_adjudication(self) -> MainDuplicateAdjudicationV1:
         refs = tuple(
             (
                 item.reviewer_id,
@@ -933,7 +933,7 @@ class MainFinalDuplicatePartitionV1(StrictModel):
         return value
 
     @model_validator(mode="after")
-    def validate_partition(self) -> "MainFinalDuplicatePartitionV1":
+    def validate_partition(self) -> MainFinalDuplicatePartitionV1:
         if self.provenance is MainDuplicateProvenance.AGREED_RAW:
             if self.adjudication is not None:
                 raise ValueError("agreed duplicate partition cannot be adjudicated")
@@ -1002,7 +1002,7 @@ class MainExecutionCellRefV1(StrictModel):
     case_sha256: Sha256
 
     @model_validator(mode="after")
-    def validate_ref(self) -> "MainExecutionCellRefV1":
+    def validate_ref(self) -> MainExecutionCellRefV1:
         if (self.trace_id is None) != (self.trace_sha256 is None):
             raise ValueError("execution-cell trace identity must be both present or absent")
         return self
@@ -1041,7 +1041,7 @@ class MainGoldPositionProjectionV1(StrictModel):
     scientific_conclusion: Literal[False] = False
 
     @model_validator(mode="after")
-    def validate_projection(self) -> "MainGoldPositionProjectionV1":
+    def validate_projection(self) -> MainGoldPositionProjectionV1:
         if (self.trace_id is None) != (self.trace_sha256 is None):
             raise ValueError("Gold position trace identity must be both present or absent")
         _validate_label_surface(
@@ -1140,7 +1140,7 @@ class MainGoldReleaseV1(StrictModel):
         return value
 
     @model_validator(mode="after")
-    def validate_release(self) -> "MainGoldReleaseV1":
+    def validate_release(self) -> MainGoldReleaseV1:
         if self.phase not in _MAIN_PHASES:
             raise ValueError("Gold release uses a non-Main phase")
         assignment = _revalidate(self.expert_assignment, MainExpertAssignmentV1)
@@ -1309,7 +1309,7 @@ class MainGoldFormalVerifierAttestationV1(StrictModel):
         return value
 
     @model_validator(mode="after")
-    def validate_attestation(self) -> "MainGoldFormalVerifierAttestationV1":
+    def validate_attestation(self) -> MainGoldFormalVerifierAttestationV1:
         _assert_identity(
             self,
             id_field="attestation_id",
@@ -2882,7 +2882,7 @@ def build_analysis_judgments_from_main_gold_v1(
     release: MainGoldReleaseV1,
     *,
     trace_evidence: object,
-) -> tuple["FinalPositionJudgmentV2", ...]:
+) -> tuple[FinalPositionJudgmentV2, ...]:
     """Canonical present-position Gold -> Analysis V2 adapter.
 
     ``trace_evidence`` is validated as ``AnalysisTraceEvidenceV2`` locally to
@@ -3015,7 +3015,7 @@ def build_analysis_cell_from_main_gold_v1(
     formal_verifier: MainGoldFormalVerifierAttestationV1,
     *,
     trace_evidence: object,
-) -> "AnalysisCellEvidenceV2":
+) -> AnalysisCellEvidenceV2:
     """Build one Analysis V2 cell with exact Gold/verifier artifact refs."""
 
     from material_agent.research.flatband_analysis_v2 import (
@@ -3073,11 +3073,11 @@ def build_analysis_cell_from_main_gold_v1(
 
 __all__ = [
     "MainArmTraceRefV1",
-    "MainExecutionCellRefV1",
     "MainDuplicateAdjudicationRefV1",
     "MainDuplicateAdjudicationV1",
     "MainDuplicatePartitionRefV1",
     "MainDuplicateProvenance",
+    "MainExecutionCellRefV1",
     "MainExpertAssignmentV1",
     "MainExpertIdentityCommitmentV1",
     "MainExpertRegistryRefV1",
@@ -3088,9 +3088,9 @@ __all__ = [
     "MainGoldReleaseV1",
     "MainGoldStatus",
     "MainLabelAdjudicationV1",
+    "MainPhaseExecutionRefV1",
     "MainPooledDuplicateClusterV1",
     "MainPositionContributionV1",
-    "MainPhaseExecutionRefV1",
     "MainPrivateIdentityMapV1",
     "MainPrivateUnitMapEntryV1",
     "MainRawDuplicatePartitionV1",
@@ -3108,8 +3108,8 @@ __all__ = [
     "build_main_gold_formal_verifier_attestation",
     "build_main_gold_release",
     "build_main_label_adjudication",
-    "build_main_raw_label",
     "build_main_raw_duplicate_partition",
+    "build_main_raw_label",
     "build_main_review_unit",
     "build_main_reviewer_materials",
 ]

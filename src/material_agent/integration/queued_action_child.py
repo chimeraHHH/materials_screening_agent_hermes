@@ -12,8 +12,9 @@ import argparse
 import json
 import os
 import signal
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any
 
 from material_agent.gateway.errors import AdapterContractError
 from material_agent.gateway.models import (
@@ -34,7 +35,6 @@ from material_agent.integration.hermes_service import (
     create_hermes_fixture_service,
     create_hermes_inspiration_service,
 )
-
 
 _MAX_PROTOCOL_BYTES = 1_000_000
 _INPUT_SCHEMA = "materials-gateway-supervised-action-input-v1"
@@ -218,7 +218,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             "status": "ERROR",
             "error_code": "CHILD_PROTOCOL_ERROR",
         }
-    except Exception:
+    except Exception:  # noqa: BLE001
         output = {
             "schema_version": _OUTPUT_SCHEMA,
             "status": "ERROR",

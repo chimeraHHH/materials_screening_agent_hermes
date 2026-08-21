@@ -986,6 +986,12 @@ def _render_markdown(
                         f"  - 参数：`{plan.parameters.model_dump(mode='json')}`",
                         f"  - 编译先验：`{getattr(plan, 'compile_prior_decision', 'EXECUTION_REQUIRED')}`；原因：`{getattr(plan, 'compile_prior_reason_codes', ())}`",
                         f"  - route SHA-256：`{plan.route_sha256}`；状态：`{plan.status.value}`",
+                        (
+                            "  - 执行边界：`COMPUTATION_OR_INTERFACE_BUILDER_REQUIRED`；"
+                            "该计划不生成 CIF，也不构成性质验证。"
+                            if getattr(plan, "execution_boundary", None)
+                            else "  - 执行边界：需要注册结构执行器与下游性质计算。"
+                        ),
                     ]
                 )
         else:

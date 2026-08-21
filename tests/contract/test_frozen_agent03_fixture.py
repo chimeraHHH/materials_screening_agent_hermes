@@ -4,7 +4,6 @@ import hashlib
 import json
 from pathlib import Path
 
-
 FIXTURE = Path(__file__).parents[1] / "fixtures/contracts/agent03-v1"
 
 

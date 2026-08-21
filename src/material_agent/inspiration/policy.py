@@ -9,7 +9,6 @@ from pydantic import Field, model_validator
 
 from material_agent.inspiration.models import Identifier, Score, ShortText, StrictModel
 
-
 INSPIRATION_POLICY_VERSION = "inspiration-policy-v1"
 
 

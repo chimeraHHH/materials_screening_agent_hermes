@@ -16,7 +16,6 @@ from material_agent.inspiration.fetch import (
     SafeNetworkDocumentFetcher,
 )
 
-
 URL = "https://articles.example.test/paper?token=secret"
 REQUEST = DocumentFetchRequest(
     request_id="fetch-1",

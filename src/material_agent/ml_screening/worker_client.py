@@ -155,7 +155,7 @@ class SubprocessWorkerClient:
                 shell=False,
                 env=environment,
             )
-            stdout, stderr = process.communicate(
+            stdout, _stderr = process.communicate(
                 request.model_dump_json().encode("utf-8"),
                 timeout=request.limits.wall_time_seconds,
             )

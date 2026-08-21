@@ -42,7 +42,6 @@ from material_agent.inspiration.transformations import (
 from material_agent.inspiration.vectorizer import SIGNED_HASHING_SNAPSHOT
 from material_agent.retrieval.storage import LocalArtifactStore
 
-
 FIXTURE_DIR = Path(__file__).parents[1] / "fixtures" / "inspiration"
 
 

@@ -39,7 +39,7 @@ def _synthetic_artifact(
 
 
 def _raw_annotation() -> RawExpertAnnotationV1:
-    from test_flatband_research_contracts import _annotation
+    from tests.unit.test_flatband_research_contracts import _annotation
 
     return _annotation()
 

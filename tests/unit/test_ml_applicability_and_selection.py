@@ -9,7 +9,6 @@ from material_agent.ml_screening.models import (
     ApplicabilityReasonCode,
     ApplicabilityStatus,
     ArtifactPointer,
-    MLModelRegistry,
     MLModelSpec,
     MLScreeningRequest,
     SelectionMode,

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from material_agent.orchestrator.models import StageId
 from material_agent.orchestrator.runtime import OrchestratorRuntime
-
 from tests.integration.test_dft_runner_orchestrator import _registry
 from tests.integration.test_orchestrator_p01 import _complete_source_run, _stage_input
 

@@ -28,7 +28,6 @@ from material_agent.orchestrator.llm import (
 )
 from material_agent.orchestrator.models import StrictModel
 
-
 DEEPSEEK_NATIVE_SEARCH_VERSION = "deepseek-native-search-discovery-v1"
 DEEPSEEK_NATIVE_SEARCH_HARD_MAX_REQUESTS = 16
 

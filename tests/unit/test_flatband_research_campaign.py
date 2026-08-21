@@ -11,7 +11,6 @@ from material_agent.research.flatband_campaign import (
     FlatBandCampaignReleaseV1,
     LockedExecutionPlanV1,
     _assert_addressed,
-    _build_addressed,
     _assert_fusion_projection_config_v1,
     _assert_locked_execution_chronology_v1,
     _assert_locked_gold_human_inputs_post_unseal_v1,
@@ -19,6 +18,7 @@ from material_agent.research.flatband_campaign import (
     _assert_public_authority_structural_links_v1,
     _assert_release_authority_policy_exact_v1,
     _assert_reviewer_decision_keys_exact_v1,
+    _build_addressed,
     _execution_groups,
     _main_gold_execution_cells_union_v1,
     build_local_sensitivity_not_run_release_v1,
@@ -235,7 +235,7 @@ def test_main_gold_expert_keys_reject_wrong_phase_and_swapped_keys() -> None:
 
 
 def test_reviewer_approve_tamper_fails_even_after_readdressing() -> None:
-    import test_flatband_research_lifecycle as lifecycle_fixture
+    from tests.unit import test_flatband_research_lifecycle as lifecycle_fixture
 
     support, promotion, config, _, _ = lifecycle_fixture._claim_support()
     projection = lifecycle.build_public_benchmark_projection_v1(
@@ -483,7 +483,7 @@ def test_campaign_content_address_detects_semantic_tamper_without_fixture() -> N
 
 
 def test_fusion_projection_rejects_query_hash_injection() -> None:
-    import test_flatband_research_analysis_v2 as analysis_fixture
+    from tests.unit import test_flatband_research_analysis_v2 as analysis_fixture
 
     baseline = analysis_fixture._config(ResearchSystemId.B0)
     e2 = analysis_fixture._config(ResearchSystemId.E2_A)
@@ -524,7 +524,7 @@ def test_local_sensitivity_rejects_structure_only_authorization_fixture(
     NOT_RUN closure.
     """
 
-    import test_flatband_research_main as main_fixture
+    from tests.unit import test_flatband_research_main as main_fixture
 
     main_fixture._contract_structure_only.__wrapped__(monkeypatch)
     chain = main_fixture._chain()
@@ -626,7 +626,7 @@ def test_locked_chronology_rejects_post_unseal_execution_artifact() -> None:
 
 
 def test_locked_chronology_rejects_valid_signed_label_before_unseal() -> None:
-    import test_flatband_research_main_gold as gold_fixture
+    from tests.unit import test_flatband_research_main_gold as gold_fixture
 
     trace = gold_fixture._arm_trace(
         gold_fixture._arm_config(ResearchSystemId.B0)
@@ -677,7 +677,7 @@ def test_gold_input_union_retains_failed_cells(
 ) -> None:
     """The bridge's structural FAILED fixture must remain in Gold custody."""
 
-    import test_flatband_research_main_execution as execution_fixture
+    from tests.unit import test_flatband_research_main_execution as execution_fixture
 
     execution_fixture._structural_only.__wrapped__(monkeypatch)
     authorization, execution, components = (

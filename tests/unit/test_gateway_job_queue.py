@@ -295,9 +295,11 @@ def test_concurrent_enqueue_reuses_one_job_and_persisted_tamper_is_detected(tmp_
     )
     connection.commit()
     connection.close()
-    with SqliteGatewayJobQueue(database) as reopened:
-        with pytest.raises(JobQueuePersistenceError, match="payload SHA-256"):
-            reopened.get_job(job_id)
+    with (
+        SqliteGatewayJobQueue(database) as reopened,
+        pytest.raises(JobQueuePersistenceError, match="payload SHA-256"),
+    ):
+        reopened.get_job(job_id)
 
 
 def test_attempt_ledger_records_monotonic_hard_deadline_and_acknowledgement(
@@ -491,9 +493,11 @@ def test_attempt_ledger_tamper_and_incomplete_v2_schema_fail_closed(
     )
     connection.commit()
     connection.close()
-    with SqliteGatewayJobQueue(database) as reopened:
-        with pytest.raises(JobQueuePersistenceError, match="attempt is invalid"):
-            reopened.list_attempts(job.job_id)
+    with (
+        SqliteGatewayJobQueue(database) as reopened,
+        pytest.raises(JobQueuePersistenceError, match="attempt is invalid"),
+    ):
+        reopened.list_attempts(job.job_id)
 
     incomplete = tmp_path / "incomplete.sqlite3"
     with SqliteGatewayJobQueue(incomplete):

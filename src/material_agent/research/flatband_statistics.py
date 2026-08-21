@@ -27,7 +27,6 @@ from material_agent.research.flatband_leakage import (
     component_assignments,
 )
 
-
 MIN_INDEPENDENT_CLUSTERS_PER_STRATUM = 10
 MAX_EXACT_SIGN_ASSIGNMENTS = 100_000
 MONTE_CARLO_SIGN_ASSIGNMENTS = 100_000
@@ -50,7 +49,7 @@ class PairedCaseScore:
             raise ValueError("case ID is required")
         for label, value in (("baseline", self.baseline), ("treatment", self.treatment)):
             if not isinstance(value, (int, float)) or isinstance(value, bool):
-                raise ValueError(f"{label} score must be numeric")
+                raise ValueError(f"{label} score must be numeric")  # noqa: TRY004
             if not math.isfinite(float(value)) or not 0.0 <= float(value) <= 1.0:
                 raise ValueError(f"{label} score must be finite and in [0, 1]")
 

@@ -20,7 +20,6 @@ from material_agent.integration.request_compiler import (
     HermesInspirationRequestCompiler,
 )
 
-
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 SKILL_PATH = (
     REPOSITORY_ROOT

@@ -10,7 +10,7 @@ import sqlite3
 from contextlib import contextmanager
 from copy import deepcopy
 from pathlib import Path
-from typing import Any
+from typing import Any, Self
 
 from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 from langgraph.checkpoint.sqlite import SqliteSaver
@@ -24,15 +24,15 @@ from material_agent.orchestrator.identity import (
     UUIDIdFactory,
 )
 from material_agent.orchestrator.models import (
-    ApprovalStatus,
-    ControlOutcomeType,
-    ControlStageOutcome,
     LEGACY_ORCHESTRATOR_CONTRACT_VERSION,
     ORCHESTRATOR_CONTRACT_VERSION,
     P01_ORCHESTRATOR_CONTRACT_VERSION,
+    ApprovalStatus,
+    ControlOutcomeType,
+    ControlStageOutcome,
+    RunStatus,
     RuntimeInterrupt,
     RuntimeView,
-    RunStatus,
     StageId,
     StageStartInput,
     StageStatus,
@@ -46,9 +46,8 @@ from material_agent.orchestrator.runners import (
     configure_agent02_production,
 )
 from material_agent.orchestrator.storage import OrchestratorRepository
-from material_agent.retrieval.storage import LocalArtifactStore
 from material_agent.retrieval.models import SourceDatabase
-
+from material_agent.retrieval.storage import LocalArtifactStore
 
 _SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 _TERMINAL_RUN_STATUSES = {
@@ -118,7 +117,7 @@ class OrchestratorRuntime:
             name="material-screening-orchestrator-p0.2",
         )
 
-    def __enter__(self) -> OrchestratorRuntime:
+    def __enter__(self) -> Self:
         return self
 
     def __exit__(self, *_args: object) -> None:

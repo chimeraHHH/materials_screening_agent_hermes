@@ -8,11 +8,11 @@ from pathlib import Path
 import pytest
 
 from material_agent.inspiration.engine import PymatgenTransformationEngine
+from material_agent.inspiration.feedback import TagFeedbackReviewV1
 from material_agent.inspiration.fetch import (
     FixtureDocumentFetcher,
     FixtureFetchResponse,
 )
-from material_agent.inspiration.feedback import TagFeedbackReviewV1
 from material_agent.inspiration.models import (
     ArtifactPointerV1,
     InspirationInputV1,
@@ -53,7 +53,6 @@ from material_agent.inspiration.vectorizer import (
 )
 from material_agent.integration.hermes_service import HermesFixtureProjector
 from material_agent.retrieval.storage import LocalArtifactStore
-
 
 FIXTURE_DIR = Path(__file__).parents[1] / "fixtures" / "inspiration"
 ARTICLE_HOST = "articles.example.test"

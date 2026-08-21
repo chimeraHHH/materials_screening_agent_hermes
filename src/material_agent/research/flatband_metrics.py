@@ -6,7 +6,6 @@ import math
 from collections.abc import Sequence
 from enum import StrEnum
 
-
 TOP_K = 5
 LINEAR_IDEAL_DCG_AT_5 = sum(3.0 / math.log2(rank + 1) for rank in range(1, 6))
 EXPONENTIAL_IDEAL_DCG_AT_5 = sum(7.0 / math.log2(rank + 1) for rank in range(1, 6))

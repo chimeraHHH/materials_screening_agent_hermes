@@ -47,6 +47,7 @@ from material_agent.inspiration.research_graph import (
     _normalize_executed_counter_queries,
     _normalize_sparse_skeptic_references,
     _normalize_synthesis,
+    _validate_query_constraint_refs,
 )
 from material_agent.orchestrator.models import StrictModel
 
@@ -142,6 +143,15 @@ def query_plan(graph: ConstraintGraphV1) -> ResearchQueryPlanV1:
     )
 
 
+def incomplete_query_plan(graph: ConstraintGraphV1) -> ResearchQueryPlanV1:
+    plan = query_plan(graph)
+    query = plan.families[1].queries[0].model_copy(
+        update={"target_constraint_ids": (graph.constraints[0].constraint_id,)}
+    )
+    family = plan.families[1].model_copy(update={"queries": (query,)})
+    return plan.model_copy(update={"families": (plan.families[0], family)})
+
+
 def test_generic_research_director_separates_evidence_unknowns_from_inference() -> None:
     graph = constraints()
     plan = query_plan(graph)
@@ -235,10 +245,12 @@ def test_generic_research_director_separates_evidence_unknowns_from_inference() 
     )
 
     outputs: dict[str, StrictModel] = {
-        "requirements_analyst": graph,
-        "query_strategist": plan,
+        "requirements_analyst": graph.model_copy(
+            update={"constraints": graph.constraints[:-1]}
+        ),
+        "query_strategist": incomplete_query_plan(graph),
         "native_search_scout": DiscoveryReviewV1(
-            useful_lead_ids=("lead-" + "1" * 24,),
+            useful_lead_ids=("lead-" + "f" * 24,),
             resolver_queries=("layered transition metal flat band",),
         ),
         "evidence_researcher": EvidenceReviewV1(
@@ -329,6 +341,14 @@ def test_generic_research_director_separates_evidence_unknowns_from_inference() 
         unresolved_hard_constraints=unknown_pairs,
         required_next_computations=("DFT band structure and PDOS",),
     )
+    repair_outputs: list[StrictModel] = [
+        graph,
+        plan,
+        DiscoveryReviewV1(
+            useful_lead_ids=("lead-" + "1" * 24,),
+            resolver_queries=("layered transition metal flat band",),
+        ),
+    ]
 
     class FakeRunner:
         def __init__(self, role: str, tools: tuple[DeepSeekFunctionTool, ...]) -> None:
@@ -337,6 +357,13 @@ def test_generic_research_director_separates_evidence_unknowns_from_inference() 
 
         def run(self, **kwargs: Any) -> DeepSeekAgentResultV1[Any]:
             del kwargs
+            if self.role == "contract_repair":
+                args_model = self.tools[0].arguments_model
+                self.tools[0].handler(args_model(sections=("repair_context",)))
+                final = repair_outputs.pop(0)
+                return DeepSeekAgentResultV1(
+                    final=final, receipt=receipt("contract-repair")
+                )
             if self.role in {
                 "native_search_scout",
                 "evidence_researcher",
@@ -360,6 +387,7 @@ def test_generic_research_director_separates_evidence_unknowns_from_inference() 
                 final=outputs[self.role], receipt=receipt(self.role)
             )
 
+    saved_checkpoint_roles: list[str] = []
     director = MaterialsResearchDirector(
         runner_factory=lambda role, tools: FakeRunner(role, tools),
         native_search_tool=native_tool,
@@ -373,12 +401,25 @@ def test_generic_research_director_separates_evidence_unknowns_from_inference() 
             source_record_count=1,
             federated_candidate_count=1,
         ),
+        checkpoint_save=lambda role, _result: saved_checkpoint_roles.append(role),
     )
     result = director.run(
         "搜索层状过渡金属二维平带材料，并逐项验证费米面、轨道、价态与连通子晶格。"
     )
 
     assert len(result.roles) == 9
+    assert len(result.repairs) == 3
+    assert all(item.status == "ACCEPTED" for item in result.repairs)
+    assert [item.defect_code for item in result.repairs] == [
+        "CONSTRAINT_COVERAGE",
+        "QUERY_CONSTRAINT_REFERENCES",
+        "NATIVE_LEAD_REFERENCES",
+    ]
+    assert {
+        "requirements_analyst-repaired",
+        "query_strategist-repaired",
+        "native_search_scout-repaired",
+    }.issubset(saved_checkpoint_roles)
     assert {item.kind for item in result.constraints.constraints} >= {
         ConstraintKind.DIMENSIONALITY,
         ConstraintKind.ELECTRONIC_BANDWIDTH,
@@ -654,6 +695,48 @@ def test_goal_coverage_requires_all_explicit_flat_band_families() -> None:
     )
     with pytest.raises(ValueError, match="COMPOSITION"):
         _validate_goal_constraint_coverage(goal, incomplete)
+
+
+def test_contract_repair_fails_closed_after_two_invalid_attempts() -> None:
+    graph = constraints()
+    invalid_plan = incomplete_query_plan(graph)
+    tool = DeepSeekFunctionTool(
+        name="fixture_tool",
+        description="Fixture-only state reader.",
+        arguments_model=SearchArgs,
+        handler=lambda args: {"query": args.query},
+    )
+
+    class InvalidRepairRunner:
+        def run(self, **kwargs: Any) -> DeepSeekAgentResultV1[Any]:
+            del kwargs
+            return DeepSeekAgentResultV1(
+                final=invalid_plan,
+                receipt=receipt("contract-repair-invalid"),
+            )
+
+    director = MaterialsResearchDirector(
+        runner_factory=lambda _role, _tools: InvalidRepairRunner(),
+        native_search_tool=tool,
+        native_leads_snapshot=lambda: (),
+        authoritative_search_tool=tool,
+        evidence_snapshot=lambda: (),
+        database_search_tool=tool,
+        database_candidates_snapshot=lambda: (),
+        database_federation_snapshot=lambda: DatabaseFederationAuditV1(),
+    )
+    repairs = []
+    with pytest.raises(ValueError, match="contract repair exhausted"):
+        director._repair_invalid_role_output(
+            target_role="query_strategist",
+            defect_code="QUERY_CONSTRAINT_REFERENCES",
+            final_model=ResearchQueryPlanV1,
+            value=invalid_plan,
+            validator=lambda item: _validate_query_constraint_refs(item, graph),
+            authoritative_context={"constraints": graph.model_dump(mode="json")},
+            repairs=repairs,
+        )
+    assert [item.status for item in repairs] == ["REJECTED", "REJECTED"]
 
 
 def test_lead_resolution_ledger_capacity_covers_large_federated_runs() -> None:
