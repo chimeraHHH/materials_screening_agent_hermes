@@ -602,7 +602,7 @@ class MaterialsResearchGraphResultV7(StrictModel):
     evidence_review: EvidenceReviewV1
     resolved_evidence: tuple[ResolvedEvidenceV1, ...] = Field(max_length=256)
     lead_evidence_resolutions: tuple[LeadEvidenceResolutionV1, ...] = Field(
-        max_length=256
+        max_length=1_024
     )
     database_review: DatabaseCandidateReviewV1
     database_federation: DatabaseFederationAuditV1

@@ -74,7 +74,65 @@ from material_agent.retrieval.storage import LocalArtifactStore
 GENERIC_RESEARCH_TOOL_NAME = "materials_generic_research_run"
 GENERIC_RESEARCH_REQUEST_SCHEMA_VERSION = "materials-generic-research-run-v1"
 GENERIC_RESEARCH_RESULT_SCHEMA_VERSION = "materials-generic-research-run-v7"
-GENERIC_RESEARCH_IMPLEMENTATION_REVISION = "generic-research-20260821-r15"
+GENERIC_RESEARCH_IMPLEMENTATION_REVISION = "generic-research-20260821-r18"
+
+
+def research_role_budget(
+    *,
+    role: str,
+    requested_rounds: int,
+    native_search_calls: int,
+    authoritative_calls: int,
+) -> DeepSeekAgentBudgetV1:
+    """Return the production budget for one full scientific-research role.
+
+    Tool-level states still enforce their own scientific request ceilings.  The
+    agent budget is deliberately larger: it must also accommodate argument
+    corrections, terminal budget receipts, counter-evidence loops, and final
+    typed synthesis without aborting a valid long-form research run.
+    """
+
+    known_roles = {
+        "requirements_analyst",
+        "query_strategist",
+        "native_search_scout",
+        "evidence_researcher",
+        "database_scout",
+        "mechanism_chemist",
+        "skeptic",
+        "hypothesis_reasoner",
+        "synthesist",
+    }
+    if role not in known_roles:
+        raise ValueError(f"unknown research role: {role}")
+    if not 2 <= requested_rounds <= 30:
+        raise ValueError("requested_rounds must be between 2 and 30")
+    if not 1 <= native_search_calls <= 16:
+        raise ValueError("native_search_calls must be between 1 and 16")
+    if not 2 <= authoritative_calls <= 24:
+        raise ValueError("authoritative_calls must be between 2 and 24")
+    if role == "native_search_scout":
+        role_rounds = min(requested_rounds, native_search_calls + 3)
+    elif role == "evidence_researcher":
+        role_rounds = min(requested_rounds, authoritative_calls + 3)
+    elif role == "database_scout":
+        role_rounds = min(requested_rounds, 7)
+    elif role in {"skeptic", "hypothesis_reasoner"}:
+        role_rounds = requested_rounds
+    elif role == "synthesist":
+        role_rounds = min(requested_rounds, 8)
+    else:
+        role_rounds = min(requested_rounds, 6)
+    return DeepSeekAgentBudgetV1(
+        max_rounds=max(2, role_rounds),
+        max_tool_calls=96,
+        max_tool_result_bytes=1_000_000,
+        max_total_tool_result_bytes=8_000_000,
+        max_final_response_bytes=1_000_000,
+        max_completion_tokens_per_round=32_768,
+        max_total_tokens=1_000_000,
+        max_walltime_seconds=3_600,
+    )
 
 
 def allocate_research_search_calls(
@@ -149,7 +207,7 @@ class GenericResearchRunResultV7(StrictModel):
     schema_version: Literal["materials-generic-research-run-v7"] = (
         GENERIC_RESEARCH_RESULT_SCHEMA_VERSION
     )
-    implementation_revision: Literal["generic-research-20260821-r15"] = (
+    implementation_revision: Literal["generic-research-20260821-r18"] = (
         GENERIC_RESEARCH_IMPLEMENTATION_REVISION
     )
     run_id: str
@@ -396,53 +454,17 @@ class GenericMaterialsResearchService:
             )
 
         def runner_factory(role, tools):
-            if role == "native_search_scout":
-                role_rounds = min(
-                    selected.max_agent_rounds_per_role,
-                    selected.max_native_search_calls + 3,
-                )
-                role_tool_calls = max(8, selected.max_native_search_calls + 4)
-            elif role == "evidence_researcher":
-                role_rounds = min(
-                    selected.max_agent_rounds_per_role,
-                    authoritative_calls + 3,
-                )
-                # One DeepSeek turn may legitimately batch topic, graph, and
-                # full-text calls. Scientific request ceilings remain enforced
-                # independently inside AuthoritativeLiteratureSearchState; this
-                # receipt ceiling must be large enough to record the whole batch,
-                # including its terminal BUDGET_EXHAUSTED responses.
-                role_tool_calls = 24
-            elif role == "database_scout":
-                role_rounds = min(selected.max_agent_rounds_per_role, 7)
-                role_tool_calls = 16
-            elif role == "skeptic" or role == "hypothesis_reasoner":
-                role_rounds = selected.max_agent_rounds_per_role
-                role_tool_calls = 8
-            elif role == "synthesist":
-                role_rounds = min(selected.max_agent_rounds_per_role, 8)
-                role_tool_calls = 8
-            else:
-                role_rounds = min(selected.max_agent_rounds_per_role, 6)
-                role_tool_calls = 8
-            role_total_tokens = (
-                500_000
-                if role
-                in {"mechanism_chemist", "skeptic", "hypothesis_reasoner"}
-                else 400_000
-                if role == "synthesist"
-                else 180_000
-            )
             return DeepSeekThinkingAgent(
                 secret_resolver=resolver,
                 tools=tools,
-                budget=DeepSeekAgentBudgetV1(
-                    max_rounds=max(2, role_rounds),
-                    max_tool_calls=min(24, role_tool_calls),
-                    max_total_tokens=role_total_tokens,
-                    max_walltime_seconds=1_200,
+                budget=research_role_budget(
+                    role=role,
+                    requested_rounds=selected.max_agent_rounds_per_role,
+                    native_search_calls=selected.max_native_search_calls,
+                    authoritative_calls=authoritative_calls,
                 ),
                 reasoning_effort=selected.reasoning_effort,
+                timeout_seconds=1_800,
             )
 
         graph = MaterialsResearchDirector(

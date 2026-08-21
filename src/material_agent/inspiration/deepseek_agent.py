@@ -30,7 +30,6 @@ from material_agent.orchestrator.llm import (
 )
 from material_agent.orchestrator.models import StrictModel
 
-
 DEEPSEEK_AGENT_SCHEMA_VERSION = "deepseek-materials-agent-v1"
 DEEPSEEK_AGENT_PROVIDER_VERSION = "deepseek-thinking-tools-v1"
 _TOOL_NAME = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
@@ -64,7 +63,7 @@ class DeepSeekToolCallReceiptV1(StrictModel):
     error_category: str | None = Field(default=None, max_length=64)
 
     @model_validator(mode="after")
-    def validate_error_state(self) -> "DeepSeekToolCallReceiptV1":
+    def validate_error_state(self) -> DeepSeekToolCallReceiptV1:
         if self.status == "SUCCEEDED" and self.error_category is not None:
             raise ValueError("successful tool receipts cannot contain an error category")
         if self.status == "FAILED" and not self.error_category:
@@ -166,8 +165,8 @@ class DeepSeekThinkingAgent:
             raise ValueError("at least one function tool is required")
         if len({tool.name for tool in tools}) != len(tools):
             raise ValueError("function tool names must be unique")
-        if not 0 < timeout_seconds <= 300:
-            raise ValueError("timeout_seconds must be in (0, 300]")
+        if not 0 < timeout_seconds <= 3_600:
+            raise ValueError("timeout_seconds must be in (0, 3600]")
         if not 1 <= max_attempts <= 3:
             raise ValueError("max_attempts must be between 1 and 3")
         if not 0 <= retry_base_seconds <= 5:
@@ -371,7 +370,7 @@ class DeepSeekThinkingAgent:
                                     "finalize from existing results and mark gaps UNKNOWN."
                                 ),
                             }
-                        except Exception:
+                        except Exception:  # noqa: BLE001 - tool handlers are isolation boundaries
                             tool_status = "FAILED"
                             error_category = "TOOL_ARGUMENT_OR_EXECUTION_REJECTED"
                             result_object = {

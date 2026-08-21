@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import threading
 from copy import deepcopy
 from typing import Any
 
@@ -23,7 +24,6 @@ from material_agent.orchestrator.parser import (
     requirement_parser_from_environment,
 )
 from material_agent.retrieval.models import Requirement
-
 
 SECRET = "super-secret-llm-test-key"
 
@@ -210,6 +210,50 @@ def test_urllib_transport_rejects_oversized_response(monkeypatch) -> None:
 
     assert raised.value.category == "INVALID_RESPONSE"
     assert SECRET not in str(raised.value)
+
+
+def test_urllib_transport_enforces_total_read_deadline(monkeypatch) -> None:
+    release = threading.Event()
+    reader_finished = threading.Event()
+    unhandled: list[threading.ExceptHookArgs] = []
+
+    class Response:
+        status = 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            self.close()
+
+        def read(self, _size: int) -> bytes:
+            release.wait(timeout=5)
+            reader_finished.set()
+            raise AttributeError("response closed while reader was active")
+
+        def close(self) -> None:
+            release.set()
+
+    monkeypatch.setattr(
+        "material_agent.orchestrator.llm.urllib.request.urlopen",
+        lambda *_args, **_kwargs: Response(),
+    )
+    monkeypatch.setattr(threading, "excepthook", unhandled.append)
+
+    with pytest.raises(LLMProviderError) as raised:
+        UrllibJSONTransport().post_json(
+            url=f"{DEEPSEEK_BASE_URL}/chat/completions",
+            headers={"Authorization": f"Bearer {SECRET}"},
+            payload={"model": DEEPSEEK_MODEL_ID},
+            timeout_seconds=0.01,
+            max_response_bytes=8,
+        )
+
+    assert raised.value.category == "TRANSIENT_EXTERNAL"
+    assert raised.value.retryable is True
+    assert SECRET not in str(raised.value)
+    assert reader_finished.wait(timeout=1)
+    assert unhandled == []
 
 
 @pytest.mark.parametrize(

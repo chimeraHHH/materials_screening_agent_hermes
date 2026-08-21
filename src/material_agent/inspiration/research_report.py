@@ -913,41 +913,67 @@ def _render_markdown(
     lines.extend(["", "## 候选详情", ""])
     for rank, candidate_id in enumerate(graph.synthesis.ranked_candidate_ids, start=1):
         hypothesis = hypothesis_by_id[candidate_id]
-        database_id = hypothesis.database_candidate_ids[0]
-        candidate = candidates_by_id[database_id]
         inference = inference_by_candidate[candidate_id]
         skeptic = skeptic_by_candidate[candidate_id]
         lines.extend(
             [
                 f"### {rank}. {hypothesis.material_name}",
                 "",
-                f"- 联邦候选 ID：`{database_id}`",
                 f"- 推理优先级分数：{inference.overall_promise_score:.2f}",
-                f"- 数据源：{', '.join(f'`{r.source_database}:{r.source_material_id}`' for r in candidate.source_records)}",
-                f"- 结构维度：{candidate.dimensionality if candidate.dimensionality is not None else 'N/A'}；过渡金属连通代理：{_number_or_na(candidate.connected_transition_metal_sublattice_proxy)}",
-                "",
             ]
         )
-        structure_ref = structure_assets.get(database_id)
-        if structure_ref:
+        database_id, candidate = _resolve_report_candidate(
+            hypothesis.database_candidate_ids,
+            candidates_by_id,
+        )
+        if candidate is None:
             lines.extend(
                 [
-                    f"![{candidate.formula} CIF 三视图]({_relative_link(structure_ref.uri, report_path)})",
-                    "",
-                    f"[下载规范化 CIF]({_relative_link(candidate.structure_artifact_uri, report_path)})",
+                    "- 联邦候选 ID：未关联（文献或机制推理候选）",
+                    "- 数据源：未关联可审计数据库结构",
+                    "- 结构维度：UNKNOWN；过渡金属连通代理：UNKNOWN",
                     "",
                 ]
             )
-        band_ref = band_assets.get(database_id)
+        else:
+            lines.extend(
+                [
+                    f"- 联邦候选 ID：`{database_id}`",
+                    f"- 数据源：{', '.join(f'`{r.source_database}:{r.source_material_id}`' for r in candidate.source_records)}",
+                    f"- 结构维度：{candidate.dimensionality if candidate.dimensionality is not None else 'N/A'}；过渡金属连通代理：{_number_or_na(candidate.connected_transition_metal_sublattice_proxy)}",
+                    "",
+                ]
+            )
+            structure_ref = structure_assets.get(database_id)
+            if structure_ref:
+                lines.extend(
+                    [
+                        f"![{candidate.formula} CIF 三视图]({_relative_link(structure_ref.uri, report_path)})",
+                        "",
+                        f"[下载规范化 CIF]({_relative_link(candidate.structure_artifact_uri, report_path)})",
+                        "",
+                    ]
+                )
+        band_ref = band_assets.get(database_id) if database_id is not None else None
         lines.extend(["#### 能带", ""])
-        if band_ref:
+        if band_ref and candidate is not None:
             lines.extend(
                 [
                     f"![{candidate.formula} 真实能带]({_relative_link(band_ref.uri, report_path)})",
                     "",
                 ]
             )
-        lines.extend([band_notes.get(database_id, "未获得可审计能带数据。"), ""])
+        if database_id is None:
+            lines.extend(
+                [
+                    "该假设没有关联联邦数据库结构，CIF、标量性质和能带资产均标记为 UNKNOWN。",
+                    "",
+                ]
+            )
+        else:
+            lines.extend(
+                [band_notes.get(database_id, "未获得可审计能带数据。"), ""]
+            )
         lines.extend(["#### 注册最小操作", ""])
         if hypothesis.proposed_registered_transformations:
             for plan_id in hypothesis.proposed_registered_transformations:
@@ -1007,6 +1033,18 @@ def _render_markdown(
         ]
     )
     return "\n".join(lines)
+
+
+def _resolve_report_candidate(
+    database_candidate_ids: tuple[str, ...],
+    candidates_by_id: Mapping[str, DatabaseCandidateV1],
+) -> tuple[str | None, DatabaseCandidateV1 | None]:
+    """Resolve an optional database-backed structure for a report hypothesis."""
+
+    if not database_candidate_ids:
+        return None, None
+    database_id = database_candidate_ids[0]
+    return database_id, candidates_by_id[database_id]
 
 
 def _within_cell_bonds(structure: Structure) -> tuple[tuple[int, int], ...]:

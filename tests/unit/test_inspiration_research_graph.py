@@ -28,6 +28,7 @@ from material_agent.inspiration.research_graph import (
     InferenceBasis,
     InferredConstraintAssessmentV1,
     MaterialsResearchDirector,
+    MaterialsResearchGraphResultV7,
     QueryFamilyV1,
     ResearchConstraintV1,
     ResearchQueryPlanV1,
@@ -653,3 +654,8 @@ def test_goal_coverage_requires_all_explicit_flat_band_families() -> None:
     )
     with pytest.raises(ValueError, match="COMPOSITION"):
         _validate_goal_constraint_coverage(goal, incomplete)
+
+
+def test_lead_resolution_ledger_capacity_covers_large_federated_runs() -> None:
+    schema = MaterialsResearchGraphResultV7.model_json_schema()
+    assert schema["properties"]["lead_evidence_resolutions"]["maxItems"] == 1_024

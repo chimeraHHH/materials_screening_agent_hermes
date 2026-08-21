@@ -10,6 +10,7 @@ from material_agent.integration.generic_research import (
     GenericResearchRunRequestV1,
     allocate_research_search_calls,
     generic_research_tool_manifest,
+    research_role_budget,
 )
 from material_agent.integration.research_pipeline import (
     RESEARCH_PIPELINE_TOOL_NAME,
@@ -53,6 +54,56 @@ def test_generic_search_fanout_never_exceeds_physical_request_ceiling() -> None:
     )
     assert (authoritative, candidate, counter) == (10, 1, 1)
     assert (authoritative + candidate + counter) * 5 <= 64
+
+
+def test_full_research_roles_receive_non_truncating_production_budgets() -> None:
+    for role in (
+        "requirements_analyst",
+        "query_strategist",
+        "native_search_scout",
+        "evidence_researcher",
+        "database_scout",
+        "mechanism_chemist",
+        "skeptic",
+        "hypothesis_reasoner",
+        "synthesist",
+    ):
+        budget = research_role_budget(
+            role=role,
+            requested_rounds=20,
+            native_search_calls=8,
+            authoritative_calls=12,
+        )
+        assert budget.max_tool_calls == 96
+        assert budget.max_completion_tokens_per_round == 32_768
+        assert budget.max_total_tokens == 1_000_000
+        assert budget.max_total_tool_result_bytes == 8_000_000
+        assert budget.max_walltime_seconds == 3_600
+
+    assert research_role_budget(
+        role="requirements_analyst",
+        requested_rounds=20,
+        native_search_calls=8,
+        authoritative_calls=12,
+    ).max_rounds == 6
+    assert research_role_budget(
+        role="native_search_scout",
+        requested_rounds=20,
+        native_search_calls=8,
+        authoritative_calls=12,
+    ).max_rounds == 11
+    assert research_role_budget(
+        role="evidence_researcher",
+        requested_rounds=20,
+        native_search_calls=8,
+        authoritative_calls=12,
+    ).max_rounds == 15
+    assert research_role_budget(
+        role="skeptic",
+        requested_rounds=20,
+        native_search_calls=8,
+        authoritative_calls=12,
+    ).max_rounds == 20
 
 
 class _Service:

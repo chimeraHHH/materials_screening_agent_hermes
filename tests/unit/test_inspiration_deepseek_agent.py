@@ -77,7 +77,9 @@ def tool_call(call_id: str, query: str) -> dict[str, Any]:
     }
 
 
-def build_agent(transport: ScriptedTransport, **budget: Any) -> DeepSeekThinkingAgent:
+def build_agent(
+    transport: ScriptedTransport, *, timeout_seconds: float = 120, **budget: Any
+) -> DeepSeekThinkingAgent:
     return DeepSeekThinkingAgent(
         secret_resolver=Secret(),
         tools=(
@@ -91,7 +93,17 @@ def build_agent(transport: ScriptedTransport, **budget: Any) -> DeepSeekThinking
         budget=DeepSeekAgentBudgetV1(**budget),
         reasoning_effort="max",
         transport=transport,
+        timeout_seconds=timeout_seconds,
     )
+
+
+def test_long_scientific_round_accepts_bounded_thirty_minute_deadline() -> None:
+    transport = ScriptedTransport([])
+    agent = build_agent(transport, timeout_seconds=1_800)
+    assert agent.timeout_seconds == 1_800
+
+    with pytest.raises(ValueError, match="3600"):
+        build_agent(transport, timeout_seconds=3_601)
 
 
 def test_multiround_thinking_tools_and_receipt_do_not_persist_reasoning() -> None:

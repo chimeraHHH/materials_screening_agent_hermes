@@ -13,6 +13,7 @@ from material_agent.inspiration.research_graph import (
 )
 from material_agent.inspiration.research_report import (
     _collect_scalar_rows,
+    _resolve_report_candidate,
     render_c2db_plotly_bandstructure_png,
     render_scalar_overview_png,
     render_structure_three_view_png,
@@ -117,3 +118,10 @@ def test_c2db_numeric_band_renderer_uses_official_trace_arrays() -> None:
     image = Image.open(BytesIO(payload))
     assert image.format == "PNG"
     assert image.width > image.height
+
+
+def test_report_candidate_resolution_allows_literature_only_hypothesis() -> None:
+    database_id, candidate = _resolve_report_candidate((), {})
+
+    assert database_id is None
+    assert candidate is None
