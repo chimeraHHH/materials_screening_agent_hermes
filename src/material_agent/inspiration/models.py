@@ -22,7 +22,6 @@ from pydantic import (
     model_validator,
 )
 
-
 INSPIRATION_INPUT_VERSION = "inspiration-input-v1"
 INSPIRATION_QUERY_VERSION = "inspiration-search-query-v1"
 INSPIRATION_HIT_VERSION = "inspiration-search-hit-v1"
@@ -594,7 +593,7 @@ def transformation_route_sha256(
     parent_structure_id: str,
     operator_id: str,
     operator_version: str,
-    parameters: SubstitutionParametersV1,
+    parameters: StrictModel,
 ) -> str:
     """Hash the semantic route used to produce a structure proposal."""
 

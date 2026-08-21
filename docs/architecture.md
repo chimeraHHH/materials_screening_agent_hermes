@@ -821,14 +821,23 @@ normalization，不得冒充旧证据仍有效。为容纳联邦候选扩展后�
 JSON，DeepSeek agent 的单轮 completion ceiling 为 32768 tokens，总 token、轮次和 walltime
 仍由每角色预算分别限制。
 
-机理化学角色若提出具体元素替换，必须调用 `compile_registered_substitution`；自由文本操作名
-不能进入 `proposed_registered_transformations`。编译器从联邦候选的 hash-verified CIF 重新
-计算完整晶体学等价位点，只接受 pinned substitution rule，并产生确定性
-`TransformationPlanV1`。研究图同时保存 proposal→candidate binding、softchem operator
-registry SHA-256、substitution registry SHA-256、编译拒绝原因和 `PLANNED` 状态。该 plan 可直接
-构造现有 `SubstitutionExecutionRequestV1`，再经独立 SMACT prior 与注册执行器生成结构；但通用
-研究本身不执行、弛豫或验证性质。v1 只注册 S↔Se 等价位点整组同价替换；应变、空位、插层、
-堆垛变化和任意元素替换尚未进入可执行注册表。
+机理化学角色若提出具体最小结构操作，必须调用 `compile_registered_operation`；自由文本操作名
+不能进入 `proposed_registered_transformations`。DeepSeek 只提交 `operation_kind + rule_id`，
+不能提交坐标、任意元素或代码。编译器从联邦候选的 hash-verified CIF 本地推导晶体学等价位点、
+层分组、最大 c 向间隙中心和实际坐标，并产生确定性 `TransformationPlanV1`（替换）或
+`StructureOperationPlanV2`（其余操作）。研究图 v6 同时保存 proposal→candidate binding、两类
+registry SHA-256、编译拒绝原因和 `PLANNED` 状态。
+
+`softchem-operator-registry-v2` 当前注册五个算子：S↔Se 完整等价位点替换、±2% 面内/−3% 面外
+均匀应变、完整等价位点类空位、Li/Na 最大 vdW gap 注册位插层、以及完整层的 A→B/A→C 注册
+平移。每个 spec 显式绑定参数 schema、允许改变项、必须保持项、化学/几何 prior 和 validator。
+空位默认移除比例上限为 25%；插层即使 SMACT 化学计量通过也保持 `REQUIRES_REVIEW`，直到宿主
+还原位点或混合价态得到独立验证；单层结构不能编译层滑移。执行器逐项验证 parent/registry hash、
+参数-算子匹配、完整等价类或层分区、允许的结构 delta、占位、有限数值、正体积、最小距离、
+维度/site budget 和 canonical CIF round-trip。`PASS`、`REQUIRES_REVIEW`、`REJECT` 相互独立，
+任何结构可写性都不能代替价态、稳定性、弛豫或目标能带验证。通用研究阶段仍只编译、不执行。
+编译阶段会先运行不需要外部计算的同一组结构/化学 preflight，`REJECT` 路线不会获得 plan ID；
+保留下来的 v2 plan 则固化 `PASS/REQUIRES_REVIEW` 原因和 validator contract，供报告和重放审计。
 
 通用研究终态同时生成独立 Markdown 图文报告。报告对每个联邦候选从 hash-verified CIF
 本地绘制沿 a/b/c 晶轴的三视图，并按 source record 汇总形成能、凸包距离和带隙；source

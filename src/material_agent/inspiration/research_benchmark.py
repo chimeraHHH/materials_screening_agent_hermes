@@ -7,7 +7,7 @@ from typing import Literal
 from pydantic import Field, model_validator
 
 from material_agent.inspiration.models import canonical_sha256
-from material_agent.inspiration.research_graph import MaterialsResearchGraphResultV5
+from material_agent.inspiration.research_graph import MaterialsResearchGraphResultV6
 from material_agent.orchestrator.models import StrictModel
 
 
@@ -120,7 +120,7 @@ class ResearchBenchmarkResultV1(StrictModel):
 
 
 def prediction_from_graph(
-    case_id: str, graph: MaterialsResearchGraphResultV5
+    case_id: str, graph: MaterialsResearchGraphResultV6
 ) -> ResearchBenchmarkPredictionV1:
     known = tuple(sorted(item.evidence_id for item in graph.resolved_evidence))
     cited = {

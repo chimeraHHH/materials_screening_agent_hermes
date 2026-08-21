@@ -6,7 +6,7 @@ test-only mock control adapters for the downstream stages described in
 `plans/subagents/material-screening-orchestrator-plan.md` and
 `plans/subagents/material-screening-agent01-plan.md`. It now also contains a
 single-user local Hermes inspiration companion: metadata-first evidence,
-cross-domain mechanism bridges, one deterministic structure operator, run-local
+cross-domain mechanism bridges, a registry of deterministic structure operators, run-local
 deduplication/diversity, and a four-tool persistent MCP Gateway.
 
 The 2026-08-11 opt-in extension adds an Agent01-to-Inspiration LangGraph
@@ -140,16 +140,16 @@ local Pydantic model. Transport retries, final-JSON repair, physical-search
 budgets, and schema-hashed role/tool-snapshot checkpoints are all receipt-audited.
 
 The mechanism/chemistry role cannot turn a prose operation into a structure.
-For a concrete element-replacement idea it must call
-`compile_registered_substitution`, which resolves a database parent CIF by hash,
-selects a complete crystallographic equivalence class, and emits a deterministic
-`TransformationPlanV1`. The result graph binds the plan to the proposing candidate
-and to both the soft-chemistry operator-registry and substitution-rule-registry
-SHA-256 values. That plan is directly consumable by the existing SMACT-first
-executor. It remains `PLANNED`, not executed or property-verified, in generic
-research. The current reviewed v1 chemistry coverage is deliberately only
-isovalent S↔Se replacement; strain, vacancies, intercalation, stacking changes,
-and arbitrary substitutions remain scientific ideas rather than registered routes.
+For a concrete idea it must call `compile_registered_operation` with only an
+allowlisted operation kind and rule ID. Local deterministic code resolves the
+hash-bound parent CIF and derives equivalence classes, layer partitions, vdW-gap
+centres, and coordinates. The v2 registry covers isovalent S↔Se replacement,
+bounded homogeneous strain, complete-equivalence-class vacancies, registered
+Li/Na gap intercalation, and registered whole-layer slides. Every operator spec
+binds a strict parameter model, permitted delta, invariants, chemistry/geometric
+priors, and validators. Free coordinates, arbitrary species, and code are never
+tool parameters. Generic research keeps every route `PLANNED`; execution has
+separate `PASS`, `REQUIRES_REVIEW`, and `REJECT` outcomes and makes no property claim.
 
 Every completed generic run also produces a deterministic Markdown sidecar
 report. It embeds one labelled CIF three-view image per federated candidate and
@@ -256,14 +256,17 @@ The gate applies the
 ICSD24 occurrence-filtered oxidation-state set, charge neutrality, and the
 Pauling electronegativity heuristic. Missing chemical data, alloys, dependency
 drift, or bounded-search limits return `REQUIRES_REVIEW`; a failed composition
-returns `REJECT`; only `PASS` reaches `softchem-operator-registry-v1`. The prior
+returns `REJECT`; only `PASS` reaches the legacy substitution execution path. The prior
 decision binds the reviewed worker-lock SHA, remains evidence `NONE`, and is not
 a stability or synthesizability claim. Missing worker configuration fails closed
 as `REQUIRES_REVIEW`.
 
-The registry then allowlists the existing equivalent-site substitution
-operator and validates structure, stoichiometry, explicit oxidation state,
-charge, and registry Artifact identity. `SoftChemDownstreamRunner` refuses any
+The legacy registry allowlists the equivalent-site substitution operator and
+validates structure, stoichiometry, explicit oxidation state, charge, and
+registry Artifact identity. The v2 structure-operation registry adds bounded
+strain, vacancy, intercalation, and layer-slide executors with operation-specific
+priors and delta validators; those proposals do not bypass the stricter legacy
+handoff. `SoftChemDownstreamRunner` refuses any
 operator result without exactly one passing SMACT check, then binds the exact
 result to optional CHGNet relaxation, DeepH, and DFT plans.
 Every native health/model/policy/approval/applicability gate is rechecked;

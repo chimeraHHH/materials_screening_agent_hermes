@@ -26,7 +26,7 @@ from material_agent.inspiration.models import canonical_json_bytes
 from material_agent.inspiration.research_graph import (
     DatabaseCandidateV1,
     DatabaseSourceRecordV1,
-    MaterialsResearchGraphResultV5,
+    MaterialsResearchGraphResultV6,
 )
 from material_agent.orchestrator.models import StrictModel
 from material_agent.retrieval.mp_screening import DeepEndpoint
@@ -65,7 +65,7 @@ class ResearchMarkdownReportV3(StrictModel):
 
 def build_generic_research_markdown_report(
     *,
-    graph: MaterialsResearchGraphResultV5,
+    graph: MaterialsResearchGraphResultV6,
     store: LocalArtifactStore,
     run_id: str,
     materials_project_adapter: Any | None = None,
@@ -216,8 +216,11 @@ def build_generic_research_markdown_report(
             band_notes[candidate.database_candidate_id] = note
             assets.append(
                 _asset(
-                    "BAND_STRUCTURE", "NOT_AVAILABLE", candidate=candidate,
-                    source_record=c2db_record, note=note,
+                    "BAND_STRUCTURE",
+                    "NOT_AVAILABLE",
+                    candidate=candidate,
+                    source_record=c2db_record,
+                    note=note,
                 )
             )
             continue
@@ -225,7 +228,10 @@ def build_generic_research_markdown_report(
         band_notes[candidate.database_candidate_id] = note
         assets.append(
             _asset(
-                "BAND_STRUCTURE", "NOT_AVAILABLE", candidate=candidate, note=note,
+                "BAND_STRUCTURE",
+                "NOT_AVAILABLE",
+                candidate=candidate,
+                note=note,
             )
         )
 
@@ -241,8 +247,7 @@ def build_generic_research_markdown_report(
             (
                 item
                 for item in assets
-                if item.asset_kind == "SCALAR_OVERVIEW"
-                and item.status == "COMPLETE"
+                if item.asset_kind == "SCALAR_OVERVIEW" and item.status == "COMPLETE"
             ),
             None,
         ),
@@ -287,8 +292,20 @@ def render_structure_three_view_png(structure: Structure, *, title: str) -> byte
     corners = structure.lattice.get_cartesian_coords(
         [[i, j, k] for i in (0, 1) for j in (0, 1) for k in (0, 1)]
     )
-    edges = ((0, 1), (0, 2), (0, 4), (1, 3), (1, 5), (2, 3), (2, 6),
-             (3, 7), (4, 5), (4, 6), (5, 7), (6, 7))
+    edges = (
+        (0, 1),
+        (0, 2),
+        (0, 4),
+        (1, 3),
+        (1, 5),
+        (2, 3),
+        (2, 6),
+        (3, 7),
+        (4, 5),
+        (4, 6),
+        (5, 7),
+        (6, 7),
+    )
     for axis_index, axis_name in enumerate(("a", "b", "c")):
         axis = fig.add_subplot(1, 3, axis_index + 1)
         u, v = _projection_basis(lattice, axis_index)
@@ -331,12 +348,19 @@ def render_structure_three_view_png(structure: Structure, *, title: str) -> byte
         axis.set_aspect("equal", adjustable="datalim")
         axis.margins(0.12)
         axis.set_axis_off()
-    fig.suptitle(f"{title} — CIF crystallographic three-view", fontsize=13, weight="bold")
+    fig.suptitle(
+        f"{title} — CIF crystallographic three-view", fontsize=13, weight="bold"
+    )
     fig.legend(
         handles=[
             Line2D(
-                [0], [0], marker="o", color="w", label=symbol,
-                markerfacecolor=palette[symbol], markeredgecolor="#1f2937",
+                [0],
+                [0],
+                marker="o",
+                color="w",
+                label=symbol,
+                markerfacecolor=palette[symbol],
+                markeredgecolor="#1f2937",
                 markersize=7,
             )
             for symbol in sorted(palette)
@@ -365,7 +389,9 @@ def render_scalar_overview_png(rows: list[dict[str, Any]]) -> bytes:
     for index, (key, title, unit, color) in enumerate(properties, start=1):
         axis = fig.add_subplot(3, 1, index)
         values = [row.get(key) for row in rows]
-        available_x = [position for position, value in zip(x, values) if value is not None]
+        available_x = [
+            position for position, value in zip(x, values) if value is not None
+        ]
         available_y = [float(value) for value in values if value is not None]
         axis.axhline(0, color="#94a3b8", linewidth=0.8)
         if available_x:
@@ -398,7 +424,9 @@ def render_scalar_overview_png(rows: list[dict[str, Any]]) -> bytes:
             axis.set_xticks([])
         else:
             axis.set_xticks(x, labels, rotation=35, ha="right", fontsize=7)
-    fig.suptitle("Federated database scalar properties (source-resolved)", weight="bold")
+    fig.suptitle(
+        "Federated database scalar properties (source-resolved)", weight="bold"
+    )
     fig.tight_layout(rect=(0, 0, 1, 0.96), pad=0.8)
     output = io.BytesIO()
     fig.savefig(output, format="png", dpi=170, facecolor="white")
@@ -427,8 +455,11 @@ def _fetch_mp_band_asset(
         band_notes[candidate.database_candidate_id] = note
         assets.append(
             _asset(
-                "BAND_STRUCTURE", "FETCH_FAILED", candidate=candidate,
-                source_record=source_record, note=note,
+                "BAND_STRUCTURE",
+                "FETCH_FAILED",
+                candidate=candidate,
+                source_record=source_record,
+                note=note,
             )
         )
         return
@@ -440,8 +471,11 @@ def _fetch_mp_band_asset(
         band_notes[candidate.database_candidate_id] = note
         assets.append(
             _asset(
-                "BAND_STRUCTURE", "NOT_AVAILABLE", candidate=candidate,
-                source_record=source_record, note=note,
+                "BAND_STRUCTURE",
+                "NOT_AVAILABLE",
+                candidate=candidate,
+                source_record=source_record,
+                note=note,
             )
         )
         return
@@ -469,8 +503,12 @@ def _fetch_mp_band_asset(
         band_notes[candidate.database_candidate_id] = note
         assets.append(
             _asset(
-                "BAND_STRUCTURE", "COMPLETE", candidate=candidate,
-                source_record=source_record, ref=ref, note=note,
+                "BAND_STRUCTURE",
+                "COMPLETE",
+                candidate=candidate,
+                source_record=source_record,
+                ref=ref,
+                note=note,
             )
         )
         serializable = payload.get("payloads", {}).get(key)
@@ -484,8 +522,11 @@ def _fetch_mp_band_asset(
             )
             assets.append(
                 _asset(
-                    "BAND_STRUCTURE_DATA", "COMPLETE", candidate=candidate,
-                    source_record=source_record, ref=raw_ref,
+                    "BAND_STRUCTURE_DATA",
+                    "COMPLETE",
+                    candidate=candidate,
+                    source_record=source_record,
+                    ref=raw_ref,
                     note="绘图所用 Materials Project 路径能带的压缩原始对象。",
                 )
             )
@@ -494,8 +535,11 @@ def _fetch_mp_band_asset(
         band_notes[candidate.database_candidate_id] = note
         assets.append(
             _asset(
-                "BAND_STRUCTURE", "RENDER_FAILED", candidate=candidate,
-                source_record=source_record, note=note,
+                "BAND_STRUCTURE",
+                "RENDER_FAILED",
+                candidate=candidate,
+                source_record=source_record,
+                note=note,
             )
         )
 
@@ -519,8 +563,11 @@ def _fetch_c2db_band_asset(
         band_notes[candidate.database_candidate_id] = note
         assets.append(
             _asset(
-                "BAND_STRUCTURE", "FETCH_FAILED", candidate=candidate,
-                source_record=source_record, note=note,
+                "BAND_STRUCTURE",
+                "FETCH_FAILED",
+                candidate=candidate,
+                source_record=source_record,
+                note=note,
             )
         )
         return
@@ -552,12 +599,19 @@ def _fetch_c2db_band_asset(
         assets.extend(
             [
                 _asset(
-                    "BAND_STRUCTURE", "COMPLETE", candidate=candidate,
-                    source_record=source_record, ref=ref, note=note,
+                    "BAND_STRUCTURE",
+                    "COMPLETE",
+                    candidate=candidate,
+                    source_record=source_record,
+                    ref=ref,
+                    note=note,
                 ),
                 _asset(
-                    "BAND_STRUCTURE_DATA", "COMPLETE", candidate=candidate,
-                    source_record=source_record, ref=raw_ref,
+                    "BAND_STRUCTURE_DATA",
+                    "COMPLETE",
+                    candidate=candidate,
+                    source_record=source_record,
+                    ref=raw_ref,
                     note="绘图所用 C2DB GPAW/PBE Plotly 数值的压缩原始对象。",
                 ),
             ]
@@ -567,8 +621,11 @@ def _fetch_c2db_band_asset(
         band_notes[candidate.database_candidate_id] = note
         assets.append(
             _asset(
-                "BAND_STRUCTURE", "RENDER_FAILED", candidate=candidate,
-                source_record=source_record, note=note,
+                "BAND_STRUCTURE",
+                "RENDER_FAILED",
+                candidate=candidate,
+                source_record=source_record,
+                note=note,
             )
         )
 
@@ -597,11 +654,17 @@ def render_c2db_plotly_bandstructure_png(
             y_values = np.asarray(y, dtype=float)
         except (TypeError, ValueError):
             continue
-        if not len(x_values) or not np.all(np.isfinite(x_values)) or not np.all(
-            np.isfinite(y_values)
+        if (
+            not len(x_values)
+            or not np.all(np.isfinite(x_values))
+            or not np.all(np.isfinite(y_values))
         ):
             continue
-        color = trace.get("line", {}).get("color") if isinstance(trace.get("line"), Mapping) else None
+        color = (
+            trace.get("line", {}).get("color")
+            if isinstance(trace.get("line"), Mapping)
+            else None
+        )
         axis.plot(
             x_values,
             y_values,
@@ -616,7 +679,11 @@ def render_c2db_plotly_bandstructure_png(
     yaxis = layout.get("yaxis") if isinstance(layout.get("yaxis"), Mapping) else {}
     ticks = xaxis.get("tickvals")
     tick_labels = xaxis.get("ticktext")
-    if isinstance(ticks, list) and isinstance(tick_labels, list) and len(ticks) == len(tick_labels):
+    if (
+        isinstance(ticks, list)
+        and isinstance(tick_labels, list)
+        and len(ticks) == len(tick_labels)
+    ):
         numeric_ticks = [float(value) for value in ticks]
         axis.set_xticks(numeric_ticks, [str(value) for value in tick_labels])
         for value in numeric_ticks:
@@ -651,7 +718,11 @@ def _collect_scalar_rows(
                     raw = value
             except (OSError, ValueError):
                 pass
-            table = raw.get("table_row") if isinstance(raw.get("table_row"), Mapping) else {}
+            table = (
+                raw.get("table_row")
+                if isinstance(raw.get("table_row"), Mapping)
+                else {}
+            )
             formation = record.formation_energy_ev_atom
             if formation is None:
                 formation = _optional_float(raw.get("formation_energy_per_atom"))
@@ -685,7 +756,7 @@ def _collect_scalar_rows(
 
 def _render_markdown(
     *,
-    graph: MaterialsResearchGraphResultV5,
+    graph: MaterialsResearchGraphResultV6,
     candidates_by_id: Mapping[str, DatabaseCandidateV1],
     structure_assets: Mapping[str, ArtifactRef],
     band_assets: Mapping[str, ArtifactRef],
@@ -885,12 +956,16 @@ def _render_markdown(
                     [
                         f"- `{plan.plan_id}` · `{plan.operator_id}@{plan.operator_version}`",
                         f"  - 母体：`{plan.parent_candidate_id}` / `{plan.parent_structure_id}`",
-                        f"  - 替换：`{plan.parameters.source_species}` → `{plan.parameters.target_species}`；完整等价位点 `{plan.parameters.equivalent_site_indices}`",
+                        f"  - 参数模型：`{getattr(plan.parameters, 'parameter_schema_id', 'substitution-parameters-v1')}`；规则：`{getattr(plan.parameters, 'rule_id', 'legacy-substitution-rule')}`",
+                        f"  - 参数：`{plan.parameters.model_dump(mode='json')}`",
+                        f"  - 编译先验：`{getattr(plan, 'compile_prior_decision', 'EXECUTION_REQUIRED')}`；原因：`{getattr(plan, 'compile_prior_reason_codes', ())}`",
                         f"  - route SHA-256：`{plan.route_sha256}`；状态：`{plan.status.value}`",
                     ]
                 )
         else:
-            lines.append("- 没有通过注册表编译的最小结构操作；自由文本设想未被当作可执行计划。")
+            lines.append(
+                "- 没有通过注册表编译的最小结构操作；自由文本设想未被当作可执行计划。"
+            )
         lines.append("")
         evidence = {item.constraint_id: item for item in skeptic.assessments}
         predicted = {item.constraint_id: item for item in inference.assessments}
@@ -948,7 +1023,9 @@ def _within_cell_bonds(structure: Structure) -> tuple[tuple[int, int], ...]:
     return tuple(sorted(values))
 
 
-def _projection_basis(lattice: np.ndarray, axis_index: int) -> tuple[np.ndarray, np.ndarray]:
+def _projection_basis(
+    lattice: np.ndarray, axis_index: int
+) -> tuple[np.ndarray, np.ndarray]:
     normal = lattice[axis_index] / np.linalg.norm(lattice[axis_index])
     reference = lattice[(axis_index + 1) % 3]
     u = reference - np.dot(reference, normal) * normal
@@ -975,7 +1052,9 @@ def _asset(
         status=status,
         candidate_id=candidate.database_candidate_id,
         source_database=(source_record.source_database if source_record else None),
-        source_material_id=(source_record.source_material_id if source_record else None),
+        source_material_id=(
+            source_record.source_material_id if source_record else None
+        ),
         artifact_uri=(ref.uri if ref else None),
         artifact_sha256=(ref.sha256 if ref else None),
         note=note,

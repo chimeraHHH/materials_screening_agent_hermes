@@ -24,8 +24,9 @@ from material_agent.inspiration.deepseek_agent import (
 )
 from material_agent.inspiration.models import TransformationPlanV1, canonical_json_bytes
 from material_agent.orchestrator.models import StrictModel
+from material_agent.softchem.operations import StructureOperationPlanV2
 
-MATERIALS_RESEARCH_GRAPH_VERSION = "materials-inspiration-research-graph-v5"
+MATERIALS_RESEARCH_GRAPH_VERSION = "materials-inspiration-research-graph-v6"
 
 
 class ConstraintKind(StrEnum):
@@ -160,9 +161,7 @@ class FineGrainedEvidenceSpanV1(StrictModel):
     text_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     locator: str = Field(min_length=3, max_length=1_000)
     parser: Literal["GROBID_TEI", "DOCLING"]
-    structured_artifact_uri: str | None = Field(
-        default=None, pattern=r"^artifact://"
-    )
+    structured_artifact_uri: str | None = Field(default=None, pattern=r"^artifact://")
     tei_artifact_uri: str | None = Field(default=None, pattern=r"^artifact://")
     pdf_artifact_uri: str | None = Field(default=None, pattern=r"^artifact://")
 
@@ -205,15 +204,20 @@ class ResolvedEvidenceV1(StrictModel):
     literature_figures: tuple[LiteratureFigureV1, ...] = Field(
         default=(), max_length=64
     )
-    evidence_scope: Literal[
-        "METADATA_OR_ABSTRACT_ONLY", "OPEN_ACCESS_FULL_TEXT"
-    ] = "METADATA_OR_ABSTRACT_ONLY"
+    evidence_scope: Literal["METADATA_OR_ABSTRACT_ONLY", "OPEN_ACCESS_FULL_TEXT"] = (
+        "METADATA_OR_ABSTRACT_ONLY"
+    )
 
     @model_validator(mode="after")
     def validate_full_text(self) -> ResolvedEvidenceV1:
         if self.full_text_status == "RESOLVED":
-            if not self.full_text_spans or self.evidence_scope != "OPEN_ACCESS_FULL_TEXT":
-                raise ValueError("resolved full text requires spans and full-text scope")
+            if (
+                not self.full_text_spans
+                or self.evidence_scope != "OPEN_ACCESS_FULL_TEXT"
+            ):
+                raise ValueError(
+                    "resolved full text requires spans and full-text scope"
+                )
         elif self.full_text_spans or self.literature_figures:
             raise ValueError("full-text spans/figures require RESOLVED status")
         return self
@@ -223,12 +227,8 @@ class LeadEvidenceResolutionV1(StrictModel):
     lead_id: str = Field(pattern=r"^lead-[0-9a-f]{24}$")
     status: Literal["RESOLVED", "UNRESOLVED"]
     doi: str | None = Field(default=None, max_length=256)
-    document_id: str | None = Field(
-        default=None, pattern=r"^document-[0-9a-f]{24}$"
-    )
-    evidence_id: str | None = Field(
-        default=None, pattern=r"^evidence-[0-9a-f]{24}$"
-    )
+    document_id: str | None = Field(default=None, pattern=r"^document-[0-9a-f]{24}$")
+    evidence_id: str | None = Field(default=None, pattern=r"^evidence-[0-9a-f]{24}$")
     resolution_method: Literal[
         "DOI_URL",
         "NORMALIZED_URL",
@@ -352,7 +352,7 @@ class CandidateHypothesisV1(StrictModel):
         default=(),
         max_length=16,
         description=(
-            "Plan IDs returned by compile_registered_substitution; free-text operation "
+            "Plan IDs returned by compile_registered_operation; free-text operation "
             "names are invalid."
         ),
     )
@@ -370,10 +370,10 @@ class CandidateSetV1(StrictModel):
         return self
 
 
-class TransformationCompileRejectionV1(StrictModel):
+class TransformationCompileRejectionV2(StrictModel):
     candidate_id: str = Field(pattern=r"^candidate-[a-z0-9-]{1,64}$")
     database_candidate_id: str = Field(pattern=r"^db-candidate-[0-9a-f]{24}$")
-    substitution_rule_id: str = Field(min_length=1, max_length=128)
+    operation_rule_id: str = Field(min_length=1, max_length=128)
     reason_code: str = Field(pattern=r"^[A-Z][A-Z0-9_]{2,63}$")
 
 
@@ -382,7 +382,10 @@ class TransformationPlanBindingV1(StrictModel):
     plan_id: str = Field(pattern=r"^[a-z][a-z0-9-]{0,31}-[0-9a-f]{24}$")
 
 
-class RegisteredTransformationAuditV1(StrictModel):
+class RegisteredTransformationAuditV2(StrictModel):
+    schema_version: Literal["registered-transformation-audit-v2"] = (
+        "registered-transformation-audit-v2"
+    )
     registry_status: Literal["NOT_CONFIGURED", "HASH_PINNED"]
     operator_registry_sha256: str | None = Field(
         default=None, pattern=r"^[0-9a-f]{64}$"
@@ -391,33 +394,53 @@ class RegisteredTransformationAuditV1(StrictModel):
         default=None, pattern=r"^[0-9a-f]{64}$"
     )
     compile_attempt_count: int = Field(default=0, ge=0, le=32)
-    plans: tuple[TransformationPlanV1, ...] = Field(default=(), max_length=64)
+    plans: tuple[TransformationPlanV1 | StructureOperationPlanV2, ...] = Field(
+        default=(), max_length=64
+    )
     bindings: tuple[TransformationPlanBindingV1, ...] = Field(default=(), max_length=64)
-    rejections: tuple[TransformationCompileRejectionV1, ...] = Field(
+    rejections: tuple[TransformationCompileRejectionV2, ...] = Field(
         default=(), max_length=32
     )
     scientific_conclusion: Literal[False] = False
 
     @model_validator(mode="after")
-    def validate_registry_binding(self) -> RegisteredTransformationAuditV1:
+    def validate_registry_binding(self) -> RegisteredTransformationAuditV2:
         hashes = (self.operator_registry_sha256, self.substitution_registry_sha256)
-        if self.registry_status == "HASH_PINNED" and any(item is None for item in hashes):
-            raise ValueError("hash-pinned transformation audit requires both registries")
+        if self.registry_status == "HASH_PINNED" and any(
+            item is None for item in hashes
+        ):
+            raise ValueError(
+                "hash-pinned transformation audit requires both registries"
+            )
         if self.registry_status == "NOT_CONFIGURED":
             if any(item is not None for item in hashes) or self.compile_attempt_count:
-                raise ValueError("unconfigured transformation audit cannot claim registry use")
+                raise ValueError(
+                    "unconfigured transformation audit cannot claim registry use"
+                )
             if self.plans or self.bindings or self.rejections:
-                raise ValueError("unconfigured transformation audit cannot contain outcomes")
+                raise ValueError(
+                    "unconfigured transformation audit cannot contain outcomes"
+                )
         if self.compile_attempt_count < len(self.rejections):
             raise ValueError("compile rejections cannot exceed attempts")
         plan_ids = tuple(item.plan_id for item in self.plans)
         if len(plan_ids) != len(set(plan_ids)):
             raise ValueError("compiled transformation plan IDs must be unique")
         binding_ids = tuple(item.plan_id for item in self.bindings)
-        if len(binding_ids) != len(set(binding_ids)) or set(binding_ids) != set(plan_ids):
+        if len(binding_ids) != len(set(binding_ids)) or set(binding_ids) != set(
+            plan_ids
+        ):
             raise ValueError("every compiled plan requires one candidate binding")
         if any(item.status.value != "PLANNED" for item in self.plans):
-            raise ValueError("generic research may expose only unexecuted PLANNED routes")
+            raise ValueError(
+                "generic research may expose only unexecuted PLANNED routes"
+            )
+        if any(
+            isinstance(item, StructureOperationPlanV2)
+            and item.compile_prior_decision == "NOT_EVALUATED"
+            for item in self.plans
+        ):
+            raise ValueError("v2 plans require a compiler-side prior receipt")
         return self
 
 
@@ -568,8 +591,8 @@ class ResearchRoleRecordV1(StrictModel):
     receipt: DeepSeekAgentReceiptV1
 
 
-class MaterialsResearchGraphResultV5(StrictModel):
-    schema_version: Literal["materials-inspiration-research-graph-v5"] = (
+class MaterialsResearchGraphResultV6(StrictModel):
+    schema_version: Literal["materials-inspiration-research-graph-v6"] = (
         MATERIALS_RESEARCH_GRAPH_VERSION
     )
     goal_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
@@ -585,7 +608,7 @@ class MaterialsResearchGraphResultV5(StrictModel):
     database_federation: DatabaseFederationAuditV1
     database_candidates: tuple[DatabaseCandidateV1, ...] = Field(max_length=128)
     candidates: CandidateSetV1
-    transformation_audit: RegisteredTransformationAuditV1
+    transformation_audit: RegisteredTransformationAuditV2
     candidate_literature_retrieval: CandidateLiteratureRetrievalV1
     skeptic_review: SkepticReviewV1
     executed_counter_queries: tuple[str, ...] = Field(default=(), max_length=32)
@@ -646,18 +669,14 @@ class MaterialsResearchDirector:
         database_search_tool: DeepSeekFunctionTool,
         database_candidates_snapshot: Callable[[], tuple[DatabaseCandidateV1, ...]],
         database_federation_snapshot: Callable[[], DatabaseFederationAuditV1],
-        lead_resolutions_snapshot: Callable[
-            [], tuple[LeadEvidenceResolutionV1, ...]
-        ]
+        lead_resolutions_snapshot: Callable[[], tuple[LeadEvidenceResolutionV1, ...]]
         | None = None,
         candidate_literature_search: Callable[
             [CandidateSetV1, ConstraintGraphV1], CandidateLiteratureRetrievalV1
         ]
         | None = None,
         operator_planning_tool: DeepSeekFunctionTool | None = None,
-        transformation_audit_snapshot: Callable[
-            [], RegisteredTransformationAuditV1
-        ]
+        transformation_audit_snapshot: Callable[[], RegisteredTransformationAuditV2]
         | None = None,
         counter_evidence_search_tool: DeepSeekFunctionTool | None = None,
         counter_queries_snapshot: Callable[[], tuple[str, ...]] | None = None,
@@ -677,7 +696,7 @@ class MaterialsResearchDirector:
         self.candidate_literature_search = candidate_literature_search
         self.operator_planning_tool = operator_planning_tool
         self.transformation_audit_snapshot = transformation_audit_snapshot or (
-            lambda: RegisteredTransformationAuditV1(registry_status="NOT_CONFIGURED")
+            lambda: RegisteredTransformationAuditV2(registry_status="NOT_CONFIGURED")
         )
         self.counter_evidence_search_tool = counter_evidence_search_tool
         self.counter_queries_snapshot = counter_queries_snapshot or (lambda: ())
@@ -688,7 +707,7 @@ class MaterialsResearchDirector:
         self.checkpoint_save = checkpoint_save
         self._pending_checkpoints: dict[str, DeepSeekAgentResultV1[Any]] = {}
 
-    def run(self, goal: str) -> MaterialsResearchGraphResultV5:
+    def run(self, goal: str) -> MaterialsResearchGraphResultV6:
         selected_goal = " ".join(goal.split())
         if not 10 <= len(selected_goal) <= 4_000:
             raise ValueError("research goal must contain 10 to 4000 characters")
@@ -751,9 +770,7 @@ class MaterialsResearchDirector:
         database_candidates = self.database_candidates_snapshot()
         database_federation = self.database_federation_snapshot()
         database_review, database_normalizations = (
-            _normalize_database_review_references(
-                database_review, database_candidates
-            )
+            _normalize_database_review_references(database_review, database_candidates)
         )
         deterministic_normalizations.extend(database_normalizations)
         _validate_database_review(database_review, database_candidates)
@@ -866,7 +883,7 @@ class MaterialsResearchDirector:
         deterministic_normalizations.extend(synthesis_normalizations)
         _validate_synthesis(synthesis, candidates, skeptic)
         self._commit_checkpoint("synthesist", final_override=synthesis)
-        return MaterialsResearchGraphResultV5(
+        return MaterialsResearchGraphResultV6(
             goal_sha256=hashlib.sha256(selected_goal.encode("utf-8")).hexdigest(),
             constraints=constraints,
             query_plan=query_plan,
@@ -990,8 +1007,10 @@ def _role_prompt(role: str, model: type[StrictModel]) -> str:
         )
     elif role == "mechanism_chemist":
         role_specific = (
-            "Use compile_registered_substitution for every concrete minimal element-"
-            "replacement route. It is the sole authority for executable operations. "
+            "Use compile_registered_operation for every concrete minimal structure route. "
+            "It supports registered complete-site substitution/vacancy, bounded strain, "
+            "registered vdW-gap intercalation, and registered whole-layer sliding. It is "
+            "the sole authority for executable operations. "
             "Copy only returned plan_id values into proposed_registered_transformations; "
             "never place operation names, prose, or invented IDs there. A rejected or "
             "inapplicable route remains a scientific hypothesis without a plan ID. "
@@ -1086,7 +1105,9 @@ def _build_inference_context(
     candidate_evidence_lists = [
         candidate.evidence_ids for candidate in candidates.candidates
     ]
-    for ordinal in range(max((len(items) for items in candidate_evidence_lists), default=0)):
+    for ordinal in range(
+        max((len(items) for items in candidate_evidence_lists), default=0)
+    ):
         for items in candidate_evidence_lists:
             if ordinal >= len(items):
                 continue
@@ -1343,9 +1364,7 @@ def _validate_executed_counter_queries(
     declared: tuple[str, ...], executed: tuple[str, ...]
 ) -> None:
     normalized_executed = {" ".join(item.split()) for item in executed}
-    missing = {
-        " ".join(item.split()) for item in declared
-    } - normalized_executed
+    missing = {" ".join(item.split()) for item in declared} - normalized_executed
     if missing:
         raise ValueError(
             "skeptic counter_evidence_queries must be executed before finalization"
@@ -1395,7 +1414,10 @@ def _normalize_evidence_review_references(
     known = {item.evidence_id for item in evidence}
     selected = tuple(item for item in review.selected_evidence_ids if item in known)
     rejected = tuple(item for item in review.rejected_evidence_ids if item in known)
-    if selected == review.selected_evidence_ids and rejected == review.rejected_evidence_ids:
+    if (
+        selected == review.selected_evidence_ids
+        and rejected == review.rejected_evidence_ids
+    ):
         return review, ()
     return (
         review.model_copy(
@@ -1424,7 +1446,7 @@ def _validate_candidate_evidence(
 
 def _validate_candidate_transformations(
     candidates: CandidateSetV1,
-    audit: RegisteredTransformationAuditV1,
+    audit: RegisteredTransformationAuditV2,
 ) -> None:
     plans = {item.plan_id: item for item in audit.plans}
     bindings = {item.plan_id: item.candidate_id for item in audit.bindings}
@@ -1436,9 +1458,13 @@ def _validate_candidate_transformations(
         for plan_id in plan_ids:
             plan = plans.get(plan_id)
             if plan is None:
-                raise ValueError("candidate references an uncompiled transformation plan")
+                raise ValueError(
+                    "candidate references an uncompiled transformation plan"
+                )
             if bindings.get(plan_id) != candidate.candidate_id:
-                raise ValueError("compiled transformation is bound to another candidate")
+                raise ValueError(
+                    "compiled transformation is bound to another candidate"
+                )
             if plan.parent_candidate_id not in candidate.database_candidate_ids:
                 raise ValueError(
                     "compiled transformation parent must be a candidate database reference"
@@ -1556,9 +1582,7 @@ def _normalize_sparse_skeptic_references(
             item for item in assessment.evidence_ids if item in known_evidence
         )
         database_ids = tuple(
-            item
-            for item in assessment.database_candidate_ids
-            if item in known_database
+            item for item in assessment.database_candidate_ids if item in known_database
         )
         changed = changed or evidence_ids != assessment.evidence_ids
         changed = changed or database_ids != assessment.database_candidate_ids
@@ -1784,5 +1808,5 @@ def _normalize_synthesis(
     return normalized, tuple(normalizations)
 
 
-def research_graph_sha256(result: MaterialsResearchGraphResultV5) -> str:
+def research_graph_sha256(result: MaterialsResearchGraphResultV6) -> str:
     return hashlib.sha256(canonical_json_bytes(result)).hexdigest()

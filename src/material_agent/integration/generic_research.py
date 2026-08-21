@@ -35,7 +35,7 @@ from material_agent.inspiration.operator_planning import OperatorPlanningToolSta
 from material_agent.inspiration.policy import SearchBudgetV1
 from material_agent.inspiration.research_graph import (
     MaterialsResearchDirector,
-    MaterialsResearchGraphResultV5,
+    MaterialsResearchGraphResultV6,
     research_graph_sha256,
 )
 from material_agent.inspiration.research_report import (
@@ -73,8 +73,8 @@ from material_agent.retrieval.storage import LocalArtifactStore
 
 GENERIC_RESEARCH_TOOL_NAME = "materials_generic_research_run"
 GENERIC_RESEARCH_REQUEST_SCHEMA_VERSION = "materials-generic-research-run-v1"
-GENERIC_RESEARCH_RESULT_SCHEMA_VERSION = "materials-generic-research-run-v5"
-GENERIC_RESEARCH_IMPLEMENTATION_REVISION = "generic-research-20260821-r12"
+GENERIC_RESEARCH_RESULT_SCHEMA_VERSION = "materials-generic-research-run-v6"
+GENERIC_RESEARCH_IMPLEMENTATION_REVISION = "generic-research-20260821-r13"
 
 
 def research_secret_resolver_from_environment(
@@ -124,18 +124,18 @@ class GenericResearchRunRequestV1(StrictModel):
         return self
 
 
-class GenericResearchRunResultV5(StrictModel):
-    schema_version: Literal["materials-generic-research-run-v5"] = (
+class GenericResearchRunResultV6(StrictModel):
+    schema_version: Literal["materials-generic-research-run-v6"] = (
         GENERIC_RESEARCH_RESULT_SCHEMA_VERSION
     )
-    implementation_revision: Literal["generic-research-20260821-r12"] = (
+    implementation_revision: Literal["generic-research-20260821-r13"] = (
         GENERIC_RESEARCH_IMPLEMENTATION_REVISION
     )
     run_id: str
     submission_id: str
     request_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     status: Literal["SUCCEEDED"] = "SUCCEEDED"
-    research_graph: MaterialsResearchGraphResultV5
+    research_graph: MaterialsResearchGraphResultV6
     research_graph_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     result_artifact_uri: str = Field(pattern=r"^artifact://")
     report_artifact_uri: str | None = Field(default=None, pattern=r"^artifact://")
@@ -159,7 +159,7 @@ def generic_research_tool_manifest() -> tuple[dict[str, object], ...]:
                 "boundaries."
             ),
             "inputSchema": GenericResearchRunRequestV1.model_json_schema(),
-            "outputSchema": GenericResearchRunResultV5.model_json_schema(),
+            "outputSchema": GenericResearchRunResultV6.model_json_schema(),
             "readOnly": False,
         },
     )
@@ -185,7 +185,7 @@ class GenericMaterialsResearchService:
 
     def run(
         self, request: GenericResearchRunRequestV1 | Mapping[str, object]
-    ) -> GenericResearchRunResultV5:
+    ) -> GenericResearchRunResultV6:
         selected = GenericResearchRunRequestV1.model_validate(request)
         semantic_request = selected.model_dump(mode="json", exclude={"submission_id"})
         semantic_sha = hashlib.sha256(
@@ -204,7 +204,7 @@ class GenericMaterialsResearchService:
         result_path = f"generic_research/{run_id}/result.json"
         result_uri = f"artifact://{result_path}"
         if self.store.exists(result_uri):
-            cached = GenericResearchRunResultV5.model_validate(
+            cached = GenericResearchRunResultV6.model_validate(
                 self.store.read_json(result_uri)
             )
             return self._with_report(cached)
@@ -445,7 +445,7 @@ class GenericMaterialsResearchService:
             checkpoint_load=checkpoint_load,
             checkpoint_save=checkpoint_save,
         ).run(selected.goal)
-        result = GenericResearchRunResultV5(
+        result = GenericResearchRunResultV6(
             run_id=run_id,
             submission_id=selected.submission_id,
             request_sha256=request_sha,
@@ -465,8 +465,8 @@ class GenericMaterialsResearchService:
         return result
 
     def _with_report(
-        self, result: GenericResearchRunResultV5
-    ) -> GenericResearchRunResultV5:
+        self, result: GenericResearchRunResultV6
+    ) -> GenericResearchRunResultV6:
         report = build_generic_research_markdown_report(
             graph=result.research_graph,
             store=self.store,
