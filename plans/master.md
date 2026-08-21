@@ -22,7 +22,9 @@
 - [x] operator registry 覆盖载流子掺杂、静电栅控、磁近邻与 vdW 异质结构型，严格区分
   结构执行计划和只改变计算边界条件的计划；
 - [x] 既有 Ruff 高信号债务从 1050 条收敛为零，固定 `ruff==0.16.3` 与显式规则集；
-- [ ] 完整离线 Gate、依赖、diff、安全扫描和 GitHub CI 状态形成收据。
+- [x] 离线分区 Gate、依赖、diff、安全扫描和 GitHub CI 状态已形成收据：PR #4 的
+  GitGuardian 通过、主 production gate 仍在运行；五个 private flat-band shard 继续因
+  既有 Linux `bounded primitive-cell reduction failed`/spglib 差异失败，未误报为本轮通过。
 
 ### 当前交付轨道：Hermes 通用材料灵感研究操作系统
 
