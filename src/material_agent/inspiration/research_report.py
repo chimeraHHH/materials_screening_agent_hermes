@@ -26,7 +26,7 @@ from material_agent.inspiration.models import canonical_json_bytes
 from material_agent.inspiration.research_graph import (
     DatabaseCandidateV1,
     DatabaseSourceRecordV1,
-    MaterialsResearchGraphResultV6,
+    MaterialsResearchGraphResultV7,
 )
 from material_agent.orchestrator.models import StrictModel
 from material_agent.retrieval.mp_screening import DeepEndpoint
@@ -65,7 +65,7 @@ class ResearchMarkdownReportV3(StrictModel):
 
 def build_generic_research_markdown_report(
     *,
-    graph: MaterialsResearchGraphResultV6,
+    graph: MaterialsResearchGraphResultV7,
     store: LocalArtifactStore,
     run_id: str,
     materials_project_adapter: Any | None = None,
@@ -756,7 +756,7 @@ def _collect_scalar_rows(
 
 def _render_markdown(
     *,
-    graph: MaterialsResearchGraphResultV6,
+    graph: MaterialsResearchGraphResultV7,
     candidates_by_id: Mapping[str, DatabaseCandidateV1],
     structure_assets: Mapping[str, ArtifactRef],
     band_assets: Mapping[str, ArtifactRef],
@@ -956,7 +956,7 @@ def _render_markdown(
                     [
                         f"- `{plan.plan_id}` · `{plan.operator_id}@{plan.operator_version}`",
                         f"  - 母体：`{plan.parent_candidate_id}` / `{plan.parent_structure_id}`",
-                        f"  - 参数模型：`{getattr(plan.parameters, 'parameter_schema_id', 'substitution-parameters-v1')}`；规则：`{getattr(plan.parameters, 'rule_id', 'legacy-substitution-rule')}`",
+                        f"  - 参数模型：`{getattr(plan.parameters, 'parameter_schema_id', 'substitution-parameters-v1')}`；运行时 spec：`{getattr(getattr(plan, 'operator_spec', None), 'operator_spec_id', 'legacy-substitution-rule')}`",
                         f"  - 参数：`{plan.parameters.model_dump(mode='json')}`",
                         f"  - 编译先验：`{getattr(plan, 'compile_prior_decision', 'EXECUTION_REQUIRED')}`；原因：`{getattr(plan, 'compile_prior_reason_codes', ())}`",
                         f"  - route SHA-256：`{plan.route_sha256}`；状态：`{plan.status.value}`",

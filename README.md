@@ -140,15 +140,17 @@ local Pydantic model. Transport retries, final-JSON repair, physical-search
 budgets, and schema-hashed role/tool-snapshot checkpoints are all receipt-audited.
 
 The mechanism/chemistry role cannot turn a prose operation into a structure.
-For a concrete idea it must call `compile_registered_operation` with only an
-allowlisted operation kind and rule ID. Local deterministic code resolves the
-hash-bound parent CIF and derives equivalence classes, layer partitions, vdW-gap
-centres, and coordinates. The v2 registry covers isovalent S↔Se replacement,
-bounded homogeneous strain, complete-equivalence-class vacancies, registered
-Li/Na gap intercalation, and registered whole-layer slides. Every operator spec
-binds a strict parameter model, permitted delta, invariants, chemistry/geometric
-priors, and validators. Free coordinates, arbitrary species, and code are never
-tool parameters. Generic research keeps every route `PLANNED`; execution has
+For a concrete idea it must call `compile_reasoned_operation`. DeepSeek uses
+native scientific reasoning to propose a material-specific substitution and
+target valence, strain tensor, vacancy element/fraction,
+intercalant/oxidation/site/gap, or layer/slide vector,
+plus mechanism, chemistry-prior rationale, and falsifier. Local deterministic
+code freezes that proposal as a run-local hash-pinned operator spec and derives
+equivalence classes, layer partitions, and the vdW-gap-centre coordinate from the
+parent CIF; DeepSeek may propose a bounded in-plane intercalation position, which
+is independently geometry-validated. The global v2 registry contains execution
+kernels and invariants, not a fixed list of scientific candidates. Unvalidated
+coordinates and code are never tool parameters. Generic research keeps every route `PLANNED`; execution has
 separate `PASS`, `REQUIRES_REVIEW`, and `REJECT` outcomes and makes no property claim.
 
 Every completed generic run also produces a deterministic Markdown sidecar

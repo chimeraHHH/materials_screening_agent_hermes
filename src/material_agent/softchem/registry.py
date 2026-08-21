@@ -43,9 +43,9 @@ SOFTCHEM_OPERATOR_REGISTRY_V2_SCHEMA_VERSION = "softchem-operator-registry-v2"
 
 SoftChemOperatorIdV2 = Literal[
     "APPLY_HOMOGENEOUS_STRAIN_V1",
-    "INTERCALATE_REGISTERED_SITE_V1",
+    "INTERCALATE_REASONED_GAP_SITE_V1",
     "REMOVE_EQUIVALENT_SITE_CLASS_V1",
-    "SLIDE_REGISTERED_LAYER_V1",
+    "SLIDE_REASONED_LAYER_V1",
     "SUBSTITUTE_EQUIVALENT_SITE_V1",
 ]
 
@@ -142,16 +142,17 @@ class SoftChemOperatorSpecV2(StrictModel):
     operator_version: Literal["1"] = "1"
     parameter_schema_id: Literal[
         "homogeneous-strain-parameters-v1",
-        "registered-intercalation-parameters-v1",
+        "reasoned-intercalation-parameters-v1",
         "equivalent-site-vacancy-parameters-v1",
-        "registered-layer-slide-parameters-v1",
+        "reasoned-layer-slide-parameters-v1",
         "substitution-parameters-v1",
+        "reasoned-substitution-parameters-v1",
     ]
     executor_id: Literal[
         "pymatgen-homogeneous-strain-v1",
-        "pymatgen-registered-intercalation-v1",
+        "pymatgen-reasoned-gap-intercalation-v1",
         "pymatgen-equivalent-site-vacancy-v1",
-        "pymatgen-registered-layer-slide-v1",
+        "pymatgen-reasoned-layer-slide-v1",
         "pymatgen-equivalent-site-substitution-v1",
     ]
     permitted_changes: Annotated[
@@ -162,9 +163,13 @@ class SoftChemOperatorSpecV2(StrictModel):
     ]
     prior_ids: Annotated[tuple[Identifier, ...], Field(min_length=1, max_length=8)]
     validator_ids: Annotated[tuple[Identifier, ...], Field(min_length=1, max_length=16)]
-    accepts_free_coordinates: Literal[False] = False
-    accepts_arbitrary_species: Literal[False] = False
+    accepts_unvalidated_coordinates: Literal[False] = False
+    accepts_unvalidated_species: Literal[False] = False
     accepts_code: Literal[False] = False
+    scientific_parameter_source: Literal["RUN_LOCAL_REASONED_SPEC"] = (
+        "RUN_LOCAL_REASONED_SPEC"
+    )
+    fixed_scientific_rule_ids: Literal[False] = False
     scientific_conclusion: Literal[False] = False
 
     @model_validator(mode="after")
@@ -245,14 +250,14 @@ DEFAULT_SOFTCHEM_OPERATOR_REGISTRY_V2 = SoftChemOperatorRegistryV2(
             ),
         ),
         SoftChemOperatorSpecV2(
-            operator_id="INTERCALATE_REGISTERED_SITE_V1",
-            parameter_schema_id="registered-intercalation-parameters-v1",
-            executor_id="pymatgen-registered-intercalation-v1",
-            permitted_changes=("registered_intercalant_site",),
+            operator_id="INTERCALATE_REASONED_GAP_SITE_V1",
+            parameter_schema_id="reasoned-intercalation-parameters-v1",
+            executor_id="pymatgen-reasoned-gap-intercalation-v1",
+            permitted_changes=("reasoned_intercalant_gap_site",),
             required_invariants=tuple(
                 sorted((*_COMMON_INVARIANTS, "host_lattice", "host_sites"))
             ),
-            prior_ids=("registered-intercalant-prior-v1", "smact-composition-prior-v1"),
+            prior_ids=("reasoned-intercalant-prior-v1", "smact-composition-prior-v1"),
             validator_ids=(
                 "common-structure-validator-v2",
                 "intercalation-delta-validator-v1",
@@ -276,10 +281,10 @@ DEFAULT_SOFTCHEM_OPERATOR_REGISTRY_V2 = SoftChemOperatorRegistryV2(
             ),
         ),
         SoftChemOperatorSpecV2(
-            operator_id="SLIDE_REGISTERED_LAYER_V1",
-            parameter_schema_id="registered-layer-slide-parameters-v1",
-            executor_id="pymatgen-registered-layer-slide-v1",
-            permitted_changes=("registered_layer_translation",),
+            operator_id="SLIDE_REASONED_LAYER_V1",
+            parameter_schema_id="reasoned-layer-slide-parameters-v1",
+            executor_id="pymatgen-reasoned-layer-slide-v1",
+            permitted_changes=("reasoned_layer_translation",),
             required_invariants=tuple(
                 sorted(
                     (*_COMMON_INVARIANTS, "composition", "host_lattice", "site_count")
@@ -293,7 +298,7 @@ DEFAULT_SOFTCHEM_OPERATOR_REGISTRY_V2 = SoftChemOperatorRegistryV2(
         ),
         SoftChemOperatorSpecV2(
             operator_id="SUBSTITUTE_EQUIVALENT_SITE_V1",
-            parameter_schema_id="substitution-parameters-v1",
+            parameter_schema_id="reasoned-substitution-parameters-v1",
             executor_id="pymatgen-equivalent-site-substitution-v1",
             permitted_changes=("species_on_complete_equivalence_class",),
             required_invariants=tuple(

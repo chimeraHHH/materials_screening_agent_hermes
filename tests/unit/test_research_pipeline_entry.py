@@ -135,7 +135,7 @@ def test_generic_manifest_and_dispatcher_accept_open_ended_goal() -> None:
                 (),
                 {
                     "model_dump": lambda self, **_kwargs: {
-                        "schema_version": "materials-generic-research-run-v6",
+                        "schema_version": "materials-generic-research-run-v7",
                         "run_id": "generic-1",
                         "submission_id": "generic-unit",
                         "request_sha256": "b" * 64,

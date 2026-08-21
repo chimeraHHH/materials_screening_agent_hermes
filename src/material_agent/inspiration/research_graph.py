@@ -26,7 +26,7 @@ from material_agent.inspiration.models import TransformationPlanV1, canonical_js
 from material_agent.orchestrator.models import StrictModel
 from material_agent.softchem.operations import StructureOperationPlanV2
 
-MATERIALS_RESEARCH_GRAPH_VERSION = "materials-inspiration-research-graph-v6"
+MATERIALS_RESEARCH_GRAPH_VERSION = "materials-inspiration-research-graph-v7"
 
 
 class ConstraintKind(StrEnum):
@@ -352,7 +352,7 @@ class CandidateHypothesisV1(StrictModel):
         default=(),
         max_length=16,
         description=(
-            "Plan IDs returned by compile_registered_operation; free-text operation "
+            "Plan IDs returned by compile_reasoned_operation; free-text operation "
             "names are invalid."
         ),
     )
@@ -370,10 +370,10 @@ class CandidateSetV1(StrictModel):
         return self
 
 
-class TransformationCompileRejectionV2(StrictModel):
+class TransformationCompileRejectionV3(StrictModel):
     candidate_id: str = Field(pattern=r"^candidate-[a-z0-9-]{1,64}$")
     database_candidate_id: str = Field(pattern=r"^db-candidate-[0-9a-f]{24}$")
-    operation_rule_id: str = Field(min_length=1, max_length=128)
+    operation_proposal_id: str = Field(min_length=1, max_length=128)
     reason_code: str = Field(pattern=r"^[A-Z][A-Z0-9_]{2,63}$")
 
 
@@ -382,9 +382,9 @@ class TransformationPlanBindingV1(StrictModel):
     plan_id: str = Field(pattern=r"^[a-z][a-z0-9-]{0,31}-[0-9a-f]{24}$")
 
 
-class RegisteredTransformationAuditV2(StrictModel):
-    schema_version: Literal["registered-transformation-audit-v2"] = (
-        "registered-transformation-audit-v2"
+class RegisteredTransformationAuditV3(StrictModel):
+    schema_version: Literal["registered-transformation-audit-v3"] = (
+        "registered-transformation-audit-v3"
     )
     registry_status: Literal["NOT_CONFIGURED", "HASH_PINNED"]
     operator_registry_sha256: str | None = Field(
@@ -398,13 +398,13 @@ class RegisteredTransformationAuditV2(StrictModel):
         default=(), max_length=64
     )
     bindings: tuple[TransformationPlanBindingV1, ...] = Field(default=(), max_length=64)
-    rejections: tuple[TransformationCompileRejectionV2, ...] = Field(
+    rejections: tuple[TransformationCompileRejectionV3, ...] = Field(
         default=(), max_length=32
     )
     scientific_conclusion: Literal[False] = False
 
     @model_validator(mode="after")
-    def validate_registry_binding(self) -> RegisteredTransformationAuditV2:
+    def validate_registry_binding(self) -> RegisteredTransformationAuditV3:
         hashes = (self.operator_registry_sha256, self.substitution_registry_sha256)
         if self.registry_status == "HASH_PINNED" and any(
             item is None for item in hashes
@@ -591,8 +591,8 @@ class ResearchRoleRecordV1(StrictModel):
     receipt: DeepSeekAgentReceiptV1
 
 
-class MaterialsResearchGraphResultV6(StrictModel):
-    schema_version: Literal["materials-inspiration-research-graph-v6"] = (
+class MaterialsResearchGraphResultV7(StrictModel):
+    schema_version: Literal["materials-inspiration-research-graph-v7"] = (
         MATERIALS_RESEARCH_GRAPH_VERSION
     )
     goal_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
@@ -608,7 +608,7 @@ class MaterialsResearchGraphResultV6(StrictModel):
     database_federation: DatabaseFederationAuditV1
     database_candidates: tuple[DatabaseCandidateV1, ...] = Field(max_length=128)
     candidates: CandidateSetV1
-    transformation_audit: RegisteredTransformationAuditV2
+    transformation_audit: RegisteredTransformationAuditV3
     candidate_literature_retrieval: CandidateLiteratureRetrievalV1
     skeptic_review: SkepticReviewV1
     executed_counter_queries: tuple[str, ...] = Field(default=(), max_length=32)
@@ -676,7 +676,7 @@ class MaterialsResearchDirector:
         ]
         | None = None,
         operator_planning_tool: DeepSeekFunctionTool | None = None,
-        transformation_audit_snapshot: Callable[[], RegisteredTransformationAuditV2]
+        transformation_audit_snapshot: Callable[[], RegisteredTransformationAuditV3]
         | None = None,
         counter_evidence_search_tool: DeepSeekFunctionTool | None = None,
         counter_queries_snapshot: Callable[[], tuple[str, ...]] | None = None,
@@ -696,7 +696,7 @@ class MaterialsResearchDirector:
         self.candidate_literature_search = candidate_literature_search
         self.operator_planning_tool = operator_planning_tool
         self.transformation_audit_snapshot = transformation_audit_snapshot or (
-            lambda: RegisteredTransformationAuditV2(registry_status="NOT_CONFIGURED")
+            lambda: RegisteredTransformationAuditV3(registry_status="NOT_CONFIGURED")
         )
         self.counter_evidence_search_tool = counter_evidence_search_tool
         self.counter_queries_snapshot = counter_queries_snapshot or (lambda: ())
@@ -707,7 +707,7 @@ class MaterialsResearchDirector:
         self.checkpoint_save = checkpoint_save
         self._pending_checkpoints: dict[str, DeepSeekAgentResultV1[Any]] = {}
 
-    def run(self, goal: str) -> MaterialsResearchGraphResultV6:
+    def run(self, goal: str) -> MaterialsResearchGraphResultV7:
         selected_goal = " ".join(goal.split())
         if not 10 <= len(selected_goal) <= 4_000:
             raise ValueError("research goal must contain 10 to 4000 characters")
@@ -883,7 +883,7 @@ class MaterialsResearchDirector:
         deterministic_normalizations.extend(synthesis_normalizations)
         _validate_synthesis(synthesis, candidates, skeptic)
         self._commit_checkpoint("synthesist", final_override=synthesis)
-        return MaterialsResearchGraphResultV6(
+        return MaterialsResearchGraphResultV7(
             goal_sha256=hashlib.sha256(selected_goal.encode("utf-8")).hexdigest(),
             constraints=constraints,
             query_plan=query_plan,
@@ -1007,10 +1007,11 @@ def _role_prompt(role: str, model: type[StrictModel]) -> str:
         )
     elif role == "mechanism_chemist":
         role_specific = (
-            "Use compile_registered_operation for every concrete minimal structure route. "
-            "It supports registered complete-site substitution/vacancy, bounded strain, "
-            "registered vdW-gap intercalation, and registered whole-layer sliding. It is "
-            "the sole authority for executable operations. "
+            "Use compile_reasoned_operation for every concrete minimal structure route. "
+            "Use native scientific reasoning to choose material-specific strain tensor, "
+            "vacancy element/fraction, intercalant/oxidation/site/gap, or layer/vector, "
+            "and provide mechanism, chemistry-prior rationale, and decisive falsifier. "
+            "Local code freezes a run-local spec and remains the sole execution authority. "
             "Copy only returned plan_id values into proposed_registered_transformations; "
             "never place operation names, prose, or invented IDs there. A rejected or "
             "inapplicable route remains a scientific hypothesis without a plan ID. "
@@ -1446,7 +1447,7 @@ def _validate_candidate_evidence(
 
 def _validate_candidate_transformations(
     candidates: CandidateSetV1,
-    audit: RegisteredTransformationAuditV2,
+    audit: RegisteredTransformationAuditV3,
 ) -> None:
     plans = {item.plan_id: item for item in audit.plans}
     bindings = {item.plan_id: item.candidate_id for item in audit.bindings}
@@ -1808,5 +1809,5 @@ def _normalize_synthesis(
     return normalized, tuple(normalizations)
 
 
-def research_graph_sha256(result: MaterialsResearchGraphResultV6) -> str:
+def research_graph_sha256(result: MaterialsResearchGraphResultV7) -> str:
     return hashlib.sha256(canonical_json_bytes(result)).hexdigest()

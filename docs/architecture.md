@@ -821,17 +821,20 @@ normalization，不得冒充旧证据仍有效。为容纳联邦候选扩展后�
 JSON，DeepSeek agent 的单轮 completion ceiling 为 32768 tokens，总 token、轮次和 walltime
 仍由每角色预算分别限制。
 
-机理化学角色若提出具体最小结构操作，必须调用 `compile_registered_operation`；自由文本操作名
-不能进入 `proposed_registered_transformations`。DeepSeek 只提交 `operation_kind + rule_id`，
-不能提交坐标、任意元素或代码。编译器从联邦候选的 hash-verified CIF 本地推导晶体学等价位点、
-层分组、最大 c 向间隙中心和实际坐标，并产生确定性 `TransformationPlanV1`（替换）或
-`StructureOperationPlanV2`（其余操作）。研究图 v6 同时保存 proposal→candidate binding、两类
+机理化学角色若提出具体最小结构操作，必须调用 `compile_reasoned_operation`；自由文本操作名
+不能进入 `proposed_registered_transformations`。DeepSeek 通过原生推理提交材料相关的应变张量、
+替换元素/目标价态、空位元素/浓度上限、插层元素/价态/面内分数位置/间隙阈值或目标层/滑移向量，并同时给出机理、化学
+先验依据和决定性证伪实验；它不能提交未验证的坐标或代码。编译器从 hash-verified CIF 本地推导晶体学等价位点、
+层分组和最大 c 向间隙中心，将 DeepSeek 提出的面内位置与本地推导的 gap 中点组合后执行周期边界、最小距离及结构 delta
+验证，并对所有 reasoned 操作（包括未在旧 substitution registry
+出现过的元素对）产生确定性 `StructureOperationPlanV2`。研究图 v7 同时保存 proposal→candidate binding、两类
 registry SHA-256、编译拒绝原因和 `PLANNED` 状态。
 
-`softchem-operator-registry-v2` 当前注册五个算子：S↔Se 完整等价位点替换、±2% 面内/−3% 面外
-均匀应变、完整等价位点类空位、Li/Na 最大 vdW gap 注册位插层、以及完整层的 A→B/A→C 注册
-平移。每个 spec 显式绑定参数 schema、允许改变项、必须保持项、化学/几何 prior 和 validator。
-空位默认移除比例上限为 25%；插层即使 SMACT 化学计量通过也保持 `REQUIRES_REVIEW`，直到宿主
+`softchem-operator-registry-v2` 只注册确定性执行内核族和安全不变量，不注册具体科学候选规则。
+每次 DeepSeek tool call 会生成 `RunLocalOperatorSpecV1`，绑定母体、原始 proposal hash、推导参数
+hash、全局 kernel registry hash、科学依据和证伪测试。每个 kernel spec 显式绑定参数 schema、
+允许改变项、必须保持项、化学/几何 prior 和 validator。空位移除比例由 DeepSeek 提出但不能超过
+执行器 50% 安全包络；插层元素和价态由 DeepSeek 提出并检查常见价态，且即使 SMACT 化学计量通过也保持 `REQUIRES_REVIEW`，直到宿主
 还原位点或混合价态得到独立验证；单层结构不能编译层滑移。执行器逐项验证 parent/registry hash、
 参数-算子匹配、完整等价类或层分区、允许的结构 delta、占位、有限数值、正体积、最小距离、
 维度/site budget 和 canonical CIF round-trip。`PASS`、`REQUIRES_REVIEW`、`REJECT` 相互独立，

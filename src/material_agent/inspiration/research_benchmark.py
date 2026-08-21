@@ -7,7 +7,7 @@ from typing import Literal
 from pydantic import Field, model_validator
 
 from material_agent.inspiration.models import canonical_sha256
-from material_agent.inspiration.research_graph import MaterialsResearchGraphResultV6
+from material_agent.inspiration.research_graph import MaterialsResearchGraphResultV7
 from material_agent.orchestrator.models import StrictModel
 
 
@@ -49,7 +49,9 @@ class ResearchBenchmarkGoldSetV1(StrictModel):
     def validate_gold(self) -> ResearchBenchmarkGoldSetV1:
         if self.review_status == "ADJUDICATED":
             if len(set(self.reviewer_ids)) < 2 or self.adjudicator_id is None:
-                raise ValueError("adjudicated benchmark requires two reviewers and adjudicator")
+                raise ValueError(
+                    "adjudicated benchmark requires two reviewers and adjudicator"
+                )
             if self.adjudicator_id in self.reviewer_ids:
                 raise ValueError("adjudicator must be independent")
         elif self.reviewer_ids or self.adjudicator_id is not None:
@@ -120,7 +122,7 @@ class ResearchBenchmarkResultV1(StrictModel):
 
 
 def prediction_from_graph(
-    case_id: str, graph: MaterialsResearchGraphResultV6
+    case_id: str, graph: MaterialsResearchGraphResultV7
 ) -> ResearchBenchmarkPredictionV1:
     known = tuple(sorted(item.evidence_id for item in graph.resolved_evidence))
     cited = {
@@ -225,8 +227,12 @@ def evaluate_research_benchmark(
         counts["leads"] += prediction.native_lead_count
         counts["resolved_leads"] += prediction.resolved_native_lead_count
         if case.require_counter_search:
-            declared = {" ".join(item.split()) for item in prediction.declared_counter_queries}
-            executed = {" ".join(item.split()) for item in prediction.executed_counter_queries}
+            declared = {
+                " ".join(item.split()) for item in prediction.declared_counter_queries
+            }
+            executed = {
+                " ".join(item.split()) for item in prediction.executed_counter_queries
+            }
             counts["counter_declared"] += len(declared)
             counts["counter_executed"] += len(declared & executed)
         if case.require_candidate_second_pass:

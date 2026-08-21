@@ -8,7 +8,7 @@ import warnings
 from collections.abc import Callable, Mapping
 from typing import Any, Literal
 
-from pydantic import Field, model_validator
+from pydantic import Field, field_validator, model_validator
 from pymatgen.core import Element, Structure
 from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
 
@@ -24,8 +24,8 @@ from material_agent.inspiration.models import (
 )
 from material_agent.inspiration.research_graph import (
     DatabaseCandidateV1,
-    RegisteredTransformationAuditV2,
-    TransformationCompileRejectionV2,
+    RegisteredTransformationAuditV3,
+    TransformationCompileRejectionV3,
     TransformationPlanBindingV1,
 )
 from material_agent.inspiration.transformations import (
@@ -47,17 +47,16 @@ from material_agent.softchem import (
     softchem_registry_sha256,
 )
 from material_agent.softchem.operations import (
-    INTERCALATION_RULES,
-    LAYER_SLIDE_RULES,
-    STRAIN_RULES,
     EquivalentSiteVacancyParametersV1,
     HomogeneousStrainParametersV1,
-    RegisteredIntercalationParametersV1,
-    RegisteredLayerSlideParametersV1,
+    ReasonedIntercalationParametersV1,
+    ReasonedLayerSlideParametersV1,
+    ReasonedSubstitutionParametersV1,
     StructureOperationExecutionRequestV2,
     StructureOperationPlanV2,
     bind_compile_prior,
     evaluate_structure_operation_prior,
+    freeze_run_local_operator_spec,
     largest_c_gap,
     layer_groups,
     layer_partition_sha256,
@@ -72,40 +71,105 @@ class CompileRegisteredSubstitutionArgsV1(StrictModel):
     substitution_rule_id: Literal["s-to-se-isovalent-v1", "se-to-s-isovalent-v1"]
 
 
-class CompileRegisteredOperationArgsV2(StrictModel):
+class CompileReasonedOperationArgsV3(StrictModel):
+    """Scientific search space proposed by DeepSeek; null marks unused fields."""
+
     candidate_id: str = Field(pattern=r"^candidate-[a-z0-9-]{1,64}$")
     database_candidate_id: str = Field(pattern=r"^db-candidate-[0-9a-f]{24}$")
     operation_kind: Literal[
-        "SUBSTITUTION", "HOMOGENEOUS_STRAIN", "VACANCY", "INTERCALATION", "LAYER_SLIDE"
+        "SUBSTITUTION",
+        "HOMOGENEOUS_STRAIN",
+        "VACANCY",
+        "INTERCALATION",
+        "LAYER_SLIDE",
     ]
-    rule_id: Literal[
-        "s-to-se-isovalent-v1",
-        "se-to-s-isovalent-v1",
-        "biaxial-compress-2pct-v1",
-        "biaxial-tensile-2pct-v1",
-        "out-of-plane-compress-3pct-v1",
-        "vacancy-chalcogen-class-v1",
-        "vacancy-transition-metal-class-v1",
-        "li-vdw-hollow-a-v1",
-        "na-vdw-hollow-a-v1",
-        "slide-a-to-b-v1",
-        "slide-a-to-c-v1",
-    ]
+    source_element: str | None = Field(default=None, max_length=2)
+    target_element: str | None = Field(default=None, max_length=2)
+    target_oxidation_state: float | None = Field(default=None, ge=-8.0, le=8.0)
+    normal_strain_x_percent: float | None = None
+    normal_strain_y_percent: float | None = None
+    normal_strain_z_percent: float | None = None
+    shear_strain_xy_percent: float | None = None
+    shear_strain_xz_percent: float | None = None
+    shear_strain_yz_percent: float | None = None
+    vacancy_element: str | None = Field(default=None, max_length=2)
+    maximum_removed_site_fraction: float | None = Field(default=None, gt=0.0, le=0.5)
+    intercalant: str | None = Field(default=None, max_length=2)
+    intercalant_oxidation_state: float | None = Field(default=None, ge=-8.0, le=8.0)
+    intercalation_site_a_fraction: float | None = Field(default=None, ge=0.0, lt=1.0)
+    intercalation_site_b_fraction: float | None = Field(default=None, ge=0.0, lt=1.0)
+    minimum_parent_gap_angstrom: float | None = Field(default=None, ge=2.5, le=8.0)
+    layer_from_top: int | None = Field(default=None, ge=1, le=8)
+    slide_a_fraction: float | None = None
+    slide_b_fraction: float | None = None
+    scientific_rationale: str = Field(min_length=10, max_length=2_000)
+    expected_mechanism: str = Field(min_length=5, max_length=1_000)
+    chemical_prior_rationale: str = Field(min_length=5, max_length=1_000)
+    decisive_falsification_test: str = Field(min_length=5, max_length=1_000)
+
+    @field_validator(
+        "source_element", "target_element", "vacancy_element", "intercalant"
+    )
+    @classmethod
+    def canonical_optional_element(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        if str(Element(value)) != value:
+            raise ValueError("operation species must be a canonical element")
+        return value
 
     @model_validator(mode="after")
-    def rule_matches_kind(self) -> CompileRegisteredOperationArgsV2:
-        allowed = {
-            "SUBSTITUTION": {"s-to-se-isovalent-v1", "se-to-s-isovalent-v1"},
-            "HOMOGENEOUS_STRAIN": set(STRAIN_RULES),
-            "VACANCY": {
-                "vacancy-chalcogen-class-v1",
-                "vacancy-transition-metal-class-v1",
-            },
-            "INTERCALATION": set(INTERCALATION_RULES),
-            "LAYER_SLIDE": set(LAYER_SLIDE_RULES),
+    def validate_operation_fields(self) -> CompileReasonedOperationArgsV3:
+        selected = {
+            "SUBSTITUTION": (
+                self.source_element is not None
+                and self.target_element is not None
+                and self.target_oxidation_state is not None
+            ),
+            "HOMOGENEOUS_STRAIN": (
+                self.normal_strain_x_percent is not None
+                and self.normal_strain_y_percent is not None
+                and self.normal_strain_z_percent is not None
+                and self.shear_strain_xy_percent is not None
+                and self.shear_strain_xz_percent is not None
+                and self.shear_strain_yz_percent is not None
+            ),
+            "VACANCY": (
+                self.vacancy_element is not None
+                and self.maximum_removed_site_fraction is not None
+            ),
+            "INTERCALATION": (
+                self.intercalant is not None
+                and self.intercalant_oxidation_state is not None
+                and self.intercalation_site_a_fraction is not None
+                and self.intercalation_site_b_fraction is not None
+                and self.minimum_parent_gap_angstrom is not None
+            ),
+            "LAYER_SLIDE": (
+                self.layer_from_top is not None
+                and self.slide_a_fraction is not None
+                and self.slide_b_fraction is not None
+            ),
         }
-        if self.rule_id not in allowed[self.operation_kind]:
-            raise ValueError("rule_id is not registered for operation_kind")
+        if not selected[self.operation_kind]:
+            raise ValueError("selected operation is missing its reasoned parameters")
+        normal = (
+            self.normal_strain_x_percent,
+            self.normal_strain_y_percent,
+            self.normal_strain_z_percent,
+        )
+        if any(value is not None and abs(value) > 8.0 for value in normal):
+            raise ValueError("normal strain exceeds the executor safety envelope")
+        shear = (
+            self.shear_strain_xy_percent,
+            self.shear_strain_xz_percent,
+            self.shear_strain_yz_percent,
+        )
+        if any(value is not None and abs(value) > 3.0 for value in shear):
+            raise ValueError("shear strain exceeds the executor safety envelope")
+        slide = (self.slide_a_fraction, self.slide_b_fraction)
+        if any(value is not None and abs(value) > 1.0 for value in slide):
+            raise ValueError("slide vector exceeds the executor safety envelope")
         return self
 
 
@@ -244,46 +308,131 @@ def _parent_pointer(
     )
 
 
-def compile_registered_structure_operation_plans(
+def compile_reasoned_structure_operation_plans(
     *,
-    candidate_id: str,
     database_candidate: DatabaseCandidateV1,
     parent_structure: Structure,
     parent_artifact_bytes: bytes,
-    operation_kind: str,
-    rule_id: str,
+    proposal: CompileReasonedOperationArgsV3,
     operator_registry: SoftChemOperatorRegistryV2 = DEFAULT_SOFTCHEM_OPERATOR_REGISTRY_V2,
 ) -> tuple[StructureOperationPlanV2, ...]:
-    """Derive every coordinate/site selection locally for one registered v2 rule."""
+    """Freeze one DeepSeek-proposed spec and derive its executable structure details."""
 
     pointer = _parent_pointer(database_candidate, parent_artifact_bytes)
     common = {
-        "candidate_id": candidate_id,
+        "candidate_id": proposal.candidate_id,
         "parent_candidate_id": database_candidate.database_candidate_id,
         "parent_structure_id": database_candidate.canonical_structure_id,
         "parent_pointer": pointer,
     }
-    plans: list[StructureOperationPlanV2] = []
-    if operation_kind == "HOMOGENEOUS_STRAIN":
-        operator_registry.resolve("APPLY_HOMOGENEOUS_STRAIN_V1", "1")
-        parameters = HomogeneousStrainParametersV1(
-            rule_id=rule_id,
-            deformation_matrix=STRAIN_RULES[rule_id],
+    proposal_payload = proposal.model_dump(mode="python")
+    registry_sha256 = softchem_registry_sha256(operator_registry)
+
+    def freeze(
+        operator_id: Any,
+        parameters: Any,
+    ) -> tuple[Any, Any]:
+        return freeze_run_local_operator_spec(
+            operator_id=operator_id,
+            parent_structure_id=database_candidate.canonical_structure_id,
+            parameters=parameters,
+            proposal_payload=proposal_payload,
+            operator_registry_sha256=registry_sha256,
+            scientific_rationale=proposal.scientific_rationale,
+            expected_mechanism=proposal.expected_mechanism,
+            chemical_prior_rationale=proposal.chemical_prior_rationale,
+            decisive_falsification_test=proposal.decisive_falsification_test,
         )
+
+    plans: list[StructureOperationPlanV2] = []
+    if proposal.operation_kind == "SUBSTITUTION":
+        operator_registry.resolve("SUBSTITUTE_EQUIVALENT_SITE_V1", "1")
+        assert proposal.source_element is not None
+        assert proposal.target_element is not None
+        assert proposal.target_oxidation_state is not None
+        for group in equivalent_site_groups(parent_structure):
+            if not all(
+                _bare_element(parent_structure[index]) == proposal.source_element
+                for index in group
+            ):
+                continue
+            parameters = ReasonedSubstitutionParametersV1(
+                operator_spec_id="pending-spec",
+                equivalent_site_indices=group,
+                source_species=proposal.source_element,
+                target_species=proposal.target_element,
+                target_oxidation_state=proposal.target_oxidation_state,
+            )
+            spec, parameters = freeze("SUBSTITUTE_EQUIVALENT_SITE_V1", parameters)
+            plans.append(
+                make_operation_plan(
+                    **common,
+                    operator_id="SUBSTITUTE_EQUIVALENT_SITE_V1",
+                    operator_spec=spec,
+                    parameters=parameters,
+                    preserved_features=(
+                        "lattice",
+                        "site count",
+                        "fractional coordinates",
+                    ),
+                    changed_features=(
+                        f"DeepSeek-proposed {proposal.source_element}-to-{proposal.target_element} complete-class substitution",
+                    ),
+                )
+            )
+    elif proposal.operation_kind == "HOMOGENEOUS_STRAIN":
+        operator_registry.resolve("APPLY_HOMOGENEOUS_STRAIN_V1", "1")
+        normal = (
+            proposal.normal_strain_x_percent,
+            proposal.normal_strain_y_percent,
+            proposal.normal_strain_z_percent,
+        )
+        shear = (
+            proposal.shear_strain_xy_percent,
+            proposal.shear_strain_xz_percent,
+            proposal.shear_strain_yz_percent,
+        )
+        assert all(value is not None for value in normal + shear)
+        normal_values = tuple(float(value) for value in normal if value is not None)
+        shear_values = tuple(float(value) for value in shear if value is not None)
+        parameters = HomogeneousStrainParametersV1(
+            operator_spec_id="pending-spec",
+            deformation_matrix=(
+                (
+                    1.0 + normal_values[0] / 100.0,
+                    shear_values[0] / 100.0,
+                    shear_values[1] / 100.0,
+                ),
+                (
+                    shear_values[0] / 100.0,
+                    1.0 + normal_values[1] / 100.0,
+                    shear_values[2] / 100.0,
+                ),
+                (
+                    shear_values[1] / 100.0,
+                    shear_values[2] / 100.0,
+                    1.0 + normal_values[2] / 100.0,
+                ),
+            ),
+        )
+        spec, parameters = freeze("APPLY_HOMOGENEOUS_STRAIN_V1", parameters)
         plans.append(
             make_operation_plan(
                 **common,
                 operator_id="APPLY_HOMOGENEOUS_STRAIN_V1",
+                operator_spec=spec,
                 parameters=parameters,
                 preserved_features=(
                     "composition",
                     "site count",
                     "fractional coordinates",
                 ),
-                changed_features=(f"lattice by registered rule {rule_id}",),
+                changed_features=(
+                    f"lattice by DeepSeek-proposed strain {normal_values}/{shear_values} percent",
+                ),
             )
         )
-    elif operation_kind == "VACANCY":
+    elif proposal.operation_kind == "VACANCY":
         operator_registry.resolve("REMOVE_EQUIVALENT_SITE_CLASS_V1", "1")
         for group in equivalent_site_groups(parent_structure):
             species = {_bare_element(parent_structure[index]) for index in group}
@@ -291,25 +440,20 @@ def compile_registered_structure_operation_plans(
                 continue
             symbol = next(iter(species))
             assert symbol is not None
-            element = Element(symbol)
-            selected = (
-                rule_id == "vacancy-transition-metal-class-v1"
-                and element.is_transition_metal
-            ) or (
-                rule_id == "vacancy-chalcogen-class-v1"
-                and symbol in {"O", "S", "Se", "Te"}
-            )
-            if not selected:
+            if symbol != proposal.vacancy_element:
                 continue
             parameters = EquivalentSiteVacancyParametersV1(
-                rule_id=rule_id,
+                operator_spec_id="pending-spec",
                 equivalent_site_indices=group,
                 removed_species=symbol,
+                maximum_removed_site_fraction=proposal.maximum_removed_site_fraction,
             )
+            spec, parameters = freeze("REMOVE_EQUIVALENT_SITE_CLASS_V1", parameters)
             plans.append(
                 make_operation_plan(
                     **common,
                     operator_id="REMOVE_EQUIVALENT_SITE_CLASS_V1",
+                    operator_spec=spec,
                     parameters=parameters,
                     preserved_features=("lattice", "all unselected sites"),
                     changed_features=(
@@ -317,45 +461,66 @@ def compile_registered_structure_operation_plans(
                     ),
                 )
             )
-    elif operation_kind == "INTERCALATION":
-        operator_registry.resolve("INTERCALATE_REGISTERED_SITE_V1", "1")
+    elif proposal.operation_kind == "INTERCALATION":
+        operator_registry.resolve("INTERCALATE_REASONED_GAP_SITE_V1", "1")
         midpoint, gap = largest_c_gap(parent_structure)
-        if gap < 3.0:
+        assert proposal.minimum_parent_gap_angstrom is not None
+        if gap < proposal.minimum_parent_gap_angstrom:
             return ()
-        species, site_rule, xy = INTERCALATION_RULES[rule_id]
-        parameters = RegisteredIntercalationParametersV1(
-            rule_id=rule_id,
-            intercalant=species,
-            site_rule_id=site_rule,
-            insertion_frac_coords=(*xy, midpoint),
+        assert (
+            proposal.intercalant is not None
+            and proposal.intercalant_oxidation_state is not None
+            and proposal.intercalation_site_a_fraction is not None
+            and proposal.intercalation_site_b_fraction is not None
         )
+        xy = (
+            proposal.intercalation_site_a_fraction,
+            proposal.intercalation_site_b_fraction,
+        )
+        parameters = ReasonedIntercalationParametersV1(
+            operator_spec_id="pending-spec",
+            intercalant=proposal.intercalant,
+            intercalant_oxidation_state=proposal.intercalant_oxidation_state,
+            insertion_frac_coords=(*xy, midpoint),
+            minimum_parent_gap_angstrom=proposal.minimum_parent_gap_angstrom,
+        )
+        spec, parameters = freeze("INTERCALATE_REASONED_GAP_SITE_V1", parameters)
         plans.append(
             make_operation_plan(
                 **common,
-                operator_id="INTERCALATE_REGISTERED_SITE_V1",
+                operator_id="INTERCALATE_REASONED_GAP_SITE_V1",
+                operator_spec=spec,
                 parameters=parameters,
                 preserved_features=("host lattice", "all host sites"),
                 changed_features=(
-                    f"insert one {species} at derived {site_rule} in largest c gap",
+                    f"insert one {proposal.intercalant} at DeepSeek-proposed in-plane {xy} and derived largest-gap midpoint",
                 ),
             )
         )
-    elif operation_kind == "LAYER_SLIDE":
-        operator_registry.resolve("SLIDE_REGISTERED_LAYER_V1", "1")
+    elif proposal.operation_kind == "LAYER_SLIDE":
+        operator_registry.resolve("SLIDE_REASONED_LAYER_V1", "1")
         groups = layer_groups(parent_structure)
-        if len(groups) < 2:
+        assert proposal.layer_from_top is not None
+        assert proposal.slide_a_fraction is not None
+        assert proposal.slide_b_fraction is not None
+        if len(groups) < 2 or proposal.layer_from_top > len(groups):
             return ()
-        selected_group = groups[-1]
-        parameters = RegisteredLayerSlideParametersV1(
-            rule_id=rule_id,
+        selected_group = groups[-proposal.layer_from_top]
+        parameters = ReasonedLayerSlideParametersV1(
+            operator_spec_id="pending-spec",
             layer_site_indices=selected_group,
-            translation_fractional_ab=LAYER_SLIDE_RULES[rule_id],
+            translation_fractional_ab=(
+                proposal.slide_a_fraction,
+                proposal.slide_b_fraction,
+            ),
             layer_partition_sha256=layer_partition_sha256(groups),
         )
+        spec, parameters = freeze("SLIDE_REASONED_LAYER_V1", parameters)
         plans.append(
             make_operation_plan(
                 **common,
-                operator_id="SLIDE_REGISTERED_LAYER_V1",
+                operator_id="SLIDE_REASONED_LAYER_V1",
+                operator_spec=spec,
                 parameters=parameters,
                 preserved_features=(
                     "composition",
@@ -369,9 +534,7 @@ def compile_registered_structure_operation_plans(
             )
         )
     else:
-        raise KeyError(
-            f"unsupported v2 structure operation: {operation_kind}/{rule_id}"
-        )
+        raise KeyError(f"unsupported reasoned operation: {proposal.operation_kind}")
     return tuple(plans)
 
 
@@ -460,27 +623,28 @@ class OperatorPlanningToolState:
         self._calls = 0
         self._plans: dict[str, TransformationPlanV1 | StructureOperationPlanV2] = {}
         self._bindings: dict[str, TransformationPlanBindingV1] = {}
-        self._rejections: list[TransformationCompileRejectionV2] = []
+        self._rejections: list[TransformationCompileRejectionV3] = []
         self._lock = threading.Lock()
 
     def as_tool(self) -> DeepSeekFunctionTool:
         return DeepSeekFunctionTool(
-            name="compile_registered_operation",
+            name="compile_reasoned_operation",
             description=(
-                "Compile a minimal structure operation against hash-pinned registries. "
-                "Choose only operation_kind and rule_id. Local code derives complete "
-                "symmetry classes, layers, vdW-gap centers, and coordinates from the CIF. "
-                "The tool accepts no free coordinates, arbitrary species, or code. It "
-                "supports substitution, bounded homogeneous strain, complete-class "
-                "vacancy, registered Li/Na gap intercalation, and registered layer slide."
+                "Propose a material-specific minimal operation using native scientific "
+                "reasoning. Choose substitution/oxidation, strain tensor, vacancy element/fraction, intercalant/"
+                "in-plane site/gap, or layer/vector and provide mechanism, chemistry prior, "
+                "and falsifier. Local code freezes a run-local hash-pinned spec, derives "
+                "sites/coordinates from the CIF, and applies safety/chemistry validators. "
+                "Set fields for other operation kinds to null. No fixed scientific rule "
+                "list, unvalidated coordinates, or code is accepted."
             ),
-            arguments_model=CompileRegisteredOperationArgsV2,
+            arguments_model=CompileReasonedOperationArgsV3,
             handler=self._handle,
         )
 
-    def audit_snapshot(self) -> RegisteredTransformationAuditV2:
+    def audit_snapshot(self) -> RegisteredTransformationAuditV3:
         with self._lock:
-            return RegisteredTransformationAuditV2(
+            return RegisteredTransformationAuditV3(
                 registry_status="HASH_PINNED",
                 operator_registry_sha256=softchem_registry_sha256(
                     self.operator_registry
@@ -502,7 +666,7 @@ class OperatorPlanningToolState:
         return self.audit_snapshot().model_dump(mode="json")
 
     def restore_snapshot(self, value: object) -> None:
-        audit = RegisteredTransformationAuditV2.model_validate_json(
+        audit = RegisteredTransformationAuditV3.model_validate_json(
             canonical_json_bytes(value)
         )
         if audit.registry_status != "HASH_PINNED":
@@ -523,7 +687,7 @@ class OperatorPlanningToolState:
 
     def _handle(
         self,
-        arguments: CompileRegisteredOperationArgsV2
+        arguments: CompileReasonedOperationArgsV3
         | CompileRegisteredSubstitutionArgsV1,
     ) -> Mapping[str, Any]:
         with self._lock:
@@ -541,10 +705,10 @@ class OperatorPlanningToolState:
         parent = candidates.get(arguments.database_candidate_id)
         if parent is None:
             return self._reject(arguments, "UNKNOWN_DATABASE_CANDIDATE")
-        legacy = isinstance(arguments, CompileRegisteredSubstitutionArgsV1)
-        operation_kind = "SUBSTITUTION" if legacy else arguments.operation_kind
-        rule_id = arguments.substitution_rule_id if legacy else arguments.rule_id
-        if operation_kind == "SUBSTITUTION" and not any(
+        legacy_substitution = isinstance(arguments, CompileRegisteredSubstitutionArgsV1)
+        operation_kind = "SUBSTITUTION" if legacy_substitution else arguments.operation_kind
+        rule_id = arguments.substitution_rule_id if legacy_substitution else None
+        if legacy_substitution and not any(
             item.rule_id == rule_id for item in self.substitution_registry.rules
         ):
             return self._reject(arguments, "UNREGISTERED_SUBSTITUTION_RULE")
@@ -553,7 +717,7 @@ class OperatorPlanningToolState:
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
                 structure = Structure.from_str(payload.decode("utf-8"), fmt="cif")
-            if operation_kind == "SUBSTITUTION":
+            if legacy_substitution:
                 plans = compile_registered_substitution_plans(
                     candidate_id=arguments.candidate_id,
                     database_candidate=parent,
@@ -564,13 +728,11 @@ class OperatorPlanningToolState:
                     substitution_registry=self.substitution_registry,
                 )
             else:
-                plans = compile_registered_structure_operation_plans(
-                    candidate_id=arguments.candidate_id,
+                plans = compile_reasoned_structure_operation_plans(
                     database_candidate=parent,
                     parent_structure=structure,
                     parent_artifact_bytes=payload,
-                    operation_kind=operation_kind,
-                    rule_id=rule_id,
+                    proposal=arguments,
                     operator_registry=self.operator_registry,
                 )
         except (KeyError, UnicodeDecodeError, ValueError) as exc:
@@ -652,19 +814,19 @@ class OperatorPlanningToolState:
 
     def _reject(
         self,
-        arguments: CompileRegisteredOperationArgsV2
+        arguments: CompileReasonedOperationArgsV3
         | CompileRegisteredSubstitutionArgsV1,
         reason_code: str,
         *,
         detail: str | None = None,
     ) -> Mapping[str, Any]:
-        rejection = TransformationCompileRejectionV2(
+        rejection = TransformationCompileRejectionV3(
             candidate_id=arguments.candidate_id,
             database_candidate_id=arguments.database_candidate_id,
-            operation_rule_id=(
+            operation_proposal_id=(
                 arguments.substitution_rule_id
                 if isinstance(arguments, CompileRegisteredSubstitutionArgsV1)
-                else arguments.rule_id
+                else f"reasoned-{arguments.operation_kind.casefold()}"
             ),
             reason_code=reason_code,
         )
@@ -674,8 +836,8 @@ class OperatorPlanningToolState:
             "status": "REJECTED",
             "reason_code": reason_code,
             "detail": detail,
-            "registered_rule_ids": tuple(
-                item.rule_id for item in self.substitution_registry.rules
+            "available_execution_kernels": tuple(
+                item.operator_id for item in self.operator_registry.operators
             ),
             "scientific_conclusion": False,
         }

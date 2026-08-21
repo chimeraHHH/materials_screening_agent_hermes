@@ -26,6 +26,7 @@ from material_agent.inspiration.models import (
     TransformationStatus,
     ValidationCheckV1,
     ValidationStatus,
+    canonical_sha256,
     deterministic_id,
     transformation_route_sha256,
 )
@@ -67,51 +68,43 @@ STRUCTURE_OPERATION_EXECUTION_SCHEMA_VERSION = "structure-operation-execution-v2
 
 OperationIdV2 = Literal[
     "APPLY_HOMOGENEOUS_STRAIN_V1",
-    "INTERCALATE_REGISTERED_SITE_V1",
+    "INTERCALATE_REASONED_GAP_SITE_V1",
     "REMOVE_EQUIVALENT_SITE_CLASS_V1",
-    "SLIDE_REGISTERED_LAYER_V1",
+    "SLIDE_REASONED_LAYER_V1",
+    "SUBSTITUTE_EQUIVALENT_SITE_V1",
 ]
 
-StrainRuleId = Literal[
-    "biaxial-compress-2pct-v1",
-    "biaxial-tensile-2pct-v1",
-    "out-of-plane-compress-3pct-v1",
-]
-VacancyRuleId = Literal[
-    "vacancy-chalcogen-class-v1",
-    "vacancy-transition-metal-class-v1",
-]
-IntercalationRuleId = Literal[
-    "li-vdw-hollow-a-v1",
-    "na-vdw-hollow-a-v1",
-]
-LayerSlideRuleId = Literal["slide-a-to-b-v1", "slide-a-to-c-v1"]
+class ReasonedSubstitutionParametersV1(StrictModel):
+    parameter_schema_id: Literal["reasoned-substitution-parameters-v1"] = (
+        "reasoned-substitution-parameters-v1"
+    )
+    operator_spec_id: Identifier
+    equivalent_site_indices: Annotated[
+        tuple[Annotated[int, Field(ge=0)], ...], Field(min_length=1, max_length=128)
+    ]
+    source_species: Annotated[str, Field(pattern=r"^[A-Z][a-z]?$", max_length=2)]
+    target_species: Annotated[str, Field(pattern=r"^[A-Z][a-z]?$", max_length=2)]
+    target_oxidation_state: Annotated[float, Field(ge=-8.0, le=8.0)]
 
-
-STRAIN_RULES: dict[str, tuple[tuple[float, float, float], ...]] = {
-    "biaxial-compress-2pct-v1": ((0.98, 0.0, 0.0), (0.0, 0.98, 0.0), (0.0, 0.0, 1.0)),
-    "biaxial-tensile-2pct-v1": ((1.02, 0.0, 0.0), (0.0, 1.02, 0.0), (0.0, 0.0, 1.0)),
-    "out-of-plane-compress-3pct-v1": (
-        (1.0, 0.0, 0.0),
-        (0.0, 1.0, 0.0),
-        (0.0, 0.0, 0.97),
-    ),
-}
-INTERCALATION_RULES: dict[str, tuple[str, str, tuple[float, float]]] = {
-    "li-vdw-hollow-a-v1": ("Li", "hex-hollow-a-v1", (0.0, 0.0)),
-    "na-vdw-hollow-a-v1": ("Na", "hex-hollow-a-v1", (0.0, 0.0)),
-}
-LAYER_SLIDE_RULES: dict[str, tuple[float, float]] = {
-    "slide-a-to-b-v1": (1.0 / 3.0, 2.0 / 3.0),
-    "slide-a-to-c-v1": (2.0 / 3.0, 1.0 / 3.0),
-}
+    @model_validator(mode="after")
+    def validate_substitution(self) -> ReasonedSubstitutionParametersV1:
+        if self.source_species == self.target_species:
+            raise ValueError("substitution source and target must differ")
+        if self.equivalent_site_indices != tuple(
+            sorted(set(self.equivalent_site_indices))
+        ):
+            raise ValueError("substitution indices must be sorted and unique")
+        for value in (self.source_species, self.target_species):
+            if str(Element(value)) != value:
+                raise ValueError("substitution species must be canonical elements")
+        return self
 
 
 class HomogeneousStrainParametersV1(StrictModel):
     parameter_schema_id: Literal["homogeneous-strain-parameters-v1"] = (
         "homogeneous-strain-parameters-v1"
     )
-    rule_id: StrainRuleId
+    operator_spec_id: Identifier
     deformation_matrix: tuple[
         tuple[float, float, float],
         tuple[float, float, float],
@@ -119,10 +112,26 @@ class HomogeneousStrainParametersV1(StrictModel):
     ]
 
     @model_validator(mode="after")
-    def registered_matrix(self) -> HomogeneousStrainParametersV1:
-        expected = STRAIN_RULES[self.rule_id]
-        if self.deformation_matrix != expected:
-            raise ValueError("strain matrix must exactly match its registered rule")
+    def safe_matrix(self) -> HomogeneousStrainParametersV1:
+        matrix = self.deformation_matrix
+        if any(not math.isfinite(value) for row in matrix for value in row):
+            raise ValueError("strain matrix must be finite")
+        if any(abs(matrix[index][index] - 1.0) > 0.08 for index in range(3)):
+            raise ValueError("normal strain exceeds the executor safety envelope")
+        if any(
+            abs(matrix[row][column]) > 0.03
+            for row in range(3)
+            for column in range(3)
+            if row != column
+        ):
+            raise ValueError("shear strain exceeds the executor safety envelope")
+        determinant = (
+            matrix[0][0] * (matrix[1][1] * matrix[2][2] - matrix[1][2] * matrix[2][1])
+            - matrix[0][1] * (matrix[1][0] * matrix[2][2] - matrix[1][2] * matrix[2][0])
+            + matrix[0][2] * (matrix[1][0] * matrix[2][1] - matrix[1][1] * matrix[2][0])
+        )
+        if determinant <= 0.0:
+            raise ValueError("strain matrix must preserve positive orientation")
         return self
 
 
@@ -130,12 +139,12 @@ class EquivalentSiteVacancyParametersV1(StrictModel):
     parameter_schema_id: Literal["equivalent-site-vacancy-parameters-v1"] = (
         "equivalent-site-vacancy-parameters-v1"
     )
-    rule_id: VacancyRuleId
+    operator_spec_id: Identifier
     equivalent_site_indices: Annotated[
         tuple[Annotated[int, Field(ge=0)], ...], Field(min_length=1, max_length=128)
     ]
     removed_species: Annotated[str, Field(pattern=r"^[A-Z][a-z]?$", max_length=2)]
-    maximum_removed_site_fraction: Literal[0.25] = 0.25
+    maximum_removed_site_fraction: Annotated[float, Field(gt=0.0, le=0.5)]
 
     @model_validator(mode="after")
     def canonical_indices(self) -> EquivalentSiteVacancyParametersV1:
@@ -148,15 +157,15 @@ class EquivalentSiteVacancyParametersV1(StrictModel):
         return self
 
 
-class RegisteredIntercalationParametersV1(StrictModel):
-    parameter_schema_id: Literal["registered-intercalation-parameters-v1"] = (
-        "registered-intercalation-parameters-v1"
+class ReasonedIntercalationParametersV1(StrictModel):
+    parameter_schema_id: Literal["reasoned-intercalation-parameters-v1"] = (
+        "reasoned-intercalation-parameters-v1"
     )
-    rule_id: IntercalationRuleId
-    intercalant: Literal["Li", "Na"]
-    site_rule_id: Literal["hex-hollow-a-v1"]
+    operator_spec_id: Identifier
+    intercalant: Annotated[str, Field(pattern=r"^[A-Z][a-z]?$", max_length=2)]
+    intercalant_oxidation_state: Annotated[float, Field(ge=-8.0, le=8.0)]
     insertion_frac_coords: tuple[float, float, float]
-    minimum_parent_gap_angstrom: Literal[3.0] = 3.0
+    minimum_parent_gap_angstrom: Annotated[float, Field(ge=2.5, le=8.0)]
 
     @field_validator("insertion_frac_coords")
     @classmethod
@@ -168,24 +177,17 @@ class RegisteredIntercalationParametersV1(StrictModel):
         return value
 
     @model_validator(mode="after")
-    def registered_species_and_site(self) -> RegisteredIntercalationParametersV1:
-        species, site_rule, xy = INTERCALATION_RULES[self.rule_id]
-        if (self.intercalant, self.site_rule_id) != (species, site_rule):
-            raise ValueError(
-                "intercalation species/site must match the registered rule"
-            )
-        if self.insertion_frac_coords[:2] != xy:
-            raise ValueError(
-                "in-plane insertion coordinates must come from the registered site"
-            )
+    def canonical_species(self) -> ReasonedIntercalationParametersV1:
+        if str(Element(self.intercalant)) != self.intercalant:
+            raise ValueError("intercalant must be a canonical chemical element")
         return self
 
 
-class RegisteredLayerSlideParametersV1(StrictModel):
-    parameter_schema_id: Literal["registered-layer-slide-parameters-v1"] = (
-        "registered-layer-slide-parameters-v1"
+class ReasonedLayerSlideParametersV1(StrictModel):
+    parameter_schema_id: Literal["reasoned-layer-slide-parameters-v1"] = (
+        "reasoned-layer-slide-parameters-v1"
     )
-    rule_id: LayerSlideRuleId
+    operator_spec_id: Identifier
     layer_site_indices: Annotated[
         tuple[Annotated[int, Field(ge=0)], ...], Field(min_length=1, max_length=512)
     ]
@@ -193,27 +195,38 @@ class RegisteredLayerSlideParametersV1(StrictModel):
     layer_partition_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
 
     @model_validator(mode="after")
-    def registered_translation(self) -> RegisteredLayerSlideParametersV1:
+    def bounded_translation(self) -> ReasonedLayerSlideParametersV1:
         if self.layer_site_indices != tuple(sorted(set(self.layer_site_indices))):
             raise ValueError("layer indices must be sorted and unique")
-        if self.translation_fractional_ab != LAYER_SLIDE_RULES[self.rule_id]:
-            raise ValueError("layer translation must exactly match its registered rule")
+        if any(
+            not math.isfinite(value) or abs(value) > 1.0
+            for value in self.translation_fractional_ab
+        ):
+            raise ValueError("layer translation must lie in the executor envelope")
         return self
 
 
 StructureOperationParametersV2 = (
-    HomogeneousStrainParametersV1
+    ReasonedSubstitutionParametersV1
+    | HomogeneousStrainParametersV1
     | EquivalentSiteVacancyParametersV1
-    | RegisteredIntercalationParametersV1
-    | RegisteredLayerSlideParametersV1
+    | ReasonedIntercalationParametersV1
+    | ReasonedLayerSlideParametersV1
 )
+
+
+def operation_parameter_sha256(parameters: StructureOperationParametersV2) -> str:
+    return canonical_sha256(
+        parameters.model_dump(mode="python", exclude={"operator_spec_id"})
+    )
 
 
 _PARAMETER_TYPE_BY_OPERATOR = {
     "APPLY_HOMOGENEOUS_STRAIN_V1": HomogeneousStrainParametersV1,
-    "INTERCALATE_REGISTERED_SITE_V1": RegisteredIntercalationParametersV1,
+    "INTERCALATE_REASONED_GAP_SITE_V1": ReasonedIntercalationParametersV1,
     "REMOVE_EQUIVALENT_SITE_CLASS_V1": EquivalentSiteVacancyParametersV1,
-    "SLIDE_REGISTERED_LAYER_V1": RegisteredLayerSlideParametersV1,
+    "SLIDE_REASONED_LAYER_V1": ReasonedLayerSlideParametersV1,
+    "SUBSTITUTE_EQUIVALENT_SITE_V1": ReasonedSubstitutionParametersV1,
 }
 
 _COMMON_EXECUTION_CHECKS = (
@@ -231,6 +244,37 @@ _COMMON_EXECUTION_CHECKS = (
 )
 
 
+class RunLocalOperatorSpecV1(StrictModel):
+    """One DeepSeek-proposed scientific operation frozen for deterministic replay."""
+
+    schema_version: Literal["run-local-operator-spec-v1"] = "run-local-operator-spec-v1"
+    operator_spec_id: Identifier
+    operator_id: OperationIdV2
+    parent_structure_id: Identifier
+    parameter_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    proposal_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    operator_registry_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    scientific_rationale: Annotated[str, Field(min_length=10, max_length=2_000)]
+    expected_mechanism: Annotated[str, Field(min_length=5, max_length=1_000)]
+    chemical_prior_rationale: Annotated[str, Field(min_length=5, max_length=1_000)]
+    decisive_falsification_test: Annotated[str, Field(min_length=5, max_length=1_000)]
+    generated_by: Literal["DEEPSEEK_NATIVE_REASONING"] = "DEEPSEEK_NATIVE_REASONING"
+    spec_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    scientific_conclusion: Literal[False] = False
+
+    @model_validator(mode="after")
+    def validate_hash(self) -> RunLocalOperatorSpecV1:
+        payload = self.model_dump(
+            mode="python", exclude={"operator_spec_id", "spec_sha256"}
+        )
+        expected = canonical_sha256(payload)
+        if self.spec_sha256 != expected:
+            raise ValueError("run-local operator spec SHA-256 mismatch")
+        if self.operator_spec_id != deterministic_id("operator-spec", payload):
+            raise ValueError("run-local operator spec ID mismatch")
+        return self
+
+
 class StructureOperationPlanV2(StrictModel):
     schema_version: Literal["inspiration-structure-operation-plan-v2"] = (
         STRUCTURE_OPERATION_PLAN_SCHEMA_VERSION
@@ -241,6 +285,7 @@ class StructureOperationPlanV2(StrictModel):
     parent_structure_artifact: ArtifactPointerV1
     operator_id: OperationIdV2
     operator_version: Literal["1"] = "1"
+    operator_spec: RunLocalOperatorSpecV1
     parameters: StructureOperationParametersV2
     preserved_features: Annotated[tuple[str, ...], Field(min_length=1, max_length=16)]
     changed_features: Annotated[tuple[str, ...], Field(min_length=1, max_length=16)]
@@ -269,6 +314,16 @@ class StructureOperationPlanV2(StrictModel):
         expected_type = _PARAMETER_TYPE_BY_OPERATOR[self.operator_id]
         if not isinstance(self.parameters, expected_type):
             raise TypeError("operator and parameter schema do not match")
+        if self.operator_spec.operator_id != self.operator_id:
+            raise ValueError("operator spec and execution kernel do not match")
+        if self.operator_spec.parent_structure_id != self.parent_structure_id:
+            raise ValueError("operator spec and parent structure do not match")
+        if self.operator_spec.parameter_sha256 != operation_parameter_sha256(
+            self.parameters
+        ):
+            raise ValueError("operator spec does not bind the plan parameters")
+        if self.parameters.operator_spec_id != self.operator_spec.operator_spec_id:
+            raise ValueError("parameters do not bind the run-local operator spec")
         expected_hash = transformation_route_sha256(
             parent_structure_id=self.parent_structure_id,
             operator_id=self.operator_id,
@@ -561,10 +616,47 @@ def evaluate_structure_operation_prior(
     removed_fraction = None
     gap = None
     smact = None
-    if isinstance(parameters, HomogeneousStrainParametersV1):
-        maximum = max(abs(parameters.deformation_matrix[i][i] - 1.0) for i in range(3))
+    if isinstance(parameters, ReasonedSubstitutionParametersV1):
+        smact = _smact_decision(
+            proposed_structure, parent_structure, smact_evaluator, smact_policy
+        )
+        common_states = tuple(
+            float(value)
+            for value in Element(parameters.target_species).common_oxidation_states
+        )
+        common_valence = any(
+            math.isclose(parameters.target_oxidation_state, value, abs_tol=1e-8)
+            for value in common_states
+        )
+        charge_decision = _explicit_charge_decision(proposed_structure)
+        decision = (
+            OperationPriorDecision.REJECT
+            if smact is SmactPriorDecision.REJECT or not common_valence
+            else OperationPriorDecision.PASS
+            if smact is SmactPriorDecision.PASS
+            and charge_decision is OperationPriorDecision.PASS
+            else OperationPriorDecision.REQUIRES_REVIEW
+        )
+        reasons.extend(
+            (
+                f"SMACT_{smact.value}",
+                "TARGET_COMMON_VALENCE_PASS"
+                if common_valence
+                else "TARGET_UNCOMMON_VALENCE",
+                f"EXPLICIT_CHARGE_{charge_decision.value}",
+            )
+        )
+    elif isinstance(parameters, HomogeneousStrainParametersV1):
+        maximum = max(
+            abs(
+                parameters.deformation_matrix[row][column]
+                - (1.0 if row == column else 0.0)
+            )
+            for row in range(3)
+            for column in range(3)
+        )
         reasons.append(
-            "ELASTIC_STRAIN_WITHIN_3_PERCENT"
+            "STRAIN_WITHIN_CONSERVATIVE_PRIOR"
             if maximum <= 0.03
             else "STRAIN_REQUIRES_REVIEW"
         )
@@ -587,7 +679,7 @@ def evaluate_structure_operation_prior(
         )
         if removed_fraction > parameters.maximum_removed_site_fraction:
             decision = OperationPriorDecision.REJECT
-            reasons.append("VACANCY_FRACTION_EXCEEDS_25_PERCENT")
+            reasons.append("VACANCY_FRACTION_EXCEEDS_PROPOSED_LIMIT")
         else:
             smact = _smact_decision(
                 proposed_structure, parent_structure, smact_evaluator, smact_policy
@@ -604,7 +696,7 @@ def evaluate_structure_operation_prior(
             reasons.append("VACANCY_FRACTION_WITHIN_BOUND")
             reasons.append(f"SMACT_{smact.value}")
             reasons.append(f"EXPLICIT_CHARGE_{charge_decision.value}")
-    elif isinstance(parameters, RegisteredIntercalationParametersV1):
+    elif isinstance(parameters, ReasonedIntercalationParametersV1):
         _, gap = largest_c_gap(parent_structure)
         if gap < parameters.minimum_parent_gap_angstrom:
             decision = OperationPriorDecision.REJECT
@@ -613,15 +705,30 @@ def evaluate_structure_operation_prior(
             smact = _smact_decision(
                 proposed_structure, parent_structure, smact_evaluator, smact_policy
             )
+            common_states = tuple(
+                float(value)
+                for value in Element(parameters.intercalant).common_oxidation_states
+            )
+            common_valence = any(
+                math.isclose(
+                    parameters.intercalant_oxidation_state,
+                    value,
+                    abs_tol=1e-8,
+                )
+                for value in common_states
+            )
             decision = (
                 OperationPriorDecision.REJECT
-                if smact is SmactPriorDecision.REJECT
+                if smact is SmactPriorDecision.REJECT or not common_valence
                 else OperationPriorDecision.REQUIRES_REVIEW
             )
             reasons.extend(
                 (
                     "HOST_REDOX_ASSIGNMENT_REQUIRED",
-                    "REGISTERED_VDW_SITE",
+                    "INTERCALANT_COMMON_VALENCE_PASS"
+                    if common_valence
+                    else "INTERCALANT_UNCOMMON_VALENCE",
+                    "REASONED_VDW_GAP_SITE",
                     f"SMACT_{smact.value}",
                 )
             )
@@ -649,6 +756,12 @@ def evaluate_structure_operation_prior(
 
 def _apply_operation(plan: StructureOperationPlanV2, parent: Structure) -> Structure:
     parameters = plan.parameters
+    if isinstance(parameters, ReasonedSubstitutionParametersV1):
+        output = parent.copy()
+        target = Species(parameters.target_species, parameters.target_oxidation_state)
+        for index in parameters.equivalent_site_indices:
+            output.replace(index, target)
+        return output
     if isinstance(parameters, HomogeneousStrainParametersV1):
         matrix = parameters.deformation_matrix
         old = parent.lattice.matrix
@@ -668,17 +781,20 @@ def _apply_operation(plan: StructureOperationPlanV2, parent: Structure) -> Struc
         output = parent.copy()
         output.remove_sites(list(parameters.equivalent_site_indices))
         return output
-    if isinstance(parameters, RegisteredIntercalationParametersV1):
+    if isinstance(parameters, ReasonedIntercalationParametersV1):
         output = parent.copy()
         output.append(
-            Species(parameters.intercalant, 1),
+            Species(
+                parameters.intercalant,
+                parameters.intercalant_oxidation_state,
+            ),
             parameters.insertion_frac_coords,
             coords_are_cartesian=False,
             validate_proximity=False,
         )
         return output
     output = parent.copy()
-    assert isinstance(parameters, RegisteredLayerSlideParametersV1)
+    assert isinstance(parameters, ReasonedLayerSlideParametersV1)
     vector = (*parameters.translation_fractional_ab, 0.0)
     output.translate_sites(
         list(parameters.layer_site_indices), vector, frac_coords=True, to_unit_cell=True
@@ -717,6 +833,23 @@ def _operation_semantics(
     plan: StructureOperationPlanV2, parent: Structure, output: Structure
 ) -> tuple[bool, str]:
     parameters = plan.parameters
+    if isinstance(parameters, ReasonedSubstitutionParametersV1):
+        groups = _equivalent_site_groups(parent)
+        indices = parameters.equivalent_site_indices
+        valid = (
+            indices in groups
+            and all(
+                _bare_element(parent[index]) == parameters.source_species
+                for index in indices
+            )
+            and all(
+                _bare_element(output[index]) == parameters.target_species
+                for index in indices
+            )
+            and len(output) == len(parent)
+            and output.lattice == parent.lattice
+        )
+        return valid, "One complete symmetry-equivalence class was substituted."
     if isinstance(parameters, HomogeneousStrainParametersV1):
         valid = (
             len(output) == len(parent)
@@ -746,9 +879,9 @@ def _operation_semantics(
             and len(output) == len(parent) - len(indices)
         )
         return valid, "Exactly one complete symmetry-equivalence class was removed."
-    if isinstance(parameters, RegisteredIntercalationParametersV1):
+    if isinstance(parameters, ReasonedIntercalationParametersV1):
         midpoint, gap = largest_c_gap(parent)
-        expected = (*INTERCALATION_RULES[parameters.rule_id][2], midpoint)
+        expected = (*parameters.insertion_frac_coords[:2], midpoint)
         valid = (
             len(output) == len(parent) + 1
             and all(
@@ -759,9 +892,9 @@ def _operation_semantics(
         )
         return (
             valid,
-            "One allowlisted intercalant was inserted at the derived largest-gap site.",
+            "One reasoned intercalant was inserted at its proposed in-plane position and the derived largest-gap midpoint.",
         )
-    assert isinstance(parameters, RegisteredLayerSlideParametersV1)
+    assert isinstance(parameters, ReasonedLayerSlideParametersV1)
     groups = layer_groups(parent)
     valid = (
         parameters.layer_site_indices in groups
@@ -827,6 +960,14 @@ def execute_registered_structure_operation(
         raise TransformationIntegrityError(
             "SOFTCHEM_REGISTRY_HASH_MISMATCH",
             "v2 registry artifact is not the execution registry",
+        )
+    if (
+        request.plan.operator_spec.operator_registry_sha256
+        != hashlib.sha256(registry_bytes).hexdigest()
+    ):
+        raise TransformationIntegrityError(
+            "RUN_LOCAL_SPEC_REGISTRY_MISMATCH",
+            "run-local operator spec does not bind the execution registry",
         )
     parent = _validate_parent_artifact(
         request.plan,
@@ -1032,6 +1173,7 @@ def make_operation_plan(
     parent_structure_id: str,
     parent_pointer: ArtifactPointerV1,
     operator_id: OperationIdV2,
+    operator_spec: RunLocalOperatorSpecV1,
     parameters: StructureOperationParametersV2,
     preserved_features: tuple[str, ...],
     changed_features: tuple[str, ...],
@@ -1050,6 +1192,7 @@ def make_operation_plan(
         parent_structure_id=parent_structure_id,
         parent_structure_artifact=parent_pointer,
         operator_id=operator_id,
+        operator_spec=operator_spec,
         parameters=parameters,
         preserved_features=preserved_features,
         changed_features=changed_features,
@@ -1061,3 +1204,43 @@ def make_operation_plan(
         bridge_packet_ids=("generic-research-mechanism-v2",),
         route_sha256=route,
     )
+
+
+def freeze_run_local_operator_spec(
+    *,
+    operator_id: OperationIdV2,
+    parent_structure_id: str,
+    parameters: StructureOperationParametersV2,
+    proposal_payload: dict[str, object],
+    operator_registry_sha256: str,
+    scientific_rationale: str,
+    expected_mechanism: str,
+    chemical_prior_rationale: str,
+    decisive_falsification_test: str,
+) -> tuple[RunLocalOperatorSpecV1, StructureOperationParametersV2]:
+    """Freeze one reasoned proposal and bind its derived executable parameters."""
+
+    parameter_sha256 = operation_parameter_sha256(parameters)
+    spec_payload = {
+        "schema_version": "run-local-operator-spec-v1",
+        "operator_id": operator_id,
+        "parent_structure_id": parent_structure_id,
+        "parameter_sha256": parameter_sha256,
+        "proposal_sha256": canonical_sha256(proposal_payload),
+        "operator_registry_sha256": operator_registry_sha256,
+        "scientific_rationale": scientific_rationale,
+        "expected_mechanism": expected_mechanism,
+        "chemical_prior_rationale": chemical_prior_rationale,
+        "decisive_falsification_test": decisive_falsification_test,
+        "generated_by": "DEEPSEEK_NATIVE_REASONING",
+        "scientific_conclusion": False,
+    }
+    spec = RunLocalOperatorSpecV1(
+        **spec_payload,
+        operator_spec_id=deterministic_id("operator-spec", spec_payload),
+        spec_sha256=canonical_sha256(spec_payload),
+    )
+    parameter_payload = parameters.model_dump(mode="python")
+    parameter_payload["operator_spec_id"] = spec.operator_spec_id
+    bound_parameters = type(parameters).model_validate(parameter_payload)
+    return spec, bound_parameters
