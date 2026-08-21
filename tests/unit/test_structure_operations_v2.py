@@ -343,6 +343,7 @@ def test_reasoned_gap_intercalation_executes_with_smact_receipt(
     magnesium_site = next(
         site for site in result.output_structure if site.specie.symbol == "Mg"
     )
+    assert getattr(magnesium_site.specie, "oxi_state", None) is None
     assert magnesium_site.frac_coords[0] == pytest.approx(0.29)
     assert magnesium_site.frac_coords[1] == pytest.approx(0.61)
     assert result.prior.smact_decision == "PASS"

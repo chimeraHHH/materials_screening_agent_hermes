@@ -1,7 +1,7 @@
-"""Registered, deterministic structure operations beyond element substitution.
+"""Deterministic kernels for DeepSeek-reasoned minimal structure operations.
 
-DeepSeek may choose only a reviewed rule ID.  Site indices, layer membership,
-gap centers, and coordinates are derived locally from the hash-bound parent CIF.
+Material-specific parameters come from a run-local reasoned spec. Site indices,
+layer membership, and gap centers are derived from the hash-bound parent CIF.
 Every output remains a proposal and carries both prior and validator receipts.
 """
 
@@ -1081,13 +1081,19 @@ def execute_registered_structure_operation(
     if not all((ordered, finite, positive, distant)):
         return _rejected(request.plan, prior, checks)
     canonical = _canonicalize_structure(output)
+    # CIF oxidation labels are not portable across elements/readers (for example,
+    # pymatgen writes ``Li+`` but reads it back as bare ``Li``). The proposed
+    # valence remains hash-bound in the operator spec and prior; the structural
+    # artifact deliberately uses bare elements so its geometry can round-trip.
+    artifact_structure = canonical.copy()
+    artifact_structure.remove_oxidation_states()
     try:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             processed = process_structure(
-                canonical,
-                summary_elements=sorted(_element_composition(canonical)),
-                summary_num_sites=len(canonical),
+                artifact_structure,
+                summary_elements=sorted(_element_composition(artifact_structure)),
+                summary_num_sites=len(artifact_structure),
                 policy=_CANONICAL_POLICY,
             )
     except (StructureValidationError, TypeError, ValueError) as error:
@@ -1116,7 +1122,7 @@ def execute_registered_structure_operation(
         return _rejected(request.plan, prior, checks)
     artifact = _serialize_cif(processed.structure)
     round_trip = _round_trip_matches(artifact, processed.structure) and _strict_match(
-        canonical, processed.structure
+        artifact_structure, processed.structure
     )
     checks.append(
         _check(

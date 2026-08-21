@@ -74,7 +74,28 @@ from material_agent.retrieval.storage import LocalArtifactStore
 GENERIC_RESEARCH_TOOL_NAME = "materials_generic_research_run"
 GENERIC_RESEARCH_REQUEST_SCHEMA_VERSION = "materials-generic-research-run-v1"
 GENERIC_RESEARCH_RESULT_SCHEMA_VERSION = "materials-generic-research-run-v7"
-GENERIC_RESEARCH_IMPLEMENTATION_REVISION = "generic-research-20260821-r14"
+GENERIC_RESEARCH_IMPLEMENTATION_REVISION = "generic-research-20260821-r15"
+
+
+def allocate_research_search_calls(
+    *, provider_count: int, requested_authoritative_calls: int
+) -> tuple[int, int, int]:
+    """Fit authoritative, candidate, and counter searches into 64 physical calls."""
+
+    if not 1 <= provider_count <= 16:
+        raise ValueError("provider_count must be between 1 and 16")
+    if not 2 <= requested_authoritative_calls <= 24:
+        raise ValueError("requested authoritative calls must be between 2 and 24")
+    logical_capacity = 64 // provider_count
+    if logical_capacity < 4:
+        raise ValueError("provider fan-out leaves no safe three-route search budget")
+    authoritative = min(requested_authoritative_calls, logical_capacity - 2)
+    remaining = logical_capacity - authoritative
+    candidate = min(4, max(1, remaining // 3))
+    counter = min(8, remaining - candidate)
+    if counter < 1:
+        raise ValueError("counter-evidence search requires at least one call")
+    return authoritative, candidate, counter
 
 
 def research_secret_resolver_from_environment(
@@ -128,7 +149,7 @@ class GenericResearchRunResultV7(StrictModel):
     schema_version: Literal["materials-generic-research-run-v7"] = (
         GENERIC_RESEARCH_RESULT_SCHEMA_VERSION
     )
-    implementation_revision: Literal["generic-research-20260821-r14"] = (
+    implementation_revision: Literal["generic-research-20260821-r15"] = (
         GENERIC_RESEARCH_IMPLEMENTATION_REVISION
     )
     run_id: str
@@ -204,8 +225,8 @@ class GenericMaterialsResearchService:
         result_path = f"generic_research/{run_id}/result.json"
         result_uri = f"artifact://{result_path}"
         if self.store.exists(result_uri):
-            cached = GenericResearchRunResultV7.model_validate(
-                self.store.read_json(result_uri)
+            cached = GenericResearchRunResultV7.model_validate_json(
+                canonical_json_bytes(self.store.read_json(result_uri))
             )
             return self._with_report(cached)
 
@@ -219,11 +240,13 @@ class GenericMaterialsResearchService:
         )
         search_environment.setdefault(PUBLIC_SEARCH_MAX_RESULTS_ENV, "20")
         provider_count = len(search_environment[PUBLIC_SEARCH_PROVIDER_ENV].split("+"))
-        candidate_search_calls = 4
-        counter_search_calls = 8
-        authoritative_calls = min(
-            selected.max_authoritative_search_calls,
-            64 // provider_count,
+        (
+            authoritative_calls,
+            candidate_search_calls,
+            counter_search_calls,
+        ) = allocate_research_search_calls(
+            provider_count=provider_count,
+            requested_authoritative_calls=selected.max_authoritative_search_calls,
         )
         search_budget = SearchBudgetV1(
             max_queries=authoritative_calls,
@@ -403,9 +426,10 @@ class GenericMaterialsResearchService:
                 role_rounds = min(selected.max_agent_rounds_per_role, 6)
                 role_tool_calls = 8
             role_total_tokens = (
-                300_000
-                if role in {"skeptic", "hypothesis_reasoner"}
-                else 240_000
+                500_000
+                if role
+                in {"mechanism_chemist", "skeptic", "hypothesis_reasoner"}
+                else 400_000
                 if role == "synthesist"
                 else 180_000
             )

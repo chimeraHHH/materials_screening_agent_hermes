@@ -8,6 +8,7 @@ from types import SimpleNamespace
 from material_agent.integration.generic_research import (
     GENERIC_RESEARCH_TOOL_NAME,
     GenericResearchRunRequestV1,
+    allocate_research_search_calls,
     generic_research_tool_manifest,
 )
 from material_agent.integration.research_pipeline import (
@@ -38,6 +39,20 @@ def _request() -> ResearchPipelineRunRequestV1:
         goal="Generate one literature-grounded TiSe2 hypothesis without DFT.",
         top_k=1,
     )
+
+
+def test_generic_search_fanout_never_exceeds_physical_request_ceiling() -> None:
+    authoritative, candidate, counter = allocate_research_search_calls(
+        provider_count=4, requested_authoritative_calls=12
+    )
+    assert (authoritative, candidate, counter) == (12, 1, 3)
+    assert (authoritative + candidate + counter) * 4 == 64
+
+    authoritative, candidate, counter = allocate_research_search_calls(
+        provider_count=5, requested_authoritative_calls=12
+    )
+    assert (authoritative, candidate, counter) == (10, 1, 1)
+    assert (authoritative + candidate + counter) * 5 <= 64
 
 
 class _Service:
