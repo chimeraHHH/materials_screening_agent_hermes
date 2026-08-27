@@ -1,0 +1,60 @@
+\appendix
+
+\section{Hermes Profiles and Gateway Surface}
+\label{app:hermes}
+
+The repository contains three source-controlled \hermes Profiles.  \texttt{materials-inspiration} exposes the production materials and research toolsets with manual approvals and bounded run continuation.  \texttt{materials-inspiration-research} exposes the long-running generic research entry point.  \texttt{materials-inspiration-evolution} enables \hermes-native Skills, memory, curator, and bounded delegation while exposing only read-only materials run and result tools.  The deployment used \hermes release v2026.8.3, package version 0.20.0.
+
+The production MCP surface contains four core actions: start an inspiration run, read run state, apply an advertised run action, and retrieve a verified terminal result.  Research Profiles additionally expose the complete materials-research pipeline and generic research entry points.  Each tool validates strict JSON input and output models.  Read-only tools are distinguished from mutating tools, and result retrieval verifies the authoritative terminal artifact before returning its projection.  The exact public tool identifiers are retained in the source-controlled Profile manifests.
+
+\section{Candidate and Evidence Contracts}
+\label{app:contracts}
+
+A candidate record contains a stable candidate identifier, source identities, formula, structure pointers, route, constraint matrix, inference matrix, operation plans, model tasks, and decision history.  An evidence record minimally contains the candidate identifier, constraint identifier, relation, value and units where applicable, source or model identity, artifact pointer, retrieval or execution time, and provenance hash.  Direct evidence verdicts are PASS, FAIL, or UNKNOWN.  Scientific inference is stored separately as LIKELY\_PASS or LIKELY\_FAIL with confidence, assumptions, and a decisive falsifier.
+
+Structures are content-addressed.  Cross-database identity links do not merge native entries or their properties; they add typed edges between source records and the candidate.  A model observation is attached to the exact structure artifact used as input.  This contract prevents a family-level paper, parent property, or neighbouring database entry from becoming a child-specific numerical observation.
+
+\section{Soft-Chemistry Registry}
+\label{app:softchem}
+
+The registry resolves the following versioned operators:
+
+\begin{itemize}
+    \item \texttt{SUBSTITUTE\_EQUIVALENT\_SITE\_V1};
+    \item \texttt{REMOVE\_EQUIVALENT\_SITE\_CLASS\_V1};
+    \item \texttt{INTERCALATE\_REASONED\_GAP\_SITE\_V1};
+    \item \texttt{APPLY\_HOMOGENEOUS\_STRAIN\_V1};
+    \item \texttt{SLIDE\_REASONED\_LAYER\_V1};
+    \item \texttt{APPLY\_CARRIER\_DOPING\_V1};
+    \item \texttt{APPLY\_ELECTROSTATIC\_GATE\_V1};
+    \item \texttt{PLAN\_MAGNETIC\_PROXIMITY\_V1};
+    \item \texttt{PLAN\_VDW\_HETEROSTRUCTURE\_V1}.
+\end{itemize}
+
+Every plan freezes its operator and specification version, typed parameters, parent structure pointer, scientific rationale, provenance, and canonical content hash.  Structure outputs pass parse, CIF round-trip, coordinate, cell, site-count, minimum-distance, dimensionality, periodic-gap, and contributor-graph checks as applicable.  Chemistry priors report charge-balance and common-valence assessments without replacing electronic calculations.
+
+\section{Scientific Task and Artifact Types}
+\label{app:tasks}
+
+The validation service defines task kinds for research-evidence import, database band import, two-dimensional structure assessment, generic model inference, structure/energy models, learned non-SOC and SOC Hamiltonians, band calculation, band analysis, and first-principles execution.  Input and output artifacts include canonical CIFs, source responses, graph inputs, checkpoints, Hamiltonian arrays, band arrays and plots, normalized observations, execution receipts, and scientific evidence records.
+
+Capabilities declare supported task kinds and observables, accepted and required artifacts, produced artifacts, physics features, supported chemistry or dimensionality when constrained, checkpoint hash, benchmark status, evidence ceiling, real-backend status, and cost.  A route is approved only when its input structure, prerequisite artifacts, parameter schema, capability snapshot, and cost satisfy the frozen policy.
+
+\section{Backend Controls}
+\label{app:controls}
+
+Three end-to-end controls exercise independent portions of the scientific stack.  A CHGNet calculation ran on an NVIDIA L40S and returned a real energy/force result for elemental Si, establishing device selection, checkpoint loading, artifact transfer, and receipt capture for the structure-model adapter.  A Uni-HamGNN route produced a real SOC Hamiltonian and band structure for ZrSiPt; the archived band analysis measured a target bandwidth of 0.827865\,eV.  A remote Quantum ESPRESSO 7.6 self-consistent-field run for Si produced a total energy of $-16.51510414$\,Ry and preserved its calculation manifest and remote outputs.  These controls validate adapter execution and provenance within their stated systems and observables.
+
+\section{Layered Benchmark Protocol}
+\label{app:benchmark}
+
+The paired benchmark evaluates five arms: base language model; base model with \hermes; \hermes with retrieval and federated evidence; \hermes with evidence and structure transformations; and the complete system with model DAG and candidate evolution.  Assignment operates at the structure-family group level.  The frozen rubric scores scientific constraint fidelity, source correctness, candidate identity, structural executability, validation specificity, and expert usefulness.  Runtime, model/tool calls, artifact recovery, and decisive-observable coverage are secondary measures.
+
+Reports are blinded before independent expert review.  Adjudication records item-level disagreements without changing the original reviews.  Analysis uses paired case-level differences and bootstrap intervals over structure-family groups.  Calibration used 12 pre-cases; five independent eligible cases were retained after structure-family and target-class screening, and 36 item-level disagreements were adjudicated to finalize the rubric.
+
+\section{Reproducibility and Artifact Layout}
+\label{app:reproducibility}
+
+Each run directory contains the original request, normalized goal and constraint graph, source query receipts and raw responses, candidate and evidence records, structure artifacts, operator plans and results, capability snapshots, model task plans, execution bindings, native outputs, normalized scientific evidence, feedback cycles, and a terminal report.  Content hashes bind plans and observations to exact inputs.  Run identifiers and idempotent task identities permit recovery without overwriting prior artifacts.
+
+The conceptual system figures in this manuscript are generated separately from the scientific results, and their prompts are retained with the figure files.  Statistical plots are generated from manuscript source-data tables and exported as editable SVG/PDF plus high-resolution raster formats.  Structure panels are rendered from archived CIFs, and band panels reproduce archived model outputs directly.

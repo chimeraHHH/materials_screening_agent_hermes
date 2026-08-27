@@ -1,5 +1,17 @@
 # Material Screening Agent
 
+## Full research report
+
+The complete report, **Materials Research Agent: A Hermes-Based Agentic System
+for Evidence-Grounded Materials Hypothesis Generation and Structure
+Exploration**, is available as a
+[PDF](docs/reports/materials-research-agent-full-report/materials-research-agent-full-report.pdf).
+The compile-ready [LaTeX source package](docs/reports/materials-research-agent-full-report/source)
+includes the manuscript sections, bibliography, final figures, and conceptual-figure prompts.
+
+- **Author:** Yiming Hua, Wuhan University
+- **Contact:** cnhym@foxmail.com
+
 This repository implements the durable Orchestrator P0.2 control plane,
 the deterministic single-source public-database retrieval stage, and explicitly
 test-only mock control adapters for the downstream stages described in

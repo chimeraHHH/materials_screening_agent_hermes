@@ -1,0 +1,36 @@
+\section{Related Work}
+\label{sec:related}
+
+\subsection{Agentic systems for scientific research}
+
+Tool-augmented language models have moved scientific agents from conversational assistance toward the execution of specialist workflows.  ChemCrow connects a language model to chemistry tools and demonstrates improvements on synthesis, safety, and analysis tasks \cite{bran2024chemcrow}.  Coscientist organizes language models, web search, code execution, and laboratory hardware to plan and execute chemical experiments \cite{boiko2023coscientist}.  A-Lab combines literature-derived synthesis knowledge, active learning, computation, and robotics in an autonomous inorganic-synthesis loop \cite{szymanski2023alab}.  More recent co-scientist systems use interacting agents and scientist feedback to generate and refine hypotheses \cite{gottweis2026coscientist}.
+
+These systems motivate research agents as coordinators rather than standalone predictors.  AutoSci extends this view to a complete research lifecycle organized around long-term knowledge memory, active research memory, a staged harness, reusable DAG operators, and controlled self-evolution \cite{qian2026autosci}.  \system adopts the lifecycle perspective while changing the persistent unit from a general research entity to a structure-centred materials candidate.  Its candidate record makes crystal structures, transformation lineages, model inputs, and observable-level evidence directly addressable throughout the lifecycle.
+
+\subsection{Materials data federation}
+
+Large computational databases provide the substrate for modern materials screening.  The Materials Project supplies computed structures and properties through a programmatic interface \cite{jain2013materials}; C2DB specializes in systematically calculated two-dimensional materials and electronic structures \cite{haastrup2018c2db}; NOMAD provides FAIR storage and analysis of heterogeneous computational materials data \cite{sbailo2022nomad}; and MC3D curates experimentally known inorganic structures and reproducible DFT relaxations \cite{huber2026mc3d}.  OPTIMADE defines a common API that enables interoperable access across database providers \cite{andersen2021optimade}.
+
+Federation creates a semantic problem in addition to an access problem.  The same formula may refer to several polymorphs, magnetic configurations, dimensional reductions, or calculation levels, while a property available in one source may not exist in another.  \matevidence therefore retains source identities and native provenance, links records through explicit candidate-identity edges, and does not fill missing candidate properties by cross-database analogy.  The resulting evidence graph complements standards for data exchange by defining how retrieved records become candidate-specific scientific judgements.
+
+\subsection{Materials generation and structure intervention}
+
+Machine-learning models have substantially expanded candidate generation.  GNoME uses deep learning and large-scale first-principles evaluation to identify stable crystal structures \cite{merchant2023gnome}; MatterGen generates inorganic materials under compositional, symmetry, and property conditions \cite{zeni2025mattergen}; and SCIGEN integrates structural constraints into generative modelling for quantum-material motifs such as Lieb lattices \cite{okabe2026scigen}.  These models address the important inverse problem of proposing crystals from learned structure distributions.
+
+\mattransform addresses a complementary task.  It begins from an identified parent and compiles a scientific intervention---substitution, removal, intercalation, strain, layer sliding, doping, gating, proximity, or heterostructure formation---into a typed operation or condition plan.  Its primary object is the parent--operation--child lineage rather than an isolated generated sample.  This formulation is particularly useful for soft-chemistry reasoning, in which the relationship to a known parent, charge-compensation route, stacking arrangement, or experimental control variable is part of the hypothesis.
+
+\subsection{Accelerated atomistic and electronic models}
+
+Machine-learning interatomic potentials offer rapid access to energies, forces, and structural relaxation.  CHGNet incorporates magnetic moments as a charge-informed representation and is pretrained on Materials Project trajectories \cite{deng2023chgnet}.  Learned electronic models target a different layer of the scientific stack.  Uni-HamGNN predicts spin--orbit-coupled Hamiltonians across broad chemistry and supplies an accelerated route to quantum-material bands \cite{zhong2026uniham}.  First-principles packages such as Quantum ESPRESSO remain central for higher-specificity electronic calculations and controlled validation \cite{giannozzi2017qe}.
+
+\matdag treats these programs as capabilities with different inputs, observables, domains, and evidence ceilings.  A structure model, Hamiltonian model, band analyser, and first-principles calculation can therefore appear in one dependency graph without making their outputs interchangeable.  The graph is assembled for each candidate and each unresolved constraint, allowing accelerated screening to narrow a portfolio before selected higher-cost calculations.
+
+\subsection{Flat bands, Lieb lattices, and magnetic topology}
+
+Crystalline flat bands provide a structural route to enhanced interactions and non-trivial topology.  General classifications connect flat bands to real-space band representations and lattice geometry \cite{calugaru2022flatbands}, while high-throughput crystal-net catalogues identify large numbers of elemental sublattices with model flat bands, including Lieb nets \cite{neves2024crystalnets}.  Electronic Lieb lattices have also been constructed and imaged in atomically patterned surface systems \cite{drost2017lieb}.  These works motivate combining graph-level lattice recognition with explicit electronic and orbital diagnostics.
+
+Layered magnetic materials provide a complementary design space.  Intrinsic ferromagnetism in few-layer Cr$_2$Ge$_2$Te$_6$ and layer-dependent ferromagnetism in CrI$_3$ established two-dimensional van der Waals magnets as experimentally accessible systems \cite{gong2017cgt,huang2017cri3}.  MnBi$_2$Te$_4$ and related heterostructures demonstrate how magnetic order, spin--orbit coupling, surfaces, and interfaces can jointly produce topological electronic states \cite{otrokov2019mnbi2te4,rienks2019hetero}.  The six-route case study in Section~\ref{sec:case-vdw} uses these physical mechanisms as search axes while retaining separate magnetic, band-alignment, and topological observables.
+
+\subsection{Positioning}
+
+\system lies at the intersection of these areas.  It is not a new foundation model, a single materials database, or a replacement for a first-principles code.  It is a persistent research environment that turns an open scientific question into a candidate-centred graph of constraints, evidence, structures, operations, model tasks, and decisions.  Its contribution is the shared abstraction that lets agentic research, materials federation, soft-chemistry structure realization, and heterogeneous scientific models operate on the same evolving materials objects.

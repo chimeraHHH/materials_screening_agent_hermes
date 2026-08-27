@@ -1,0 +1,47 @@
+\section{MatSpec: Compiling Open-Ended Materials Questions}
+\label{sec:matspec}
+
+Materials questions often mix hard requirements, mechanistic preferences, permitted interventions, and desired measurements in one sentence.  \matspec separates these roles and compiles the request into a scientific constraint graph
+\begin{equation}
+    \mathcal{G}_{\mathrm{spec}}=(\mathcal{C},\mathcal{R},\mathcal{O},\mathcal{Y}),
+\end{equation}
+where $\mathcal{C}$ is a set of typed constraints, $\mathcal{R}$ contains logical or mechanistic relations between constraints, $\mathcal{O}$ specifies allowed structure or condition operations, and $\mathcal{Y}$ lists the observables required to evaluate the goal.  The graph is the contract shared by retrieval, hypothesis generation, transformation, and validation.
+
+\subsection{Constraint types}
+
+Each constraint $c_i\in\mathcal{C}$ contains a type, subject, predicate, threshold or categorical target, evidence requirement, and priority.  We use six broad types: composition, crystal structure, electronic structure, magnetism and topology, chemical realizability, and evidence quality.  A hard constraint determines whether a candidate can satisfy the stated problem; a ranking constraint distinguishes promising candidates within the feasible set; and a context constraint records a mechanism or condition needed to interpret other observations.  The distinction prevents a strong literature mechanism from being mistaken for a measured candidate property, while still allowing it to guide search.
+
+\begin{table}[t]
+    \centering
+    \caption{\textbf{Examples of MatSpec constraint compilation in the three case studies.}}
+    \label{tab:constraints}
+    \small
+    \setlength{\tabcolsep}{4pt}
+    \renewcommand{\arraystretch}{1.13}
+    \begin{tabularx}{\linewidth}{>{\raggedright\arraybackslash}p{0.15\linewidth}>{\raggedright\arraybackslash}p{0.23\linewidth}X>{\raggedright\arraybackslash}p{0.18\linewidth}}
+        \toprule
+        \textbf{Problem} & \textbf{Constraint} & \textbf{Compiled interpretation} & \textbf{Target evidence} \\
+        \midrule
+        2D flat band & Transition-metal sublattice & A periodic connected graph of transition-metal sites must remain in the explicit structure & Canonical CIF and graph analysis \\
+        2D flat band & Flat band near $E_\mathrm{F}$ & Bandwidth and Fermi-level distance are distinct observables; neither is inferred from metadata & Band energies on a declared $k$ path \\
+        vdW FM topology & Intrinsic or engineered ferromagnetism & Separate magnetic ground state, ordering scale, and magnetic-anisotropy targets & Magnetic calculations or experiment \\
+        vdW FM topology & Non-trivial topology & SOC gap, Fermi-level placement and topological invariant are separate constraints & SOC Hamiltonian/DFT and invariant \\
+        Lieb lattice & Fractional transition-metal valence & Formal charge balance must admit a non-integer average $d$-metal valence without asserting site-resolved charge order & Composition, structure and later charge analysis \\
+        Lieb lattice & Lieb connectivity & Contributor sites must form the intended line-centred-square graph rather than a visually similar motif & Structure graph and orbital projection \\
+        \bottomrule
+    \end{tabularx}
+\end{table}
+
+Table~\ref{tab:constraints} illustrates a central aspect of compilation: compound phrases are split into independently testable observables.  ``Ferromagnetic topological insulator'', for example, does not become one Boolean property.  It becomes a conjunction of magnetic order, relevant temperature scale, spin--orbit-coupled gap, Fermi-level placement, and a topological diagnostic.  Similarly, ``a flat band at the Fermi level'' separates bandwidth, energy alignment, competing dispersive crossings, and orbital or sublattice character.
+
+\subsection{Relations and conditional paths}
+
+Edges $\mathcal{R}$ encode logical dependence and scientific mechanism.  A hard logical edge can state that a topological invariant is meaningful only for an identified isolated band manifold.  A mechanistic edge can state that increasing spin--orbit coupling is expected to act on a band inversion, but does not by itself establish topology.  Conditional edges define alternative research routes: intrinsic magnetism, magnetic intercalation, proximity coupling, electrostatic control, strain, or heterostructure formation can each be explored while sharing the same terminal observables.
+
+This representation permits open questions to remain open without becoming vague.  The fractional-valence Lieb-lattice problem, for example, is expressed as three coordinated routes: federated structure discovery, literature-and-mechanism transfer, and direct structure generation.  All three populate a common candidate schema and are judged against the same constraint graph, even though their starting evidence differs.
+
+\subsection{Search and validation plans}
+
+The compiled search plan specifies which sources can directly address each constraint and which observations require new computation.  Source selection is based on declared fields rather than convenience.  If a source supplies a structure but no band energies, it can support dimensionality or connectivity but cannot support the flat-band constraint.  The validation plan maps unresolved constraints to observables and assigns a preferred progression from inexpensive evidence to more specific calculation.  For electronic candidates, a typical progression is database band retrieval, learned-Hamiltonian screening, explicit band diagnostics, and selected first-principles confirmation.  For structural interventions, the plan first requires an executable child structure and hard-gate checks before electronic tasks are admitted.
+
+The output of \matspec is therefore not a prose paraphrase.  It is a versioned graph and a set of machine-checkable targets that constrain every downstream module.  The original user goal is retained alongside its compiled representation so that final reports can connect each claim back to the question that motivated it.

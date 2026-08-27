@@ -1,0 +1,52 @@
+\section{MatDAG: Capability-Aware Scientific Validation}
+\label{sec:matdag}
+
+\matdag translates unresolved candidate constraints into an executable graph of scientific tasks.  Its central design choice is to route on declared model capability rather than model name alone.  Each registered capability specifies accepted and required artifact kinds, produced artifacts, supported elements and dimensionalities where applicable, physics features, parameter schema, checkpoint hash, evidence ceiling, benchmark status, estimated cost, and whether the backend is real.
+
+\subsection{From observables to task graphs}
+
+For a candidate $m$ with structure $s$, the hypothesis reasoner proposes a route
+\begin{equation}
+    \mathcal{T}_m=\{t_k=(y_k,a_k,d_k,\phi_k)\},
+\end{equation}
+where $y_k$ is the requested observable, $a_k$ is a capability, $d_k$ is a set of prerequisite tasks, and $\phi_k$ contains parameters.  A deterministic auditor then verifies structure binding, input compatibility, checkpoint readiness, parameter validity, dependency artifacts, cost budget, and the evidence level the task may support.  The auditor can block an inapplicable task but does not rewrite the scientific contents of the route.
+
+This division allows model reasoning to decide \emph{what} should be calculated while policy decides whether the proposed calculation is executable and what can be claimed from it.  An approved plan stores the hash of the reasoning proposal, policy, capability snapshot, goal, and input structure.  An execution result can therefore be traced back to the exact scientific question and software/model state that produced it.
+
+\subsection{Electronic-structure route}
+
+The present electronic route contains four task families.  A database import task retrieves a source-native band structure and its calculation metadata.  A learned-Hamiltonian task constructs a graph input and predicts a non-SOC or SOC Hamiltonian with an explicitly frozen basis identity.  A band task diagonalizes the Hamiltonian along a declared path and produces numerical energies and a plot.  A band-analysis task evaluates bandwidth, distance to $E_\mathrm{F}$, competing dispersive crossings, and first-order crossings according to the campaign policy.  Selected candidates can then enter a first-principles route with a versioned code, pseudopotentials, numerical parameters, remote execution receipt, and archived output.
+
+Structure and energy models provide complementary tasks for geometry checking, relaxation, or coarse stability ranking.  Their outputs are not automatically promoted to electronic evidence.  In particular, a surrogate energy or force calculation cannot establish a topological invariant, and a band-width measurement cannot establish that the relevant band is localized on the intended Lieb sublattice without a compatible orbital projection.
+
+\begin{table}[t]
+    \centering
+    \caption{\textbf{Representative scientific capabilities exercised by the current implementation.}}
+    \label{tab:capabilities}
+    \small
+    \setlength{\tabcolsep}{4pt}
+    \renewcommand{\arraystretch}{1.13}
+    \begin{tabularx}{\linewidth}{>{\raggedright\arraybackslash}p{0.21\linewidth}>{\raggedright\arraybackslash}p{0.19\linewidth}XX}
+        \toprule
+        \textbf{Capability} & \textbf{Input/output} & \textbf{Role in a campaign} & \textbf{Executed control} \\
+        \midrule
+        Federated database adapters & Query $\rightarrow$ source structure/property artifact & Candidate discovery and source-native evidence & Live C2DB, MC3D and NOMAD retrieval; optional Materials Project \\
+        Structural hard gates & CIF $\rightarrow$ geometry and topology checks & Admit explicit children to model routing & Prompt-1 parent--child structures \\
+        CHGNet adapter & Structure $\rightarrow$ energy/forces & Structure-model execution and device control & Elemental Si on an NVIDIA L40S \\
+        Uni-HamGNN adapter & Structure graph $\rightarrow$ SOC Hamiltonian and bands & Rapid candidate-specific electronic screening & ZrSiPt control and Lieb-candidate campaigns \\
+        Quantum ESPRESSO adapter & Calculation manifest $\rightarrow$ first-principles outputs & Selected high-specificity validation & Remote Si self-consistent-field calculation \\
+        \bottomrule
+    \end{tabularx}
+\end{table}
+
+Table~\ref{tab:capabilities} lists concrete backend controls executed in the project.  These controls establish that the adapters, artifact transfers, and execution receipts operate on real backends.  Scientific conclusions in the case studies are restricted to the domain and observable of the corresponding task; the controls are not used as universal accuracy claims for the models.
+
+\subsection{Evidence ceilings and artifact promotion}
+
+Each execution produces native artifacts and a normalized observation.  The execution receipt records backend identity, code or checkpoint hash, parameters, timing, and artifact hashes.  An evidence ceiling limits the strongest scientific record a task can create.  Retrieved source values enter as retrieved evidence.  A benchmarked model may create model-derived screening evidence within its declared domain.  Unbenchmarked or out-of-domain capabilities can still produce diagnostic artifacts, but those artifacts do not become high-level scientific support.
+
+Promotion is observable-specific.  A completed SOC Hamiltonian and band calculation may resolve a bandwidth constraint while leaving topology, orbital character, or finite-temperature magnetism unresolved.  The evidence matrix is updated only for the observables actually produced.  This allows the next route to focus on the missing discriminator rather than repeating the complete workflow.
+
+\subsection{Execution, recovery, and reproducibility}
+
+The DAG executor admits a task only after its dependencies have produced the required artifact kinds.  Task identity includes its candidate, structure, capability, parameters, and dependencies, which makes execution idempotent.  Existing successful artifacts can be reused; failed or interrupted remote tasks retain their request and receipt and can be resumed according to backend policy.  Each terminal campaign report is generated from the normalized task and evidence records and links to the native artifacts, including CIF files, Hamiltonians, numerical band arrays, plots, and first-principles outputs.
