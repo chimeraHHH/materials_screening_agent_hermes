@@ -5,10 +5,15 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from .models import EffectiveModelPackage, InteractionKind, ManyBodyRequest, SolverRoutingDecision, canonical_hash
-from .registry import CapabilityRegistry, DEFAULT_REGISTRY
+from .models import (
+    EffectiveModelPackage,
+    InteractionKind,
+    ManyBodyRequest,
+    SolverRoutingDecision,
+    canonical_hash,
+)
+from .registry import DEFAULT_REGISTRY, CapabilityRegistry
 from .validation import ModelFeatures, ValidationStatus, validate_model_package
-
 
 ROUTING_POLICY_VERSION = "many-body-routing/v1"
 CONTROL_FLOW_CLAIMS = frozenset({"workflow_lifecycle", "model_validation", "control_flow"})
@@ -20,12 +25,15 @@ class RoutingPolicy:
     require_approval_for_executable: bool = True
 
 
+DEFAULT_ROUTING_POLICY = RoutingPolicy()
+
+
 def route_model(
     package: EffectiveModelPackage,
     target_claim: str,
     *,
     registry: CapabilityRegistry = DEFAULT_REGISTRY,
-    policy: RoutingPolicy = RoutingPolicy(),
+    policy: RoutingPolicy = DEFAULT_ROUTING_POLICY,
     request: ManyBodyRequest | None = None,
 ) -> SolverRoutingDecision:
     """Match a validated package without selecting a fallback or executing work."""
@@ -37,13 +45,13 @@ def route_model(
             "target_claim": target_claim,
         }
     )
-    base = dict(
-        routing_decision_id=f"route_{request_hash[:24]}",
-        model_package_hash=package.package_hash,
-        request_hash=request_hash,
-        policy_version=policy.version,
-        registry_snapshot=registry.capabilities[0].registry_snapshot,
-    )
+    base = {
+        "routing_decision_id": f"route_{request_hash[:24]}",
+        "model_package_hash": package.package_hash,
+        "request_hash": request_hash,
+        "policy_version": policy.version,
+        "registry_snapshot": registry.capabilities[0].registry_snapshot,
+    }
     if validation.status is not ValidationStatus.READY or validation.features is None:
         issues = validation.issues
         reason_map = {

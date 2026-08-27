@@ -24,10 +24,10 @@ from material_agent.gateway.memory import (
     InMemoryGatewayRepository,
 )
 from material_agent.gateway.models import (
+    MATERIALS_GATEWAY_VERSION,
     CompanionTransitionV1,
     FailedStateV1,
     InspirationRunRequestV1,
-    MATERIALS_GATEWAY_VERSION,
     MaterialsResultGetRequestV1,
     MaterialsResultViewV1,
     MaterialsRunActRequestV1,
@@ -38,7 +38,6 @@ from material_agent.gateway.models import (
     canonical_json_bytes,
 )
 from material_agent.gateway.service import MaterialsGatewayService
-
 
 MATERIALS_TOOL_NAMES = (
     "materials_inspiration_run",
@@ -164,7 +163,7 @@ class GatewayToolDispatcher:
             raise GatewayDispatchError(str(exc)) from None
         except GatewayDispatchError:
             raise
-        except Exception:
+        except Exception:  # noqa: BLE001
             raise GatewayDispatchError(f"{tool_name} failed") from None
 
         try:
@@ -308,7 +307,7 @@ def _load_service(
         )
     try:
         module = importlib.import_module(module_name)
-    except Exception:
+    except Exception:  # noqa: BLE001
         raise GatewayDispatchError(
             "configured service factory could not be imported"
         ) from None
@@ -317,7 +316,7 @@ def _load_service(
         raise GatewayDispatchError("configured service factory is not callable")
     try:
         service = factory(settings)
-    except Exception:
+    except Exception:  # noqa: BLE001
         raise GatewayDispatchError("configured service factory failed") from None
     if not isinstance(service, MaterialsGatewayService):
         raise GatewayDispatchError(

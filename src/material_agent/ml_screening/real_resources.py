@@ -6,6 +6,8 @@ contains no Torch, CHGNet, ASE, or NumPy import.
 
 from __future__ import annotations
 
+from typing import Literal
+
 from material_agent.ml_screening.models import (
     MLModelRegistry,
     MLModelSpec,
@@ -13,7 +15,6 @@ from material_agent.ml_screening.models import (
     ModelCard,
 )
 from material_agent.ml_screening.resources import sha256_payload
-
 
 CHGNET_PACKAGE_VERSION = "0.4.2"
 CHGNET_MODEL_NAME = "0.3.0"
@@ -25,6 +26,27 @@ CHGNET_CHECKPOINT_SHA256 = (
 AGENT02_PACKAGE_LOCK_SHA256 = (
     "278ab73807262c733c6196e9f6bea074b997d80e738ca77781b5b42a4451f870"
 )
+AGENT02_CUDA_PACKAGE_LOCK_SHA256 = (
+    "5001cfffd380e8ea1f61bb0e2a8590456f22dca2039af2b82638908aa5d89f56"
+)
+
+Agent02ExecutionProfile = Literal["portable", "cuda"]
+
+
+def package_lock_sha256_for_profile(profile: Agent02ExecutionProfile) -> str:
+    if profile not in {"portable", "cuda"}:
+        raise ValueError(f"unsupported Agent02 execution profile: {profile}")
+    return (
+        AGENT02_CUDA_PACKAGE_LOCK_SHA256
+        if profile == "cuda"
+        else AGENT02_PACKAGE_LOCK_SHA256
+    )
+
+
+def package_lock_sha256_for_device(device: str) -> str:
+    return package_lock_sha256_for_profile(
+        "cuda" if device == "cuda" else "portable"
+    )
 
 
 def real_model_card() -> ModelCard:
@@ -67,8 +89,16 @@ def real_model_card() -> ModelCard:
     )
 
 
-def real_model_spec() -> MLModelSpec:
+def real_model_spec(
+    execution_profile: Agent02ExecutionProfile = "portable",
+) -> MLModelSpec:
     card = real_model_card()
+    package_lock_sha256 = package_lock_sha256_for_profile(execution_profile)
+    package_lock_name = (
+        "requirements-agent02-cuda.lock"
+        if execution_profile == "cuda"
+        else "requirements-agent02.lock"
+    )
     return MLModelSpec(
         model_id=CHGNET_MODEL_ID,
         adapter_type="subprocess-json-chgnet",
@@ -81,8 +111,8 @@ def real_model_spec() -> MLModelSpec:
             "chgnet_0.3.0_e29f68s314m37.pth.tar"
         ),
         checkpoint_sha256=CHGNET_CHECKPOINT_SHA256,
-        package_lock_uri="repository://requirements-agent02.lock",
-        package_lock_sha256=AGENT02_PACKAGE_LOCK_SHA256,
+        package_lock_uri=f"repository://{package_lock_name}",
+        package_lock_sha256=package_lock_sha256,
         license="Modified BSD; MPtrj use is subject to Materials Project terms",
         training_dataset="MPtrj, Materials Project September 2022 trajectories",
         training_method="CHGNet 0.3.0 pretrained universal neural potential",
@@ -112,7 +142,9 @@ def real_model_spec() -> MLModelSpec:
             "minimum interatomic distance at least 0.5 angstrom",
         ],
         max_num_sites_policy=100,
-        supported_devices=["cpu", "mps"],
+        supported_devices=(
+            ["cuda"] if execution_profile == "cuda" else ["cpu", "mps"]
+        ),
         native_uncertainty=False,
         known_limitations=card.limitations,
         model_card_uri="repository://config/agent02/chgnet-0.3.0-model-card.json",
@@ -121,5 +153,7 @@ def real_model_spec() -> MLModelSpec:
     )
 
 
-def real_registry() -> MLModelRegistry:
-    return MLModelRegistry(models=[real_model_spec()])
+def real_registry(
+    execution_profile: Agent02ExecutionProfile = "portable",
+) -> MLModelRegistry:
+    return MLModelRegistry(models=[real_model_spec(execution_profile)])

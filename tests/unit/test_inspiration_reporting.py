@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from material_agent.inspiration.models import (
+    REQUIRED_STRUCTURE_NONFAIL_CHECK_IDS,
+    REQUIRED_STRUCTURE_PASS_CHECK_IDS,
     ArtifactPointerV1,
     BridgePacketV1,
     CandidateRouteRefV1,
@@ -17,8 +19,6 @@ from material_agent.inspiration.models import (
     PassageLocatorKind,
     PassageLocatorV1,
     PassageV1,
-    REQUIRED_STRUCTURE_NONFAIL_CHECK_IDS,
-    REQUIRED_STRUCTURE_PASS_CHECK_IDS,
     SearchHitV1,
     SearchQueryKind,
     SearchQueryV1,

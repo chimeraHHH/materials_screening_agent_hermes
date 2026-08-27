@@ -13,11 +13,10 @@ from pathlib import Path
 import yaml
 
 from material_agent.gateway.models import InspirationRunRequestV1
+from material_agent.inspiration.policy import SearchExecutionMode
 from material_agent.integration.request_compiler import (
     HermesInspirationRequestCompiler,
 )
-from material_agent.inspiration.policy import SearchExecutionMode
-
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 HERMES_ROOT = REPO_ROOT / "integrations" / "hermes"
@@ -38,9 +37,11 @@ EXPECTED_TOOLS = [
     "materials_run_act",
     "materials_result_get",
 ]
-EXPECTED_SERVICE_FACTORY = (
-    "material_agent.integration.hermes_service:create_hermes_inspiration_service"
-)
+EXPECTED_RESEARCH_TOOLS = [
+    "materials_research_pipeline_run",
+    "materials_generic_research_run",
+]
+EXPECTED_SERVICE_FACTORY = "shared-loopback-mcp-http-hub-v1"
 GATEWAY_REFERENCE_GUIDANCE = (
     "Read [the Gateway contract](references/gateway-contract.md) before the first tool\n"
     "call when tool arguments, states, or evidence boundaries are unclear."
@@ -100,6 +101,10 @@ def verify() -> None:
     lock = json.loads((HERMES_ROOT / "hermes.lock.json").read_text(encoding="utf-8"))
     if lock["package_version"] != "0.20.0" or lock["release_tag"] != "v2026.8.3":
         raise ValueError("Hermes release lock changed without a compatibility update")
+    if lock.get("node_minimum") != "22.22.0":
+        raise ValueError("Hermes dashboard Node floor drifted")
+    if lock.get("uv_extras") != ["cli", "mcp", "slack", "web"]:
+        raise ValueError("Hermes production extras drifted")
 
     config = yaml.safe_load(
         (PROFILE_ROOT / "config.yaml").read_text(encoding="utf-8")
@@ -111,18 +116,17 @@ def verify() -> None:
         raise ValueError("Hermes profile compatibility pin drifted")
     if config.get("_config_version") != 33:
         raise ValueError("Hermes config schema must remain at v33 for the pinned runtime")
-    expected_platforms = {"cli": ["materials"], "api_server": ["materials"]}
+    expected_platforms = {
+        "cli": ["materials", "materials_research"],
+        "api_server": ["materials", "materials_research"],
+    }
     if config.get("platform_toolsets") != expected_platforms:
-        raise ValueError("profile must expose only the raw materials MCP toolset")
+        raise ValueError("profile must expose the reviewed materials MCP toolsets")
     if "skills" not in config.get("agent", {}).get("disabled_toolsets", []):
         raise ValueError("native skill management must remain disabled")
     server = config.get("mcp_servers", {}).get("materials", {})
-    args = server.get("args", [])
-    if "--service-factory" not in args:
-        raise ValueError("materials MCP server must pin its trusted service factory")
-    factory_index = args.index("--service-factory") + 1
-    if factory_index >= len(args) or args[factory_index] != EXPECTED_SERVICE_FACTORY:
-        raise ValueError("materials MCP service factory drifted")
+    if server.get("url") != "${MATERIAL_AGENT_MCP_BASE_URL}/materials/mcp":
+        raise ValueError("materials MCP must use the shared loopback HTTP Hub")
     if server.get("tools", {}).get("include") != EXPECTED_TOOLS:
         raise ValueError("materials MCP tool allowlist drifted")
     if server.get("tools", {}).get("resources") is not False:
@@ -131,8 +135,21 @@ def verify() -> None:
         raise ValueError("MCP prompts must remain disabled")
     if server.get("supports_parallel_tool_calls") is not False:
         raise ValueError("parallel Materials Gateway calls must remain disabled")
+    research = config.get("mcp_servers", {}).get("materials_research", {})
+    if research.get("url") != "${MATERIAL_AGENT_MCP_BASE_URL}/research/mcp":
+        raise ValueError("research MCP must use the shared loopback HTTP Hub")
+    if research.get("tools", {}).get("include") != EXPECTED_RESEARCH_TOOLS:
+        raise ValueError("research MCP tool allowlist drifted")
+    if research.get("tools", {}).get("resources") is not False:
+        raise ValueError("research MCP resources must remain disabled")
+    if research.get("tools", {}).get("prompts") is not False:
+        raise ValueError("research MCP prompts must remain disabled")
+    if research.get("supports_parallel_tool_calls") is not False:
+        raise ValueError("parallel research pipeline calls must remain disabled")
     if config.get("gateway", {}).get("api_server", {}).get("host") != "127.0.0.1":
         raise ValueError("development API server must remain loopback-bound")
+    if config.get("gateway", {}).get("api_server", {}).get("max_concurrent_runs") != 1:
+        raise ValueError("Hermes run concurrency must match the single managed worker")
 
     skill_text = SKILL_PATH.read_text(encoding="utf-8")
     example_match = re.search(
@@ -188,6 +205,7 @@ def verify() -> None:
         "Crossref schema drift is nonretryable",
         "live approval prompt must disclose\n   public Crossref metadata/abstract network access",
         "prompt that says offline execution for this public request\n   as a contract mismatch",
+        "production profile durably enqueues that action and returns `RUNNING`",
         "Never request, read, or summarize full PDFs",
         "immutable, review-only runtime Artifact",
         "`review_disposition=REVIEW_ONLY`",
@@ -221,6 +239,7 @@ def verify() -> None:
         "schema drift and other permanent adapter failures are nonretryable",
         "approval prompt must accurately\ndisclose the prepared execution mode",
         "public\nprepared run advertises offline execution",
+        "source-controlled production profile uses the durable queued factory",
         "immutable, review-only internal Artifact",
         "inclusive, non-additive",
         "Only the Gateway `CostLedger` is additive",
@@ -246,6 +265,11 @@ def verify() -> None:
     hermes_readme = HERMES_README_PATH.read_text(encoding="utf-8")
     if EXPECTED_SERVICE_FACTORY not in hermes_readme:
         raise ValueError("Hermes README must document the production factory")
+    if re.search(
+        r"successful `materials_run_act` returns `RUNNING` after durable\s+enqueue",
+        hermes_readme,
+    ) is None:
+        raise ValueError("Hermes README must document queued action semantics")
     if "--service-mode fixture" not in hermes_readme:
         raise ValueError("Hermes README must make fixture approval mode explicit")
     if "CLI defaults to the production public service" not in hermes_readme:

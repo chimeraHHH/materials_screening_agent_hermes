@@ -20,7 +20,6 @@ from material_agent.inspiration.parent_catalog import (
     parent_catalog_manifest_bytes,
 )
 
-
 EXPECTED_MANIFEST_SHA256 = (
     "09d563732717e05ccf216d3b8572b1bcd1d855dd3f5d0106a4cdbc15b9197b99"
 )

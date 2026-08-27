@@ -1,0 +1,129 @@
+_config_version: 33
+
+gateway:
+  api_server:
+    enabled: true
+    host: 127.0.0.1
+    port: 8643
+    max_concurrent_runs: 1
+
+# This profile deliberately reuses Hermes-native skills, memory, and delegation.
+# The Materials MCP surface is read-only; scientific execution remains owned by
+# the production profile and the versioned material-agent service.
+platform_toolsets:
+  cli:
+    - materials
+    - skills
+    - memory
+    - delegation
+  api_server:
+    - materials
+    - skills
+    - memory
+    - delegation
+
+plugins:
+  enabled: []
+
+agent:
+  disabled_toolsets:
+    - web
+    - browser
+    - terminal
+    - file
+    - code_execution
+    - vision
+    - video
+    - image_gen
+    - video_gen
+    - bfl
+    - x_search
+    - tts
+    - stt
+    - todo
+    - context_engine
+    - session_search
+    - clarify
+    - cronjob
+    - homeassistant
+    - spotify
+    - discord
+    - discord_admin
+    - yuanbao
+    - computer_use
+    - google_meet
+    - a2a
+
+memory:
+  memory_enabled: true
+  user_profile_enabled: false
+  nudge_interval: 5
+  write_approval: true
+
+skills:
+  creation_nudge_interval: 5
+  write_approval: true
+  guard_agent_created: true
+
+delegation:
+  max_concurrent_children: 2
+  max_spawn_depth: 1
+  max_iterations: 12
+  orchestrator_enabled: false
+  subagent_auto_approve: false
+  inherit_mcp_toolsets: false
+
+curator:
+  enabled: true
+  consolidate: false
+  prune_builtins: false
+
+approvals:
+  mode: manual
+  timeout: 300
+
+security:
+  allow_private_urls: false
+  allow_lazy_installs: false
+
+tool_loop_guardrails:
+  warnings_enabled: true
+  hard_stop_enabled: true
+  warn_after:
+    exact_failure: 2
+    same_tool_failure: 3
+    idempotent_no_progress: 2
+  hard_stop_after:
+    exact_failure: 5
+    same_tool_failure: 8
+    idempotent_no_progress: 5
+  loop_caps:
+    max_web_searches: 0
+    max_subagents: 2
+
+mcp_servers:
+  materials:
+    command: "${MATERIAL_AGENT_PYTHON}"
+    args:
+      - "-m"
+      - "material_agent.integration.mcp_server"
+      - "--workspace"
+      - "${MATERIAL_AGENT_WORKSPACE}"
+      - "--project"
+      - "${MATERIAL_AGENT_PROJECT_ID}"
+      - "--service-factory"
+      - "material_agent.integration.queued_gateway:create_queued_hermes_inspiration_service"
+    enabled: true
+    timeout: 300
+    connect_timeout: 30
+    supports_parallel_tool_calls: false
+    tools:
+      include:
+        - materials_run_get
+        - materials_result_get
+      resources: false
+      prompts: false
+    sampling:
+      enabled: false
+    elicitation:
+      enabled: false

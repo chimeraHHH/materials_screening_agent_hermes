@@ -5,13 +5,17 @@ gateway:
     enabled: true
     host: 127.0.0.1
     port: 8642
-    max_concurrent_runs: 2
+    # One managed action worker is deployed by the production lifecycle.
+    # Keep admitted Hermes runs aligned with that serialized capacity.
+    max_concurrent_runs: 1
 
 platform_toolsets:
   cli:
     - materials
+    - materials_research
   api_server:
     - materials
+    - materials_research
 
 plugins:
   enabled: []
@@ -82,16 +86,7 @@ tool_loop_guardrails:
 
 mcp_servers:
   materials:
-    command: "${MATERIAL_AGENT_PYTHON}"
-    args:
-      - "-m"
-      - "material_agent.integration.mcp_server"
-      - "--workspace"
-      - "${MATERIAL_AGENT_WORKSPACE}"
-      - "--project"
-      - "${MATERIAL_AGENT_PROJECT_ID}"
-      - "--service-factory"
-      - "material_agent.integration.hermes_service:create_hermes_inspiration_service"
+    url: "${MATERIAL_AGENT_MCP_BASE_URL}/materials/mcp"
     enabled: true
     timeout: 300
     connect_timeout: 30
@@ -109,3 +104,19 @@ mcp_servers:
     elicitation:
       enabled: true
       timeout: 300
+  materials_research:
+    url: "${MATERIAL_AGENT_MCP_BASE_URL}/research/mcp"
+    enabled: true
+    timeout: 1800
+    connect_timeout: 30
+    supports_parallel_tool_calls: false
+    tools:
+      include:
+        - materials_research_pipeline_run
+        - materials_generic_research_run
+      resources: false
+      prompts: false
+    sampling:
+      enabled: false
+    elicitation:
+      enabled: false

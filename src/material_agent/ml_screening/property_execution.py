@@ -19,7 +19,6 @@ from material_agent.ml_screening.property_models import (
     StrictFrozenModel,
 )
 
-
 PROPERTY_PLAN_VERSION = "agent02-property-plan-v1"
 PROPERTY_WORKER_VERSION = "agent02-property-worker-v1"
 PROPERTY_RESULT_VERSION = "agent02-property-result-v1"
@@ -47,7 +46,7 @@ class PropertyInputArtifact(StrictFrozenModel):
         return _safe_relative_path(value)
 
     @model_validator(mode="after")
-    def validate_uri(self) -> "PropertyInputArtifact":
+    def validate_uri(self) -> PropertyInputArtifact:
         if self.artifact_uri != f"artifact://{self.root_relative_path}":
             raise ValueError("artifact URI must match its root-relative path")
         return self
@@ -69,7 +68,7 @@ class PropertyExecutionPlan(StrictFrozenModel):
         return _safe_relative_path(value)
 
     @model_validator(mode="after")
-    def validate_plan(self) -> "PropertyExecutionPlan":
+    def validate_plan(self) -> PropertyExecutionPlan:
         if self.selected_model.capability_for(
             self.request.need.property_id, self.request.need.unit
         ) != self.selected_capability:
@@ -114,7 +113,7 @@ class PropertyOutputArtifact(StrictFrozenModel):
         return _safe_relative_path(value)
 
     @model_validator(mode="after")
-    def validate_uri(self) -> "PropertyOutputArtifact":
+    def validate_uri(self) -> PropertyOutputArtifact:
         if self.artifact_uri != f"artifact://{self.root_relative_path}":
             raise ValueError("artifact URI must match its root-relative path")
         return self
@@ -134,7 +133,7 @@ class PropertyWorkerResponse(StrictFrozenModel):
     errors: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
-    def validate_response(self) -> "PropertyWorkerResponse":
+    def validate_response(self) -> PropertyWorkerResponse:
         if self.status == "SUCCEEDED":
             if self.prediction is None or self.output is None or self.errors:
                 raise ValueError("successful property response requires prediction and output only")

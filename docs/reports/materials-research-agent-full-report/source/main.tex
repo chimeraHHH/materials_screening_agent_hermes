@@ -1,0 +1,200 @@
+\documentclass[11pt]{article}
+
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage[a4paper,margin=2.35cm]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{tabularx}
+\usepackage{multirow}
+\usepackage{subcaption}
+\usepackage{float}
+\usepackage{enumitem}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage[numbers,sort&compress]{natbib}
+\usepackage[hidelinks]{hyperref}
+
+\setlist[itemize]{leftmargin=1.45em,itemsep=0.25em,topsep=0.35em}
+\setlength{\bibsep}{2pt}
+\setlength{\parskip}{0.15em}
+\setlength{\parindent}{1.5em}
+
+\newcommand{\system}{\textsc{Materials Research Agent}}
+\newcommand{\hermes}{\textsc{Hermes}}
+\newcommand{\matspec}{\textsc{MatSpec}}
+\newcommand{\matevidence}{\textsc{MatEvidence}}
+\newcommand{\mattransform}{\textsc{MatTransform}}
+\newcommand{\matdag}{\textsc{MatDAG}}
+\newcommand{\matevolve}{\textsc{MatEvolve}}
+\newcommand{\fullsupport}{\ensuremath{\checkmark}}
+\newcommand{\partialsupport}{\ensuremath{\circ}}
+\newcommand{\notsupport}{--}
+
+\title{\Large\textbf{Materials Research Agent:}\\[0.15em]
+\Large\textbf{A Hermes-Based Agentic System for Evidence-Grounded}\\
+\Large\textbf{Materials Hypothesis Generation and Structure Exploration}}
+
+\author{
+  \textbf{Yiming Hua}\\[0.2em]
+  Wuhan University\\
+  \href{mailto:cnhym@foxmail.com}{\texttt{cnhym@foxmail.com}}
+}
+
+\date{}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+Materials research requires sustained coordination across scientific literature, materials databases, crystal structures, chemical transformations, and computational models. An effective research agent must preserve the constraints of an open-ended scientific question, align heterogeneous evidence around candidate materials, realize hypotheses as explicit structures, dispatch domain models, and carry the resulting artifacts into subsequent rounds of exploration. Existing scientific agents and materials-design systems provide important parts of this process, but commonly treat hypothesis generation, structure manipulation, and computational validation as separate activities. We present \system, a persistent materials-research system built on the \hermes\ agent runtime. \hermes\ provides natural-language interaction, the agent--tool loop, Profile and Skill execution, and controlled research evolution; a Materials MCP Gateway connects this runtime to a structure-centred scientific service. The service is organized around five modules: \matspec\ compiles research goals into scientific constraint graphs; \matevidence\ aligns literature and federated database evidence; \mattransform\ realizes soft-chemistry hypotheses through executable structure operations and condition plans; \matdag\ assembles model-grounded scientific workflows; and \matevolve\ maintains candidate lineages and research artifacts across iterations. We study the system on three end-to-end problems: constraint-guided exploration of two-dimensional transition-metal flat-band structures, multi-route exploration of van der Waals ferromagnetic topological materials, and the open problem of fractional-valence transition metals on a Lieb lattice with a flat band near the Fermi level. Across these studies, the system produces evidence-linked candidate portfolios, parent--child crystal-structure lineages, and prioritized computational and experimental validation trajectories. Together, \hermes\ and the materials-specific scientific layer provide a unified environment in which materials hypotheses can be generated, structurally instantiated, computationally characterized, and progressively refined.
+\end{abstract}
+
+\section{Introduction}
+\label{sec:introduction}
+
+Materials discovery is a long-horizon coordination problem. A research question expressed in physical or chemical terms must be translated into searchable constraints; relevant mechanisms must be recovered from the literature; candidate identities must be reconciled across databases; proposed modifications must be instantiated as crystal structures; and each structure must be connected to calculations and experiments that can resolve the central hypothesis. Modern infrastructures have made individual parts of this process increasingly powerful. Open materials databases support large-scale retrieval and comparison of computed structures and properties \cite{jain2013materials,haastrup2018c2db}. Graph neural networks and generative models have expanded the accessible crystal-structure space \cite{merchant2023gnome,zeni2025mattergen}, while geometry-constrained generation has begun to target motifs of direct interest to quantum materials, including Lieb lattices \cite{okabe2026scigen}. Autonomous laboratories further connect computational targets, literature-derived synthesis knowledge, active learning, and robotic experimentation \cite{szymanski2023alab}. These advances create a rich collection of scientific resources; using them coherently requires a system that preserves the scientific object and its evidence across the full exploration process.
+
+Large language models provide a natural interface for such coordination. Tool-augmented systems including ChemCrow and Coscientist have shown that an agent can combine language reasoning with chemical software, information retrieval, and laboratory operations \cite{bran2024chemcrow,boiko2023coscientist}. Multi-agent scientific systems have extended this idea to hypothesis generation, proposal refinement, and scientist-in-the-loop discovery \cite{gottweis2026coscientist}. Full-lifecycle systems such as AutoSci frame automated research as a persistent process involving execution, memory, and system evolution rather than a sequence of isolated prompts \cite{qian2026autosci}. In materials science, physics-aware multi-agent systems have connected retrieval, simulation, and multimodal analysis for alloy design \cite{ghafarollahi2024atomagents}. Collectively, these efforts establish the value of agents as organizers of scientific work.
+
+The materials domain, however, places a distinctive requirement on this emerging research paradigm: a hypothesis must remain attached to a physical structure. A statement such as \emph{replace a heavy element to strengthen spin--orbit coupling}, \emph{intercalate an electron donor between magnetic layers}, or \emph{tune the filling of a transition-metal Lieb lattice} is scientifically useful when it is connected to an identified parent structure, a well-defined operation, a resulting child structure or condition plan, and a validation target. The same candidate may be supported by a database record, motivated by a mechanism reported in the literature, transformed through several soft-chemistry operations, and evaluated by multiple models with different input domains. A text-only research trace obscures these dependencies. A structure-centred trace makes them explicit and allows the next model, calculation, or expert decision to operate on the same scientific object.
+
+Existing systems address complementary portions of this problem. General agent runtimes provide interaction, tools, memory, and reusable skills. Scientific lifecycle systems organize literature, experimentation, writing, and review. Chemistry agents connect language models to specialist tools and laboratories. Materials models generate structures or predict particular properties. Table~\ref{tab:system-comparison} compares representative systems at this boundary. The comparison is deliberately feature-level: it asks whether a capability is an explicit, reusable part of the documented system, rather than whether it could be approximated in a single language-model interaction.
+
+\begin{table}[t]
+    \centering
+    \caption{\textbf{Feature-level comparison of representative scientific-agent and materials-design systems.}}
+    \label{tab:system-comparison}
+    \small
+    \setlength{\tabcolsep}{3.2pt}
+    \renewcommand{\arraystretch}{1.16}
+    \resizebox{\linewidth}{!}{%
+    \begin{tabular}{lccccc}
+        \toprule
+        \textbf{System} &
+        \shortstack{\textbf{Research}\\\textbf{harness}} &
+        \shortstack{\textbf{Candidate-linked}\\\textbf{evidence}} &
+        \shortstack{\textbf{Executable}\\\textbf{structure lineage}} &
+        \shortstack{\textbf{Capability-aware}\\\textbf{model DAG}} &
+        \shortstack{\textbf{Persistent}\\\textbf{scientific state}} \\
+        \midrule
+        ChemCrow \cite{bran2024chemcrow}                  & \partialsupport & \partialsupport & \notsupport    & \notsupport    & \notsupport \\
+        Coscientist \cite{boiko2023coscientist}           & \partialsupport & \partialsupport & \notsupport    & \notsupport    & \notsupport \\
+        A-Lab \cite{szymanski2023alab}                    & \fullsupport    & \partialsupport & \partialsupport & \partialsupport & \partialsupport \\
+        AtomAgents \cite{ghafarollahi2024atomagents}      & \partialsupport & \partialsupport & \partialsupport & \partialsupport & \notsupport \\
+        MatterGen / SCIGEN \cite{zeni2025mattergen,okabe2026scigen}
+                                                            & \notsupport    & \notsupport    & \partialsupport & \notsupport    & \notsupport \\
+        AutoSci \cite{qian2026autosci}                    & \fullsupport    & \partialsupport & \notsupport    & \partialsupport & \fullsupport \\
+        \textbf{Materials Research Agent (ours; Hermes-based)}
+                                                            & \fullsupport    & \fullsupport    & \fullsupport    & \fullsupport    & \fullsupport \\
+        \bottomrule
+    \end{tabular}%
+    }
+    \vspace{0.25em}
+
+    \begin{minipage}{0.98\linewidth}
+        \footnotesize
+        Symbols denote full support (\fullsupport), partial or task-/campaign-local support (\partialsupport), and capabilities that are not a primary focus (\notsupport). A research harness requires controlled multi-stage tool execution rather than tool access alone. Candidate-linked evidence requires literature and database observations to be joined to stable material identities with retained provenance. Executable structure lineage requires typed operations or condition plans with explicit parent--child relationships; producing isolated structures is counted as partial support. A capability-aware model DAG binds candidate-specific observables to registered models or calculations and their dependencies. Persistent scientific state denotes reusable evidence, structures, tasks, and decisions beyond a single dialogue or execution trace. The symbols describe system scope, not comparative scientific performance.
+    \end{minipage}
+\end{table}
+
+The comparison exposes a division of labour. Chemistry agents provide broad tool use and experimental planning; A-Lab closes a synthesis loop for predefined inorganic targets; AtomAgents couples multi-agent reasoning to atomistic simulation; MatterGen and SCIGEN produce explicit crystals under property or motif constraints; and AutoSci supplies a general research harness with structured persistent memory. None of these systems makes candidate-linked evidence, executable soft-chemistry structure lineage, capability-aware model workflows, and persistent scientific state parts of the same materials-research abstraction. The resulting opportunity is to join these capabilities around a durable candidate representation that binds scientific constraints, evidence sources, structure lineage, model tasks, and subsequent validation. This is the systems-level problem studied in this work.
+
+From this perspective, a materials-research agent should satisfy six requirements.
+
+\begin{enumerate}[leftmargin=1.75em,label=\textbf{R\arabic*.},itemsep=0.45em]
+    \setcounter{enumi}{-1}
+    \item \textbf{Persistent agent runtime.}
+    The system should support natural-language interaction, long-running tool use, reusable task policies, and research continuity across turns.
+
+    \item \textbf{Compilable scientific goals.}
+    An open-ended request should become a structured set of compositional, structural, electronic, magnetic, realizability, and evidence constraints, together with permitted operations and validation targets.
+
+    \item \textbf{Federated evidence.}
+    Literature mechanisms, database properties, source structures, and model-derived observations should be aligned around stable candidate identities while retaining their provenance.
+
+    \item \textbf{Structure-backed hypotheses.}
+    Scientific proposals should be realized through explicit parent--child structures or condition plans. Relevant operations include site substitution, vacancy formation, intercalation, strain, layer sliding, carrier doping, electrostatic gating, magnetic proximity, and van der Waals heterostructure construction.
+
+    \item \textbf{Capability-aware scientific execution.}
+    Candidate-specific questions should be translated into dependency-aware tasks for structure models, Hamiltonian models, band analysis, and first-principles calculations.
+
+    \item \textbf{Evolvable research state.}
+    Evidence, structures, computations, and expert decisions should remain reusable across iterations, enabling the system to expand promising structure families and prioritize subsequent calculations or experiments.
+\end{enumerate}
+
+To meet these requirements, we introduce \system, a materials-research system built on \hermes\ \cite{nousresearch2026hermes}. \hermes\ serves as the outer agent runtime: it receives a natural-language scientific goal, loads a materials-specific Profile and Skill, invokes reviewed tools, and returns structured results to the researcher. We connect this runtime to a Materials MCP Gateway that exposes coarse-grained research operations while keeping the scientific state in a dedicated materials service. This separation gives the system a clear division of labour. \hermes\ supplies the general interaction and agent substrate; our materials layer supplies evidence-aware reasoning, candidate identities, executable crystal-structure transformations, model task graphs, and scientific artifact memory.
+
+The materials layer contains five cooperating modules. \matspec\ translates a research goal into a constraint graph and search plan. \matevidence\ combines scholarly retrieval with federated materials databases and attaches each observation to a candidate and source. \mattransform\ compiles chemically meaningful hypotheses into five executable structure operations and four condition-level plans, preserving the lineage from every parent structure to its descendants. \matdag\ maps the resulting candidates to model-grounded workflows spanning database electronic structures, machine-learning interatomic models, learned Hamiltonians, band analysis, and first-principles calculations. \matevolve\ maintains the candidate portfolio and scientific artifact graph across iterations. At the runtime level, a separate controlled-evolution Profile can use \hermes-native memory, Skills, and delegation to accumulate reusable workflow experience; at the scientific level, the materials service remains the record of candidate structures, evidence, calculations, and validation state.
+
+Figure~\ref{fig:overview} summarizes the resulting three-layer architecture and research lifecycle. A user-defined materials question enters through \hermes, reaches the scientific modules through MCP, and returns as a portfolio of traceable evidence, structures, tasks, and follow-up decisions. The same architecture supports research questions with markedly different degrees of openness: constrained screening of two-dimensional flat-band candidates; six complementary routes toward van der Waals ferromagnetic topological materials; and a three-route exploration of fractional-valence transition-metal Lieb lattices.
+
+\begin{figure}[t]
+    \centering
+    \IfFileExists{figures/system-overview-image2-v1.png}{
+        \includegraphics[width=\linewidth]{figures/system-overview-image2-v1.png}
+    }{
+        \fbox{
+            \begin{minipage}{0.92\linewidth}
+                \centering
+                \vspace{0.5em}
+                \hermes\ \textbf{Agent Runtime}\\[-0.1em]
+                Natural-language interaction $\cdot$ Agent--tool loop $\cdot$
+                Profiles/Skills $\cdot$ controlled evolution\\[0.45em]
+                $\Downarrow$\\[-0.15em]
+                \textbf{Materials MCP Gateway}\\[-0.1em]
+                Research submission $\cdot$ run state $\cdot$
+                scientific artifact exchange\\[0.45em]
+                $\Downarrow$\\[-0.15em]
+                \textbf{Materials Scientific Service}\\[-0.1em]
+                \matspec\ $\rightarrow$ \matevidence\ $\rightarrow$
+                \mattransform\ $\rightarrow$ \matdag\ $\rightarrow$ \matevolve\\[0.45em]
+                $\Downarrow$\\[-0.15em]
+                Evidence-linked candidates $\cdot$ parent--child structures
+                $\cdot$ model tasks $\cdot$ validation trajectories
+                \vspace{0.5em}
+            \end{minipage}
+        }
+    }
+    \caption{\textbf{Overview of Materials Research Agent.}
+    \hermes\ provides the interaction and agent runtime, a Materials MCP Gateway connects the runtime to domain tools, and five materials-science modules transform an open-ended research goal into evidence-linked candidate structures and validation tasks. Scientific artifacts are returned to the runtime for expert review and subsequent research iterations.}
+    \label{fig:overview}
+\end{figure}
+
+Our main contributions are:
+
+\begin{itemize}
+    \item \textbf{A Hermes-based materials-research architecture.}
+    We extend the \hermes\ agent runtime with source-controlled materials Profiles and Skills, a Materials MCP interface, and a structure-centred scientific service, establishing an explicit boundary between reusable agent capabilities and domain-specific scientific operations.
+
+    \item \textbf{A unified formulation of evidence, structures, and validation.}
+    We formulate materials hypothesis generation as the joint evolution of a scientific constraint graph, a federated evidence graph, a candidate structure lineage, and a capability-aware validation graph.
+
+    \item \textbf{An end-to-end scientific implementation.}
+    We implement literature and database federation, nine soft-chemistry structure or condition operations, candidate-level scientific task DAGs, model execution interfaces, and persistent research artifacts that connect each hypothesis to its parent structure and next validation step.
+
+    \item \textbf{Three materials case studies and a layered evaluation design.}
+    We apply the same system to two-dimensional flat-band exploration, van der Waals ferromagnetic topological materials, and fractional-valence Lieb lattices. The evaluation separates the contribution of the base language model, the \hermes\ runtime, materials evidence tools, structure operations, and the complete \hermes-based materials system.
+\end{itemize}
+
+The remainder of this paper first describes the \hermes-based system architecture and its interface to the materials service, then presents the five scientific modules, followed by the three case studies and their cross-case evaluation.
+
+\input{sections/02_system_overview}
+\input{sections/03_matspec}
+\input{sections/04_matevidence}
+\input{sections/05_mattransform}
+\input{sections/06_matdag}
+\input{sections/07_matevolve}
+\input{sections/08_case_studies}
+\input{sections/09_related_work}
+\input{sections/10_conclusion}
+\input{sections/appendices}
+
+\bibliographystyle{unsrtnat}
+\bibliography{references}
+
+\end{document}

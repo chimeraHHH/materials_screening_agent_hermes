@@ -58,10 +58,12 @@ class _StaticCrossrefTransport:
         url: str,
         *,
         headers: Mapping[str, str],
-        timeout_seconds: int,
+        timeout_seconds: float,
         max_response_bytes: int,
+        deadline_monotonic: float | None = None,
+        max_physical_requests: int | None = None,
     ) -> bytes:
-        del headers, timeout_seconds
+        del headers, timeout_seconds, deadline_monotonic, max_physical_requests
         assert len(self.payload) <= max_response_bytes
         self.calls.append(url)
         return self.payload
@@ -521,8 +523,10 @@ def test_completed_run_verifier_passes_canonical_network_retry(
         url: str,
         *,
         headers: Mapping[str, str],
-        timeout_seconds: int,
+        timeout_seconds: float,
         max_response_bytes: int,
+        deadline_monotonic: float | None = None,
+        max_physical_requests: int | None = None,
     ) -> bytes:
         nonlocal failed_once
         if not failed_once:
@@ -537,6 +541,8 @@ def test_completed_run_verifier_passes_canonical_network_retry(
             headers=headers,
             timeout_seconds=timeout_seconds,
             max_response_bytes=max_response_bytes,
+            deadline_monotonic=deadline_monotonic,
+            max_physical_requests=max_physical_requests,
         )
 
     monkeypatch.setattr(_StaticCrossrefTransport, "get", flaky_get)
@@ -1084,6 +1090,7 @@ def test_completed_run_verifier_rejects_fully_forged_manifest_binding(
         approval_kind="requirement_freeze",
         prompt=binding["prompt"],
         input_sha256=forged_manifest,
+        execution_manifest_sha256=forged_manifest,
     )
     forged_interaction_sha256 = hashlib.sha256(
         canonical_json_bytes(forged_interaction)
@@ -1117,13 +1124,15 @@ def test_completed_run_verifier_rejects_fully_forged_manifest_binding(
     try:
         connection.execute(
             "UPDATE one_time_action_grants SET grant_id=?, interaction_id=?, "
-            "interaction_sha256=?, action_sha256=?, action_json=?",
+            "interaction_sha256=?, action_sha256=?, action_json=?, "
+            "execution_manifest_sha256=?",
             (
                 forged_grant_id,
                 forged_interaction_id,
                 forged_interaction_sha256,
                 forged_action_sha256,
                 forged_action_json,
+                forged_manifest,
             ),
         )
         connection.commit()

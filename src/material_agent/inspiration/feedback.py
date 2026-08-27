@@ -34,7 +34,6 @@ from material_agent.inspiration.models import (
 )
 from material_agent.inspiration.search import SearchAttemptRecord
 
-
 TAG_FEEDBACK_REVIEW_VERSION = "inspiration-tag-feedback-review-v1"
 AGGREGATION_SEMANTICS = "INCLUSIVE_NON_ADDITIVE"
 EXPERT_STATUS = "UNKNOWN"

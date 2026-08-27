@@ -16,7 +16,6 @@ from pydantic import Field, model_validator
 
 from material_agent.retrieval.models import StrictModel
 
-
 MP_SCREENING_SPEC_VERSION = "mp-screening-spec-v1"
 MP_CAPABILITY_CATALOG_VERSION = "mp-capability-catalog-v1"
 
@@ -24,7 +23,7 @@ MP_CAPABILITY_CATALOG_VERSION = "mp-capability-catalog-v1"
 # does not misuse the MP `elements` query parameter, whose list semantics are
 # an AND rather than an OR.
 TRANSITION_METAL_ELEMENTS: frozenset[str] = frozenset(
-    "Sc Ti V Cr Mn Fe Co Ni Cu Zn Y Zr Nb Mo Tc Ru Rh Pd Ag Cd Hf Ta W Re Os Ir Pt Au Hg Rf Db Sg Bh Hs Mt Ds Rg Cn".split()
+    ["Sc", "Ti", "V", "Cr", "Mn", "Fe", "Co", "Ni", "Cu", "Zn", "Y", "Zr", "Nb", "Mo", "Tc", "Ru", "Rh", "Pd", "Ag", "Cd", "Hf", "Ta", "W", "Re", "Os", "Ir", "Pt", "Au", "Hg", "Rf", "Db", "Sg", "Bh", "Hs", "Mt", "Ds", "Rg", "Cn"]
 )
 
 
@@ -287,9 +286,7 @@ def compile_mp_screening_spec(spec: MPScreeningSpec) -> CompiledMPScreening:
                     filters[capability.query_parameter] = (0.0, value)
                 else:
                     filters[capability.query_parameter] = (value, None)
-            elif clause.operator == "contains_all":
-                filters[capability.query_parameter] = sorted(set(clause.value))
-            elif clause.operator == "contains_none":
+            elif clause.operator == "contains_all" or clause.operator == "contains_none":
                 filters[capability.query_parameter] = sorted(set(clause.value))
             elif clause.operator in {"in", "has"}:
                 filters[capability.query_parameter] = clause.value

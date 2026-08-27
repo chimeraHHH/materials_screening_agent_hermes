@@ -14,13 +14,18 @@ from material_agent.inspiration.extractors import (
     ExtractionTier,
     count_approximate_tokens,
 )
+from material_agent.inspiration.hybrid_similarity import (
+    HybridSimilarityPolicyV1,
+    RankedNearDuplicateCandidate,
+    SimilarityMode,
+    decide_ranked_near_duplicates,
+)
 from material_agent.inspiration.models import (
     ComponentSnapshotV1,
     PassageLocatorV1,
     canonical_sha256,
 )
 from material_agent.inspiration.policy import PassageBudgetV1
-
 
 _TOKEN_RE = re.compile(
     r"[\u3400-\u9fff]|[A-Za-z0-9]+(?:[-'][A-Za-z0-9]+)*|[^\W\d_]+",
@@ -231,25 +236,37 @@ def select_passage_drafts(
             )
 
     scored.sort(key=_ranking_key)
-    output: list[SelectedPassageDraft] = []
-    fingerprints: list[frozenset[str]] = []
+    exact_unique: list[_ScoredWindow] = []
     hashes: set[str] = set()
     for candidate in scored:
         digest = candidate.selected.normalized_text_sha256
         if digest in hashes:
             continue
-        if any(
-            _jaccard(candidate.token_fingerprint, previous)
-            >= selected_config.local_dedup_jaccard
-            for previous in fingerprints
-        ):
-            continue
-        output.append(candidate.selected)
         hashes.add(digest)
-        fingerprints.append(candidate.token_fingerprint)
-        if len(output) >= selected_config.max_per_hit:
-            break
-    return tuple(output)
+        exact_unique.append(candidate)
+
+    ranked = tuple(
+        RankedNearDuplicateCandidate(
+            candidate_id=f"passage-window-{index}",
+            lexical_features=candidate.token_fingerprint,
+        )
+        for index, candidate in enumerate(exact_unique)
+    )
+    decision = decide_ranked_near_duplicates(
+        ranked,
+        policy=HybridSimilarityPolicyV1(
+            lexical_weight=1.0,
+            semantic_weight=0.0,
+            near_duplicate_threshold=selected_config.local_dedup_jaccard,
+        ),
+        requested_mode=SimilarityMode.LEXICAL_ONLY,
+        max_selected=selected_config.max_per_hit,
+    )
+    kept_indices = tuple(
+        int(candidate.candidate_id.removeprefix("passage-window-"))
+        for candidate in decision.kept
+    )
+    return tuple(exact_unique[index].selected for index in kept_indices)
 
 
 def _bounded_windows(
@@ -452,12 +469,6 @@ def _contains_any(text: str, terms: Iterable[str]) -> bool:
 
 def _casefolded_tokens(text: str) -> tuple[str, ...]:
     return tuple(match.group().casefold() for match in _TOKEN_RE.finditer(text))
-
-
-def _jaccard(first: frozenset[str], second: frozenset[str]) -> float:
-    if not first and not second:
-        return 1.0
-    return len(first & second) / len(first | second)
 
 
 def _ranking_key(candidate: _ScoredWindow) -> tuple[object, ...]:

@@ -90,6 +90,8 @@ def build_ml_stage_plan(
         raise ValueError("registry and health mock identities differ")
     if health.adapter_version != model.adapter_version:
         raise ValueError("health adapter version differs from registry")
+    if health.device_policy not in model.supported_devices:
+        raise ValueError("health device is not supported by registry model")
     installed_model_version = health.installed_package_versions.get(
         model.package_name
     )

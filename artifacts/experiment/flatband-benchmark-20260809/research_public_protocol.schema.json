@@ -1,0 +1,5509 @@
+{
+  "$id": "urn:materials-screening-agent:flatband-research-public-protocol:v2",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "audience": "PUBLIC_PROTOCOL",
+  "contract_implementation_status": "FULL_FLOW_CONTRACT_IMPLEMENTED",
+  "instance_release_policy": "PUBLIC_INSTANCES_REQUIRE_PHASE_APPROPRIATE_RELEASE_AUTHORIZATION",
+  "models": {
+    "BenchmarkSplitManifestV2": {
+      "$defs": {
+        "BenchmarkSplit": {
+          "enum": [
+            "PILOT_R1",
+            "PILOT_R2",
+            "DEVELOPMENT",
+            "LOCKED_IID",
+            "LOCKED_OOD"
+          ],
+          "title": "BenchmarkSplit",
+          "type": "string"
+        },
+        "CaseHoldoutMembershipV2": {
+          "additionalProperties": false,
+          "description": "Typed OOD membership kept separate from independence graph edges.",
+          "properties": {
+            "axis": {
+              "$ref": "#/$defs/OodHoldoutAxis"
+            },
+            "group_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "title": "Group Id",
+              "type": "string"
+            }
+          },
+          "required": [
+            "axis",
+            "group_id"
+          ],
+          "title": "CaseHoldoutMembershipV2",
+          "type": "object"
+        },
+        "Dimensionality": {
+          "enum": [
+            "2D",
+            "3D"
+          ],
+          "title": "Dimensionality",
+          "type": "string"
+        },
+        "MechanismFamily": {
+          "enum": [
+            "LATTICE_INTERFERENCE",
+            "LINE_GRAPH",
+            "ORBITAL_FRUSTRATION_HYBRIDIZATION",
+            "SYMMETRY_INDUCED",
+            "MOIRE_SUPERLATTICE",
+            "CONFINEMENT",
+            "CORRELATION_RENORMALIZATION",
+            "STRAIN_INTERFACE_DEFECT",
+            "ATOMIC_ORBITAL_LOCALIZATION",
+            "OTHER_OR_UNKNOWN"
+          ],
+          "title": "MechanismFamily",
+          "type": "string"
+        },
+        "OodHoldoutAxis": {
+          "enum": [
+            "STRUCTURE_PROTOTYPE",
+            "STRUCTURE_FINGERPRINT",
+            "MECHANISM_FAMILY"
+          ],
+          "title": "OodHoldoutAxis",
+          "type": "string"
+        },
+        "OodHoldoutFamilyV1": {
+          "additionalProperties": false,
+          "properties": {
+            "axis": {
+              "$ref": "#/$defs/OodHoldoutAxis"
+            },
+            "group_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "title": "Group Id",
+              "type": "string"
+            }
+          },
+          "required": [
+            "axis",
+            "group_id"
+          ],
+          "title": "OodHoldoutFamilyV1",
+          "type": "object"
+        },
+        "SplitCaseRefV2": {
+          "additionalProperties": false,
+          "description": "Split case with independent resampling and OOD-taxonomy namespaces.",
+          "properties": {
+            "case_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "title": "Case Id",
+              "type": "string"
+            },
+            "case_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Case Sha256",
+              "type": "string"
+            },
+            "dimensionality": {
+              "$ref": "#/$defs/Dimensionality"
+            },
+            "holdout_memberships": {
+              "default": [],
+              "items": {
+                "$ref": "#/$defs/CaseHoldoutMembershipV2"
+              },
+              "maxItems": 64,
+              "title": "Holdout Memberships",
+              "type": "array"
+            },
+            "independence_group_ids": {
+              "items": {
+                "maxLength": 128,
+                "minLength": 1,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+                "type": "string"
+              },
+              "maxItems": 64,
+              "minItems": 1,
+              "title": "Independence Group Ids",
+              "type": "array"
+            },
+            "primary_mechanism_stratum": {
+              "$ref": "#/$defs/MechanismFamily"
+            },
+            "split": {
+              "$ref": "#/$defs/BenchmarkSplit"
+            },
+            "target_class": {
+              "$ref": "#/$defs/TargetBandClass"
+            }
+          },
+          "required": [
+            "case_id",
+            "case_sha256",
+            "split",
+            "target_class",
+            "dimensionality",
+            "primary_mechanism_stratum",
+            "independence_group_ids"
+          ],
+          "title": "SplitCaseRefV2",
+          "type": "object"
+        },
+        "SplitManifestKind": {
+          "enum": [
+            "PILOT_R1",
+            "PILOT_R2",
+            "MAIN_120"
+          ],
+          "title": "SplitManifestKind",
+          "type": "string"
+        },
+        "TargetBandClass": {
+          "enum": [
+            "FB100",
+            "NB300"
+          ],
+          "title": "TargetBandClass",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "description": "Formal split contract separating OOD taxonomy from resampling edges.\n\nV1 remains unchanged for historical releases.  V2 is required by Leakage\nV3 so broad ``MechanismFamily`` strata can define a frozen OOD taxonomy\nwithout mathematically collapsing every case in that stratum into one\nbootstrap/randomization component.",
+      "properties": {
+        "cases": {
+          "items": {
+            "$ref": "#/$defs/SplitCaseRefV2"
+          },
+          "maxItems": 120,
+          "minItems": 30,
+          "title": "Cases",
+          "type": "array"
+        },
+        "manifest_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+          "title": "Manifest Id",
+          "type": "string"
+        },
+        "manifest_kind": {
+          "$ref": "#/$defs/SplitManifestKind"
+        },
+        "manifest_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Manifest Sha256",
+          "type": "string"
+        },
+        "ood_holdout_families": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/OodHoldoutFamilyV1"
+          },
+          "maxItems": 64,
+          "title": "Ood Holdout Families",
+          "type": "array"
+        },
+        "schema_version": {
+          "const": "flatband-split-manifest-v2",
+          "default": "flatband-split-manifest-v2",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "source_catalog_sha256": {
+          "const": "57c24de8f0cf616205b03ef16231def711f2dfa9fcac86d94beede9c01b0bb1f",
+          "default": "57c24de8f0cf616205b03ef16231def711f2dfa9fcac86d94beede9c01b0bb1f",
+          "title": "Source Catalog Sha256",
+          "type": "string"
+        },
+        "split_seed": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "title": "Split Seed",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "manifest_id",
+        "manifest_sha256",
+        "manifest_kind",
+        "split_seed",
+        "cases"
+      ],
+      "title": "BenchmarkSplitManifestV2",
+      "type": "object"
+    },
+    "BudgetManifestV2": {
+      "$defs": {
+        "LlmExecutionIdentityV1": {
+          "additionalProperties": false,
+          "properties": {
+            "max_calls": {
+              "const": 2,
+              "default": 2,
+              "title": "Max Calls",
+              "type": "integer"
+            },
+            "max_input_tokens": {
+              "const": 12000,
+              "default": 12000,
+              "title": "Max Input Tokens",
+              "type": "integer"
+            },
+            "max_output_tokens": {
+              "maximum": 16000,
+              "minimum": 1,
+              "title": "Max Output Tokens",
+              "type": "integer"
+            },
+            "metadata_packet_limit": {
+              "const": 20,
+              "default": 20,
+              "title": "Metadata Packet Limit",
+              "type": "integer"
+            },
+            "model": {
+              "maxLength": 512,
+              "minLength": 1,
+              "title": "Model",
+              "type": "string"
+            },
+            "output_schema_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Output Schema Sha256",
+              "type": "string"
+            },
+            "prompt_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Prompt Sha256",
+              "type": "string"
+            },
+            "provider": {
+              "maxLength": 512,
+              "minLength": 1,
+              "title": "Provider",
+              "type": "string"
+            },
+            "revision": {
+              "maxLength": 512,
+              "minLength": 1,
+              "title": "Revision",
+              "type": "string"
+            },
+            "tokenizer_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Tokenizer Sha256",
+              "type": "string"
+            }
+          },
+          "required": [
+            "provider",
+            "model",
+            "revision",
+            "prompt_sha256",
+            "tokenizer_sha256",
+            "output_schema_sha256",
+            "max_output_tokens"
+          ],
+          "title": "LlmExecutionIdentityV1",
+          "type": "object"
+        },
+        "LocalModelExecutionIdentityV1": {
+          "additionalProperties": false,
+          "properties": {
+            "bundle_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Bundle Sha256",
+              "type": "string"
+            },
+            "license_manifest_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "License Manifest Sha256",
+              "type": "string"
+            },
+            "model_card_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Model Card Sha256",
+              "type": "string"
+            },
+            "tokenizer_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Tokenizer Sha256",
+              "type": "string"
+            },
+            "vector_dimension": {
+              "maximum": 65536,
+              "minimum": 1,
+              "title": "Vector Dimension",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "bundle_sha256",
+            "tokenizer_sha256",
+            "model_card_sha256",
+            "license_manifest_sha256",
+            "vector_dimension"
+          ],
+          "title": "LocalModelExecutionIdentityV1",
+          "type": "object"
+        },
+        "ResearchSystemId": {
+          "enum": [
+            "B0",
+            "E1",
+            "E1-local",
+            "E2-A",
+            "E2-B",
+            "E3",
+            "Fusion"
+          ],
+          "title": "ResearchSystemId",
+          "type": "string"
+        },
+        "SourceBudgetV1": {
+          "additionalProperties": false,
+          "description": "Frozen request and information budget for one retrieval source.",
+          "properties": {
+            "allowed_request_hosts": {
+              "items": {
+                "maxLength": 512,
+                "minLength": 1,
+                "type": "string"
+              },
+              "maxItems": 8,
+              "minItems": 1,
+              "title": "Allowed Request Hosts",
+              "type": "array"
+            },
+            "max_cache_hits": {
+              "maximum": 100000,
+              "minimum": 0,
+              "title": "Max Cache Hits",
+              "type": "integer"
+            },
+            "max_logical_queries": {
+              "maximum": 128,
+              "minimum": 0,
+              "title": "Max Logical Queries",
+              "type": "integer"
+            },
+            "max_pages": {
+              "maximum": 128,
+              "minimum": 0,
+              "title": "Max Pages",
+              "type": "integer"
+            },
+            "max_physical_requests": {
+              "maximum": 8,
+              "minimum": 0,
+              "title": "Max Physical Requests",
+              "type": "integer"
+            },
+            "max_records": {
+              "maximum": 100000,
+              "minimum": 0,
+              "title": "Max Records",
+              "type": "integer"
+            },
+            "max_response_bytes": {
+              "maximum": 100000000,
+              "minimum": 0,
+              "title": "Max Response Bytes",
+              "type": "integer"
+            },
+            "max_unique_documents": {
+              "maximum": 20000,
+              "minimum": 0,
+              "title": "Max Unique Documents",
+              "type": "integer"
+            },
+            "projected_fields": {
+              "items": {
+                "maxLength": 512,
+                "minLength": 1,
+                "type": "string"
+              },
+              "maxItems": 64,
+              "minItems": 1,
+              "title": "Projected Fields",
+              "type": "array"
+            },
+            "request_path_class": {
+              "maxLength": 512,
+              "minLength": 1,
+              "title": "Request Path Class",
+              "type": "string"
+            },
+            "request_path_template_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Request Path Template Sha256",
+              "type": "string"
+            },
+            "retrieval_identity_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Retrieval Identity Sha256",
+              "type": "string"
+            },
+            "source_catalog_row_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Source Catalog Row Sha256",
+              "type": "string"
+            },
+            "source_catalog_sha256": {
+              "const": "57c24de8f0cf616205b03ef16231def711f2dfa9fcac86d94beede9c01b0bb1f",
+              "default": "57c24de8f0cf616205b03ef16231def711f2dfa9fcac86d94beede9c01b0bb1f",
+              "title": "Source Catalog Sha256",
+              "type": "string"
+            },
+            "source_field_projection_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Source Field Projection Sha256",
+              "type": "string"
+            },
+            "source_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "title": "Source Id",
+              "type": "string"
+            }
+          },
+          "required": [
+            "source_id",
+            "retrieval_identity_sha256",
+            "allowed_request_hosts",
+            "max_physical_requests",
+            "max_logical_queries",
+            "max_pages",
+            "max_records",
+            "max_response_bytes",
+            "max_unique_documents",
+            "max_cache_hits",
+            "source_catalog_row_sha256",
+            "request_path_class",
+            "request_path_template_sha256",
+            "projected_fields",
+            "source_field_projection_sha256"
+          ],
+          "title": "SourceBudgetV1",
+          "type": "object"
+        },
+        "SourceVariant": {
+          "enum": [
+            "CROSSREF_ONLY",
+            "E2-A",
+            "E2-B"
+          ],
+          "title": "SourceVariant",
+          "type": "string"
+        },
+        "SystemConfigV1": {
+          "additionalProperties": false,
+          "description": "Literal, content-addressed intervention arm.\n\nThe six registered system IDs cannot be relabelled with a different source,\nsemantic, TagGraph, query, cache, or local-model intervention.",
+          "properties": {
+            "baseline_tag_graph_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Baseline Tag Graph Sha256",
+              "type": "string"
+            },
+            "cache_policy_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Cache Policy Sha256",
+              "type": "string"
+            },
+            "cache_snapshot_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Cache Snapshot Sha256",
+              "type": "string"
+            },
+            "config_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "title": "Config Id",
+              "type": "string"
+            },
+            "config_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Config Sha256",
+              "type": "string"
+            },
+            "cross_domain_tag_graph_sha256": {
+              "anyOf": [
+                {
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Cross Domain Tag Graph Sha256"
+            },
+            "fusion_components": {
+              "default": [],
+              "items": {
+                "$ref": "#/$defs/ResearchSystemId"
+              },
+              "maxItems": 4,
+              "title": "Fusion Components",
+              "type": "array"
+            },
+            "llm": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/LlmExecutionIdentityV1"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "local_semantic_model": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/LocalModelExecutionIdentityV1"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "query_plan_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Query Plan Sha256",
+              "type": "string"
+            },
+            "ranking_policy_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Ranking Policy Sha256",
+              "type": "string"
+            },
+            "record_projection_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Record Projection Sha256",
+              "type": "string"
+            },
+            "schema_version": {
+              "const": "flatband-system-config-v1",
+              "default": "flatband-system-config-v1",
+              "title": "Schema Version",
+              "type": "string"
+            },
+            "scientific_conclusion": {
+              "const": false,
+              "default": false,
+              "title": "Scientific Conclusion",
+              "type": "boolean"
+            },
+            "source_budgets": {
+              "items": {
+                "$ref": "#/$defs/SourceBudgetV1"
+              },
+              "maxItems": 4,
+              "minItems": 1,
+              "title": "Source Budgets",
+              "type": "array"
+            },
+            "source_catalog_sha256": {
+              "const": "57c24de8f0cf616205b03ef16231def711f2dfa9fcac86d94beede9c01b0bb1f",
+              "default": "57c24de8f0cf616205b03ef16231def711f2dfa9fcac86d94beede9c01b0bb1f",
+              "title": "Source Catalog Sha256",
+              "type": "string"
+            },
+            "source_variant": {
+              "$ref": "#/$defs/SourceVariant"
+            },
+            "system_id": {
+              "$ref": "#/$defs/ResearchSystemId"
+            }
+          },
+          "required": [
+            "config_id",
+            "config_sha256",
+            "system_id",
+            "source_variant",
+            "source_budgets",
+            "query_plan_sha256",
+            "record_projection_sha256",
+            "ranking_policy_sha256",
+            "cache_policy_sha256",
+            "cache_snapshot_sha256",
+            "baseline_tag_graph_sha256"
+          ],
+          "title": "SystemConfigV1",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "description": "A formal cell budget exact-bound to every V3 upstream seal.",
+      "properties": {
+        "analysis_environment_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Analysis Environment Sha256",
+          "type": "string"
+        },
+        "budget_manifest_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+          "title": "Budget Manifest Id",
+          "type": "string"
+        },
+        "budget_manifest_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Budget Manifest Sha256",
+          "type": "string"
+        },
+        "case_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+          "title": "Case Id",
+          "type": "string"
+        },
+        "case_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Case Sha256",
+          "type": "string"
+        },
+        "cell_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+          "title": "Cell Id",
+          "type": "string"
+        },
+        "cell_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Cell Sha256",
+          "type": "string"
+        },
+        "execution_matrix_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+          "title": "Execution Matrix Id",
+          "type": "string"
+        },
+        "execution_matrix_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Execution Matrix Sha256",
+          "type": "string"
+        },
+        "frozen_at": {
+          "maxLength": 40,
+          "minLength": 20,
+          "title": "Frozen At",
+          "type": "string"
+        },
+        "frozen_case_release_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+          "title": "Frozen Case Release Id",
+          "type": "string"
+        },
+        "frozen_case_release_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Frozen Case Release Sha256",
+          "type": "string"
+        },
+        "git_commit": {
+          "pattern": "^[0-9a-f]{40}$",
+          "title": "Git Commit",
+          "type": "string"
+        },
+        "legacy_budget_alias_allowed": {
+          "const": false,
+          "default": false,
+          "title": "Legacy Budget Alias Allowed",
+          "type": "boolean"
+        },
+        "max_walltime_seconds": {
+          "maximum": 3600,
+          "minimum": 1,
+          "title": "Max Walltime Seconds",
+          "type": "integer"
+        },
+        "pre_budget_closure_release_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+          "title": "Pre Budget Closure Release Id",
+          "type": "string"
+        },
+        "pre_budget_closure_release_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Pre Budget Closure Release Sha256",
+          "type": "string"
+        },
+        "pre_run_eligibility_release_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+          "title": "Pre Run Eligibility Release Id",
+          "type": "string"
+        },
+        "pre_run_eligibility_release_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Pre Run Eligibility Release Sha256",
+          "type": "string"
+        },
+        "run_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+          "title": "Run Id",
+          "type": "string"
+        },
+        "runtime_environment_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Runtime Environment Sha256",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "flatband-budget-manifest-v2",
+          "default": "flatband-budget-manifest-v2",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "scientific_conclusion": {
+          "const": false,
+          "default": false,
+          "title": "Scientific Conclusion",
+          "type": "boolean"
+        },
+        "system_config": {
+          "$ref": "#/$defs/SystemConfigV1"
+        }
+      },
+      "required": [
+        "budget_manifest_id",
+        "budget_manifest_sha256",
+        "frozen_case_release_id",
+        "frozen_case_release_sha256",
+        "pre_run_eligibility_release_id",
+        "pre_run_eligibility_release_sha256",
+        "pre_budget_closure_release_id",
+        "pre_budget_closure_release_sha256",
+        "execution_matrix_id",
+        "execution_matrix_sha256",
+        "cell_id",
+        "cell_sha256",
+        "run_id",
+        "case_id",
+        "case_sha256",
+        "system_config",
+        "git_commit",
+        "runtime_environment_sha256",
+        "analysis_environment_sha256",
+        "max_walltime_seconds",
+        "frozen_at"
+      ],
+      "title": "BudgetManifestV2",
+      "type": "object"
+    },
+    "CaseSourcePolicyAttestationV2": {
+      "$defs": {
+        "SourceCatalogDecision": {
+          "enum": [
+            "INCLUDE",
+            "CONDITIONAL",
+            "EXCLUDE"
+          ],
+          "title": "SourceCatalogDecision",
+          "type": "string"
+        },
+        "SourceUseRole": {
+          "enum": [
+            "case_seed",
+            "structure",
+            "electronic_structure",
+            "mechanism_seed",
+            "literature_retrieval",
+            "identifier_resolution",
+            "open_access_status",
+            "sensitivity_only"
+          ],
+          "title": "SourceUseRole",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "description": "Record-level replay token for one source used by one frozen case.\n\nThis is an internal, content-addressed policy assertion rather than a legal\nopinion or an external rights-holder signature.  The fields for a future\nCONDITIONAL-record approval flow remain reserved, but the formal Pilot is\nINCLUDE-only and this validator rejects every CONDITIONAL or EXCLUDE row.",
+      "properties": {
+        "attestation_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+          "title": "Attestation Id",
+          "type": "string"
+        },
+        "attestation_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Attestation Sha256",
+          "type": "string"
+        },
+        "case_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+          "title": "Case Id",
+          "type": "string"
+        },
+        "case_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Case Sha256",
+          "type": "string"
+        },
+        "catalog_decision": {
+          "$ref": "#/$defs/SourceCatalogDecision"
+        },
+        "conditional_gate_token_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Conditional Gate Token Sha256"
+        },
+        "conditional_public_release_authorization_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Conditional Public Release Authorization Sha256"
+        },
+        "external_legal_attestation_present": {
+          "const": false,
+          "default": false,
+          "title": "External Legal Attestation Present",
+          "type": "boolean"
+        },
+        "public_fields_release_allowed": {
+          "title": "Public Fields Release Allowed",
+          "type": "boolean"
+        },
+        "record_license_compatibility_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Record License Compatibility Sha256",
+          "type": "string"
+        },
+        "record_license_expression": {
+          "maxLength": 96,
+          "minLength": 2,
+          "title": "Record License Expression",
+          "type": "string"
+        },
+        "record_provenance_token_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Record Provenance Token Sha256",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "flatband-case-source-policy-attestation-v2",
+          "default": "flatband-case-source-policy-attestation-v2",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "scientific_conclusion": {
+          "const": false,
+          "default": false,
+          "title": "Scientific Conclusion",
+          "type": "boolean"
+        },
+        "source_catalog_row_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Source Catalog Row Sha256",
+          "type": "string"
+        },
+        "source_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+          "title": "Source Id",
+          "type": "string"
+        },
+        "source_record_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+          "title": "Source Record Id",
+          "type": "string"
+        },
+        "source_record_raw_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Source Record Raw Sha256",
+          "type": "string"
+        },
+        "structure_payload_release_allowed": {
+          "title": "Structure Payload Release Allowed",
+          "type": "boolean"
+        },
+        "usage_roles": {
+          "items": {
+            "$ref": "#/$defs/SourceUseRole"
+          },
+          "maxItems": 8,
+          "minItems": 1,
+          "title": "Usage Roles",
+          "type": "array"
+        }
+      },
+      "required": [
+        "attestation_id",
+        "attestation_sha256",
+        "case_id",
+        "case_sha256",
+        "source_id",
+        "source_record_id",
+        "source_record_raw_sha256",
+        "source_catalog_row_sha256",
+        "catalog_decision",
+        "usage_roles",
+        "record_license_expression",
+        "record_license_compatibility_sha256",
+        "record_provenance_token_sha256",
+        "public_fields_release_allowed",
+        "structure_payload_release_allowed"
+      ],
+      "title": "CaseSourcePolicyAttestationV2",
+      "type": "object"
+    },
+    "ExecutionMatrixV2": {
+      "$defs": {
+        "BenchmarkSplit": {
+          "enum": [
+            "PILOT_R1",
+            "PILOT_R2",
+            "DEVELOPMENT",
+            "LOCKED_IID",
+            "LOCKED_OOD"
+          ],
+          "title": "BenchmarkSplit",
+          "type": "string"
+        },
+        "BenchmarkSplitManifestV2": {
+          "additionalProperties": false,
+          "description": "Formal split contract separating OOD taxonomy from resampling edges.\n\nV1 remains unchanged for historical releases.  V2 is required by Leakage\nV3 so broad ``MechanismFamily`` strata can define a frozen OOD taxonomy\nwithout mathematically collapsing every case in that stratum into one\nbootstrap/randomization component.",
+          "properties": {
+            "cases": {
+              "items": {
+                "$ref": "#/$defs/SplitCaseRefV2"
+              },
+              "maxItems": 120,
+              "minItems": 30,
+              "title": "Cases",
+              "type": "array"
+            },
+            "manifest_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "title": "Manifest Id",
+              "type": "string"
+            },
+            "manifest_kind": {
+              "$ref": "#/$defs/SplitManifestKind"
+            },
+            "manifest_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Manifest Sha256",
+              "type": "string"
+            },
+            "ood_holdout_families": {
+              "default": [],
+              "items": {
+                "$ref": "#/$defs/OodHoldoutFamilyV1"
+              },
+              "maxItems": 64,
+              "title": "Ood Holdout Families",
+              "type": "array"
+            },
+            "schema_version": {
+              "const": "flatband-split-manifest-v2",
+              "default": "flatband-split-manifest-v2",
+              "title": "Schema Version",
+              "type": "string"
+            },
+            "source_catalog_sha256": {
+              "const": "57c24de8f0cf616205b03ef16231def711f2dfa9fcac86d94beede9c01b0bb1f",
+              "default": "57c24de8f0cf616205b03ef16231def711f2dfa9fcac86d94beede9c01b0bb1f",
+              "title": "Source Catalog Sha256",
+              "type": "string"
+            },
+            "split_seed": {
+              "maximum": 9223372036854775807,
+              "minimum": 0,
+              "title": "Split Seed",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "manifest_id",
+            "manifest_sha256",
+            "manifest_kind",
+            "split_seed",
+            "cases"
+          ],
+          "title": "BenchmarkSplitManifestV2",
+          "type": "object"
+        },
+        "CaseHoldoutMembershipV2": {
+          "additionalProperties": false,
+          "description": "Typed OOD membership kept separate from independence graph edges.",
+          "properties": {
+            "axis": {
+              "$ref": "#/$defs/OodHoldoutAxis"
+            },
+            "group_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "title": "Group Id",
+              "type": "string"
+            }
+          },
+          "required": [
+            "axis",
+            "group_id"
+          ],
+          "title": "CaseHoldoutMembershipV2",
+          "type": "object"
+        },
+        "Dimensionality": {
+          "enum": [
+            "2D",
+            "3D"
+          ],
+          "title": "Dimensionality",
+          "type": "string"
+        },
+        "ExecutionCellV1": {
+          "additionalProperties": false,
+          "properties": {
+            "case_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "title": "Case Id",
+              "type": "string"
+            },
+            "case_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Case Sha256",
+              "type": "string"
+            },
+            "cell_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "title": "Cell Id",
+              "type": "string"
+            },
+            "cell_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Cell Sha256",
+              "type": "string"
+            },
+            "split": {
+              "$ref": "#/$defs/BenchmarkSplit"
+            },
+            "system_config_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "title": "System Config Id",
+              "type": "string"
+            },
+            "system_config_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "System Config Sha256",
+              "type": "string"
+            },
+            "system_id": {
+              "$ref": "#/$defs/ResearchSystemId"
+            }
+          },
+          "required": [
+            "cell_id",
+            "cell_sha256",
+            "split",
+            "case_id",
+            "case_sha256",
+            "system_id",
+            "system_config_id",
+            "system_config_sha256"
+          ],
+          "title": "ExecutionCellV1",
+          "type": "object"
+        },
+        "ExecutionPhase": {
+          "enum": [
+            "PILOT_R1",
+            "PILOT_R2",
+            "DEVELOPMENT_ABLATIONS",
+            "DEVELOPMENT_LOCAL_SENSITIVITY",
+            "DEVELOPMENT_FUSION",
+            "LOCKED_FUSION_COMPONENTS",
+            "LOCKED_PRIMARY",
+            "LOCKED_FUSION_MINUS_E1",
+            "LOCKED_FUSION_MINUS_E2",
+            "LOCKED_FUSION_MINUS_E3"
+          ],
+          "title": "ExecutionPhase",
+          "type": "string"
+        },
+        "LlmExecutionIdentityV1": {
+          "additionalProperties": false,
+          "properties": {
+            "max_calls": {
+              "const": 2,
+              "default": 2,
+              "title": "Max Calls",
+              "type": "integer"
+            },
+            "max_input_tokens": {
+              "const": 12000,
+              "default": 12000,
+              "title": "Max Input Tokens",
+              "type": "integer"
+            },
+            "max_output_tokens": {
+              "maximum": 16000,
+              "minimum": 1,
+              "title": "Max Output Tokens",
+              "type": "integer"
+            },
+            "metadata_packet_limit": {
+              "const": 20,
+              "default": 20,
+              "title": "Metadata Packet Limit",
+              "type": "integer"
+            },
+            "model": {
+              "maxLength": 512,
+              "minLength": 1,
+              "title": "Model",
+              "type": "string"
+            },
+            "output_schema_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Output Schema Sha256",
+              "type": "string"
+            },
+            "prompt_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Prompt Sha256",
+              "type": "string"
+            },
+            "provider": {
+              "maxLength": 512,
+              "minLength": 1,
+              "title": "Provider",
+              "type": "string"
+            },
+            "revision": {
+              "maxLength": 512,
+              "minLength": 1,
+              "title": "Revision",
+              "type": "string"
+            },
+            "tokenizer_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Tokenizer Sha256",
+              "type": "string"
+            }
+          },
+          "required": [
+            "provider",
+            "model",
+            "revision",
+            "prompt_sha256",
+            "tokenizer_sha256",
+            "output_schema_sha256",
+            "max_output_tokens"
+          ],
+          "title": "LlmExecutionIdentityV1",
+          "type": "object"
+        },
+        "LocalModelExecutionIdentityV1": {
+          "additionalProperties": false,
+          "properties": {
+            "bundle_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Bundle Sha256",
+              "type": "string"
+            },
+            "license_manifest_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "License Manifest Sha256",
+              "type": "string"
+            },
+            "model_card_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Model Card Sha256",
+              "type": "string"
+            },
+            "tokenizer_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Tokenizer Sha256",
+              "type": "string"
+            },
+            "vector_dimension": {
+              "maximum": 65536,
+              "minimum": 1,
+              "title": "Vector Dimension",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "bundle_sha256",
+            "tokenizer_sha256",
+            "model_card_sha256",
+            "license_manifest_sha256",
+            "vector_dimension"
+          ],
+          "title": "LocalModelExecutionIdentityV1",
+          "type": "object"
+        },
+        "MechanismFamily": {
+          "enum": [
+            "LATTICE_INTERFERENCE",
+            "LINE_GRAPH",
+            "ORBITAL_FRUSTRATION_HYBRIDIZATION",
+            "SYMMETRY_INDUCED",
+            "MOIRE_SUPERLATTICE",
+            "CONFINEMENT",
+            "CORRELATION_RENORMALIZATION",
+            "STRAIN_INTERFACE_DEFECT",
+            "ATOMIC_ORBITAL_LOCALIZATION",
+            "OTHER_OR_UNKNOWN"
+          ],
+          "title": "MechanismFamily",
+          "type": "string"
+        },
+        "OodHoldoutAxis": {
+          "enum": [
+            "STRUCTURE_PROTOTYPE",
+            "STRUCTURE_FINGERPRINT",
+            "MECHANISM_FAMILY"
+          ],
+          "title": "OodHoldoutAxis",
+          "type": "string"
+        },
+        "OodHoldoutFamilyV1": {
+          "additionalProperties": false,
+          "properties": {
+            "axis": {
+              "$ref": "#/$defs/OodHoldoutAxis"
+            },
+            "group_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "title": "Group Id",
+              "type": "string"
+            }
+          },
+          "required": [
+            "axis",
+            "group_id"
+          ],
+          "title": "OodHoldoutFamilyV1",
+          "type": "object"
+        },
+        "ResearchSystemId": {
+          "enum": [
+            "B0",
+            "E1",
+            "E1-local",
+            "E2-A",
+            "E2-B",
+            "E3",
+            "Fusion"
+          ],
+          "title": "ResearchSystemId",
+          "type": "string"
+        },
+        "SourceBudgetV1": {
+          "additionalProperties": false,
+          "description": "Frozen request and information budget for one retrieval source.",
+          "properties": {
+            "allowed_request_hosts": {
+              "items": {
+                "maxLength": 512,
+                "minLength": 1,
+                "type": "string"
+              },
+              "maxItems": 8,
+              "minItems": 1,
+              "title": "Allowed Request Hosts",
+              "type": "array"
+            },
+            "max_cache_hits": {
+              "maximum": 100000,
+              "minimum": 0,
+              "title": "Max Cache Hits",
+              "type": "integer"
+            },
+            "max_logical_queries": {
+              "maximum": 128,
+              "minimum": 0,
+              "title": "Max Logical Queries",
+              "type": "integer"
+            },
+            "max_pages": {
+              "maximum": 128,
+              "minimum": 0,
+              "title": "Max Pages",
+              "type": "integer"
+            },
+            "max_physical_requests": {
+              "maximum": 8,
+              "minimum": 0,
+              "title": "Max Physical Requests",
+              "type": "integer"
+            },
+            "max_records": {
+              "maximum": 100000,
+              "minimum": 0,
+              "title": "Max Records",
+              "type": "integer"
+            },
+            "max_response_bytes": {
+              "maximum": 100000000,
+              "minimum": 0,
+              "title": "Max Response Bytes",
+              "type": "integer"
+            },
+            "max_unique_documents": {
+              "maximum": 20000,
+              "minimum": 0,
+              "title": "Max Unique Documents",
+              "type": "integer"
+            },
+            "projected_fields": {
+              "items": {
+                "maxLength": 512,
+                "minLength": 1,
+                "type": "string"
+              },
+              "maxItems": 64,
+              "minItems": 1,
+              "title": "Projected Fields",
+              "type": "array"
+            },
+            "request_path_class": {
+              "maxLength": 512,
+              "minLength": 1,
+              "title": "Request Path Class",
+              "type": "string"
+            },
+            "request_path_template_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Request Path Template Sha256",
+              "type": "string"
+            },
+            "retrieval_identity_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Retrieval Identity Sha256",
+              "type": "string"
+            },
+            "source_catalog_row_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Source Catalog Row Sha256",
+              "type": "string"
+            },
+            "source_catalog_sha256": {
+              "const": "57c24de8f0cf616205b03ef16231def711f2dfa9fcac86d94beede9c01b0bb1f",
+              "default": "57c24de8f0cf616205b03ef16231def711f2dfa9fcac86d94beede9c01b0bb1f",
+              "title": "Source Catalog Sha256",
+              "type": "string"
+            },
+            "source_field_projection_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Source Field Projection Sha256",
+              "type": "string"
+            },
+            "source_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "title": "Source Id",
+              "type": "string"
+            }
+          },
+          "required": [
+            "source_id",
+            "retrieval_identity_sha256",
+            "allowed_request_hosts",
+            "max_physical_requests",
+            "max_logical_queries",
+            "max_pages",
+            "max_records",
+            "max_response_bytes",
+            "max_unique_documents",
+            "max_cache_hits",
+            "source_catalog_row_sha256",
+            "request_path_class",
+            "request_path_template_sha256",
+            "projected_fields",
+            "source_field_projection_sha256"
+          ],
+          "title": "SourceBudgetV1",
+          "type": "object"
+        },
+        "SourceVariant": {
+          "enum": [
+            "CROSSREF_ONLY",
+            "E2-A",
+            "E2-B"
+          ],
+          "title": "SourceVariant",
+          "type": "string"
+        },
+        "SplitCaseRefV2": {
+          "additionalProperties": false,
+          "description": "Split case with independent resampling and OOD-taxonomy namespaces.",
+          "properties": {
+            "case_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "title": "Case Id",
+              "type": "string"
+            },
+            "case_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Case Sha256",
+              "type": "string"
+            },
+            "dimensionality": {
+              "$ref": "#/$defs/Dimensionality"
+            },
+            "holdout_memberships": {
+              "default": [],
+              "items": {
+                "$ref": "#/$defs/CaseHoldoutMembershipV2"
+              },
+              "maxItems": 64,
+              "title": "Holdout Memberships",
+              "type": "array"
+            },
+            "independence_group_ids": {
+              "items": {
+                "maxLength": 128,
+                "minLength": 1,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+                "type": "string"
+              },
+              "maxItems": 64,
+              "minItems": 1,
+              "title": "Independence Group Ids",
+              "type": "array"
+            },
+            "primary_mechanism_stratum": {
+              "$ref": "#/$defs/MechanismFamily"
+            },
+            "split": {
+              "$ref": "#/$defs/BenchmarkSplit"
+            },
+            "target_class": {
+              "$ref": "#/$defs/TargetBandClass"
+            }
+          },
+          "required": [
+            "case_id",
+            "case_sha256",
+            "split",
+            "target_class",
+            "dimensionality",
+            "primary_mechanism_stratum",
+            "independence_group_ids"
+          ],
+          "title": "SplitCaseRefV2",
+          "type": "object"
+        },
+        "SplitManifestKind": {
+          "enum": [
+            "PILOT_R1",
+            "PILOT_R2",
+            "MAIN_120"
+          ],
+          "title": "SplitManifestKind",
+          "type": "string"
+        },
+        "SystemConfigV1": {
+          "additionalProperties": false,
+          "description": "Literal, content-addressed intervention arm.\n\nThe six registered system IDs cannot be relabelled with a different source,\nsemantic, TagGraph, query, cache, or local-model intervention.",
+          "properties": {
+            "baseline_tag_graph_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Baseline Tag Graph Sha256",
+              "type": "string"
+            },
+            "cache_policy_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Cache Policy Sha256",
+              "type": "string"
+            },
+            "cache_snapshot_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Cache Snapshot Sha256",
+              "type": "string"
+            },
+            "config_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "title": "Config Id",
+              "type": "string"
+            },
+            "config_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Config Sha256",
+              "type": "string"
+            },
+            "cross_domain_tag_graph_sha256": {
+              "anyOf": [
+                {
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Cross Domain Tag Graph Sha256"
+            },
+            "fusion_components": {
+              "default": [],
+              "items": {
+                "$ref": "#/$defs/ResearchSystemId"
+              },
+              "maxItems": 4,
+              "title": "Fusion Components",
+              "type": "array"
+            },
+            "llm": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/LlmExecutionIdentityV1"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "local_semantic_model": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/LocalModelExecutionIdentityV1"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "query_plan_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Query Plan Sha256",
+              "type": "string"
+            },
+            "ranking_policy_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Ranking Policy Sha256",
+              "type": "string"
+            },
+            "record_projection_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Record Projection Sha256",
+              "type": "string"
+            },
+            "schema_version": {
+              "const": "flatband-system-config-v1",
+              "default": "flatband-system-config-v1",
+              "title": "Schema Version",
+              "type": "string"
+            },
+            "scientific_conclusion": {
+              "const": false,
+              "default": false,
+              "title": "Scientific Conclusion",
+              "type": "boolean"
+            },
+            "source_budgets": {
+              "items": {
+                "$ref": "#/$defs/SourceBudgetV1"
+              },
+              "maxItems": 4,
+              "minItems": 1,
+              "title": "Source Budgets",
+              "type": "array"
+            },
+            "source_catalog_sha256": {
+              "const": "57c24de8f0cf616205b03ef16231def711f2dfa9fcac86d94beede9c01b0bb1f",
+              "default": "57c24de8f0cf616205b03ef16231def711f2dfa9fcac86d94beede9c01b0bb1f",
+              "title": "Source Catalog Sha256",
+              "type": "string"
+            },
+            "source_variant": {
+              "$ref": "#/$defs/SourceVariant"
+            },
+            "system_id": {
+              "$ref": "#/$defs/ResearchSystemId"
+            }
+          },
+          "required": [
+            "config_id",
+            "config_sha256",
+            "system_id",
+            "source_variant",
+            "source_budgets",
+            "query_plan_sha256",
+            "record_projection_sha256",
+            "ranking_policy_sha256",
+            "cache_policy_sha256",
+            "cache_snapshot_sha256",
+            "baseline_tag_graph_sha256"
+          ],
+          "title": "SystemConfigV1",
+          "type": "object"
+        },
+        "TargetBandClass": {
+          "enum": [
+            "FB100",
+            "NB300"
+          ],
+          "title": "TargetBandClass",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "description": "Formal execution matrix over the leakage-safe split V2 contract.\n\nV1 remains available only for historical/draft releases.  V2 is the\nscientific Pilot/Main path because ``BenchmarkSplitManifestV2`` separates\nOOD taxonomy memberships from connected-component independence edges.",
+      "properties": {
+        "cells": {
+          "items": {
+            "$ref": "#/$defs/ExecutionCellV1"
+          },
+          "maxItems": 720,
+          "minItems": 1,
+          "title": "Cells",
+          "type": "array"
+        },
+        "matrix_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+          "title": "Matrix Id",
+          "type": "string"
+        },
+        "matrix_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Matrix Sha256",
+          "type": "string"
+        },
+        "phase": {
+          "$ref": "#/$defs/ExecutionPhase"
+        },
+        "schema_version": {
+          "const": "flatband-execution-matrix-v2",
+          "default": "flatband-execution-matrix-v2",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "scientific_conclusion": {
+          "const": false,
+          "default": false,
+          "title": "Scientific Conclusion",
+          "type": "boolean"
+        },
+        "split_manifest": {
+          "$ref": "#/$defs/BenchmarkSplitManifestV2"
+        },
+        "system_configs": {
+          "items": {
+            "$ref": "#/$defs/SystemConfigV1"
+          },
+          "maxItems": 6,
+          "minItems": 1,
+          "title": "System Configs",
+          "type": "array"
+        }
+      },
+      "required": [
+        "matrix_id",
+        "matrix_sha256",
+        "phase",
+        "split_manifest",
+        "system_configs",
+        "cells"
+      ],
+      "title": "ExecutionMatrixV2",
+      "type": "object"
+    },
+    "FormalPilotAgreementGateReleaseV1": {
+      "$defs": {
+        "PilotAgreementGateDecision": {
+          "enum": [
+            "R1_PASS_MAIN_ALLOWED",
+            "R1_GUIDE_REVISION_AND_DISJOINT_R2_REQUIRED",
+            "STOP_R1_BELOW_0_667",
+            "R2_PASS_MAIN_ALLOWED",
+            "STOP_R2_BELOW_0_80",
+            "ROUND_FAIL_CLOSED"
+          ],
+          "title": "PilotAgreementGateDecision",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "description": "Preregistered R1/R2 decision derived only from a formal agreement release.",
+      "properties": {
+        "agreement_release_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+          "title": "Agreement Release Id",
+          "type": "string"
+        },
+        "agreement_release_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Agreement Release Sha256",
+          "type": "string"
+        },
+        "alpha": {
+          "anyOf": [
+            {
+              "maximum": 1.0,
+              "minimum": -1.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Alpha"
+        },
+        "annotation_guide_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Annotation Guide Sha256",
+          "type": "string"
+        },
+        "bootstrap_lower": {
+          "anyOf": [
+            {
+              "maximum": 1.0,
+              "minimum": -1.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Bootstrap Lower"
+        },
+        "bootstrap_replicates": {
+          "const": 50000,
+          "default": 50000,
+          "title": "Bootstrap Replicates",
+          "type": "integer"
+        },
+        "bootstrap_seed": {
+          "const": 20260809,
+          "default": 20260809,
+          "title": "Bootstrap Seed",
+          "type": "integer"
+        },
+        "bootstrap_upper": {
+          "anyOf": [
+            {
+              "maximum": 1.0,
+              "minimum": -1.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Bootstrap Upper"
+        },
+        "caller_supplied_rated_units_allowed": {
+          "const": false,
+          "default": false,
+          "title": "Caller Supplied Rated Units Allowed",
+          "type": "boolean"
+        },
+        "case_invalid_units": {
+          "minimum": 0,
+          "title": "Case Invalid Units",
+          "type": "integer"
+        },
+        "decision": {
+          "$ref": "#/$defs/PilotAgreementGateDecision"
+        },
+        "evaluated_at": {
+          "maxLength": 40,
+          "minLength": 20,
+          "title": "Evaluated At",
+          "type": "string"
+        },
+        "exact_assessability_agreement_rate": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Exact Assessability Agreement Rate",
+          "type": "number"
+        },
+        "exact_grade_agreement_rate": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Exact Grade Agreement Rate",
+          "type": "number"
+        },
+        "execution_phase": {
+          "enum": [
+            "PILOT_R1",
+            "PILOT_R2"
+          ],
+          "title": "Execution Phase",
+          "type": "string"
+        },
+        "gate_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+          "title": "Gate Id",
+          "type": "string"
+        },
+        "gate_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Gate Sha256",
+          "type": "string"
+        },
+        "leakage_release_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+          "title": "Leakage Release Id",
+          "type": "string"
+        },
+        "leakage_release_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Leakage Release Sha256",
+          "type": "string"
+        },
+        "lineage_assignment_curation_release_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+          "title": "Lineage Assignment Curation Release Id",
+          "type": "string"
+        },
+        "lineage_assignment_curation_release_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Lineage Assignment Curation Release Sha256",
+          "type": "string"
+        },
+        "lineage_curation_release_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+          "title": "Lineage Curation Release Id",
+          "type": "string"
+        },
+        "lineage_curation_release_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Lineage Curation Release Sha256",
+          "type": "string"
+        },
+        "minimum_exact_agreement_used_as_gate": {
+          "const": false,
+          "default": false,
+          "title": "Minimum Exact Agreement Used As Gate",
+          "type": "boolean"
+        },
+        "paired_system_packet_invalid_units": {
+          "minimum": 0,
+          "title": "Paired System Packet Invalid Units",
+          "type": "integer"
+        },
+        "pass_threshold": {
+          "const": 0.8,
+          "default": 0.8,
+          "title": "Pass Threshold",
+          "type": "number"
+        },
+        "prior_r1_agreement_release_id": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Prior R1 Agreement Release Id"
+        },
+        "prior_r1_agreement_release_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Prior R1 Agreement Release Sha256"
+        },
+        "prior_r1_gate_id": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Prior R1 Gate Id"
+        },
+        "prior_r1_gate_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Prior R1 Gate Sha256"
+        },
+        "prior_r1_leakage_release_id": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Prior R1 Leakage Release Id"
+        },
+        "prior_r1_leakage_release_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Prior R1 Leakage Release Sha256"
+        },
+        "prior_r1_lineage_assignment_curation_release_id": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Prior R1 Lineage Assignment Curation Release Id"
+        },
+        "prior_r1_lineage_assignment_curation_release_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Prior R1 Lineage Assignment Curation Release Sha256"
+        },
+        "r1_revision_floor": {
+          "const": 0.667,
+          "default": 0.667,
+          "title": "R1 Revision Floor",
+          "type": "number"
+        },
+        "r2_cases_and_components_disjoint": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "R2 Cases And Components Disjoint"
+        },
+        "rated_units": {
+          "minimum": 0,
+          "title": "Rated Units",
+          "type": "integer"
+        },
+        "review_round": {
+          "maximum": 2,
+          "minimum": 1,
+          "title": "Review Round",
+          "type": "integer"
+        },
+        "round_fail_closed": {
+          "title": "Round Fail Closed",
+          "type": "boolean"
+        },
+        "schema_version": {
+          "const": "flatband-formal-pilot-agreement-gate-v1",
+          "default": "flatband-formal-pilot-agreement-gate-v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "scientific_conclusion": {
+          "const": false,
+          "default": false,
+          "title": "Scientific Conclusion",
+          "type": "boolean"
+        },
+        "total_units": {
+          "minimum": 1,
+          "title": "Total Units",
+          "type": "integer"
+        },
+        "undefined_bootstrap_replicates": {
+          "maximum": 50000,
+          "minimum": 0,
+          "title": "Undefined Bootstrap Replicates",
+          "type": "integer"
+        },
+        "unilateral_system_packet_invalid_units": {
+          "minimum": 0,
+          "title": "Unilateral System Packet Invalid Units",
+          "type": "integer"
+        },
+        "valid_bootstrap_replicates": {
+          "maximum": 50000,
+          "minimum": 0,
+          "title": "Valid Bootstrap Replicates",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "gate_id",
+        "gate_sha256",
+        "agreement_release_id",
+        "agreement_release_sha256",
+        "leakage_release_id",
+        "leakage_release_sha256",
+        "lineage_curation_release_id",
+        "lineage_curation_release_sha256",
+        "lineage_assignment_curation_release_id",
+        "lineage_assignment_curation_release_sha256",
+        "execution_phase",
+        "review_round",
+        "annotation_guide_sha256",
+        "alpha",
+        "bootstrap_lower",
+        "bootstrap_upper",
+        "valid_bootstrap_replicates",
+        "undefined_bootstrap_replicates",
+        "total_units",
+        "rated_units",
+        "paired_system_packet_invalid_units",
+        "unilateral_system_packet_invalid_units",
+        "case_invalid_units",
+        "exact_assessability_agreement_rate",
+        "exact_grade_agreement_rate",
+        "round_fail_closed",
+        "decision",
+        "evaluated_at"
+      ],
+      "title": "FormalPilotAgreementGateReleaseV1",
+      "type": "object"
+    },
+    "LeakageComponentReleaseV3": {
+      "$defs": {
+        "LeakageAxis": {
+          "enum": [
+            "COMPOSITION_FAMILY",
+            "STRUCTURE_PROTOTYPE",
+            "STRUCTURE_FINGERPRINT",
+            "ARTICLE_OR_SOURCE_FAMILY",
+            "MECHANISM_FAMILY"
+          ],
+          "title": "LeakageAxis",
+          "type": "string"
+        },
+        "LeakageAxisV3": {
+          "enum": [
+            "COMPOSITION_FAMILY",
+            "STRUCTURE_PROTOTYPE",
+            "STRUCTURE_FINGERPRINT",
+            "ARTICLE_OR_SOURCE_FAMILY",
+            "MECHANISM_LINEAGE"
+          ],
+          "title": "LeakageAxisV3",
+          "type": "string"
+        },
+        "LeakageComponentV1": {
+          "additionalProperties": false,
+          "properties": {
+            "case_ids": {
+              "items": {
+                "maxLength": 128,
+                "minLength": 1,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+                "type": "string"
+              },
+              "maxItems": 120,
+              "minItems": 1,
+              "title": "Case Ids",
+              "type": "array"
+            },
+            "component_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "title": "Component Id",
+              "type": "string"
+            }
+          },
+          "required": [
+            "component_id",
+            "case_ids"
+          ],
+          "title": "LeakageComponentV1",
+          "type": "object"
+        },
+        "LeakageGroupDefinitionV3": {
+          "additionalProperties": false,
+          "properties": {
+            "axis": {
+              "$ref": "#/$defs/LeakageAxisV3"
+            },
+            "canonical_preimage": {
+              "maxLength": 4096,
+              "minLength": 2,
+              "title": "Canonical Preimage",
+              "type": "string"
+            },
+            "definition_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Definition Sha256",
+              "type": "string"
+            },
+            "group_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "title": "Group Id",
+              "type": "string"
+            }
+          },
+          "required": [
+            "group_id",
+            "definition_sha256",
+            "axis",
+            "canonical_preimage"
+          ],
+          "title": "LeakageGroupDefinitionV3",
+          "type": "object"
+        },
+        "LeakageMembershipV3": {
+          "additionalProperties": false,
+          "properties": {
+            "axis": {
+              "$ref": "#/$defs/LeakageAxisV3"
+            },
+            "case_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "title": "Case Id",
+              "type": "string"
+            },
+            "case_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Case Sha256",
+              "type": "string"
+            },
+            "group_definition_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Group Definition Sha256",
+              "type": "string"
+            },
+            "group_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "title": "Group Id",
+              "type": "string"
+            },
+            "mechanism_lineage_assignment_id": {
+              "anyOf": [
+                {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Mechanism Lineage Assignment Id"
+            },
+            "mechanism_lineage_assignment_sha256": {
+              "anyOf": [
+                {
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Mechanism Lineage Assignment Sha256"
+            },
+            "provenance_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Provenance Sha256",
+              "type": "string"
+            },
+            "structure_assignment_id": {
+              "anyOf": [
+                {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Structure Assignment Id"
+            },
+            "structure_assignment_sha256": {
+              "anyOf": [
+                {
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Structure Assignment Sha256"
+            }
+          },
+          "required": [
+            "case_id",
+            "case_sha256",
+            "axis",
+            "group_id",
+            "group_definition_sha256",
+            "provenance_sha256"
+          ],
+          "title": "LeakageMembershipV3",
+          "type": "object"
+        },
+        "MechanismFamily": {
+          "enum": [
+            "LATTICE_INTERFERENCE",
+            "LINE_GRAPH",
+            "ORBITAL_FRUSTRATION_HYBRIDIZATION",
+            "SYMMETRY_INDUCED",
+            "MOIRE_SUPERLATTICE",
+            "CONFINEMENT",
+            "CORRELATION_RENORMALIZATION",
+            "STRAIN_INTERFACE_DEFECT",
+            "ATOMIC_ORBITAL_LOCALIZATION",
+            "OTHER_OR_UNKNOWN"
+          ],
+          "title": "MechanismFamily",
+          "type": "string"
+        },
+        "MechanismLineageAssignmentV3": {
+          "additionalProperties": false,
+          "description": "Sealed exact case-to-registry assignment; never a caller group string.",
+          "properties": {
+            "assigned_at": {
+              "maxLength": 40,
+              "minLength": 20,
+              "title": "Assigned At",
+              "type": "string"
+            },
+            "assignment_basis_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Assignment Basis Sha256",
+              "type": "string"
+            },
+            "assignment_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "title": "Assignment Id",
+              "type": "string"
+            },
+            "assignment_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Assignment Sha256",
+              "type": "string"
+            },
+            "case_evidence_refs": {
+              "items": {
+                "$ref": "#/$defs/MechanismLineageEvidenceRefV3"
+              },
+              "maxItems": 32,
+              "minItems": 1,
+              "title": "Case Evidence Refs",
+              "type": "array"
+            },
+            "case_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "title": "Case Id",
+              "type": "string"
+            },
+            "case_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Case Sha256",
+              "type": "string"
+            },
+            "lineage_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "title": "Lineage Id",
+              "type": "string"
+            },
+            "lineage_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Lineage Sha256",
+              "type": "string"
+            },
+            "registry_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "title": "Registry Id",
+              "type": "string"
+            },
+            "registry_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Registry Sha256",
+              "type": "string"
+            },
+            "schema_version": {
+              "const": "flatband-mechanism-lineage-assignment-v3",
+              "default": "flatband-mechanism-lineage-assignment-v3",
+              "title": "Schema Version",
+              "type": "string"
+            },
+            "scientific_conclusion": {
+              "const": false,
+              "default": false,
+              "title": "Scientific Conclusion",
+              "type": "boolean"
+            },
+            "sealed": {
+              "const": true,
+              "default": true,
+              "title": "Sealed",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "assignment_id",
+            "assignment_sha256",
+            "registry_id",
+            "registry_sha256",
+            "case_id",
+            "case_sha256",
+            "lineage_id",
+            "lineage_sha256",
+            "case_evidence_refs",
+            "assignment_basis_sha256",
+            "assigned_at"
+          ],
+          "title": "MechanismLineageAssignmentV3",
+          "type": "object"
+        },
+        "MechanismLineageDefinitionV3": {
+          "additionalProperties": false,
+          "description": "Curated, content-addressed fine-grained mechanism relationship.\n\nThe identity includes inspectable scientific content and exact evidence\nrecords.  It is not an opaque label that can be minted independently for\nevery benchmark case.",
+          "properties": {
+            "broad_mechanism_family": {
+              "$ref": "#/$defs/MechanismFamily"
+            },
+            "lineage_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "title": "Lineage Id",
+              "type": "string"
+            },
+            "lineage_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Lineage Sha256",
+              "type": "string"
+            },
+            "schema_version": {
+              "const": "flatband-mechanism-lineage-definition-v3",
+              "default": "flatband-mechanism-lineage-definition-v3",
+              "title": "Schema Version",
+              "type": "string"
+            },
+            "scientific_conclusion": {
+              "const": false,
+              "default": false,
+              "title": "Scientific Conclusion",
+              "type": "boolean"
+            },
+            "scientific_preimage_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Scientific Preimage Sha256",
+              "type": "string"
+            },
+            "shared_invariant": {
+              "maxLength": 512,
+              "minLength": 1,
+              "title": "Shared Invariant",
+              "type": "string"
+            },
+            "source_mechanism": {
+              "maxLength": 512,
+              "minLength": 1,
+              "title": "Source Mechanism",
+              "type": "string"
+            },
+            "taxonomy_evidence_refs": {
+              "items": {
+                "$ref": "#/$defs/MechanismLineageEvidenceRefV3"
+              },
+              "maxItems": 32,
+              "minItems": 1,
+              "title": "Taxonomy Evidence Refs",
+              "type": "array"
+            },
+            "transfer_route_family": {
+              "maxLength": 512,
+              "minLength": 1,
+              "title": "Transfer Route Family",
+              "type": "string"
+            }
+          },
+          "required": [
+            "lineage_id",
+            "lineage_sha256",
+            "scientific_preimage_sha256",
+            "broad_mechanism_family",
+            "source_mechanism",
+            "shared_invariant",
+            "transfer_route_family",
+            "taxonomy_evidence_refs"
+          ],
+          "title": "MechanismLineageDefinitionV3",
+          "type": "object"
+        },
+        "MechanismLineageEvidenceRefV3": {
+          "additionalProperties": false,
+          "description": "Exact source record included in a lineage's scientific preimage.",
+          "properties": {
+            "source_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "title": "Source Id",
+              "type": "string"
+            },
+            "source_record_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "title": "Source Record Id",
+              "type": "string"
+            },
+            "source_record_raw_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Source Record Raw Sha256",
+              "type": "string"
+            }
+          },
+          "required": [
+            "source_id",
+            "source_record_id",
+            "source_record_raw_sha256"
+          ],
+          "title": "MechanismLineageEvidenceRefV3",
+          "type": "object"
+        },
+        "MechanismLineageRegistryV3": {
+          "additionalProperties": false,
+          "description": "Sealed registry from which every V3 lineage assignment must resolve.",
+          "properties": {
+            "curation_policy_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Curation Policy Sha256",
+              "type": "string"
+            },
+            "curator_roster_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Curator Roster Sha256",
+              "type": "string"
+            },
+            "definitions": {
+              "items": {
+                "$ref": "#/$defs/MechanismLineageDefinitionV3"
+              },
+              "maxItems": 512,
+              "minItems": 1,
+              "title": "Definitions",
+              "type": "array"
+            },
+            "evidence_review_manifest_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Evidence Review Manifest Sha256",
+              "type": "string"
+            },
+            "registry_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "title": "Registry Id",
+              "type": "string"
+            },
+            "registry_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Registry Sha256",
+              "type": "string"
+            },
+            "schema_version": {
+              "const": "flatband-mechanism-lineage-registry-v3",
+              "default": "flatband-mechanism-lineage-registry-v3",
+              "title": "Schema Version",
+              "type": "string"
+            },
+            "scientific_conclusion": {
+              "const": false,
+              "default": false,
+              "title": "Scientific Conclusion",
+              "type": "boolean"
+            },
+            "sealed": {
+              "const": true,
+              "default": true,
+              "title": "Sealed",
+              "type": "boolean"
+            },
+            "sealed_at": {
+              "maxLength": 40,
+              "minLength": 20,
+              "title": "Sealed At",
+              "type": "string"
+            },
+            "taxonomy_version": {
+              "maxLength": 512,
+              "minLength": 1,
+              "title": "Taxonomy Version",
+              "type": "string"
+            }
+          },
+          "required": [
+            "registry_id",
+            "registry_sha256",
+            "taxonomy_version",
+            "curation_policy_sha256",
+            "evidence_review_manifest_sha256",
+            "curator_roster_sha256",
+            "definitions",
+            "sealed_at"
+          ],
+          "title": "MechanismLineageRegistryV3",
+          "type": "object"
+        },
+        "StructureGroupingAlgorithmV2": {
+          "additionalProperties": false,
+          "description": "Frozen implementation/configuration identity for one structure axis.",
+          "properties": {
+            "algorithm_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "title": "Algorithm Id",
+              "type": "string"
+            },
+            "algorithm_name": {
+              "maxLength": 512,
+              "minLength": 1,
+              "title": "Algorithm Name",
+              "type": "string"
+            },
+            "algorithm_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Algorithm Sha256",
+              "type": "string"
+            },
+            "algorithm_version": {
+              "maxLength": 512,
+              "minLength": 1,
+              "title": "Algorithm Version",
+              "type": "string"
+            },
+            "axis": {
+              "$ref": "#/$defs/LeakageAxis"
+            },
+            "configuration_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Configuration Sha256",
+              "type": "string"
+            },
+            "implementation_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Implementation Sha256",
+              "type": "string"
+            },
+            "schema_version": {
+              "const": "flatband-structure-grouping-algorithm-v2",
+              "default": "flatband-structure-grouping-algorithm-v2",
+              "title": "Schema Version",
+              "type": "string"
+            },
+            "scientific_conclusion": {
+              "const": false,
+              "default": false,
+              "title": "Scientific Conclusion",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "algorithm_id",
+            "algorithm_sha256",
+            "axis",
+            "algorithm_name",
+            "algorithm_version",
+            "implementation_sha256",
+            "configuration_sha256"
+          ],
+          "title": "StructureGroupingAlgorithmV2",
+          "type": "object"
+        },
+        "StructureGroupingAssignmentV2": {
+          "additionalProperties": false,
+          "description": "Content-addressed result for exactly one case and one structure axis.",
+          "properties": {
+            "algorithm_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "title": "Algorithm Id",
+              "type": "string"
+            },
+            "algorithm_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Algorithm Sha256",
+              "type": "string"
+            },
+            "assignment_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "title": "Assignment Id",
+              "type": "string"
+            },
+            "assignment_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Assignment Sha256",
+              "type": "string"
+            },
+            "axis": {
+              "$ref": "#/$defs/LeakageAxis"
+            },
+            "canonical_group_key": {
+              "maxLength": 512,
+              "minLength": 1,
+              "title": "Canonical Group Key",
+              "type": "string"
+            },
+            "case_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "title": "Case Id",
+              "type": "string"
+            },
+            "case_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Case Sha256",
+              "type": "string"
+            },
+            "grouping_run_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "title": "Grouping Run Id",
+              "type": "string"
+            },
+            "grouping_run_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Grouping Run Sha256",
+              "type": "string"
+            },
+            "schema_version": {
+              "const": "flatband-structure-grouping-assignment-v2",
+              "default": "flatband-structure-grouping-assignment-v2",
+              "title": "Schema Version",
+              "type": "string"
+            },
+            "scientific_conclusion": {
+              "const": false,
+              "default": false,
+              "title": "Scientific Conclusion",
+              "type": "boolean"
+            },
+            "structure_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Structure Sha256",
+              "type": "string"
+            }
+          },
+          "required": [
+            "assignment_id",
+            "assignment_sha256",
+            "axis",
+            "algorithm_id",
+            "algorithm_sha256",
+            "grouping_run_id",
+            "grouping_run_sha256",
+            "case_id",
+            "case_sha256",
+            "structure_sha256",
+            "canonical_group_key"
+          ],
+          "title": "StructureGroupingAssignmentV2",
+          "type": "object"
+        },
+        "StructureGroupingRunV2": {
+          "additionalProperties": false,
+          "description": "One content-addressed grouping execution over the exact case universe.",
+          "properties": {
+            "algorithm_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "title": "Algorithm Id",
+              "type": "string"
+            },
+            "algorithm_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Algorithm Sha256",
+              "type": "string"
+            },
+            "axis": {
+              "$ref": "#/$defs/LeakageAxis"
+            },
+            "completed_at": {
+              "maxLength": 40,
+              "minLength": 20,
+              "title": "Completed At",
+              "type": "string"
+            },
+            "grouping_run_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "title": "Grouping Run Id",
+              "type": "string"
+            },
+            "grouping_run_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Grouping Run Sha256",
+              "type": "string"
+            },
+            "input_case_universe_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Input Case Universe Sha256",
+              "type": "string"
+            },
+            "runtime_environment_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Runtime Environment Sha256",
+              "type": "string"
+            },
+            "schema_version": {
+              "const": "flatband-structure-grouping-run-v2",
+              "default": "flatband-structure-grouping-run-v2",
+              "title": "Schema Version",
+              "type": "string"
+            },
+            "scientific_conclusion": {
+              "const": false,
+              "default": false,
+              "title": "Scientific Conclusion",
+              "type": "boolean"
+            },
+            "started_at": {
+              "maxLength": 40,
+              "minLength": 20,
+              "title": "Started At",
+              "type": "string"
+            },
+            "status": {
+              "const": "SUCCEEDED",
+              "default": "SUCCEEDED",
+              "title": "Status",
+              "type": "string"
+            }
+          },
+          "required": [
+            "grouping_run_id",
+            "grouping_run_sha256",
+            "axis",
+            "algorithm_id",
+            "algorithm_sha256",
+            "input_case_universe_sha256",
+            "runtime_environment_sha256",
+            "started_at",
+            "completed_at"
+          ],
+          "title": "StructureGroupingRunV2",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "description": "Formal non-contradictory leakage release for Pilot and Main.",
+      "properties": {
+        "broad_mechanism_component_edges_allowed": {
+          "const": false,
+          "default": false,
+          "title": "Broad Mechanism Component Edges Allowed",
+          "type": "boolean"
+        },
+        "caller_supplied_memberships_allowed": {
+          "const": false,
+          "default": false,
+          "title": "Caller Supplied Memberships Allowed",
+          "type": "boolean"
+        },
+        "canonical_work_registry_id": {
+          "const": null,
+          "default": null,
+          "title": "Canonical Work Registry Id",
+          "type": "null"
+        },
+        "components": {
+          "items": {
+            "$ref": "#/$defs/LeakageComponentV1"
+          },
+          "maxItems": 120,
+          "minItems": 1,
+          "title": "Components",
+          "type": "array"
+        },
+        "created_at": {
+          "maxLength": 40,
+          "minLength": 20,
+          "title": "Created At",
+          "type": "string"
+        },
+        "full_case_universe_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Full Case Universe Sha256",
+          "type": "string"
+        },
+        "group_definitions": {
+          "items": {
+            "$ref": "#/$defs/LeakageGroupDefinitionV3"
+          },
+          "maxItems": 20000,
+          "minItems": 1,
+          "title": "Group Definitions",
+          "type": "array"
+        },
+        "grouping_algorithms": {
+          "items": {
+            "$ref": "#/$defs/StructureGroupingAlgorithmV2"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "title": "Grouping Algorithms",
+          "type": "array"
+        },
+        "grouping_assignments": {
+          "items": {
+            "$ref": "#/$defs/StructureGroupingAssignmentV2"
+          },
+          "maxItems": 240,
+          "minItems": 60,
+          "title": "Grouping Assignments",
+          "type": "array"
+        },
+        "grouping_runs": {
+          "items": {
+            "$ref": "#/$defs/StructureGroupingRunV2"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "title": "Grouping Runs",
+          "type": "array"
+        },
+        "mechanism_lineage_assignments": {
+          "items": {
+            "$ref": "#/$defs/MechanismLineageAssignmentV3"
+          },
+          "maxItems": 120,
+          "minItems": 30,
+          "title": "Mechanism Lineage Assignments",
+          "type": "array"
+        },
+        "mechanism_lineage_registry": {
+          "$ref": "#/$defs/MechanismLineageRegistryV3"
+        },
+        "memberships": {
+          "items": {
+            "$ref": "#/$defs/LeakageMembershipV3"
+          },
+          "maxItems": 20000,
+          "minItems": 1,
+          "title": "Memberships",
+          "type": "array"
+        },
+        "release_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+          "title": "Release Id",
+          "type": "string"
+        },
+        "release_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Release Sha256",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "flatband-leakage-component-release-v3",
+          "default": "flatband-leakage-component-release-v3",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "scientific_conclusion": {
+          "const": false,
+          "default": false,
+          "title": "Scientific Conclusion",
+          "type": "boolean"
+        },
+        "split_manifest_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+          "title": "Split Manifest Id",
+          "type": "string"
+        },
+        "split_manifest_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Split Manifest Sha256",
+          "type": "string"
+        },
+        "uncanonicalized_cross_source_doi_alias_count": {
+          "const": 0,
+          "default": 0,
+          "title": "Uncanonicalized Cross Source Doi Alias Count",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "release_id",
+        "release_sha256",
+        "split_manifest_id",
+        "split_manifest_sha256",
+        "full_case_universe_sha256",
+        "grouping_algorithms",
+        "grouping_runs",
+        "grouping_assignments",
+        "mechanism_lineage_registry",
+        "mechanism_lineage_assignments",
+        "group_definitions",
+        "memberships",
+        "components",
+        "created_at"
+      ],
+      "title": "LeakageComponentReleaseV3",
+      "type": "object"
+    },
+    "MainCapacityPolicyV1": {
+      "additionalProperties": false,
+      "description": "Main-only capacity decision; never aliases Pilot V0's 96-case cap.",
+      "properties": {
+        "authorized_union_candidate_count": {
+          "maximum": 2048,
+          "minimum": 120,
+          "title": "Authorized Union Candidate Count",
+          "type": "integer"
+        },
+        "authorized_union_member_count": {
+          "maximum": 32,
+          "minimum": 3,
+          "title": "Authorized Union Member Count",
+          "type": "integer"
+        },
+        "complete_pair_count": {
+          "minimum": 7140,
+          "title": "Complete Pair Count",
+          "type": "integer"
+        },
+        "frozen_at": {
+          "maxLength": 40,
+          "minLength": 20,
+          "title": "Frozen At",
+          "type": "string"
+        },
+        "main_case_count": {
+          "const": 120,
+          "default": 120,
+          "title": "Main Case Count",
+          "type": "integer"
+        },
+        "performance_or_benchmark_result_claimed": {
+          "const": false,
+          "default": false,
+          "title": "Performance Or Benchmark Result Claimed",
+          "type": "boolean"
+        },
+        "pilot_v0_candidate_cap": {
+          "const": 96,
+          "default": 96,
+          "title": "Pilot V0 Candidate Cap",
+          "type": "integer"
+        },
+        "pilot_v0_capacity_reuse_allowed": {
+          "const": false,
+          "default": false,
+          "title": "Pilot V0 Capacity Reuse Allowed",
+          "type": "boolean"
+        },
+        "policy_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+          "title": "Policy Id",
+          "type": "string"
+        },
+        "policy_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Policy Sha256",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "flatband-main-capacity-policy-v1",
+          "default": "flatband-main-capacity-policy-v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "scientific_conclusion": {
+          "const": false,
+          "default": false,
+          "title": "Scientific Conclusion",
+          "type": "boolean"
+        },
+        "separately_addressed_main_union_release_required": {
+          "const": true,
+          "default": true,
+          "title": "Separately Addressed Main Union Release Required",
+          "type": "boolean"
+        },
+        "verifier_implementation_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Verifier Implementation Sha256",
+          "type": "string"
+        },
+        "verifier_runtime_environment_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Verifier Runtime Environment Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "policy_id",
+        "policy_sha256",
+        "authorized_union_candidate_count",
+        "authorized_union_member_count",
+        "complete_pair_count",
+        "verifier_implementation_sha256",
+        "verifier_runtime_environment_sha256",
+        "frozen_at"
+      ],
+      "title": "MainCapacityPolicyV1",
+      "type": "object"
+    },
+    "MainSamplingPolicyReleaseV1": {
+      "additionalProperties": false,
+      "description": "Preregistered Main120 quotas frozen before case custody.",
+      "properties": {
+        "component_may_cross_split": {
+          "const": false,
+          "default": false,
+          "title": "Component May Cross Split",
+          "type": "boolean"
+        },
+        "development_case_count": {
+          "const": 60,
+          "default": 60,
+          "title": "Development Case Count",
+          "type": "integer"
+        },
+        "development_minimum_component_count": {
+          "const": 20,
+          "default": 20,
+          "title": "Development Minimum Component Count",
+          "type": "integer"
+        },
+        "dimensionality_balance_per_split_required": {
+          "const": true,
+          "default": true,
+          "title": "Dimensionality Balance Per Split Required",
+          "type": "boolean"
+        },
+        "frozen_at": {
+          "maxLength": 40,
+          "minLength": 20,
+          "title": "Frozen At",
+          "type": "string"
+        },
+        "frozen_ood_holdout_family_required": {
+          "const": true,
+          "default": true,
+          "title": "Frozen Ood Holdout Family Required",
+          "type": "boolean"
+        },
+        "full_axis_pilot_main_disjointness_required": {
+          "const": true,
+          "default": true,
+          "title": "Full Axis Pilot Main Disjointness Required",
+          "type": "boolean"
+        },
+        "locked_iid_case_count": {
+          "const": 30,
+          "default": 30,
+          "title": "Locked Iid Case Count",
+          "type": "integer"
+        },
+        "locked_iid_minimum_component_count": {
+          "const": 10,
+          "default": 10,
+          "title": "Locked Iid Minimum Component Count",
+          "type": "integer"
+        },
+        "locked_ood_case_count": {
+          "const": 30,
+          "default": 30,
+          "title": "Locked Ood Case Count",
+          "type": "integer"
+        },
+        "locked_ood_minimum_component_count": {
+          "const": 10,
+          "default": 10,
+          "title": "Locked Ood Minimum Component Count",
+          "type": "integer"
+        },
+        "release_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+          "title": "Release Id",
+          "type": "string"
+        },
+        "release_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Release Sha256",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "flatband-main-sampling-policy-release-v1",
+          "default": "flatband-main-sampling-policy-release-v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "scientific_conclusion": {
+          "const": false,
+          "default": false,
+          "title": "Scientific Conclusion",
+          "type": "boolean"
+        },
+        "source_catalog_sha256": {
+          "const": "57c24de8f0cf616205b03ef16231def711f2dfa9fcac86d94beede9c01b0bb1f",
+          "default": "57c24de8f0cf616205b03ef16231def711f2dfa9fcac86d94beede9c01b0bb1f",
+          "title": "Source Catalog Sha256",
+          "type": "string"
+        },
+        "split_seed": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "title": "Split Seed",
+          "type": "integer"
+        },
+        "target_balance_per_split_required": {
+          "const": true,
+          "default": true,
+          "title": "Target Balance Per Split Required",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "release_id",
+        "release_sha256",
+        "split_seed",
+        "frozen_at"
+      ],
+      "title": "MainSamplingPolicyReleaseV1",
+      "type": "object"
+    },
+    "MechanismLineageAssignmentV3": {
+      "$defs": {
+        "MechanismLineageEvidenceRefV3": {
+          "additionalProperties": false,
+          "description": "Exact source record included in a lineage's scientific preimage.",
+          "properties": {
+            "source_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "title": "Source Id",
+              "type": "string"
+            },
+            "source_record_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "title": "Source Record Id",
+              "type": "string"
+            },
+            "source_record_raw_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Source Record Raw Sha256",
+              "type": "string"
+            }
+          },
+          "required": [
+            "source_id",
+            "source_record_id",
+            "source_record_raw_sha256"
+          ],
+          "title": "MechanismLineageEvidenceRefV3",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "description": "Sealed exact case-to-registry assignment; never a caller group string.",
+      "properties": {
+        "assigned_at": {
+          "maxLength": 40,
+          "minLength": 20,
+          "title": "Assigned At",
+          "type": "string"
+        },
+        "assignment_basis_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Assignment Basis Sha256",
+          "type": "string"
+        },
+        "assignment_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+          "title": "Assignment Id",
+          "type": "string"
+        },
+        "assignment_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Assignment Sha256",
+          "type": "string"
+        },
+        "case_evidence_refs": {
+          "items": {
+            "$ref": "#/$defs/MechanismLineageEvidenceRefV3"
+          },
+          "maxItems": 32,
+          "minItems": 1,
+          "title": "Case Evidence Refs",
+          "type": "array"
+        },
+        "case_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+          "title": "Case Id",
+          "type": "string"
+        },
+        "case_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Case Sha256",
+          "type": "string"
+        },
+        "lineage_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+          "title": "Lineage Id",
+          "type": "string"
+        },
+        "lineage_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Lineage Sha256",
+          "type": "string"
+        },
+        "registry_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+          "title": "Registry Id",
+          "type": "string"
+        },
+        "registry_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Registry Sha256",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "flatband-mechanism-lineage-assignment-v3",
+          "default": "flatband-mechanism-lineage-assignment-v3",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "scientific_conclusion": {
+          "const": false,
+          "default": false,
+          "title": "Scientific Conclusion",
+          "type": "boolean"
+        },
+        "sealed": {
+          "const": true,
+          "default": true,
+          "title": "Sealed",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "assignment_id",
+        "assignment_sha256",
+        "registry_id",
+        "registry_sha256",
+        "case_id",
+        "case_sha256",
+        "lineage_id",
+        "lineage_sha256",
+        "case_evidence_refs",
+        "assignment_basis_sha256",
+        "assigned_at"
+      ],
+      "title": "MechanismLineageAssignmentV3",
+      "type": "object"
+    },
+    "MechanismLineageRegistryV3": {
+      "$defs": {
+        "MechanismFamily": {
+          "enum": [
+            "LATTICE_INTERFERENCE",
+            "LINE_GRAPH",
+            "ORBITAL_FRUSTRATION_HYBRIDIZATION",
+            "SYMMETRY_INDUCED",
+            "MOIRE_SUPERLATTICE",
+            "CONFINEMENT",
+            "CORRELATION_RENORMALIZATION",
+            "STRAIN_INTERFACE_DEFECT",
+            "ATOMIC_ORBITAL_LOCALIZATION",
+            "OTHER_OR_UNKNOWN"
+          ],
+          "title": "MechanismFamily",
+          "type": "string"
+        },
+        "MechanismLineageDefinitionV3": {
+          "additionalProperties": false,
+          "description": "Curated, content-addressed fine-grained mechanism relationship.\n\nThe identity includes inspectable scientific content and exact evidence\nrecords.  It is not an opaque label that can be minted independently for\nevery benchmark case.",
+          "properties": {
+            "broad_mechanism_family": {
+              "$ref": "#/$defs/MechanismFamily"
+            },
+            "lineage_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "title": "Lineage Id",
+              "type": "string"
+            },
+            "lineage_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Lineage Sha256",
+              "type": "string"
+            },
+            "schema_version": {
+              "const": "flatband-mechanism-lineage-definition-v3",
+              "default": "flatband-mechanism-lineage-definition-v3",
+              "title": "Schema Version",
+              "type": "string"
+            },
+            "scientific_conclusion": {
+              "const": false,
+              "default": false,
+              "title": "Scientific Conclusion",
+              "type": "boolean"
+            },
+            "scientific_preimage_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Scientific Preimage Sha256",
+              "type": "string"
+            },
+            "shared_invariant": {
+              "maxLength": 512,
+              "minLength": 1,
+              "title": "Shared Invariant",
+              "type": "string"
+            },
+            "source_mechanism": {
+              "maxLength": 512,
+              "minLength": 1,
+              "title": "Source Mechanism",
+              "type": "string"
+            },
+            "taxonomy_evidence_refs": {
+              "items": {
+                "$ref": "#/$defs/MechanismLineageEvidenceRefV3"
+              },
+              "maxItems": 32,
+              "minItems": 1,
+              "title": "Taxonomy Evidence Refs",
+              "type": "array"
+            },
+            "transfer_route_family": {
+              "maxLength": 512,
+              "minLength": 1,
+              "title": "Transfer Route Family",
+              "type": "string"
+            }
+          },
+          "required": [
+            "lineage_id",
+            "lineage_sha256",
+            "scientific_preimage_sha256",
+            "broad_mechanism_family",
+            "source_mechanism",
+            "shared_invariant",
+            "transfer_route_family",
+            "taxonomy_evidence_refs"
+          ],
+          "title": "MechanismLineageDefinitionV3",
+          "type": "object"
+        },
+        "MechanismLineageEvidenceRefV3": {
+          "additionalProperties": false,
+          "description": "Exact source record included in a lineage's scientific preimage.",
+          "properties": {
+            "source_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "title": "Source Id",
+              "type": "string"
+            },
+            "source_record_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "title": "Source Record Id",
+              "type": "string"
+            },
+            "source_record_raw_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Source Record Raw Sha256",
+              "type": "string"
+            }
+          },
+          "required": [
+            "source_id",
+            "source_record_id",
+            "source_record_raw_sha256"
+          ],
+          "title": "MechanismLineageEvidenceRefV3",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "description": "Sealed registry from which every V3 lineage assignment must resolve.",
+      "properties": {
+        "curation_policy_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Curation Policy Sha256",
+          "type": "string"
+        },
+        "curator_roster_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Curator Roster Sha256",
+          "type": "string"
+        },
+        "definitions": {
+          "items": {
+            "$ref": "#/$defs/MechanismLineageDefinitionV3"
+          },
+          "maxItems": 512,
+          "minItems": 1,
+          "title": "Definitions",
+          "type": "array"
+        },
+        "evidence_review_manifest_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Evidence Review Manifest Sha256",
+          "type": "string"
+        },
+        "registry_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+          "title": "Registry Id",
+          "type": "string"
+        },
+        "registry_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Registry Sha256",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "flatband-mechanism-lineage-registry-v3",
+          "default": "flatband-mechanism-lineage-registry-v3",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "scientific_conclusion": {
+          "const": false,
+          "default": false,
+          "title": "Scientific Conclusion",
+          "type": "boolean"
+        },
+        "sealed": {
+          "const": true,
+          "default": true,
+          "title": "Sealed",
+          "type": "boolean"
+        },
+        "sealed_at": {
+          "maxLength": 40,
+          "minLength": 20,
+          "title": "Sealed At",
+          "type": "string"
+        },
+        "taxonomy_version": {
+          "maxLength": 512,
+          "minLength": 1,
+          "title": "Taxonomy Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "registry_id",
+        "registry_sha256",
+        "taxonomy_version",
+        "curation_policy_sha256",
+        "evidence_review_manifest_sha256",
+        "curator_roster_sha256",
+        "definitions",
+        "sealed_at"
+      ],
+      "title": "MechanismLineageRegistryV3",
+      "type": "object"
+    },
+    "PublicBenchmarkProjectionV1": {
+      "$defs": {
+        "ClaimKind": {
+          "enum": [
+            "BENCHMARK_PRIMARY_PASSED",
+            "BENCHMARK_PRIMARY_NOT_PASSED",
+            "DEVELOPMENT_COMPONENT_SELECTION",
+            "EXPERT_AGREEMENT_RESULT",
+            "PROTOCOL_DEVIATION_DISCLOSURE"
+          ],
+          "title": "ClaimKind",
+          "type": "string"
+        },
+        "ConfirmatoryValidity": {
+          "enum": [
+            "VALID_NO_SCORE_EFFECT",
+            "INVALIDATED_SCORE_OR_CANDIDATE_CHANGE"
+          ],
+          "title": "ConfirmatoryValidity",
+          "type": "string"
+        },
+        "LifecycleArtifactType": {
+          "enum": [
+            "ANALYSIS_INPUT_V2",
+            "ANALYSIS_INPUT_V2_FORMAL_VERIFIER",
+            "ANALYSIS_INPUT_V2_FORMAL_VERIFIER_ATTESTATION",
+            "SYSTEM_CONFIGURATION",
+            "BENCHMARK_SPLIT_MANIFEST",
+            "PRIVATE_LOCKED_LABEL_CUSTODY",
+            "ANALYSIS_CODE_RELEASE",
+            "ANALYSIS_ENVIRONMENT_RELEASE",
+            "STATISTICAL_ANALYSIS_PLAN",
+            "LOCKED_EXECUTION_RELEASE",
+            "SCIENTIFIC_REVIEWER_IDENTITY_ATTESTATION",
+            "RELEASE_AUTHORITY_POLICY",
+            "LICENSE_RELEASE_ATTESTATION",
+            "PRIVACY_RELEASE_ATTESTATION",
+            "CUSTODY_RELEASE_ATTESTATION",
+            "DEVELOPMENT_PROMOTION_RELEASE",
+            "FUSION_CONFIGURATION_RELEASE",
+            "DEVELOPMENT_FUSION_GATE_RELEASE",
+            "LOCKED_LABEL_SEAL",
+            "LOCKED_TEST_AUTHORIZATION",
+            "LOCKED_ANNOTATION_UNSEAL",
+            "LOCKED_UNSEAL_LEDGER",
+            "PROTOCOL_DEVIATION_RELEASE",
+            "CLAIM_SUPPORT_RELEASE",
+            "PUBLIC_BENCHMARK_PROJECTION",
+            "SCIENTIFIC_REVIEW_RELEASE",
+            "PUBLIC_RELEASE_AUTHORIZATION"
+          ],
+          "title": "LifecycleArtifactType",
+          "type": "string"
+        },
+        "LockedPrimaryResultV1": {
+          "additionalProperties": false,
+          "properties": {
+            "bootstrap_guardrail_passed": {
+              "title": "Bootstrap Guardrail Passed",
+              "type": "boolean"
+            },
+            "bootstrap_lower": {
+              "maximum": 1.0,
+              "minimum": -1.0,
+              "title": "Bootstrap Lower",
+              "type": "number"
+            },
+            "bootstrap_upper": {
+              "maximum": 1.0,
+              "minimum": -1.0,
+              "title": "Bootstrap Upper",
+              "type": "number"
+            },
+            "data_quality_guardrails_passed": {
+              "title": "Data Quality Guardrails Passed",
+              "type": "boolean"
+            },
+            "duplicate_rate_delta": {
+              "maximum": 1.0,
+              "minimum": -1.0,
+              "title": "Duplicate Rate Delta",
+              "type": "number"
+            },
+            "equal_iid_ood_andcg_delta": {
+              "maximum": 1.0,
+              "minimum": -1.0,
+              "title": "Equal Iid Ood Andcg Delta",
+              "type": "number"
+            },
+            "evidence_valid_delta": {
+              "maximum": 1.0,
+              "minimum": -1.0,
+              "title": "Evidence Valid Delta",
+              "type": "number"
+            },
+            "invalid_case_rate": {
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "title": "Invalid Case Rate",
+              "type": "number"
+            },
+            "metric_gate_passed": {
+              "title": "Metric Gate Passed",
+              "type": "boolean"
+            },
+            "observed_effect_guardrail_passed": {
+              "title": "Observed Effect Guardrail Passed",
+              "type": "boolean"
+            },
+            "one_sided_randomization_p": {
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "title": "One Sided Randomization P",
+              "type": "number"
+            },
+            "primary_has_no_holm_adjustment": {
+              "const": true,
+              "default": true,
+              "title": "Primary Has No Holm Adjustment",
+              "type": "boolean"
+            },
+            "randomization_guardrail_passed": {
+              "title": "Randomization Guardrail Passed",
+              "type": "boolean"
+            },
+            "safety_guardrails_passed": {
+              "title": "Safety Guardrails Passed",
+              "type": "boolean"
+            },
+            "success_delta": {
+              "maximum": 1.0,
+              "minimum": -1.0,
+              "title": "Success Delta",
+              "type": "number"
+            },
+            "unresolvable_unit_rate": {
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "title": "Unresolvable Unit Rate",
+              "type": "number"
+            }
+          },
+          "required": [
+            "equal_iid_ood_andcg_delta",
+            "bootstrap_lower",
+            "bootstrap_upper",
+            "one_sided_randomization_p",
+            "success_delta",
+            "evidence_valid_delta",
+            "duplicate_rate_delta",
+            "invalid_case_rate",
+            "unresolvable_unit_rate",
+            "observed_effect_guardrail_passed",
+            "bootstrap_guardrail_passed",
+            "randomization_guardrail_passed",
+            "safety_guardrails_passed",
+            "data_quality_guardrails_passed",
+            "metric_gate_passed"
+          ],
+          "title": "LockedPrimaryResultV1",
+          "type": "object"
+        },
+        "LockedSecondaryHypothesis": {
+          "enum": [
+            "FUSION_VS_B0_IID",
+            "FUSION_VS_B0_OOD",
+            "FUSION_VS_FUSION_MINUS_E1",
+            "FUSION_VS_FUSION_MINUS_E2",
+            "FUSION_VS_FUSION_MINUS_E3"
+          ],
+          "title": "LockedSecondaryHypothesis",
+          "type": "string"
+        },
+        "LockedSecondaryResultV1": {
+          "additionalProperties": false,
+          "properties": {
+            "andcg_delta": {
+              "anyOf": [
+                {
+                  "maximum": 1.0,
+                  "minimum": -1.0,
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Andcg Delta"
+            },
+            "applicability": {
+              "$ref": "#/$defs/SecondaryApplicability"
+            },
+            "component_promoted": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Component Promoted"
+            },
+            "holm_adjusted_p": {
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "title": "Holm Adjusted P",
+              "type": "number"
+            },
+            "hypothesis": {
+              "$ref": "#/$defs/LockedSecondaryHypothesis"
+            },
+            "not_applicable_uses_conservative_p_one": {
+              "title": "Not Applicable Uses Conservative P One",
+              "type": "boolean"
+            },
+            "raw_one_sided_p": {
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "title": "Raw One Sided P",
+              "type": "number"
+            }
+          },
+          "required": [
+            "hypothesis",
+            "applicability",
+            "andcg_delta",
+            "raw_one_sided_p",
+            "holm_adjusted_p",
+            "component_promoted",
+            "not_applicable_uses_conservative_p_one"
+          ],
+          "title": "LockedSecondaryResultV1",
+          "type": "object"
+        },
+        "ProtocolDeviationSeverity": {
+          "enum": [
+            "MINOR",
+            "MAJOR",
+            "CRITICAL"
+          ],
+          "title": "ProtocolDeviationSeverity",
+          "type": "string"
+        },
+        "PublicLimitationCodeV1": {
+          "description": "Frozen, non-parametric public limitation vocabulary.\n\nFree-form text is deliberately excluded from the public projection.  A\npresentation layer may render these codes with repository-frozen text.",
+          "enum": [
+            "BENCHMARK_SCOPE_ONLY",
+            "NO_MATERIAL_DISCOVERY_CLAIM",
+            "NO_DFT_OR_EXPERIMENTAL_VALIDATION",
+            "INTERNAL_REPLAY_NOT_PROVIDER_ATTESTED",
+            "NARROW_OR_FLAT_BAND_SCOPE",
+            "PERFORMANCE_NOT_EVALUATED"
+          ],
+          "title": "PublicLimitationCodeV1",
+          "type": "string"
+        },
+        "PublicProtocolDeviationSummaryV1": {
+          "additionalProperties": false,
+          "properties": {
+            "confirmatory_validity": {
+              "$ref": "#/$defs/ConfirmatoryValidity"
+            },
+            "deviation_ordinal": {
+              "maximum": 128,
+              "minimum": 1,
+              "title": "Deviation Ordinal",
+              "type": "integer"
+            },
+            "disclosed": {
+              "const": true,
+              "default": true,
+              "title": "Disclosed",
+              "type": "boolean"
+            },
+            "severity": {
+              "$ref": "#/$defs/ProtocolDeviationSeverity"
+            }
+          },
+          "required": [
+            "deviation_ordinal",
+            "severity",
+            "confirmatory_validity"
+          ],
+          "title": "PublicProtocolDeviationSummaryV1",
+          "type": "object"
+        },
+        "ResearchSystemId": {
+          "enum": [
+            "B0",
+            "E1",
+            "E1-local",
+            "E2-A",
+            "E2-B",
+            "E3",
+            "Fusion"
+          ],
+          "title": "ResearchSystemId",
+          "type": "string"
+        },
+        "SecondaryApplicability": {
+          "enum": [
+            "APPLICABLE",
+            "NOT_APPLICABLE"
+          ],
+          "title": "SecondaryApplicability",
+          "type": "string"
+        },
+        "SupportedClaimV1": {
+          "additionalProperties": false,
+          "properties": {
+            "benchmark_scope_only": {
+              "const": true,
+              "default": true,
+              "title": "Benchmark Scope Only",
+              "type": "boolean"
+            },
+            "claim_kind": {
+              "$ref": "#/$defs/ClaimKind"
+            },
+            "statement": {
+              "maxLength": 1000,
+              "minLength": 1,
+              "title": "Statement",
+              "type": "string"
+            }
+          },
+          "required": [
+            "claim_kind",
+            "statement"
+          ],
+          "title": "SupportedClaimV1",
+          "type": "object"
+        },
+        "TypedArtifactRefV1": {
+          "additionalProperties": false,
+          "description": "Opaque typed reference; this module does not claim the artifact exists.",
+          "properties": {
+            "artifact_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "title": "Artifact Id",
+              "type": "string"
+            },
+            "artifact_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Artifact Sha256",
+              "type": "string"
+            },
+            "artifact_type": {
+              "$ref": "#/$defs/LifecycleArtifactType"
+            }
+          },
+          "required": [
+            "artifact_type",
+            "artifact_id",
+            "artifact_sha256"
+          ],
+          "title": "TypedArtifactRefV1",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "description": "Strict aggregate-only projection reviewed before release authorization.",
+      "properties": {
+        "aggregate_only": {
+          "const": true,
+          "default": true,
+          "title": "Aggregate Only",
+          "type": "boolean"
+        },
+        "claim_support_ref": {
+          "$ref": "#/$defs/TypedArtifactRefV1"
+        },
+        "claims": {
+          "items": {
+            "$ref": "#/$defs/SupportedClaimV1"
+          },
+          "maxItems": 16,
+          "minItems": 1,
+          "title": "Claims",
+          "type": "array"
+        },
+        "confirmatory_run_valid": {
+          "title": "Confirmatory Run Valid",
+          "type": "boolean"
+        },
+        "development_case_count": {
+          "const": 60,
+          "default": 60,
+          "title": "Development Case Count",
+          "type": "integer"
+        },
+        "expert_identity_mapping_included": {
+          "const": false,
+          "default": false,
+          "title": "Expert Identity Mapping Included",
+          "type": "boolean"
+        },
+        "fusion_components": {
+          "items": {
+            "$ref": "#/$defs/ResearchSystemId"
+          },
+          "maxItems": 3,
+          "minItems": 1,
+          "title": "Fusion Components",
+          "type": "array"
+        },
+        "fusion_configuration_ref": {
+          "$ref": "#/$defs/TypedArtifactRefV1"
+        },
+        "limitation_codes": {
+          "items": {
+            "$ref": "#/$defs/PublicLimitationCodeV1"
+          },
+          "maxItems": 16,
+          "minItems": 1,
+          "title": "Limitation Codes",
+          "type": "array"
+        },
+        "locked_iid_case_count": {
+          "const": 30,
+          "default": 30,
+          "title": "Locked Iid Case Count",
+          "type": "integer"
+        },
+        "locked_ood_case_count": {
+          "const": 30,
+          "default": 30,
+          "title": "Locked Ood Case Count",
+          "type": "integer"
+        },
+        "primary_claim_allowed": {
+          "title": "Primary Claim Allowed",
+          "type": "boolean"
+        },
+        "primary_result": {
+          "$ref": "#/$defs/LockedPrimaryResultV1"
+        },
+        "projection_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+          "title": "Projection Id",
+          "type": "string"
+        },
+        "projection_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Projection Sha256",
+          "type": "string"
+        },
+        "promoted_components": {
+          "items": {
+            "$ref": "#/$defs/ResearchSystemId"
+          },
+          "maxItems": 3,
+          "title": "Promoted Components",
+          "type": "array"
+        },
+        "promotion_release_ref": {
+          "$ref": "#/$defs/TypedArtifactRefV1"
+        },
+        "protocol_deviations": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/PublicProtocolDeviationSummaryV1"
+          },
+          "maxItems": 128,
+          "title": "Protocol Deviations",
+          "type": "array"
+        },
+        "restricted_text_included": {
+          "const": false,
+          "default": false,
+          "title": "Restricted Text Included",
+          "type": "boolean"
+        },
+        "schema_version": {
+          "const": "flatband-public-benchmark-projection-v1",
+          "default": "flatband-public-benchmark-projection-v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "scientific_conclusion": {
+          "const": false,
+          "default": false,
+          "title": "Scientific Conclusion",
+          "type": "boolean"
+        },
+        "secondary_results": {
+          "items": {
+            "$ref": "#/$defs/LockedSecondaryResultV1"
+          },
+          "maxItems": 5,
+          "minItems": 5,
+          "title": "Secondary Results",
+          "type": "array"
+        },
+        "selected_e2_variant": {
+          "anyOf": [
+            {
+              "enum": [
+                "E2-A",
+                "E2-B"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Selected E2 Variant"
+        }
+      },
+      "required": [
+        "projection_id",
+        "projection_sha256",
+        "claim_support_ref",
+        "promotion_release_ref",
+        "fusion_configuration_ref",
+        "promoted_components",
+        "selected_e2_variant",
+        "fusion_components",
+        "primary_result",
+        "secondary_results",
+        "claims",
+        "limitation_codes",
+        "confirmatory_run_valid",
+        "primary_claim_allowed"
+      ],
+      "title": "PublicBenchmarkProjectionV1",
+      "type": "object"
+    },
+    "PublicBenchmarkResultReleaseV1": {
+      "$defs": {
+        "ClaimKind": {
+          "enum": [
+            "BENCHMARK_PRIMARY_PASSED",
+            "BENCHMARK_PRIMARY_NOT_PASSED",
+            "DEVELOPMENT_COMPONENT_SELECTION",
+            "EXPERT_AGREEMENT_RESULT",
+            "PROTOCOL_DEVIATION_DISCLOSURE"
+          ],
+          "title": "ClaimKind",
+          "type": "string"
+        },
+        "ConfirmatoryValidity": {
+          "enum": [
+            "VALID_NO_SCORE_EFFECT",
+            "INVALIDATED_SCORE_OR_CANDIDATE_CHANGE"
+          ],
+          "title": "ConfirmatoryValidity",
+          "type": "string"
+        },
+        "LifecycleArtifactType": {
+          "enum": [
+            "ANALYSIS_INPUT_V2",
+            "ANALYSIS_INPUT_V2_FORMAL_VERIFIER",
+            "ANALYSIS_INPUT_V2_FORMAL_VERIFIER_ATTESTATION",
+            "SYSTEM_CONFIGURATION",
+            "BENCHMARK_SPLIT_MANIFEST",
+            "PRIVATE_LOCKED_LABEL_CUSTODY",
+            "ANALYSIS_CODE_RELEASE",
+            "ANALYSIS_ENVIRONMENT_RELEASE",
+            "STATISTICAL_ANALYSIS_PLAN",
+            "LOCKED_EXECUTION_RELEASE",
+            "SCIENTIFIC_REVIEWER_IDENTITY_ATTESTATION",
+            "RELEASE_AUTHORITY_POLICY",
+            "LICENSE_RELEASE_ATTESTATION",
+            "PRIVACY_RELEASE_ATTESTATION",
+            "CUSTODY_RELEASE_ATTESTATION",
+            "DEVELOPMENT_PROMOTION_RELEASE",
+            "FUSION_CONFIGURATION_RELEASE",
+            "DEVELOPMENT_FUSION_GATE_RELEASE",
+            "LOCKED_LABEL_SEAL",
+            "LOCKED_TEST_AUTHORIZATION",
+            "LOCKED_ANNOTATION_UNSEAL",
+            "LOCKED_UNSEAL_LEDGER",
+            "PROTOCOL_DEVIATION_RELEASE",
+            "CLAIM_SUPPORT_RELEASE",
+            "PUBLIC_BENCHMARK_PROJECTION",
+            "SCIENTIFIC_REVIEW_RELEASE",
+            "PUBLIC_RELEASE_AUTHORIZATION"
+          ],
+          "title": "LifecycleArtifactType",
+          "type": "string"
+        },
+        "LockedPrimaryResultV1": {
+          "additionalProperties": false,
+          "properties": {
+            "bootstrap_guardrail_passed": {
+              "title": "Bootstrap Guardrail Passed",
+              "type": "boolean"
+            },
+            "bootstrap_lower": {
+              "maximum": 1.0,
+              "minimum": -1.0,
+              "title": "Bootstrap Lower",
+              "type": "number"
+            },
+            "bootstrap_upper": {
+              "maximum": 1.0,
+              "minimum": -1.0,
+              "title": "Bootstrap Upper",
+              "type": "number"
+            },
+            "data_quality_guardrails_passed": {
+              "title": "Data Quality Guardrails Passed",
+              "type": "boolean"
+            },
+            "duplicate_rate_delta": {
+              "maximum": 1.0,
+              "minimum": -1.0,
+              "title": "Duplicate Rate Delta",
+              "type": "number"
+            },
+            "equal_iid_ood_andcg_delta": {
+              "maximum": 1.0,
+              "minimum": -1.0,
+              "title": "Equal Iid Ood Andcg Delta",
+              "type": "number"
+            },
+            "evidence_valid_delta": {
+              "maximum": 1.0,
+              "minimum": -1.0,
+              "title": "Evidence Valid Delta",
+              "type": "number"
+            },
+            "invalid_case_rate": {
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "title": "Invalid Case Rate",
+              "type": "number"
+            },
+            "metric_gate_passed": {
+              "title": "Metric Gate Passed",
+              "type": "boolean"
+            },
+            "observed_effect_guardrail_passed": {
+              "title": "Observed Effect Guardrail Passed",
+              "type": "boolean"
+            },
+            "one_sided_randomization_p": {
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "title": "One Sided Randomization P",
+              "type": "number"
+            },
+            "primary_has_no_holm_adjustment": {
+              "const": true,
+              "default": true,
+              "title": "Primary Has No Holm Adjustment",
+              "type": "boolean"
+            },
+            "randomization_guardrail_passed": {
+              "title": "Randomization Guardrail Passed",
+              "type": "boolean"
+            },
+            "safety_guardrails_passed": {
+              "title": "Safety Guardrails Passed",
+              "type": "boolean"
+            },
+            "success_delta": {
+              "maximum": 1.0,
+              "minimum": -1.0,
+              "title": "Success Delta",
+              "type": "number"
+            },
+            "unresolvable_unit_rate": {
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "title": "Unresolvable Unit Rate",
+              "type": "number"
+            }
+          },
+          "required": [
+            "equal_iid_ood_andcg_delta",
+            "bootstrap_lower",
+            "bootstrap_upper",
+            "one_sided_randomization_p",
+            "success_delta",
+            "evidence_valid_delta",
+            "duplicate_rate_delta",
+            "invalid_case_rate",
+            "unresolvable_unit_rate",
+            "observed_effect_guardrail_passed",
+            "bootstrap_guardrail_passed",
+            "randomization_guardrail_passed",
+            "safety_guardrails_passed",
+            "data_quality_guardrails_passed",
+            "metric_gate_passed"
+          ],
+          "title": "LockedPrimaryResultV1",
+          "type": "object"
+        },
+        "LockedSecondaryHypothesis": {
+          "enum": [
+            "FUSION_VS_B0_IID",
+            "FUSION_VS_B0_OOD",
+            "FUSION_VS_FUSION_MINUS_E1",
+            "FUSION_VS_FUSION_MINUS_E2",
+            "FUSION_VS_FUSION_MINUS_E3"
+          ],
+          "title": "LockedSecondaryHypothesis",
+          "type": "string"
+        },
+        "LockedSecondaryResultV1": {
+          "additionalProperties": false,
+          "properties": {
+            "andcg_delta": {
+              "anyOf": [
+                {
+                  "maximum": 1.0,
+                  "minimum": -1.0,
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Andcg Delta"
+            },
+            "applicability": {
+              "$ref": "#/$defs/SecondaryApplicability"
+            },
+            "component_promoted": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Component Promoted"
+            },
+            "holm_adjusted_p": {
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "title": "Holm Adjusted P",
+              "type": "number"
+            },
+            "hypothesis": {
+              "$ref": "#/$defs/LockedSecondaryHypothesis"
+            },
+            "not_applicable_uses_conservative_p_one": {
+              "title": "Not Applicable Uses Conservative P One",
+              "type": "boolean"
+            },
+            "raw_one_sided_p": {
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "title": "Raw One Sided P",
+              "type": "number"
+            }
+          },
+          "required": [
+            "hypothesis",
+            "applicability",
+            "andcg_delta",
+            "raw_one_sided_p",
+            "holm_adjusted_p",
+            "component_promoted",
+            "not_applicable_uses_conservative_p_one"
+          ],
+          "title": "LockedSecondaryResultV1",
+          "type": "object"
+        },
+        "ProtocolDeviationSeverity": {
+          "enum": [
+            "MINOR",
+            "MAJOR",
+            "CRITICAL"
+          ],
+          "title": "ProtocolDeviationSeverity",
+          "type": "string"
+        },
+        "PublicBenchmarkProjectionV1": {
+          "additionalProperties": false,
+          "description": "Strict aggregate-only projection reviewed before release authorization.",
+          "properties": {
+            "aggregate_only": {
+              "const": true,
+              "default": true,
+              "title": "Aggregate Only",
+              "type": "boolean"
+            },
+            "claim_support_ref": {
+              "$ref": "#/$defs/TypedArtifactRefV1"
+            },
+            "claims": {
+              "items": {
+                "$ref": "#/$defs/SupportedClaimV1"
+              },
+              "maxItems": 16,
+              "minItems": 1,
+              "title": "Claims",
+              "type": "array"
+            },
+            "confirmatory_run_valid": {
+              "title": "Confirmatory Run Valid",
+              "type": "boolean"
+            },
+            "development_case_count": {
+              "const": 60,
+              "default": 60,
+              "title": "Development Case Count",
+              "type": "integer"
+            },
+            "expert_identity_mapping_included": {
+              "const": false,
+              "default": false,
+              "title": "Expert Identity Mapping Included",
+              "type": "boolean"
+            },
+            "fusion_components": {
+              "items": {
+                "$ref": "#/$defs/ResearchSystemId"
+              },
+              "maxItems": 3,
+              "minItems": 1,
+              "title": "Fusion Components",
+              "type": "array"
+            },
+            "fusion_configuration_ref": {
+              "$ref": "#/$defs/TypedArtifactRefV1"
+            },
+            "limitation_codes": {
+              "items": {
+                "$ref": "#/$defs/PublicLimitationCodeV1"
+              },
+              "maxItems": 16,
+              "minItems": 1,
+              "title": "Limitation Codes",
+              "type": "array"
+            },
+            "locked_iid_case_count": {
+              "const": 30,
+              "default": 30,
+              "title": "Locked Iid Case Count",
+              "type": "integer"
+            },
+            "locked_ood_case_count": {
+              "const": 30,
+              "default": 30,
+              "title": "Locked Ood Case Count",
+              "type": "integer"
+            },
+            "primary_claim_allowed": {
+              "title": "Primary Claim Allowed",
+              "type": "boolean"
+            },
+            "primary_result": {
+              "$ref": "#/$defs/LockedPrimaryResultV1"
+            },
+            "projection_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "title": "Projection Id",
+              "type": "string"
+            },
+            "projection_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Projection Sha256",
+              "type": "string"
+            },
+            "promoted_components": {
+              "items": {
+                "$ref": "#/$defs/ResearchSystemId"
+              },
+              "maxItems": 3,
+              "title": "Promoted Components",
+              "type": "array"
+            },
+            "promotion_release_ref": {
+              "$ref": "#/$defs/TypedArtifactRefV1"
+            },
+            "protocol_deviations": {
+              "default": [],
+              "items": {
+                "$ref": "#/$defs/PublicProtocolDeviationSummaryV1"
+              },
+              "maxItems": 128,
+              "title": "Protocol Deviations",
+              "type": "array"
+            },
+            "restricted_text_included": {
+              "const": false,
+              "default": false,
+              "title": "Restricted Text Included",
+              "type": "boolean"
+            },
+            "schema_version": {
+              "const": "flatband-public-benchmark-projection-v1",
+              "default": "flatband-public-benchmark-projection-v1",
+              "title": "Schema Version",
+              "type": "string"
+            },
+            "scientific_conclusion": {
+              "const": false,
+              "default": false,
+              "title": "Scientific Conclusion",
+              "type": "boolean"
+            },
+            "secondary_results": {
+              "items": {
+                "$ref": "#/$defs/LockedSecondaryResultV1"
+              },
+              "maxItems": 5,
+              "minItems": 5,
+              "title": "Secondary Results",
+              "type": "array"
+            },
+            "selected_e2_variant": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "E2-A",
+                    "E2-B"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Selected E2 Variant"
+            }
+          },
+          "required": [
+            "projection_id",
+            "projection_sha256",
+            "claim_support_ref",
+            "promotion_release_ref",
+            "fusion_configuration_ref",
+            "promoted_components",
+            "selected_e2_variant",
+            "fusion_components",
+            "primary_result",
+            "secondary_results",
+            "claims",
+            "limitation_codes",
+            "confirmatory_run_valid",
+            "primary_claim_allowed"
+          ],
+          "title": "PublicBenchmarkProjectionV1",
+          "type": "object"
+        },
+        "PublicLimitationCodeV1": {
+          "description": "Frozen, non-parametric public limitation vocabulary.\n\nFree-form text is deliberately excluded from the public projection.  A\npresentation layer may render these codes with repository-frozen text.",
+          "enum": [
+            "BENCHMARK_SCOPE_ONLY",
+            "NO_MATERIAL_DISCOVERY_CLAIM",
+            "NO_DFT_OR_EXPERIMENTAL_VALIDATION",
+            "INTERNAL_REPLAY_NOT_PROVIDER_ATTESTED",
+            "NARROW_OR_FLAT_BAND_SCOPE",
+            "PERFORMANCE_NOT_EVALUATED"
+          ],
+          "title": "PublicLimitationCodeV1",
+          "type": "string"
+        },
+        "PublicProtocolDeviationSummaryV1": {
+          "additionalProperties": false,
+          "properties": {
+            "confirmatory_validity": {
+              "$ref": "#/$defs/ConfirmatoryValidity"
+            },
+            "deviation_ordinal": {
+              "maximum": 128,
+              "minimum": 1,
+              "title": "Deviation Ordinal",
+              "type": "integer"
+            },
+            "disclosed": {
+              "const": true,
+              "default": true,
+              "title": "Disclosed",
+              "type": "boolean"
+            },
+            "severity": {
+              "$ref": "#/$defs/ProtocolDeviationSeverity"
+            }
+          },
+          "required": [
+            "deviation_ordinal",
+            "severity",
+            "confirmatory_validity"
+          ],
+          "title": "PublicProtocolDeviationSummaryV1",
+          "type": "object"
+        },
+        "ResearchSystemId": {
+          "enum": [
+            "B0",
+            "E1",
+            "E1-local",
+            "E2-A",
+            "E2-B",
+            "E3",
+            "Fusion"
+          ],
+          "title": "ResearchSystemId",
+          "type": "string"
+        },
+        "SecondaryApplicability": {
+          "enum": [
+            "APPLICABLE",
+            "NOT_APPLICABLE"
+          ],
+          "title": "SecondaryApplicability",
+          "type": "string"
+        },
+        "SupportedClaimV1": {
+          "additionalProperties": false,
+          "properties": {
+            "benchmark_scope_only": {
+              "const": true,
+              "default": true,
+              "title": "Benchmark Scope Only",
+              "type": "boolean"
+            },
+            "claim_kind": {
+              "$ref": "#/$defs/ClaimKind"
+            },
+            "statement": {
+              "maxLength": 1000,
+              "minLength": 1,
+              "title": "Statement",
+              "type": "string"
+            }
+          },
+          "required": [
+            "claim_kind",
+            "statement"
+          ],
+          "title": "SupportedClaimV1",
+          "type": "object"
+        },
+        "TypedArtifactRefV1": {
+          "additionalProperties": false,
+          "description": "Opaque typed reference; this module does not claim the artifact exists.",
+          "properties": {
+            "artifact_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "title": "Artifact Id",
+              "type": "string"
+            },
+            "artifact_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Artifact Sha256",
+              "type": "string"
+            },
+            "artifact_type": {
+              "$ref": "#/$defs/LifecycleArtifactType"
+            }
+          },
+          "required": [
+            "artifact_type",
+            "artifact_id",
+            "artifact_sha256"
+          ],
+          "title": "TypedArtifactRefV1",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "authorization_ref": {
+          "$ref": "#/$defs/TypedArtifactRefV1"
+        },
+        "authorization_scope": {
+          "const": "INTERNAL_PRECOMMITTED_HMAC_POLICY",
+          "default": "INTERNAL_PRECOMMITTED_HMAC_POLICY",
+          "title": "Authorization Scope",
+          "type": "string"
+        },
+        "benchmark_scope_claim_only": {
+          "const": true,
+          "default": true,
+          "title": "Benchmark Scope Claim Only",
+          "type": "boolean"
+        },
+        "dft_proof_claim_permitted": {
+          "const": false,
+          "default": false,
+          "title": "Dft Proof Claim Permitted",
+          "type": "boolean"
+        },
+        "external_authority_identity_attestation": {
+          "const": "NOT_PROVIDED",
+          "default": "NOT_PROVIDED",
+          "title": "External Authority Identity Attestation",
+          "type": "string"
+        },
+        "external_key_custody_attestation": {
+          "const": "NOT_PROVIDED",
+          "default": "NOT_PROVIDED",
+          "title": "External Key Custody Attestation",
+          "type": "string"
+        },
+        "external_publication_permission_claimed": {
+          "const": false,
+          "default": false,
+          "title": "External Publication Permission Claimed",
+          "type": "boolean"
+        },
+        "novelty_claim_permitted": {
+          "const": false,
+          "default": false,
+          "title": "Novelty Claim Permitted",
+          "type": "boolean"
+        },
+        "projection": {
+          "$ref": "#/$defs/PublicBenchmarkProjectionV1"
+        },
+        "real_material_discovery_claim_permitted": {
+          "const": false,
+          "default": false,
+          "title": "Real Material Discovery Claim Permitted",
+          "type": "boolean"
+        },
+        "release_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+          "title": "Release Id",
+          "type": "string"
+        },
+        "release_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Release Sha256",
+          "type": "string"
+        },
+        "released_at": {
+          "maxLength": 40,
+          "minLength": 20,
+          "title": "Released At",
+          "type": "string"
+        },
+        "sanitized_aggregate_only": {
+          "const": true,
+          "default": true,
+          "title": "Sanitized Aggregate Only",
+          "type": "boolean"
+        },
+        "schema_version": {
+          "const": "flatband-public-benchmark-result-release-v1",
+          "default": "flatband-public-benchmark-result-release-v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "scientific_conclusion": {
+          "const": false,
+          "default": false,
+          "title": "Scientific Conclusion",
+          "type": "boolean"
+        },
+        "scientific_review_ref": {
+          "$ref": "#/$defs/TypedArtifactRefV1"
+        }
+      },
+      "required": [
+        "release_id",
+        "release_sha256",
+        "authorization_ref",
+        "scientific_review_ref",
+        "projection",
+        "released_at"
+      ],
+      "title": "PublicBenchmarkResultReleaseV1",
+      "type": "object"
+    },
+    "PublicExpertIdentityReleaseV2": {
+      "$defs": {
+        "ExpertRole": {
+          "enum": [
+            "REVIEWER",
+            "ADJUDICATOR"
+          ],
+          "title": "ExpertRole",
+          "type": "string"
+        },
+        "PublicExpertIdentityV2": {
+          "additionalProperties": false,
+          "properties": {
+            "expert_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "title": "Expert Id",
+              "type": "string"
+            },
+            "pseudonymous": {
+              "const": true,
+              "default": true,
+              "title": "Pseudonymous",
+              "type": "boolean"
+            },
+            "role": {
+              "$ref": "#/$defs/ExpertRole"
+            }
+          },
+          "required": [
+            "expert_id",
+            "role"
+          ],
+          "title": "PublicExpertIdentityV2",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "description": "Safe public projection: pseudonyms plus an opaque attestation reference.",
+      "properties": {
+        "evidence_level": {
+          "const": "INTERNAL_REPLAYABLE_CUSTODIAN_ATTESTATION",
+          "default": "INTERNAL_REPLAYABLE_CUSTODIAN_ATTESTATION",
+          "title": "Evidence Level",
+          "type": "string"
+        },
+        "experts": {
+          "items": {
+            "$ref": "#/$defs/PublicExpertIdentityV2"
+          },
+          "maxItems": 12,
+          "minItems": 3,
+          "title": "Experts",
+          "type": "array"
+        },
+        "externally_trusted_signature_present": {
+          "const": false,
+          "default": false,
+          "title": "Externally Trusted Signature Present",
+          "type": "boolean"
+        },
+        "identity_attestation_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+          "title": "Identity Attestation Id",
+          "type": "string"
+        },
+        "identity_attestation_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Identity Attestation Sha256",
+          "type": "string"
+        },
+        "release_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+          "title": "Release Id",
+          "type": "string"
+        },
+        "release_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Release Sha256",
+          "type": "string"
+        },
+        "released_at": {
+          "maxLength": 40,
+          "minLength": 20,
+          "title": "Released At",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "flatband-public-expert-identity-release-v2",
+          "default": "flatband-public-expert-identity-release-v2",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "scientific_conclusion": {
+          "const": false,
+          "default": false,
+          "title": "Scientific Conclusion",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "release_id",
+        "release_sha256",
+        "identity_attestation_id",
+        "identity_attestation_sha256",
+        "experts",
+        "released_at"
+      ],
+      "title": "PublicExpertIdentityReleaseV2",
+      "type": "object"
+    },
+    "ResearchRankingV1": {
+      "$defs": {
+        "RankingPositionV1": {
+          "additionalProperties": false,
+          "properties": {
+            "packet_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "title": "Packet Id",
+              "type": "string"
+            },
+            "packet_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Packet Sha256",
+              "type": "string"
+            },
+            "selection_rank": {
+              "maximum": 5,
+              "minimum": 1,
+              "title": "Selection Rank",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "selection_rank",
+            "packet_id",
+            "packet_sha256"
+          ],
+          "title": "RankingPositionV1",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "budget_manifest_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+          "title": "Budget Manifest Id",
+          "type": "string"
+        },
+        "budget_manifest_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Budget Manifest Sha256",
+          "type": "string"
+        },
+        "case_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+          "title": "Case Id",
+          "type": "string"
+        },
+        "case_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Case Sha256",
+          "type": "string"
+        },
+        "cell_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+          "title": "Cell Id",
+          "type": "string"
+        },
+        "created_at": {
+          "maxLength": 40,
+          "minLength": 20,
+          "title": "Created At",
+          "type": "string"
+        },
+        "positions": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/RankingPositionV1"
+          },
+          "maxItems": 5,
+          "title": "Positions",
+          "type": "array"
+        },
+        "ranking_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+          "title": "Ranking Id",
+          "type": "string"
+        },
+        "ranking_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Ranking Sha256",
+          "type": "string"
+        },
+        "requested_top_k": {
+          "const": 5,
+          "default": 5,
+          "title": "Requested Top K",
+          "type": "integer"
+        },
+        "run_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+          "title": "Run Id",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "flatband-research-ranking-v1",
+          "default": "flatband-research-ranking-v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "scientific_conclusion": {
+          "const": false,
+          "default": false,
+          "title": "Scientific Conclusion",
+          "type": "boolean"
+        },
+        "system_config_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+          "title": "System Config Id",
+          "type": "string"
+        },
+        "system_config_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "System Config Sha256",
+          "type": "string"
+        },
+        "underfill_reason_codes": {
+          "default": [],
+          "items": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+            "type": "string"
+          },
+          "maxItems": 16,
+          "title": "Underfill Reason Codes",
+          "type": "array"
+        }
+      },
+      "required": [
+        "ranking_id",
+        "ranking_sha256",
+        "budget_manifest_id",
+        "budget_manifest_sha256",
+        "cell_id",
+        "run_id",
+        "case_id",
+        "case_sha256",
+        "system_config_id",
+        "system_config_sha256",
+        "created_at"
+      ],
+      "title": "ResearchRankingV1",
+      "type": "object"
+    },
+    "SourceCatalogCheckpointReleaseV1": {
+      "$defs": {
+        "SourceCatalogDecision": {
+          "enum": [
+            "INCLUDE",
+            "CONDITIONAL",
+            "EXCLUDE"
+          ],
+          "title": "SourceCatalogDecision",
+          "type": "string"
+        },
+        "SourceCatalogRowCommitmentV1": {
+          "additionalProperties": false,
+          "properties": {
+            "decision": {
+              "$ref": "#/$defs/SourceCatalogDecision"
+            },
+            "license_expressions": {
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 16,
+              "minItems": 1,
+              "title": "License Expressions",
+              "type": "array"
+            },
+            "roles": {
+              "items": {
+                "$ref": "#/$defs/SourceUseRole"
+              },
+              "maxItems": 8,
+              "minItems": 1,
+              "title": "Roles",
+              "type": "array"
+            },
+            "row_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Row Sha256",
+              "type": "string"
+            },
+            "source_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "title": "Source Id",
+              "type": "string"
+            }
+          },
+          "required": [
+            "source_id",
+            "row_sha256",
+            "decision",
+            "roles",
+            "license_expressions"
+          ],
+          "title": "SourceCatalogRowCommitmentV1",
+          "type": "object"
+        },
+        "SourceUseRole": {
+          "enum": [
+            "case_seed",
+            "structure",
+            "electronic_structure",
+            "mechanism_seed",
+            "literature_retrieval",
+            "identifier_resolution",
+            "open_access_status",
+            "sensitivity_only"
+          ],
+          "title": "SourceUseRole",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "description": "Machine-readable checkpoint of the exact audited 20-row catalog.",
+      "properties": {
+        "audited_at": {
+          "maxLength": 40,
+          "minLength": 20,
+          "title": "Audited At",
+          "type": "string"
+        },
+        "checkpoint_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+          "title": "Checkpoint Id",
+          "type": "string"
+        },
+        "checkpoint_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Checkpoint Sha256",
+          "type": "string"
+        },
+        "conditional_count": {
+          "const": 5,
+          "default": 5,
+          "title": "Conditional Count",
+          "type": "integer"
+        },
+        "exclude_count": {
+          "const": 3,
+          "default": 3,
+          "title": "Exclude Count",
+          "type": "integer"
+        },
+        "include_count": {
+          "const": 12,
+          "default": 12,
+          "title": "Include Count",
+          "type": "integer"
+        },
+        "public_protocol_artifact": {
+          "const": true,
+          "default": true,
+          "title": "Public Protocol Artifact",
+          "type": "boolean"
+        },
+        "rows": {
+          "items": {
+            "$ref": "#/$defs/SourceCatalogRowCommitmentV1"
+          },
+          "maxItems": 20,
+          "minItems": 20,
+          "title": "Rows",
+          "type": "array"
+        },
+        "schema_version": {
+          "const": "flatband-source-catalog-checkpoint-v1",
+          "default": "flatband-source-catalog-checkpoint-v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "scientific_conclusion": {
+          "const": false,
+          "default": false,
+          "title": "Scientific Conclusion",
+          "type": "boolean"
+        },
+        "source_audit_sha256": {
+          "const": "5574eaa9f70e223a03991ef7f2e5942c38e1afd38898b54243fd4c66b3290660",
+          "default": "5574eaa9f70e223a03991ef7f2e5942c38e1afd38898b54243fd4c66b3290660",
+          "title": "Source Audit Sha256",
+          "type": "string"
+        },
+        "source_catalog_schema_sha256": {
+          "const": "a796757159679a02146ad00f306f8bc6db2642fdd3fc51c82b25aba36936efc7",
+          "default": "a796757159679a02146ad00f306f8bc6db2642fdd3fc51c82b25aba36936efc7",
+          "title": "Source Catalog Schema Sha256",
+          "type": "string"
+        },
+        "source_catalog_sha256": {
+          "const": "57c24de8f0cf616205b03ef16231def711f2dfa9fcac86d94beede9c01b0bb1f",
+          "default": "57c24de8f0cf616205b03ef16231def711f2dfa9fcac86d94beede9c01b0bb1f",
+          "title": "Source Catalog Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "checkpoint_id",
+        "checkpoint_sha256",
+        "rows",
+        "audited_at"
+      ],
+      "title": "SourceCatalogCheckpointReleaseV1",
+      "type": "object"
+    },
+    "Top5ProjectionV1": {
+      "$defs": {
+        "MissingPositionReason": {
+          "enum": [
+            "RUN_FAILED",
+            "EMPTY_RANKING",
+            "UNDERFILL"
+          ],
+          "title": "MissingPositionReason",
+          "type": "string"
+        },
+        "ProjectedTop5PositionV1": {
+          "additionalProperties": false,
+          "properties": {
+            "fixed_gain": {
+              "anyOf": [
+                {
+                  "const": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Fixed Gain"
+            },
+            "forced_zero": {
+              "title": "Forced Zero",
+              "type": "boolean"
+            },
+            "missing_reason": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/MissingPositionReason"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "packet_id": {
+              "anyOf": [
+                {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Packet Id"
+            },
+            "packet_sha256": {
+              "anyOf": [
+                {
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Packet Sha256"
+            },
+            "position": {
+              "maximum": 5,
+              "minimum": 1,
+              "title": "Position",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "position",
+            "forced_zero"
+          ],
+          "title": "ProjectedTop5PositionV1",
+          "type": "object"
+        },
+        "RunCellStatus": {
+          "enum": [
+            "SUCCEEDED",
+            "PARTIAL",
+            "FAILED"
+          ],
+          "title": "RunCellStatus",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "cell_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+          "title": "Cell Id",
+          "type": "string"
+        },
+        "denominator_size": {
+          "const": 5,
+          "default": 5,
+          "title": "Denominator Size",
+          "type": "integer"
+        },
+        "positions": {
+          "items": {
+            "$ref": "#/$defs/ProjectedTop5PositionV1"
+          },
+          "maxItems": 5,
+          "minItems": 5,
+          "title": "Positions",
+          "type": "array"
+        },
+        "projection_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+          "title": "Projection Id",
+          "type": "string"
+        },
+        "projection_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Projection Sha256",
+          "type": "string"
+        },
+        "ranking_id": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ranking Id"
+        },
+        "ranking_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ranking Sha256"
+        },
+        "schema_version": {
+          "const": "flatband-top5-projection-v1",
+          "default": "flatband-top5-projection-v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "scientific_conclusion": {
+          "const": false,
+          "default": false,
+          "title": "Scientific Conclusion",
+          "type": "boolean"
+        },
+        "status": {
+          "$ref": "#/$defs/RunCellStatus"
+        },
+        "terminal_result_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+          "title": "Terminal Result Id",
+          "type": "string"
+        },
+        "terminal_result_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Terminal Result Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "projection_id",
+        "projection_sha256",
+        "cell_id",
+        "terminal_result_id",
+        "terminal_result_sha256",
+        "status",
+        "positions"
+      ],
+      "title": "Top5ProjectionV1",
+      "type": "object"
+    }
+  },
+  "protocol_readiness": "PILOT_NO_GO",
+  "real_execution_status": "NOT_RUN",
+  "root_allowlist": [
+    "BenchmarkSplitManifestV2",
+    "BudgetManifestV2",
+    "CaseSourcePolicyAttestationV2",
+    "ExecutionMatrixV2",
+    "FormalPilotAgreementGateReleaseV1",
+    "LeakageComponentReleaseV3",
+    "MainCapacityPolicyV1",
+    "MainSamplingPolicyReleaseV1",
+    "MechanismLineageAssignmentV3",
+    "MechanismLineageRegistryV3",
+    "PublicBenchmarkProjectionV1",
+    "PublicBenchmarkResultReleaseV1",
+    "PublicExpertIdentityReleaseV2",
+    "ResearchRankingV1",
+    "SourceCatalogCheckpointReleaseV1",
+    "Top5ProjectionV1"
+  ],
+  "root_set_policy": "EXPLICIT_DISJOINT_ALLOWLIST_FAIL_CLOSED",
+  "schema_version": "flatband-research-public-protocol-bundle-v2",
+  "semantic_reasoning_policy": "MODEL_NATIVE_ONLY_LOCAL_SEMANTIC_MODEL_PROHIBITED"
+}

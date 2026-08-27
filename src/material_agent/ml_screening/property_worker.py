@@ -11,7 +11,6 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import os
 import subprocess
 import sys
 from pathlib import Path
@@ -33,7 +32,7 @@ def main() -> int:
         root = args.artifact_root.resolve(strict=True)
         request = PropertyWorkerRequest.model_validate_json(sys.stdin.buffer.read())
         response = execute(request, root=root, ct_uae_source_root=args.ct_uae_source_root)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         print(f"property worker failed: {type(exc).__name__}: {exc}", file=sys.stderr)
         return 2
     sys.stdout.write(response.model_dump_json())
@@ -54,7 +53,7 @@ def execute(
         return _failed(plan, "MISSING_MODEL_SOURCE", "ct-UAE source root was not configured")
     try:
         value = _predict_ct_uae(plan, root=root, source_root=ct_uae_source_root)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         # This remains a structured, non-traceback failure, but preserve the
         # exception message so a missing reviewed runtime dependency can be
         # diagnosed rather than being indistinguishable from model failure.
@@ -120,8 +119,8 @@ def _predict_ct_uae(plan, *, root: Path, source_root: Path) -> float:
     sys.path.insert(0, str(source))
     import numpy as np
     import torch
-    from pymatgen.core import Structure
     from ct.model import CrystalTransformer
+    from pymatgen.core import Structure
 
     structure = Structure.from_file(structure_path)
     if not 1 <= len(structure) <= 256:
@@ -166,7 +165,7 @@ def _load_ct_uae_model(crystal_transformer, state_dict: dict, torch):
         "output_linear.bias",
     }
     if not expected_legacy_keys.issubset(state_dict) or any(
-        key.startswith("output_linear1.") or key.startswith("output_linear2.")
+        key.startswith(("output_linear1.", "output_linear2."))
         for key in state_dict
     ):
         raise ValueError("ct-UAE checkpoint architecture is not recognized")

@@ -13,12 +13,14 @@ matplotlib.use("Agg")
 from matplotlib.figure import Figure
 from matplotlib.lines import Line2D
 from pymatgen.analysis.local_env import CrystalNN
-from pymatgen.vis.structure_vtk import EL_COLORS
 from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
+from pymatgen.vis.structure_vtk import EL_COLORS
 
-from material_agent.retrieval.models import CandidateRecord, MaterialsProjectReportPolicy
+from material_agent.retrieval.models import (
+    CandidateRecord,
+    MaterialsProjectReportPolicy,
+)
 from material_agent.retrieval.storage import ArtifactRef, LocalArtifactStore
-
 
 _SUMMARY_FIELDS = (
     ("Energy Above Hull", "energy_above_hull", "eV/atom"),
@@ -91,7 +93,7 @@ def enrich_published_candidates(
                     artifacts.append(ref)
                     entry["assets"].append(ref.model_dump(mode="json"))
                     entry["sections"]["crystal_structure"]["image_status"] = "COMPLETE"
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001
                 entry["sections"]["crystal_structure"] = {"status": "RENDER_FAILED"}
                 entry["warnings"].append(f"structure rendering failed: {type(exc).__name__}")
                 partial = True
@@ -137,7 +139,7 @@ def enrich_published_candidates(
                         artifacts.append(ref)
                         entry["assets"].append(ref.model_dump(mode="json"))
                         entry["sections"][section]["image_status"] = "COMPLETE"
-                    except Exception as exc:
+                    except Exception as exc:  # noqa: BLE001
                         entry["warnings"].append(f"{key} rendering failed: {type(exc).__name__}")
                         partial = True
             if heavy and payload.get("charge_density") is not None:
@@ -155,7 +157,7 @@ def enrich_published_candidates(
                         artifacts.append(charge_ref)
                         entry["assets"].append(charge_ref.model_dump(mode="json"))
                         entry["sections"]["charge_density"] = {"status": "COMPLETE", "normalization": "mp-pyrho electrons/Å³", "slices": ["a=0.5", "b=0.5", "c=0.5"]}
-                except Exception as exc:
+                except Exception as exc:  # noqa: BLE001
                     entry["sections"]["charge_density"] = {"status": "RENDER_FAILED"}
                     entry["warnings"].append(f"charge density rendering failed: {type(exc).__name__}")
                     partial = True
@@ -164,7 +166,7 @@ def enrich_published_candidates(
             for endpoint, error in sorted(errors.items()):
                 entry["warnings"].append(f"{endpoint}: FETCH_FAILED ({error})")
                 partial = True
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             entry["warnings"].append(f"report enrichment failed: {type(exc).__name__}")
             entry["sections"]["properties"] = {"status": "FETCH_FAILED"}
             partial = True
@@ -264,7 +266,7 @@ def render_structure_png(structure: Any) -> bytes:
                     [coordinates[site_index, 2], neighbor_coordinate[2]],
                     color="#64748b", linewidth=1.2, alpha=0.72, zorder=0,
                 )
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
     # Label only symmetry-inequivalent sites; per-atom labels obscure dense cells.
     try:
@@ -274,7 +276,7 @@ def render_structure_png(structure: Any) -> bytes:
             site = sites[0]
             coordinate = site.coords
             axis.text(*coordinate, f"{site.specie.symbol}{group_index}", fontsize=7, color="#111827")
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
     axis.view_init(elev=18, azim=38)
     axis.set_axis_off()

@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from datetime import UTC, datetime
 import hashlib
 import os
+import re
+from collections.abc import Callable
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
 from material_agent.orchestrator.models import (
+    STAGE_TO_AGENT,
     ArtifactPointer,
     CancelOutcome,
     ControlError,
@@ -22,7 +24,6 @@ from material_agent.orchestrator.models import (
     StageId,
     StageInputValidation,
     StageStatus,
-    STAGE_TO_AGENT,
     operation_input_sha256_for,
 )
 from material_agent.retrieval.models import (
@@ -32,12 +33,15 @@ from material_agent.retrieval.models import (
     RetrievalStageContext,
     RetrievalStageInput,
     RetrievalStagePlan,
+)
+from material_agent.retrieval.models import (
     StageOutcomeType as NativeOutcomeType,
+)
+from material_agent.retrieval.models import (
     StageStatus as NativeStageStatus,
 )
 from material_agent.retrieval.runner import RetrievalStageRunner
 from material_agent.retrieval.storage import LocalArtifactStore
-
 
 RunnerFactory = Callable[[StageExecutionContext], "StageRunner"]
 
@@ -178,6 +182,24 @@ def configure_agent02_production(
         )
         return
     try:
+        execution_profile = os.environ.get(
+            "MATERIAL_AGENT_ML_EXECUTION_PROFILE", "portable"
+        )
+        if execution_profile not in {"portable", "cuda"}:
+            raise ValueError(
+                "MATERIAL_AGENT_ML_EXECUTION_PROFILE must be portable or cuda"
+            )
+        cuda_visible_devices = os.environ.get(
+            "MATERIAL_AGENT_ML_CUDA_VISIBLE_DEVICES"
+        )
+        if execution_profile == "cuda" and (
+            cuda_visible_devices is None
+            or not re.fullmatch(r"\d+", cuda_visible_devices)
+        ):
+            raise ValueError(
+                "CUDA profile requires MATERIAL_AGENT_ML_CUDA_VISIBLE_DEVICES "
+                "as one non-negative GPU index"
+            )
         worker_python = Path(worker_value)
         if not worker_python.is_absolute():
             raise ValueError("MATERIAL_AGENT_ML_WORKER_PYTHON must be absolute")
@@ -186,7 +208,11 @@ def configure_agent02_production(
             raise ValueError("configured Agent02 worker Python is not executable")
         repository_root = Path(__file__).resolve().parents[3]
         source_root = repository_root / "src"
-        lock_path = repository_root / "requirements-agent02.lock"
+        lock_path = repository_root / (
+            "requirements-agent02-cuda.lock"
+            if execution_profile == "cuda"
+            else "requirements-agent02.lock"
+        )
         model_card_path = (
             repository_root / "config/agent02/chgnet-0.3.0-model-card.json"
         )
@@ -194,18 +220,22 @@ def configure_agent02_production(
             raise ValueError("Agent02 repository resources are unavailable")
         from material_agent.ml_screening.models import ModelCard
         from material_agent.ml_screening.real_resources import (
-            AGENT02_PACKAGE_LOCK_SHA256,
+            package_lock_sha256_for_profile,
             real_model_card,
             real_model_spec,
         )
         from material_agent.ml_screening.resources import sha256_payload
 
-        if _sha256_file(lock_path) != AGENT02_PACKAGE_LOCK_SHA256:
+        expected_lock_sha256 = package_lock_sha256_for_profile(
+            execution_profile
+        )
+        if _sha256_file(lock_path) != expected_lock_sha256:
             raise ValueError("Agent02 package lock hash does not match registry")
         card = ModelCard.model_validate_json(model_card_path.read_text("utf-8"))
         if (
             card != real_model_card()
-            or sha256_payload(card) != real_model_spec().model_card_sha256
+            or sha256_payload(card)
+            != real_model_spec(execution_profile).model_card_sha256
         ):
             raise ValueError("Agent02 model card does not match registry")
     except (OSError, ValueError) as exc:
@@ -242,6 +272,11 @@ def configure_agent02_production(
                 artifact_root=project_root,
                 package_lock_path=lock_path,
                 source_root=source_root,
+                cuda_visible_devices=(
+                    cuda_visible_devices
+                    if execution_profile == "cuda"
+                    else None
+                ),
             ),
         )
 
@@ -392,7 +427,7 @@ class Agent01RunnerAdapter:
             )
             _validate_native_plan_context(plan, context)
             native = self.native_runner.start(plan, plan.idempotency_key)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             return runner_exception_outcome(
                 context,
                 idempotency_key,

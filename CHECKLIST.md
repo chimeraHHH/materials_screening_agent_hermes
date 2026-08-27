@@ -1,5 +1,33 @@
 # P3.x Inspiration Generalization 控制清单
 
+## 当前活动轨道：Flat/Narrow-Band Research Benchmark
+
+- [x] 冻结研究计划 v0：范围、B0/E1/E2/E3、预算、指标、统计 Gate 和停止条件
+- [x] 提交并推送工程基线，建立 public Draft PR #4
+- [x] 完成 20-source 开源数据审计并冻结 source catalog v1
+- [x] 完成科研预注册/标注/契约独立红队；当前 30-case Pilot 决策为 NO-GO
+- [ ] 完成预注册、标注手册和 30-case Pilot
+- [ ] 通过双专家一致性 Gate 并冻结 120-case benchmark
+- [ ] 依次完成 B0、E1、E2、E3、融合、locked test 和科研审查
+
+详细状态见
+[`artifacts/experiment/flatband-benchmark-20260809/CHECKLIST.md`](artifacts/experiment/flatband-benchmark-20260809/CHECKLIST.md)。
+
+## 只读工程基线：Production Hardening
+
+- [x] 冻结生产加固目标、基线、代码变更图和五级验收门
+- [x] Gate A：redirect、完整 manifest、reject/cancel、否定证据、完整闭包验证
+- [ ] Gate B：queued profile、worker lifecycle 和监督式 hard deadline 已接线；parent hard-kill 后独立 child 的清理/回收仍是 P0
+- [x] Gate C：run-bound、长度受限的可读证据和报告接口
+- [ ] Gate D：部署、worker readiness、失败审计与 CI workflow 已实现；真实 provider 全链和平台 required checks 尚未完成
+- [ ] Gate E：工程契约已实现；真实召回金标、认证专家 Tag release、production semantic provider 尚未完成
+- [x] 完整离线 Gate、live Crossref、隔离 MCP、依赖、bundle、compile、diff 和生产审计
+
+详细滚动状态见
+[`artifacts/experiment/production-hardening-20260809/CHECKLIST.md`](artifacts/experiment/production-hardening-20260809/CHECKLIST.md)。
+历史生产审计及其 superseding addendum 见
+[`artifacts/experiment/production-hardening-20260809/PRODUCTION_READINESS_AUDIT.md`](artifacts/experiment/production-hardening-20260809/PRODUCTION_READINESS_AUDIT.md)。
+
 ## Identity
 
 - parent map node：P3 Hermes inspiration companion

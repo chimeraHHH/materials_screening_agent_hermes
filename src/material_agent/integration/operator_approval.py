@@ -1,4 +1,4 @@
-"""Out-of-band operator CLI for one requirement-freeze approval grant.
+"""Out-of-band operator CLI for one requirement-freeze decision grant.
 
 This module is never registered with MCP.  It must be invoked by a trusted
 operator who controls the fixed workspace/project arguments and supplies an
@@ -15,6 +15,7 @@ from pathlib import Path
 from material_agent.gateway.authorization import (
     ActionGrantStoreError,
     OperatorApprovalError,
+    RequirementFreezeDecision,
     RequirementFreezeGrantIssuer,
     SqliteOneTimeActionGrantStore,
 )
@@ -40,14 +41,24 @@ def _argument_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="material-agent-approve-requirement-freeze",
         description=(
-            "Issue one operator grant for the current requirement_freeze "
-            "approval in a fixed Hermes project."
+            "Issue one exact approve, reject, or cancel operator grant for "
+            "the current requirement_freeze approval in a fixed Hermes project."
         ),
     )
     parser.add_argument("--workspace", type=Path, required=True)
     parser.add_argument("--project", required=True)
     parser.add_argument("--run-id", required=True)
     parser.add_argument("--confirmation-reference", required=True)
+    parser.add_argument(
+        "--decision",
+        choices=("approve", "reject", "cancel"),
+        default="approve",
+        help="exact advertised action to authorize; defaults to approve",
+    )
+    parser.add_argument(
+        "--reason",
+        help="optional bounded reason recorded only in the exact reject action",
+    )
     parser.add_argument(
         "--service-mode",
         choices=("public", "fixture"),
@@ -75,10 +86,12 @@ def issue_requirement_freeze_grant(
     settings: GatewayServerSettings,
     run_id: str,
     confirmation_reference: str,
+    decision: RequirementFreezeDecision = "approve",
+    reason: str | None = None,
     service_mode: str = "public",
     recover_consumed_grant: bool = False,
     confirm_original_process_stopped: bool = False,
-) -> dict[str, str]:
+) -> dict[str, str | None]:
     """Issue one grant after re-reading the current persisted interaction."""
 
     if recover_consumed_grant != confirm_original_process_stopped:
@@ -128,6 +141,8 @@ def issue_requirement_freeze_grant(
             run_id=run_id,
             confirmation_reference=confirmation_reference,
             expected_execution_manifest_sha256=execution_manifest_sha256,
+            decision=decision,
+            reason=reason,
             recover_consumed=recover_consumed_grant,
         )
         return receipt.as_json_value()
@@ -147,6 +162,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             settings=settings,
             run_id=args.run_id,
             confirmation_reference=args.confirmation_reference,
+            decision=args.decision,
+            reason=args.reason,
             service_mode=args.service_mode,
             recover_consumed_grant=args.recover_consumed_grant,
             confirm_original_process_stopped=(
@@ -160,7 +177,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         OperatorApprovalError,
         OSError,
     ) as exc:
-        parser.exit(2, f"approval failed: {exc}\n")
+        parser.exit(2, f"decision failed: {exc}\n")
     print(
         json.dumps(
             receipt,

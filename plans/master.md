@@ -13,7 +13,319 @@
 > [Agent 04 计划](subagents/material-screening-agent04-plan.md)中明确记录的状态更新。当前可运行能力以 README、源码、配置和测试为准。
 > 只有这些仓库文档明确确认完成的事项才标为 `[x]`；无法确认的事项保持 `[ ]`。
 
-状态基准日期：2026-08-08
+状态基准日期：2026-08-25
+
+### 2026-08-26 当前增量：科学 Benchmark 重启（不含 Track C）
+
+用户已明确重新启动科学 Benchmark，并排除工程 Track C。当前执行顺序以
+`group_meeting_full_report_20260826/benchmark_plan_20260826.md` 的 Track A、Track B 与
+Track B-PV 为上层 claim 计划，以仓库内 `flatband-benchmark-20260809` 的 V3 契约、预注册、
+标注和统计实现为 Track A 权威执行边界。2026-08-26 已关闭历史三项 V3 对抗门禁，并完成
+真实公开源候选 intake、Fermi 纠偏、结构去重和 calibration-only 私有 custody。机器状态仍保持
+`PILOT_NO_GO`：下一步闭合自然人专家、电子结构/derivative 人审、COI、Pilot full-pool
+私有 custody、系统身份与独立 readiness review；只有新的 `PILOT_GO` 可启动 30-case R1。
+Track B 已在首个 development-only FEDERATED_DATABASE case 上完成公共预算候选审计：250k、
+350k、400k、450k、500k、600k 均未稳定闭合，终态为 `BUDGET_CALIBRATION_NO_GO`。不得继续
+自动调参、不得查看未来 locked case，也不得启动 Full Loop / No-Feedback 成对评分；重新开启前
+必须先冻结新的 evidence 收束合同和独立预算依据，再在新的 6-case cohort 上从头校准。
+
+### 2026-08-25 当前增量：纯 ML 动态科学筛选 DAG 与 GPU 执行
+
+用户选择速度/效率优先并明确不需要 DFT。当前目标链为 DeepSeek 原生科学推理生成动态
+`ModelTaskPlan` DAG，覆盖数据库/文献候选、二维结构检查、CHGNet/ML 预弛豫、磁性倾向、
+结构直达性质模型，以及在已有可信预计算图时的 non-SOC/SOC learned-Hamiltonian 推理；
+平带、SOC、拓扑和磁性均输出校准的不确定性/排序证据，再写回 research memory。运行时
+DFT、SOC-DFT、Wannier 和 OpenMX/ABACUS 电子输入生成全部退出生产链。
+
+- [x] 修复现有 DAG 只转发原结构指针而不消费前序真实 Artifact 的缺口；冻结 task kind、
+  typed input/output Artifact、observable/claim 兼容性、依赖和执行收据；
+- [x] 增加二维结构、磁序枚举、平带、SOC、拓扑和 Tc proxy 的参数模型与 validator；
+- [x] 保持 DeepSeek 决定科学路线和参数，policy 只审计 capability、适用域、权重、预算、
+  审批、收敛和证据 ceiling，不用硬编码路线替代模型推理；
+- [x] 科学验证契约固定为 `ML_ONLY`，阻断 DFT、SOC-DFT、磁态总能、运行时 overlap/电子 graph 生成与 L3
+  证据；learned-Hamiltonian 仅可消费可信预计算输入，默认筛选阈值改为速度优先；
+- [x] 接通 Uni-HamGNN 单卡 CUDA 真实权重推理；每个远端任务有冻结输入、日志、设备
+  provenance、Artifact hash 和可恢复 operation key；
+- [x] 在真实 GPU 服务器完成一个官方 ZrSiPt 预计算图小体系 smoke；没有合法 VASP/POTCAR 时
+  不再寻找 DFT 替代，而使用官方预计算图或结构直达 ML 模型；
+- [x] 把真实 ZrSiPt operation 接入
+  `PRECOMPUTED_ELECTRONIC_INPUT_IMPORT → ML_HAMILTONIAN_SOC → BAND_ORBITAL_ANALYSIS`，
+  严格 band worker 输出 DAT/PNG/CIF，三条 evidence 写回 memory；自动测得最近带宽
+  `0.827865 eV` 并以 `NONE/CONTRADICTS` 标记不满足 50 meV；
+- [x] DeepSeek route/feedback 系统边界显式固定为纯 ML；更高证据请求只能指向已注册
+  ML ensemble、检索到的实验/文献证据或人工复核。校准性质 executor 同时支持一级单模型
+  和二级 `ML_ENSEMBLE_VALIDATION`，避免把所有临界项永久保留为 unknown；
+- [x] 两次真实 DeepSeek route-only 复核发现并修复 capability 缺少通用必需输入声明的
+  问题；新增 `required_input_artifact_kinds` 后，DeepSeek 自动为 band 节点补齐 graph 与
+  Hamiltonian 前序依赖，三节点全部通过审计且零 DFT。最终 route SHA-256 为
+  `b387b6ef945beffd7527630dfe47bf0158de70a65205979ebb6742c030c42d99`；
+- [x] 完成真实 memory→DeepSeek feedback 回合：速度优先 policy 允许真实 ML/数据库硬反证
+  淘汰搜索池候选，但正向结论仍受 benchmark 与 L2 ceiling 约束；ZrSiPt control feedback
+  receipt 为 `e78d03b0b08a6135fd694bd2c08c2b92bc9920207cac0833f35c6a0e28e3a679`；
+- [x] 用历史 prompt1 的三个真实 C2DB CIF/能带跑通 9 节点纯数据库/本地判据 DAG、真实
+  DeepSeek route、memory 写回和真实 feedback。修正 C2DB `E−E_VBM` 能量参考后，三个母相
+  均因带宽明显超过 50 meV 被移出当前搜索池；轨道投影缺失保持 unresolved。route/feedback
+  receipt 分别为 `339139df7fb6c08374a2ab25cff17248990e706d98b7abd161f5b2cae250db03` 与
+  `3d4bfb34be4645b74a18d4b4ef37d6fde8e78c365ca561b5b1358b295d556bdf`；
+- [x] 清理全仓 Ruff 新暴露的 33 项历史债务，`ruff check .` 与 `git diff --check` 通过；
+  全量 pytest 因既有大型 flat-band 契约压力轨耗时在 `350 passed, 20 skipped` 后人工终止，
+  无失败；本次 ML/DAG/运维定向 Gate `85 passed, 1 skipped`；
+- [ ] 完成 vdW 铁磁（Tc>30 K）+拓扑绝缘体 case 的纯数据库/ML 回归；不把 CHGNet、
+  Hamiltonian 或 proxy 越级表述为确定的平带、拓扑或磁基态证明。
+
+### 2026-08-24 当前增量：Agent02 Linux/CUDA 平台化
+
+- [x] 将已在 WHU L40S 上验证的 CHGNet CUDA 上游执行纳入正式 Agent02 profile；完成
+  独立 lock、单卡隔离、health/parity、worker Artifact/L2 Gate 与真实服务器发布收据；
+- [x] 保持科学适用域仍为已审核的周期性三维 Si，不把 GPU 可执行性误写成二维过渡金属、
+  平带、SOC、拓扑或稳定性验证。
+
+### 2026-08-23 当前增量：文献候选到 ML 证据反馈闭环
+
+- [x] 新增通用 `HypothesisCandidate → OperatorResult → ModelTaskPlan →
+  ScientificEvidence` 契约；Generic Research 的全部排名候选均可进入同一 handoff，固定
+  TiS2/S→Se 单候选 research entry 仅保留兼容回归角色；
+- [x] 新增 DeepSeek 原生路线与反馈 reasoner。模型负责提出模型/计算、observable、前置、
+  evidence target 和 falsifier；确定性 policy 只审计 lineage、适用域、backend/权重、
+  benchmark/evidence ceiling 与成本，不补写科学路线；
+- [x] ScientificEvidence 先落 immutable Artifact，再以 `MODEL_VALIDATION` 事件写入
+  append-only research memory；下一轮 DeepSeek 可提出淘汰、typed operator revision 或
+  更高等级计算，确定性审计拒绝 mock/NONE/未入 memory 的淘汰依据；
+- [x] 复用历史二维过渡金属平带 case 的 Pd3P2S8 strain、Li-intercalated Pd3P2S8 和
+  Li-deficient LiP2PdS6 三候选完成多候选、模型域/权重阻断及三类反馈 action 回归；相关
+  跨模块定向 Gate `65 passed`，Ruff、`pip check`、`git diff --check` 通过；完整离线 Gate
+  在历史 flat-band/spglib 压力用例长期运行时于 42:01 人工终止，终止前为
+  `339 passed, 19 skipped` 且无失败，故不标记全量通过；
+- [x] 修复 DeepSeek strict final JSON 的 array→tuple 验证缺陷后，历史三候选 route live Gate
+  通过并保留真实 receipt hash；DeepSeek 为三个候选各提出覆盖六项电子约束的 HSE+SOC
+  band/PDOS 路线，本地 policy 因 DFT backend 未就绪将三项均明确阻断；
+- [ ] feedback live 回合在 provider chunked response 中断后以 `IncompleteRead` fail closed；
+  离线 memory→feedback→audit 纵切已通过，但不得描述为完整 live feedback pass。真实模型
+  execution、DFT backend 与实验/专家证据仍是后续科学 Gate。
+
+### 2026-08-22 当前增量：自动修复、操作覆盖与 lint 收敛
+
+- [x] 有界 DeepSeek contract-repair agent 覆盖约束遗漏、query ID 覆盖和 native lead
+  引用错误；所有修复再次经过原确定性门禁并保留审计收据；
+- [x] operator registry 覆盖载流子掺杂、静电栅控、磁近邻与 vdW 异质结构型，严格区分
+  结构执行计划和只改变计算边界条件的计划；
+- [x] 既有 Ruff 高信号债务从 1050 条收敛为零，固定 `ruff==0.16.3` 与显式规则集；
+- [x] 离线分区 Gate、依赖、diff、安全扫描和 GitHub CI 状态已形成收据：PR #4 的
+  GitGuardian 通过、主 production gate 仍在运行；五个 private flat-band shard 继续因
+  既有 Linux `bounded primitive-cell reduction failed`/spglib 差异失败，未误报为本轮通过。
+
+### 当前交付轨道：Hermes 通用材料灵感研究操作系统
+
+用户于 2026-08-19 明确要求：本轮不是给 Agent01 或固定 TiS2→TiSe2 demo 做最小补丁，
+而是在现有 Hermes companion、材料证据引擎和安全边界上，完成能够处理复杂自然语言材料
+约束的通用灵感生成研究循环，并显著提高 DeepSeek 原生思考、工具调用和搜索在研究过程中的
+占比。以下为本轮发布验收，未全部通过前不得把目标称为完成：
+
+- [x] research request 不再硬编码 `TIS2_TO_TISE2_NARROW_BAND_V1`；能够接收通用材料目标，
+  将层状性、能带拓扑/带宽、轨道来源、价态、连通子晶格等复合约束编译成可审计约束图；
+- [x] DeepSeek V4-Pro 具有显式 `high/max` thinking、多轮 function-tool loop、严格参数
+  Schema、轮次/调用/字节/时间预算和完整 receipt；`reasoning_content` 只在同一原子循环中
+  回传，不进入 Artifact、SQLite、日志或最终结果；
+- [x] 研究循环包含需求审计、查询扩展、资料发现、机理/化学、证据反证、假设推理和综合；
+  候选同时给出逐约束 `PASS/FAIL/UNKNOWN` 证据矩阵与
+  `LIKELY_PASS/LIKELY_FAIL` 概率推理矩阵；前者不把模型自信当证据，后者不能因证据
+  `UNKNOWN` 而拒绝生成可证伪灵感；
+- [x] DeepSeek 原生搜索只作为 lead discovery；正式科学引用必须解析到 Crossref/OpenAlex/
+  arXiv/OSTI 或材料数据库等可复核来源，并保留原始响应 hash、稳定身份和工具调用账本；
+- [x] 结构建议只能调用注册的受控 transformation，并经价态、成键/连通性、层状性和结构
+  完整性确定性校验；带宽、费米面交叉和轨道贡献在缺少 band/PDOS 数据时，证据 verdict
+  保持 `UNKNOWN`，但推理层仍输出概率判断、机理、假设和决定性证伪；
+- [x] 新增独立 Hermes research profile，只暴露粗粒度、Schema 化研究工具；production 和
+  evolution profile 的权限、安全及状态真源边界保持不变；
+- [x] 离线 fake-provider 测试覆盖正常多轮、非法工具、参数错误、预算耗尽、空结果、搜索
+  resolver 失败和 reasoning 不落盘；相关非 flatband Gate、依赖检查和 diff 检查通过；
+- [x] 使用既有科研测试专用密钥完成一次真实 DeepSeek thinking + 多轮 tool-call + 严格最终
+  Schema Gate，以及一次通用材料 prompt 的 Hermes/MCP 端到端实机运行；只报告实际返回的
+  能力与 blocker，不把候选假说写成性质结论。
+
+本轨道优先于下方已暂停的 benchmark 轨道。现有固定 TiS2 路径继续作为兼容回归 fixture，
+不再代表通用研究能力的产品边界。
+
+2026-08-19 superseding release checkpoint：thinking/tool loop、原生 discovery、四源 resolver、
+C2DB scout、九角色研究图、稀疏 skeptic→确定性证据矩阵、DeepSeek 完整推理矩阵、通用 MCP tool、Schema-hash
+角色/工具快照和隔离 Hermes research profile 已实现。科研专用 key 的真实 Gate 覆盖
+max-thinking 多轮 strict tools、原生 search 与原始中文 prompt 端到端，结果为 `3 passed`；
+完整非 flatband Gate 当前为 `1145 passed, 20 skipped`。通用 MCP 当前仍同步，耐久异步状态与
+细粒度 UI 进度是后续生产增强，不影响本轮 correctness release。真实 MCP stdio 边界也已
+调用通用工具并复用不可变 live 结果，返回 `isError=false`、九个角色、完整推理矩阵与
+`REASONED_HYPOTHESIS`。
+
+2026-08-19 灵感语义修正 Gate：此前把证据 `UNKNOWN` 等同于无结论，真实原始 prompt 因而
+输出 50 个 UNKNOWN，虽安全但不构成有用灵感。现新增独立 `hypothesis_reasoner`，要求对每个
+候选×约束作二元概率预测，并把共享机理、假设、关键前提和证伪提升到候选级。首版重复长文本
+在 25 分钟实测中被主动终止；紧凑上下文/输出版复用七个安全检查点后以 `1 passed in
+162.61s` 完成。真实结果为 NbCl2O/TaCl2O 两个低置信候选、20 个证据 UNKNOWN、7 个
+`LIKELY_PASS`、13 个 `LIKELY_FAIL`，概率 0.06–0.98，非空科学推理结论通过 MCP stdio 返回。
+最终非 flatband 回归为 `1145 passed, 20 skipped, 377 warnings`。
+
+### 当前科研轨道：平带/窄带灵感生成 Benchmark
+
+当前最高优先级已从功能扩展转为真实科研评测。工程基线先通过 public Draft PR 固定，
+随后依次完成开源数据源许可/字段审计、预注册与标注手册、30-case 双专家 Pilot、
+120-case family-disjoint benchmark、B0 以及 E1/E2/E3 单因素消融，最后才允许融合和
+一次 locked-test 评估。详细计划和清单见
+[`flatband-benchmark-20260809`](../artifacts/experiment/flatband-benchmark-20260809/PLAN.md)。
+
+当前研究范围只包含 flat/narrow-band inspiration，不评估 novelty。现有 Crossref run、
+synthetic evaluation fixture、专家审查 Schema 和 semantic provider contract 都是工程证据，
+不能替代真实专家金标。正式语义实验只允许大模型原生 reasoning work/response/receipt
+链；本地代码只做 schema、哈希、parser、exact replay 与统计，不运行本地语义模型，也不
+引入外部 embedding API。多源检索必须服从与 B0 相同的八次物理请求预算。
+
+当前工作树已实现独立的 `src/material_agent/research/` 科研契约、`aNDCG@5` 指标、泄漏组
+bootstrap/randomization 统计、预注册和标注手册；真实实例仍未运行。Pilot 的 ordinal Krippendorff alpha
+必须达到 0.80；`[0.667, 0.80)` 只允许修改手册并在完全不重叠的 30-case R2 复测，低于
+0.667 或 R2 未达 0.80 即停止扩展。专家身份、指南、split、模型和 prompt 的哈希闭合前
+不得启动正式标注。
+
+2026-08-09 的独立红队将当时 Pilot 判为 NO-GO：现有公式可保留，但 reviewer-safe 投影、完整
+`case × system` 执行矩阵、泄漏图 connected component、单向 run/ranking 哈希、raw review 到
+final gold、case-level duplicate partition、system config/信息预算及 expert calibration/COI
+尚未闭合。该历史发现的候选修复已进入当前 V3 工作树，但尚未取得新的独立 GO。具体顺序见
+[`READINESS_REVIEW.md`](../artifacts/experiment/flatband-benchmark-20260809/READINESS_REVIEW.md)；
+这些项未完成前不得用 schema/test 通过替代真实科研 Gate。
+
+当时 active Gate 是 `PILOT_PROVENANCE_CLOSURE`。该历史阶段只实现并对抗验证 reviewer-safe
+有界证据投影、私有 identity map、完整 execution matrix、单向 budget/ranking/terminal
+闭包、raw/adjudication/final-gold exact coverage、case-level expert duplicate partition、
+leakage connected-component 和 expert calibration/COI 绑定；不构建真实 Pilot case，
+不调用网络或模型，不读取专家标签，也不比较 B0/E1/E2/E3 性能。只有独立红队重新给出
+Pilot GO 且冻结对象形成新内容哈希后，下一节点才是 30-case Pilot R1。
+
+2026-08-09 的历史工作树复核维持 canonical action `iterate`：研究定向测试为
+`91 passed`，已推送 Draft PR #4 的 GitHub Actions 为绿色，但本地生成器
+`scripts/generate_flatband_research_contracts.py --check` 因科研 Schema 漂移而正确失败。
+局部模型可重放不等于 Pilot readiness；目前仍须关闭完整 FrozenCase/pre-run eligibility、
+安全 reviewer manifests/private maps 到 pooled Gold 的 exact cover、由完整 case 与固定算法
+重放的 leakage group、正式 Pilot agreement input、专家真实独立性/校准集不重叠、
+receipt-to-evidence provenance、campaign prerequisite 和由 Execution/Gold 唯一派生的
+AnalysisInputRelease。完成并重新生成内容哈希、通过独立红队之前，禁止启动网络、模型或专家
+Pilot。该 generator drift 已由 2026-08-10 audience-split bundles 替代；当前状态以下方
+`FULL_FLOW_CONTRACT_IMPLEMENTED` checkpoint 为准。
+
+2026-08-09 的 leakage V2 合并审计发现新的设计反例：若把只有十个枚举值的宽泛
+`MechanismFamily` 本身作为 connected-component 连边，则全 Main universe 理论上最多只有十个
+独立 component，且同一 family 不能同时出现在 development/IID/OOD；这与预注册的
+`20/10/10` component 下限和 IID 语义不可同时满足。canonical action 仍为 `iterate`：保留
+宽泛 mechanism 作为抽样分层和 OOD holdout taxonomy，把正式独立性连边改为由冻结证据和
+算法重放的细粒度 mechanism lineage；在诚实的 Main120 正例、伪 lineage 反例和更新后的
+功效 Gate 通过前暂停正式 AnalysisInput/Main 路径。拒绝的替代是降低 component 下限或给每个
+case 自报唯一 mechanism group，因为两者都会制造虚假的独立样本数。
+
+### 2026-08-10 科研 Gate checkpoint
+
+- **当前 active checkpoint：** `FULL_FLOW_CONTRACT_IMPLEMENTED`；canonical action 仍为
+  `iterate`，机器可读科研状态保持 `PILOT_NO_GO`。这里的“全流程”只指类型化合同、内容
+  寻址、custody、时序和 exact replay 已实现，不表示真实 Pilot/Main 已运行或科研 Gate
+  已通过。当前不把性能或 benchmark 耗时作为实现阻断。
+- **来源、Pilot 与结构闭包：** 20-row source catalog、source-role policy、raw structure
+  parse/normalize、2D/3D conservative grouping、CandidatePool/Calibration/PreBudget 全池
+  raw-union、derivative screening、R1/R2 agreement 与 execution provenance 已正式接线。
+  release-local group ID、fully-readdressed output、foreign source role、selected-only universe、
+  replacement omission、runtime/clock drift 等攻击均 fail closed。结构方法的 128-site、6-species、
+  8 Å vacuum 与 bounded-supercell 适用域仍是预注册限制，不能外推为一般材料覆盖。
+- **Main120 与模型原生 Arm：** 已实现 60 development / 30 locked IID / 30 locked OOD 的
+  sampling、candidate、双审 eligibility、freeze、PreBudget 与五阶段授权。B0、E1、E2-A、
+  E2-B、E3、Fusion 只接受可见的模型原生 work/response/receipt；`E1-local` 固定为
+  `NOT_RUN_USER_PROHIBITED`，零 execution/output/local invocation，禁止 promotion 和 locked。
+  locked component 的 240 cells 仅是 derivation preimage，不进入 Gold/Analysis denominator。
+- **Execution、Gold 与 Analysis：** 七份 formal execution、FAILED cell 的五个
+  `SYSTEM_PACKET_INVALID/RUN_FAILED` 零位、双 reviewer + distinct adjudicator 的签名 raw
+  label/duplicate partition/adjudication、Gold exact replay、Analysis V2、component→case 两层
+  bootstrap、randomization、Holm、development promotion/Fusion Gate 和固定五个 locked
+  hypotheses 已闭合。所有人工 payload 使用内部预承诺 HMAC；临时 key 只作为 formal replay
+  参数，不能进入 artifact。
+- **Locked 与 release-control：** 已实现 frozen locked plan、authorization、derivation/parent
+  execution、revision-0→revision-1 one-shot ledger、unseal、解封后人工 Gold、claim support、
+  两位独立科研 reviewer 的签名 decision，以及 license/privacy/custody control。执行与 receipts
+  必须早于 unseal，raw labels、raw duplicate partitions 和两类 adjudication 必须严格晚于
+  unseal。公开结果只包含 allowlisted aggregate projection，不嵌签名、commitment、私有身份
+  preimage、raw payload 或 key material。
+- **合同身份：** public protocol bundle v2 含 16 个 active roots，SHA-256
+  `380303adda9cab0929f8fc90ab3b59e5ce9975e3af05c83684bf9997699c184e`；private custody
+  bundle v3 含 73 个 active roots，SHA-256
+  `4581db7cb6aa7ae1cd82ade26110d72a5d0732c8e0f8e06a59cb8cca406bf781`。
+  generator `--check`、五份科研文档与两份 schema sidecar、Source Audit 机器常量均一致。
+- **当前正确性证据：** 完整合成 Campaign smoke 真实调用公开 assembler、其内部 exact replay
+  并再次显式 exact replay，结果为 `1 passed`；覆盖 7 execution、3 组 signed Gold/verifier、
+  3 组 Analysis/attestation、FAILED denominator、typed registry join、locked lifecycle、HMAC
+  review/control 和 public result。独立定向门还包括 Campaign/Lifecycle/MainGold `42 passed`、
+  artifact-store/ingress/runtime/workflow `23 passed`、contract/ingress `16 passed`。这些只证明
+  合同链可构造和 fail closed；合成 Main/Pilot 的深层科学 fixture seam 已在测试中显式标注。
+- **诚实边界与下一动作：** 本 checkpoint 没有调用网络、真实模型、本地语义模型、真实
+  30-case Pilot、Main120、专家标注或 benchmark，也没有生成真实 benchmark 分数、材料候选、novelty、DFT
+  或科学发现。外部 provider execution、自然人/机构身份、key custody、全局 unseal CAS 和
+  publication permission 均为 `NOT_PROVIDED`/false；Main structure union 的真实科学输出也未
+  执行。只有用户另行授权并提供真实私有输入后，才实例化并运行该合同链；在此之前不得把
+  合成测试或 schema 通过描述成 Pilot/scientific GO。
+- **2026-08-10 用户评审采纳：** `READINESS_REVIEW.md` 要求的第 1 步用户人工评审已完成
+  （AI 代行分析、用户批准采纳），修订写入预注册 v0.5、标注指南 v0.6 与实验 PLAN：专家
+  工作量预算与校准计时试点及冻结缩减序、Fusion 组合算子按 `2^3` 子集冻结、COI 操作化与
+  替补校准前置、`min_k |E(k)-E_F|` 与单带 `W` 操作定义、companion alpha 与 `(0,0)` 占比
+  预声明、OOD holdout 约束感知回退序、R2 后唯一一次 binary-gain 降级模式、专家公开描述
+  模板。该评审不是独立红队或外部 authority 证据；`PILOT_NO_GO` 与真实 custody blocker
+  不变，修订稿需重走独立红队。
+- **2026-08-10 协议层红队复审与修复：** 对 v0.5/v0.6 修订稿的独立红队返回 FAIL（B1：
+  binary 降级阈值"1.5 倍最坏情形等效"数学不成立，真实最坏情形为 1→2 转移的 3 倍；B2：
+  单边 `SYSTEM_PACKET_INVALID` 整轮 fail-closed 与指南 assessability 判据重叠互相矛盾；
+  另有 M1--M10）。修复为预注册 v0.6 / 指南 v0.7：整体撤除 binary 降级模式；invalid 判据
+  收窄为机械/结构性失败，单边改为 `(0,g)` 纳入加留痕加 5% 完整性审查；统一 `CASE_INVALID`
+  处置；工作量上界修正为 60--115 小时并冻结两级缩减判据与固定移除序；Fusion 按 E2 变体
+  冻结 12 配置；冻结 E_F/自旋/多带/覆盖缺失归属规则；COI 两两关系约束与替补 adjudicator。
+  修复稿需再走一轮独立红队；`PILOT_NO_GO` 与真实 custody blocker 不变。
+- **2026-08-10 第三轮红队与修复：** 独立复核确认第二轮 12 项修复中 10 项闭合（全部数学
+  重验通过：3 倍最坏情形、450/300/600 上限、12 个 Fusion 配置、两个指标分母、三箱分层），
+  但发现指南 §13 残留修复前的整轮 fail-closed 旧句（N1 BLOCKER）与 Pilot 无效 case 上限
+  空引用（N2 MAJOR）及六个 minor。已全部修复为预注册 v0.7 / 指南 v0.8：残留句对齐、
+  Pilot 对称排除超 10% 须另建不重叠轮次、development 超 5% 暂停 promotion、工时口径统一
+  为 60--118 小时/定额 18、malformed packet 专属 invalid 状态、二级缩减独立求值、E_F 与
+  带隙双缺失 fail closed、adjudicator 双回避对称排除、Main 侧"不得直接通过"定义为完整性
+  审查签署前 Gold/Analysis 不得组装。待下一轮独立核对；`PILOT_NO_GO` 不变。
+- **2026-08-11 完整离线 Gate（分区）与科研轨道暂停：** 非 flatband 分区
+  `998 passed, 15 skipped`（133s）；flatband 分区 `437 passed, 3 failed`（14222s）。
+  三个失败均为 V3 未闭合的对抗拒绝测试：`test_formal_v3_r2_prebudget_rejects_overlapping_full_candidate_pool`、
+  `test_formal_v3_execution_rejects_alternate_prebudget_same_universes`、
+  `test_top_level_rejects_model_copy_foreign_structure_union_root`，作为已知开放失败如实
+  入库、不得表述为绿色 Gate。用户决定暂停科研轨道修复、优先交付 MVP（见
+  `docs/MVP.md`；MVP 主链已于 2026-08-10 在真实 MC3D 上端到端验证）；三个失败不影响
+  MVP 主链。
+- **2026-08-11 Inspiration/LangGraph/Hermes/语义/软化学扩展 checkpoint：** 新增显式
+  opt-in `orchestrator-composite-inspiration-v2` LangGraph/runtime，从既有 Agent01 run
+  hash-verified 解析动态 candidate manifest 与结构，不改变默认四阶段或 `StageId`；新增
+  Crossref/OpenAlex 年代窗口、多源 raw/provenance envelope 与本地年份复核，默认仍 Crossref；
+  新增 SHA-pinned local Sentence Transformers 真实 provider，并以固定 MiniLM bundle 完成
+  384 维、L2=1.0 本地 smoke；DeepSeek 仅作为 bounded grounded reranker/judge，真实单调用
+  live Gate `1 passed`，不冒充 embedding；新增独立 Hermes evolution profile，复用原生
+  memory/skills/delegation 且只读材料结果、所有学习写入人工审批，锁定 runtime 安装演练与
+  verifier `3 passed`；新增 `softchem-operator-registry-v1` 和
+  `SoftChemDownstreamRunner`，复用真实 CHGNet/DeepH/DFT native Gate，不可用时
+  `BLOCKED/NOT_RUN`，mock 不得升级证据。合并后非 flatband 全量离线 Gate 为
+  `1035 passed, 16 skipped`（114.77s），两套 Hermes verifier 与 `pip check` / diff check
+  通过。当前未完成 OpenAlex live Gate、材料领域 embedding
+  gold/准确率 Gate、Ti/Se CHGNet 适用域扩展、真实 DeepH/DFT 计算和 composite 独立
+  checkpoint/CLI，因此不得写成科研全链完成。
+- **2026-08-14 arXiv/OSTI 文献源 checkpoint：** Inspiration 公共检索新增官方 arXiv
+  Atom Query API 与 OSTI.GOV v1 JSON adapter，均进入现有原始响应 Artifact/SHA、年代复核、
+  DOI/arXiv identity 和 provider-neutral passage/evidence 链；组合模式
+  `crossref+arxiv+osti` 真实单 query smoke 完成 3 次物理请求，解析 12 hits/12 unique
+  documents。非 DFT 科研入口预留 16 次物理请求，ignored 本地一键启动器默认选择三源；
+  PDF/全文仍不读取，检索结果仍只支持灵感假说。排除已暂停 flatband 轨的完整离线 Gate
+  `1104 passed, 17 skipped`（135.36s），`pip check`/diff check 通过。
+- **2026-08-14 accuracy-first 检索 checkpoint：** 非 DFT research entry 将公共检索扩为每源
+  20 条、最多 320 unique documents/128 passages，并按 metadata eligibility/quality 优先消费
+  passage budget；DeepSeek grounded rerank 闭合窗口扩至 64。无 OpenAlex key 时默认三源，
+  有真实 key 才自动启用四源。真实三源 ×20 smoke 得到 60 hits/57 unique、59 abstracts、
+  48 DOI；完整非 flatband Gate `1109 passed, 17 skipped`（130.83s）。科研 evidence ceiling、
+  PDF 禁用和真实 DFT/多体 blocker 均未改变。
+
+public production 仍为 NO-GO：queued production 与 worker lifecycle 已激活，但 parent
+worker 被 hard-kill 后独立 action child 的清理/回收契约仍未闭合；真实 provider 全链、
+branch protection、required review 和科学 performance Gate 也未完成。
 
 ### 当前 P3：Hermes 平台与灵感生成器
 
@@ -465,6 +777,25 @@ flowchart LR
 - [ ] gold set 的维护人、来源与判定流程。
 
 这些事项不影响已完成的 P0 mock 控制链，但会阻塞真实 DFT、多体和科学验收。
+
+### 2026-08-14：Hermes 直跑超时与重复进程修复
+
+- 标准部署收敛为 dashboard、共享 MCP Hub/queued worker、monitor 三个 owned 顶层
+  进程；多 TUI session 复用同一 HTTP Hub，stop 可回收跨进程组后代。
+- C2DB 在 table listing 上先做 exact-formula 预筛，再有界并发下载结构；真实 TiS2
+  smoke 为 5 个结构、约 32 秒。
+- DFT 外科研入口改为后台 `RUNNING`/canonical poll；同一请求具备进程内去重、跨进程
+  lock、终态 Artifact 幂等和 Orchestrator `resume()` 恢复。
+- 这些改动修复工程执行与恢复，不提升 CHGNet/DeepH/DFT/多体证据等级；真实 ML
+  适用域、DFT 与多体后端的既有 blocker 不变。
+- 后续故障审计补齐三个遗漏：自然语言直跑不再要求用户提供 submission/workflow ID，
+  请求身份绑定内部实现 revision；research terminal failure 与 Orchestrator run/stage/attempt
+  以事务对齐，并迁移旧 RUNNING 投影；detached dashboard TUI 只保留 10 秒且每 2 秒回收，
+  不再让多个浏览器 token 长期留下 Node/Python 子进程。
+- 修复后标准部署健康，旧 `agent01-ed81...` 的 run/stage/attempt 已分别对齐为
+  `FAILED/PERMANENT_FAILED/PERMANENT_FAILED`；自然语言 Schema 的唯一 required field 为
+  `goal`，服务端生成 `auto-*` submission 和 revision-bound run ID。完整非 flatband 离线
+  Gate 为 `1060 passed, 17 skipped`，三个隔离环境依赖检查与 diff check 通过。
 
 ## 8. 下一步
 

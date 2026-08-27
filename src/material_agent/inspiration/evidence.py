@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 from material_agent.inspiration.models import (
@@ -32,6 +33,99 @@ class EvidenceBuildResult:
     cards: tuple[EvidenceCardV1, ...]
     by_rule: tuple[RuleEvidenceIndex, ...]
     warnings: tuple[str, ...] = ()
+
+
+_NEGATION_CUES = (
+    "cannot",
+    "can't",
+    "did not",
+    "didn't",
+    "does not",
+    "doesn't",
+    "do not",
+    "don't",
+    "fails to",
+    "failed to",
+    "failure to",
+    "is not",
+    "isn't",
+    "lack of",
+    "lacks",
+    "never",
+    "no evidence",
+    "not cause",
+    "not produce*",
+    "not support",
+    "rules out",
+    "unable to",
+    "without evidence",
+)
+_UNCERTAINTY_CUES = (
+    "could",
+    "hypothes*",
+    "may",
+    "might",
+    "not established",
+    "not yet established",
+    "possibly",
+    "potentially",
+    "remains unclear",
+    "suggest",
+    "uncertain",
+    "unknown",
+)
+_COUNTER_CUES = (
+    "breaks",
+    "destroys",
+    "disrupts",
+    "eliminates",
+    "invalidates",
+    "path imbalance",
+    "precludes",
+    "prevents",
+    "removes",
+)
+_SUPPORT_CUES = (
+    "arise from",
+    "arises from",
+    "because",
+    "cause",
+    "confine",
+    "demonstrat*",
+    "due to",
+    "emerge",
+    "enable",
+    "generate",
+    "host",
+    "hybridiz*",
+    "induce",
+    "lead to",
+    "localiz*",
+    "preserve",
+    "produce*",
+    "realize",
+    "result from",
+    "results from",
+    "show",
+    "suppress",
+    "support",
+    "trap",
+    "yield",
+)
+_SENTENCE_BOUNDARY = re.compile(r"(?<=[.!?;])\s+")
+
+
+def _contains_cue(text: str, cues: tuple[str, ...]) -> bool:
+    """Match whole lexical cues; a trailing ``*`` permits a word suffix."""
+
+    for cue in cues:
+        prefix = cue.endswith("*")
+        literal = cue[:-1] if prefix else cue
+        suffix = r"[a-z]*" if prefix else ""
+        pattern = rf"(?<![a-z0-9]){re.escape(literal)}{suffix}(?![a-z0-9])"
+        if re.search(pattern, text) is not None:
+            return True
+    return False
 
 
 def build_evidence_cards(
@@ -112,12 +206,20 @@ def build_evidence_cards(
                 raise EvidenceBuildError(
                     f"hit {hit.hit_id!r} mixes support and counter query kinds"
                 )
-            if SearchQueryKind.COUNTER in kinds:
-                relation = EvidenceRelation.COUNTER
+            relation = classify_evidence_relation(
+                passage.text,
+                counter_query=SearchQueryKind.COUNTER in kinds,
+            )
+            if relation is EvidenceRelation.COUNTER:
                 conditions = rule.breaking_conditions
-            else:
-                relation = EvidenceRelation.SUPPORT
+            elif relation is EvidenceRelation.SUPPORT:
                 conditions = rule.required_conditions
+            else:
+                conditions = (
+                    ("source mentions the mechanism, but the deterministic relation "
+                    "gate found no unambiguous support or counter assertion"),
+                )
+                warnings.append(f"RELATION_UNCERTAIN:{passage.passage_id}")
 
         payload = {
             "passage_id": passage.passage_id,
@@ -153,6 +255,58 @@ def build_evidence_cards(
         ),
         warnings=tuple(warnings),
     )
+
+
+def classify_evidence_relation(
+    text: str,
+    *,
+    counter_query: bool,
+) -> EvidenceRelation:
+    """Classify only explicit source assertions and fail closed on ambiguity.
+
+    Search-query intent is not evidence semantics.  A bridge result therefore
+    becomes ``SUPPORT`` only when its selected passage contains an affirmative
+    relation cue without negation or epistemic hedging.  Counter queries likewise
+    require an explicit breaking/negative assertion.  This intentionally
+    conservative lexical gate is not a substitute for expert review or NLI; its
+    purpose is to prevent keyword matches from being promoted automatically.
+    """
+
+    if not isinstance(text, str) or not text.strip():
+        raise EvidenceBuildError("evidence relation text must be non-empty")
+    if not isinstance(counter_query, bool):
+        raise TypeError("counter_query must be a boolean")
+
+    sentences = tuple(
+        sentence.casefold().strip()
+        for sentence in _SENTENCE_BOUNDARY.split(text)
+        if sentence.strip()
+    )
+    explicit_support = False
+    explicit_counter = False
+    for sentence in sentences:
+        uncertain = _contains_cue(sentence, _UNCERTAINTY_CUES)
+        negated = _contains_cue(sentence, _NEGATION_CUES)
+        counter = negated or _contains_cue(sentence, _COUNTER_CUES)
+        support = _contains_cue(sentence, _SUPPORT_CUES)
+        # A negated or hedged causal verb is never affirmative support.  Separate
+        # sentences may legitimately state an observed mechanism and then its
+        # breaking condition; retain the affirmative assertion while the bridge
+        # packet continues to expose the curated breaking conditions.
+        explicit_support = explicit_support or (support and not counter and not uncertain)
+        explicit_counter = explicit_counter or (counter and not uncertain)
+
+    if counter_query:
+        return (
+            EvidenceRelation.COUNTER
+            if explicit_counter
+            else EvidenceRelation.CONTEXT
+        )
+    if explicit_support:
+        return EvidenceRelation.SUPPORT
+    if explicit_counter:
+        return EvidenceRelation.COUNTER
+    return EvidenceRelation.CONTEXT
 
 
 def _unique_index(items, id_attribute: str, label: str):

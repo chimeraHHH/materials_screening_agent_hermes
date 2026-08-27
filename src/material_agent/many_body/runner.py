@@ -8,8 +8,9 @@ created here.
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from datetime import UTC, datetime
-from typing import Any, Callable
+from typing import Any
 
 from material_agent.orchestrator.models import (
     CancelOutcome,
@@ -46,7 +47,6 @@ from .models import (
 from .registry import REGISTRY_URI, build_registry
 from .routing import ROUTING_POLICY_VERSION, route_model
 from .validation import ValidationStatus, validate_model_package
-
 
 _TERMINAL = {JobStatus.SUCCEEDED, JobStatus.FAILED, JobStatus.TIMEOUT, JobStatus.CANCELLED}
 _REMEDIATION = {
@@ -197,7 +197,7 @@ class ManyBodyStageRunner:
             operation = {"schema_version": "agent04-many-body-operation-v1", "idempotency_key": idempotency_key, "request": request.model_dump(mode="json"), "external_job_ref": ref.__dict__, "status": JobStatus.CREATED.value, "status_sequence": 0, "scenario": self.backend.scenario, "plan_uri": prepared_plan.native_plan_uri, "plan_sha256": prepared_plan.native_plan_sha256}
             operation_ref = self.store.write_json(operation_uri, operation, immutable=True)
             return self._waiting(context, idempotency_key, ref, 0, JobStatus.CREATED, operation_ref.uri)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             return self._failed(context, idempotency_key, "start", exc)
 
     def reconcile(self, context: StageExecutionContext, prepared_plan: PreparedStagePlan, external_job_ref: str, idempotency_key: str) -> ControlStageOutcome:
@@ -239,7 +239,7 @@ class ManyBodyStageRunner:
             operation.update({"result": {"uri": result_ref.uri, "sha256": result_ref.sha256}})
             terminal_ref = self.store.write_json(self._terminal_uri(idempotency_key), operation, immutable=True)
             return ControlStageOutcome(stage=context.stage, agent_id=context.agent_id, outcome=ControlOutcomeType.COMPLETED, status=StageStatus.SUCCEEDED, idempotency_key=idempotency_key, native_result_uri=result_ref.uri, native_result_sha256=result_ref.sha256, operation_ref=self._operation_uri(idempotency_key), external_job_ref=ref.external_job_ref_id, external_status=ExternalJobStatus.SUCCEEDED, external_status_sequence=sequence, summary={"is_mock": True, "mock_only": True, "observables": [], "evidence_level": "L0_PARSED", "evidence_scope": EvidenceScope.SOLVER_BENCHMARK.value, "plan_sha256": prepared_plan.native_plan_sha256, "result_sha256": result_ref.sha256})
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             return self._failed(context, idempotency_key, "reconcile", exc)
 
     def cancel(self, external_job_ref: str, idempotency_key: str) -> CancelOutcome:

@@ -7,13 +7,13 @@ publishes additive ML evidence in its own manifest.
 
 from __future__ import annotations
 
-import math
 import hashlib
 import json
+import math
 from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import PurePosixPath
-from typing import Any, Literal, Protocol
+from typing import Annotated, Any, Literal, Protocol
 
 from pydantic import (
     BaseModel,
@@ -23,8 +23,6 @@ from pydantic import (
     field_validator,
     model_validator,
 )
-from typing_extensions import Annotated
-
 
 AGENT02_REQUEST_VERSION = "agent02-request-v1"
 AGENT02_STAGE_PLAN_VERSION = "agent02-stage-plan-v1"
@@ -1236,16 +1234,16 @@ class MLPropertyValue(StrictFrozenModel):
             if self.property_name in {
                 "forces",
                 "site_magnetic_moments",
-            }:
-                if self.num_sites is None or shape[0] != self.num_sites:
-                    raise ValueError(
-                        f"{self.property_name} shape must match num_sites"
-                    )
-            elif self.property_name == "stress_trajectory":
-                if self.num_steps is None or shape[0] != self.num_steps:
-                    raise ValueError(
-                        "stress trajectory shape must match num_steps"
-                    )
+            } and (self.num_sites is None or shape[0] != self.num_sites):
+                raise ValueError(
+                    f"{self.property_name} shape must match num_sites"
+                )
+            elif self.property_name == "stress_trajectory" and (
+                self.num_steps is None or shape[0] != self.num_steps
+            ):
+                raise ValueError(
+                    "stress trajectory shape must match num_steps"
+                )
         elif self.num_sites is not None or self.num_steps is not None:
             raise ValueError(
                 "inline property values cannot declare artifact dimensions"
@@ -1703,15 +1701,14 @@ class MLCandidateResult(StrictFrozenModel):
                 "non-PASS results must recommend the source structure"
             )
 
-        if self.decision is MLDecision.FAILED:
-            if self.execution_status not in {
-                ExecutionStatus.INVALID_OUTPUT,
-                ExecutionStatus.RUNTIME_FAILED,
-                ExecutionStatus.NOT_RUN,
-            }:
-                raise ValueError(
-                    "FAILED decision requires a failed execution state"
-                )
+        if self.decision is MLDecision.FAILED and self.execution_status not in {
+            ExecutionStatus.INVALID_OUTPUT,
+            ExecutionStatus.RUNTIME_FAILED,
+            ExecutionStatus.NOT_RUN,
+        }:
+            raise ValueError(
+                "FAILED decision requires a failed execution state"
+            )
         if (
             self.selection_status is SelectionStatus.NOT_APPLICABLE
             and self.applicability.status
@@ -2233,14 +2230,13 @@ class WorkerResponse(StrictFrozenModel):
             raise ValueError(
                 "worker response operation key differs from request"
             )
-        if self.candidate_result is not None:
-            if (
-                self.candidate_result.project_id != request.plan.project_id
-                or self.candidate_result.run_id != request.plan.run_id
-            ):
-                raise ValueError(
-                    "worker result project/run differs from stage plan"
-                )
+        if self.candidate_result is not None and (
+            self.candidate_result.project_id != request.plan.project_id
+            or self.candidate_result.run_id != request.plan.run_id
+        ):
+            raise ValueError(
+                "worker result project/run differs from stage plan"
+            )
         sandbox = PurePosixPath(request.output_sandbox_relative_path)
         for artifact in self.produced_artifacts:
             path = PurePosixPath(artifact.root_relative_path)

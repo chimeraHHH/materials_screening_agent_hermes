@@ -35,12 +35,15 @@ from material_agent.gateway.mcp_server import GatewayServerSettings
 from material_agent.gateway.models import (
     ApprovalInteractionV1,
     ApproveActionV1,
+    ArtifactClosureV1,
+    ArtifactReferenceV1,
     CostLedgerProjectionV1,
     GatewayResultRecordV1,
     GatewayRunRecordV1,
     InspirationBundleSummaryV1,
     PartialStateV1,
     SucceededStateV1,
+    artifact_closure_sha256,
     gateway_result_sha256,
     inspiration_report_uri,
     terminal_reference,
@@ -50,6 +53,7 @@ from material_agent.gateway.models import (
 )
 from material_agent.gateway.persistence import GATEWAY_DATABASE_SCHEMA_VERSION
 from material_agent.inspiration.bridge import build_search_supported_bridges
+from material_agent.inspiration.component_identity import execution_identity_snapshots
 from material_agent.inspiration.engine import PymatgenTransformationEngine
 from material_agent.inspiration.evidence import build_evidence_cards
 from material_agent.inspiration.extractors import (
@@ -94,6 +98,12 @@ from material_agent.inspiration.passages import (
 )
 from material_agent.inspiration.policy import InspirationPolicyV1, SearchExecutionMode
 from material_agent.inspiration.reporting import render_inspiration_report
+from material_agent.inspiration.retrieval_quality import (
+    CuratedQueryCandidatePoolV1,
+    MetadataQualityAuditV1,
+    QueryAllocationAuditV1,
+    audit_metadata_hits,
+)
 from material_agent.inspiration.runner import (
     MAX_SEARCH_RESPONSE_BYTES,
     STRUCTURE_MEDIA_TYPE,
@@ -987,7 +997,9 @@ def _database_state(
         )
         grant = approval.execute(
             "SELECT grant_id, run_id, interaction_id, interaction_sha256, "
-            "request_sha256, action_sha256, action_json, confirmation_reference, consumed "
+            "request_sha256, action_sha256, action_json, action_kind, "
+            "execution_manifest_sha256, audit_binding_version, "
+            "confirmation_reference, consumed "
             "FROM one_time_action_grants"
         ).fetchone()
         _require(grant is not None, "approval grant is absent")
@@ -1007,6 +1019,16 @@ def _database_state(
         _require(
             grant["action_sha256"] == expectations.action_sha256,
             "grant action SHA drifted",
+        )
+        _require(grant["action_kind"] == "approve", "grant decision is not approve")
+        _require(
+            grant["execution_manifest_sha256"]
+            == expectations.execution_manifest_sha256,
+            "approved execution manifest differs from the expected value",
+        )
+        _require(
+            grant["audit_binding_version"] == 1,
+            "grant audit binding is not fully migrated",
         )
         _require(grant["consumed"] == 1, "one-time grant was not consumed")
         _require(
@@ -1062,8 +1084,12 @@ def _database_state(
             "grant recovery is forbidden for the release run",
         )
         grant_summary = {
+            "action_kind": grant["action_kind"],
             "action_sha256": grant["action_sha256"],
             "confirmation_reference": grant["confirmation_reference"],
+            "execution_manifest_sha256": grant[
+                "execution_manifest_sha256"
+            ],
             "grant_id": grant["grant_id"],
             "interaction_sha256": grant["interaction_sha256"],
         }
@@ -1123,6 +1149,9 @@ def _replay_public_search_and_passages(
     payloads: dict[str, bytes],
     fetch_manifest: tuple[dict[str, Any], ...],
     fetch_manifest_lines: dict[str, bytes],
+    query_candidate_pool: CuratedQueryCandidatePoolV1,
+    query_allocation_audit: QueryAllocationAuditV1,
+    metadata_quality: MetadataQualityAuditV1,
 ) -> tuple[Any, tuple[Any, ...], tuple[str, ...]]:
     """Replay query planning, Crossref parsing, and metadata passage selection."""
 
@@ -1133,6 +1162,26 @@ def _replay_public_search_and_passages(
     )
     _require(
         query_plan.queries == queries, "query plan does not deterministically replay"
+    )
+    _require(
+        query_plan.candidate_pool == query_candidate_pool,
+        "curated query candidate pool does not deterministically replay",
+    )
+    _require(
+        query_plan.allocation_audit == query_allocation_audit,
+        "query allocation audit does not deterministically replay",
+    )
+    _require(
+        query_plan.allocation_audit is not None,
+        "query plan has no physical-request allocation audit",
+    )
+    physical_allowance_by_query = {
+        allowance.query_id: allowance.max_physical_requests
+        for allowance in query_plan.allocation_audit.allowances
+    }
+    _require(
+        set(physical_allowance_by_query) == {query.query_id for query in queries},
+        "physical-request allowances do not close over the query plan",
     )
     warnings: list[str] = [
         f"QUERY_RULE_SKIPPED:{rule_id}" for rule_id in query_plan.skipped_rule_ids
@@ -1171,6 +1220,10 @@ def _replay_public_search_and_passages(
             f"search query {query.query_id} has no physical attempt",
         )
         _require(
+            len(query_attempts) <= physical_allowance_by_query[query.query_id],
+            f"search query {query.query_id} exceeded its reserved physical slots",
+        )
+        _require(
             query_attempts[-1].response_bytes == pointer.size_bytes,
             f"search query {query.query_id} terminal byte count differs from its raw response",
         )
@@ -1189,6 +1242,14 @@ def _replay_public_search_and_passages(
     _require(
         tuple(replayed_hits) == hits,
         "Crossref raw responses do not replay to search_hits.jsonl",
+    )
+    replayed_metadata_quality = audit_metadata_hits(
+        hits,
+        require_abstract=policy.fetch.max_requests == 0,
+    )
+    _require(
+        replayed_metadata_quality == metadata_quality,
+        "metadata quality audit does not exactly replay from search hits",
     )
 
     groups = group_document_hits(hits)
@@ -1212,7 +1273,17 @@ def _replay_public_search_and_passages(
     )
     for group in groups:
         member_hits = tuple(hit_index[hit_id] for hit_id in group.member_hit_ids)
-        hit = _select_document_processing_hit(member_hits, query_index=query_index)
+        hit = _select_document_processing_hit(
+            member_hits,
+            query_index=query_index,
+            quality_rank_by_hit_id={
+                item.hit_id: (
+                    item.eligible_for_evidence_ranking,
+                    item.quality_rank,
+                )
+                for item in metadata_quality.entries
+            },
+        )
         source_query_id = hit.query_ids[0]
         source_pointer = raw_by_query[source_query_id]
         member_query_ids = tuple(
@@ -1654,9 +1725,12 @@ def _verify_artifacts(
             structure_pointers.append(pointer)
 
     required_names = {
+        "query_candidate_pool.json",
+        "query_allocation_audit.json",
         "query_plans.jsonl",
         "search_attempts.jsonl",
         "search_hits.jsonl",
+        "metadata_quality_audit.json",
         "fetch_attempts.jsonl",
         "fetch_manifest.jsonl",
         "passages.jsonl",
@@ -1674,6 +1748,9 @@ def _verify_artifacts(
         "stage is missing required intermediate Artifacts",
     )
     json_intermediate_names = {
+        "query_candidate_pool.json",
+        "query_allocation_audit.json",
+        "metadata_quality_audit.json",
         "selection_audit.json",
         "tag_feedback.json",
         "tag_graph.json",
@@ -1733,6 +1810,26 @@ def _verify_artifacts(
         label="query_plans.jsonl",
         identity=lambda item: item.query_id,
     )
+    query_candidate_pool = _model_from_bytes(
+        CuratedQueryCandidatePoolV1,
+        named("query_candidate_pool.json"),
+        label="query_candidate_pool.json",
+    )
+    _require_canonical_model(
+        named("query_candidate_pool.json"),
+        query_candidate_pool,
+        label="query_candidate_pool.json",
+    )
+    query_allocation_audit = _model_from_bytes(
+        QueryAllocationAuditV1,
+        named("query_allocation_audit.json"),
+        label="query_allocation_audit.json",
+    )
+    _require_canonical_model(
+        named("query_allocation_audit.json"),
+        query_allocation_audit,
+        label="query_allocation_audit.json",
+    )
     search_attempts = _dataclasses_from_jsonl(
         SearchAttemptRecord,
         named("search_attempts.jsonl"),
@@ -1745,6 +1842,16 @@ def _verify_artifacts(
         named("search_hits.jsonl"),
         label="search_hits.jsonl",
         identity=lambda item: item.hit_id,
+    )
+    metadata_quality = _model_from_bytes(
+        MetadataQualityAuditV1,
+        named("metadata_quality_audit.json"),
+        label="metadata_quality_audit.json",
+    )
+    _require_canonical_model(
+        named("metadata_quality_audit.json"),
+        metadata_quality,
+        label="metadata_quality_audit.json",
     )
     fetch_attempts = _dataclasses_from_jsonl(
         FetchAttemptRecord,
@@ -1918,7 +2025,8 @@ def _verify_artifacts(
             item for item in search_attempts if item.query_id == query_id
         )
         _require(
-            len(query_attempts) <= _PUBLIC_CROSSREF_MAX_RETRIES + 1,
+            sum(item.outcome == "error" for item in query_attempts)
+            <= _PUBLIC_CROSSREF_MAX_RETRIES,
             f"search query {query_id} exceeds the frozen retry bound",
         )
         _require(
@@ -1927,25 +2035,36 @@ def _verify_artifacts(
             f"search attempts for {query_id} are not contiguous",
         )
         _require(
-            all(item.outcome == "error" for item in query_attempts[:-1]),
+            all(
+                item.outcome in {"error", "redirect"}
+                for item in query_attempts[:-1]
+            ),
             f"search query {query_id} continued after a successful attempt",
         )
         _require(
             all(
-                (
-                    item.error_code == "NETWORK_ERROR"
-                    and item.http_status is None
-                    and item.response_bytes == 0
-                    and item.retry_delay_seconds == 1.0
-                )
-                or (
-                    item.error_code == "TRANSIENT_HTTP_ERROR"
-                    and item.http_status in _TRANSIENT_HTTP_STATUSES
-                    and item.response_bytes == 0
+                item.outcome == "redirect"
+                and item.error_code is None
+                and item.http_status in {301, 302, 303, 307, 308}
+                and item.response_bytes == 0
+                and item.retry_delay_seconds == 0.0
+                or item.outcome == "error"
+                and (
+                    (
+                        item.error_code == "NETWORK_ERROR"
+                        and item.http_status is None
+                        and item.response_bytes == 0
+                        and item.retry_delay_seconds == 1.0
+                    )
+                    or (
+                        item.error_code == "TRANSIENT_HTTP_ERROR"
+                        and item.http_status in _TRANSIENT_HTTP_STATUSES
+                        and item.response_bytes == 0
+                    )
                 )
                 for item in query_attempts[:-1]
             ),
-            f"search query {query_id} retried a noncanonical transient error",
+            f"search query {query_id} retried a noncanonical transient error or redirect",
         )
         _require(
             query_attempts[-1].outcome == "success",
@@ -2031,6 +2150,7 @@ def _verify_artifacts(
         request=record.request,
         prepared=prepared,
         execution_components=(
+            *execution_identity_snapshots(),
             transformation_engine.component,
             DisabledDocumentFetcher.component,
             FEEDBACK_COMPILER_SNAPSHOT,
@@ -2083,6 +2203,9 @@ def _verify_artifacts(
         payloads=payloads,
         fetch_manifest=fetch_manifest,
         fetch_manifest_lines=fetch_manifest_lines,
+        query_candidate_pool=query_candidate_pool,
+        query_allocation_audit=query_allocation_audit,
+        metadata_quality=metadata_quality,
     )
 
     passage_ids = {item.passage_id for item in passages}
@@ -2282,10 +2405,13 @@ def _verify_artifacts(
     )
     expected_lineage = _unique_pointers(
         (
+            intermediate_by_name["query_candidate_pool.json"],
+            intermediate_by_name["query_allocation_audit.json"],
             intermediate_by_name["query_plans.jsonl"],
             intermediate_by_name["search_attempts.jsonl"],
             *(raw_pointer_by_query[query.query_id] for query in queries),
             intermediate_by_name["search_hits.jsonl"],
+            intermediate_by_name["metadata_quality_audit.json"],
             intermediate_by_name["fetch_attempts.jsonl"],
             intermediate_by_name["fetch_manifest.jsonl"],
             intermediate_by_name["passages.jsonl"],
@@ -2328,7 +2454,7 @@ def _verify_artifacts(
             plan.status is TransformationStatus.REJECTED for plan in plans
         ),
         candidates_after_internal_dedup=len(identities),
-        walltime_ms=0,
+        walltime_ms=ledger.walltime_ms,
     )
     _require(ledger == expected_ledger, "cost ledger does not exactly replay")
 
@@ -2351,7 +2477,7 @@ def _verify_artifacts(
     expected_limitations = (
         "Search evidence is limited to bounded metadata passages and may omit relevant context.",
         "Generated structures have no downstream property validation; target property status is UNKNOWN.",
-        "Artifacts record walltime_ms as zero while enforcing the configured walltime ceiling.",
+        "walltime_ms is a monotonic runtime snapshot; the runner also enforces the deadline through terminal Artifact verification.",
         *selection_limitations,
     )
     expected_next_steps = tuple(
@@ -2517,6 +2643,47 @@ def _verify_artifacts(
             plans=plans,
         )
     )
+    projected_readable_evidence = HermesFixtureProjector._project_readable_evidence(
+        lineage=projected_lineage,
+        passages=passages,
+        evidence_cards=evidence,
+        search_hits=hits,
+    )
+    stage_result_reference = ArtifactReferenceV1(
+        uri=f"artifact://{stage_relative.as_posix()}/stage_result.json",
+        sha256=_sha256(stage_result_bytes),
+        size_bytes=len(stage_result_bytes),
+        media_type="application/json",
+    )
+    closure_artifacts = tuple(
+        sorted(
+            (
+                ArtifactReferenceV1(
+                    uri=pointer.uri,
+                    sha256=pointer.sha256,
+                    size_bytes=pointer.size_bytes,
+                    media_type=pointer.media_type,
+                )
+                for pointer in (
+                    stage.input_snapshot_artifact,
+                    stage.policy_artifact,
+                    *stage.intermediate_artifacts,
+                    stage.cost_ledger_artifact,
+                    stage.report_artifact,
+                    stage.bundle_artifact,
+                )
+            ),
+            key=lambda item: item.uri,
+        )
+    )
+    artifact_closure = ArtifactClosureV1(
+        stage_result=stage_result_reference,
+        artifacts=closure_artifacts,
+        closure_sha256=artifact_closure_sha256(
+            stage_result=stage_result_reference,
+            artifacts=closure_artifacts,
+        ),
+    )
     replayed_gateway_result = GatewayResultRecordV1(
         run_id=run_id,
         report_uri=inspiration_report_uri(run_id),
@@ -2528,6 +2695,7 @@ def _verify_artifacts(
             next_validation_steps=bundle.next_validation_steps,
         ),
         evidence_lineage=projected_lineage,
+        readable_evidence=projected_readable_evidence,
         validation_boundaries=(
             "SEARCH_SUPPORTED records bounded source support, not property validation.",
             "STRUCTURE_VALID records deterministic structural QC only.",
@@ -2544,6 +2712,7 @@ def _verify_artifacts(
             output_tokens=ledger.llm_output_tokens,
             walltime_ms=ledger.walltime_ms,
         ),
+        artifact_closure=artifact_closure,
     )
     _require(
         result == replayed_gateway_result,
@@ -2841,6 +3010,7 @@ def _verify_artifacts(
         approval_kind="requirement_freeze",
         prompt=prompt,
         input_sha256=expectations.execution_manifest_sha256,
+        execution_manifest_sha256=expectations.execution_manifest_sha256,
     )
     interaction_sha256 = _sha256(gateway_canonical_json_bytes(expected_interaction))
     _require(

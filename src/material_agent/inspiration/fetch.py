@@ -28,7 +28,6 @@ from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 from material_agent.inspiration.models import ComponentSnapshotV1
 
-
 _TRANSIENT_HTTP_STATUSES = frozenset({408, 429, 500, 502, 503, 504})
 _REDIRECT_HTTP_STATUSES = frozenset({301, 302, 303, 307, 308})
 _PDF_MEDIA_TYPES = frozenset({"application/pdf", "application/x-pdf"})
@@ -315,13 +314,12 @@ class DocumentFetchTransport(Protocol):
 
 
 class _NoRedirectHandler(HTTPRedirectHandler):
-    def redirect_request(self, req, fp, code, msg, headers, newurl):  # noqa: ANN001
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
         del req, fp, code, msg, headers, newurl
-        return None
 
 
 class _UrllibOpenResponse:
-    def __init__(self, response) -> None:  # noqa: ANN001
+    def __init__(self, response) -> None:
         self._response = response
         self.status_code = int(response.getcode())
         self.headers = response.headers
@@ -348,7 +346,7 @@ class UrllibNoRedirectTransport:
     ) -> OpenFetchResponse:
         request = Request(url, headers=dict(headers), method="GET")
         try:
-            response = self._opener.open(request, timeout=timeout_seconds)  # noqa: S310
+            response = self._opener.open(request, timeout=timeout_seconds)
         except HTTPError as error:
             response = error
         return _UrllibOpenResponse(response)
@@ -511,7 +509,7 @@ class SafeNetworkDocumentFetcher:
                     self.sleeper(retry_delay)
                     total_wait_seconds += retry_delay
                 continue
-            except (TimeoutError, socket.timeout, URLError, OSError) as cause:
+            except (TimeoutError, URLError, OSError) as cause:
                 error = DocumentFetchError(
                     "NETWORK_ERROR",
                     "document endpoint could not be opened within the bounded request",
@@ -712,7 +710,7 @@ class SafeNetworkDocumentFetcher:
             finally:
                 try:
                     response.close()
-                except Exception:  # pragma: no cover - close failure cannot alter evidence
+                except Exception:  # pragma: no cover - close failure cannot alter evidence  # noqa: BLE001, S110
                     pass
 
     def _preflight_url(self, url: str) -> None:
@@ -1052,7 +1050,7 @@ def _read_bounded(
                 http_status=error.http_status,
                 response_bytes=response_bytes,
             ) from error
-        except (TimeoutError, socket.timeout, URLError, OSError) as error:
+        except (TimeoutError, URLError, OSError) as error:
             raise DocumentFetchError(
                 "NETWORK_ERROR",
                 "document response stream failed before completion",

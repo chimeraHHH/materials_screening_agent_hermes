@@ -3,17 +3,22 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import os
 import subprocess
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-from material_agent.ml_screening.alignn_models import AlignnExecutionPlan, AlignnInferenceRequest, AlignnResult, AlignnWorkerRequest, AlignnWorkerResponse
+from material_agent.ml_screening.alignn_models import (
+    AlignnExecutionPlan,
+    AlignnInferenceRequest,
+    AlignnResult,
+    AlignnWorkerRequest,
+    AlignnWorkerResponse,
+)
 from material_agent.ml_screening.alignn_planner import build_alignn_plan
-from material_agent.retrieval.storage import LocalArtifactStore
 from material_agent.ml_screening.worker_protocol import capture_artifact_tree
+from material_agent.retrieval.storage import LocalArtifactStore
 
 
 class AlignnProcessError(RuntimeError):
@@ -42,7 +47,7 @@ class AlignnSubprocessClient:
         command = [str(python), str(script), "--artifact-root", str(root)]
         environment = _worker_environment()
         try:
-            completed = subprocess.run(command, input=request.model_dump_json().encode(), stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=request.wall_time_seconds + 5, shell=False, env=environment, check=False)
+            completed = subprocess.run(command, input=request.model_dump_json().encode(), capture_output=True, timeout=request.wall_time_seconds + 5, shell=False, env=environment, check=False)
         except subprocess.TimeoutExpired as exc:
             raise AlignnProcessError("ALIGNN worker timed out") from exc
         if completed.returncode:

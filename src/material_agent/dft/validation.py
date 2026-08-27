@@ -157,8 +157,8 @@ def validate_real_task(
         message: str,
         remediation_class: str,
         *,
-        observed: str | float | int | bool | None = None,
-        expected: str | float | int | bool | None = None,
+        observed: str | float | bool | None = None,
+        expected: str | float | bool | None = None,
     ) -> None:
         issues.append(
             ValidationIssue(

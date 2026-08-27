@@ -5,7 +5,12 @@ from pathlib import Path
 
 import pytest
 
-from material_agent.ml_screening.alignn_models import AlignnArtifact, AlignnInferenceRequest
+from material_agent.ml_screening.alignn_models import (
+    AlignnArtifact,
+    AlignnInferenceRequest,
+    AlignnProperty,
+    AlignnResult,
+)
 from material_agent.ml_screening.models import ArtifactPointer
 from material_agent.ml_screening.property_execution import PropertyPredictionResult
 from material_agent.ml_screening.property_models import (
@@ -22,7 +27,6 @@ from material_agent.ml_screening.property_pipeline import (
     PostRelaxationPropertyChain,
     PropertyPredictionChainRequest,
 )
-from material_agent.ml_screening.alignn_models import AlignnResult, AlignnProperty
 from material_agent.retrieval.storage import LocalArtifactStore
 
 

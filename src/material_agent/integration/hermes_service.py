@@ -30,6 +30,8 @@ from material_agent.gateway.companion import (
 )
 from material_agent.gateway.mcp_server import GatewayServerSettings
 from material_agent.gateway.models import (
+    ArtifactClosureV1,
+    ArtifactReferenceV1,
     CandidateSummaryV1,
     CompanionTransitionV1,
     CostLedgerProjectionV1,
@@ -41,6 +43,9 @@ from material_agent.gateway.models import (
     InspirationBundleSummaryV1,
     InspirationConstraintsV1,
     InspirationRunRequestV1,
+    ReadableEvidenceSetV1,
+    ReadableEvidenceV1,
+    artifact_closure_sha256,
     inspiration_report_uri,
     inspiration_request_sha256,
 )
@@ -56,6 +61,7 @@ from material_agent.inspiration.models import (
     InspirationStageResultV1,
     ParentCandidateRefV1,
     PassageV1,
+    SearchHitV1,
     TagGraphV1,
     TransformationPlanV1,
 )
@@ -100,8 +106,7 @@ from material_agent.integration.request_compiler import (
     HermesInspirationRequestCompiler,
     HermesRequestCompilationError,
 )
-from material_agent.retrieval.storage import LocalArtifactStore
-
+from material_agent.retrieval.storage import LocalArtifactStore, canonical_json_bytes
 
 HERMES_FIXTURE_GOAL = (
     "Find bounded mechanism-guided structure proposals for a layered "
@@ -221,6 +226,7 @@ def hermes_fixture_policy() -> InspirationPolicyV1:
         policy_id="inspiration-offline-fixture-v1",
         search=SearchBudgetV1(
             max_queries=3,
+            max_physical_requests=gateway_budget.max_search_requests,
             max_direct_queries=1,
             max_bridge_queries=1,
             max_counter_queries=1,
@@ -575,11 +581,330 @@ class HermesInspirationPreparer:
         )
 
 
+def _gateway_artifact_reference(pointer: ArtifactPointerV1) -> ArtifactReferenceV1:
+    if not isinstance(pointer, ArtifactPointerV1):
+        raise CompanionAdapterError("artifact closure contains an invalid pointer")
+    return ArtifactReferenceV1(
+        uri=pointer.uri,
+        sha256=pointer.sha256,
+        size_bytes=pointer.size_bytes,
+        media_type=pointer.media_type,
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class _RecoveredInspirationRunnerResult:
+    """Minimal structural runner result reconstructed from authoritative bytes."""
+
+    stage_result: InspirationStageResultV1
+    stage_result_artifact: ArtifactPointerV1
+    bundle: InspirationBundleV1
+
+
 class HermesFixtureProjector:
     """Re-read authoritative runner artifacts and build the bounded Gateway DTO."""
 
     def __init__(self, store: LocalArtifactStore) -> None:
         self.store = store
+
+    def recover_or_bind_completed(
+        self,
+        *,
+        run_id: str,
+        request: InspirationRunRequestV1,
+        prepared: PreparedInspirationRun,
+        execution_manifest_sha256: str,
+    ) -> InspirationRunnerResultLike | None:
+        """Recover one exact completed run, or bind a pristine execution once.
+
+        The intent record lives outside the scientific stage closure and is
+        written with exclusive-create semantics before any runner I/O.  It
+        prevents a completed stage produced by an older or different manifest
+        from being silently promoted after a Gateway commit crash.
+        """
+
+        expected_binding = {
+            "schema_version": "materials-inspiration-recovery-binding-v1",
+            "run_id": run_id,
+            "project_id": prepared.inspiration_input.project_id,
+            "request_id": prepared.inspiration_input.request_id,
+            "gateway_request_sha256": inspiration_request_sha256(request),
+            "execution_manifest_sha256": execution_manifest_sha256,
+            "stage_result_uri": (
+                f"artifact://stages/inspiration/{run_id}/stage_result.json"
+            ),
+        }
+        binding_path = self._recovery_binding_path(run_id)
+        stage_root = self._stage_root(run_id)
+
+        if binding_path.exists():
+            self._verify_recovery_binding(binding_path, expected_binding)
+            return self._recover_bound_completed(
+                run_id=run_id,
+                prepared=prepared,
+                expected_stage_result_uri=expected_binding["stage_result_uri"],
+            )
+        if binding_path.is_symlink():
+            raise CompanionAdapterError("completed-run recovery binding is unsafe")
+        if self._stage_has_any_state(stage_root):
+            raise CompanionAdapterError(
+                "unbound or partial inspiration stage cannot be recovered"
+            )
+
+        binding_path.parent.mkdir(parents=True, exist_ok=True)
+        if binding_path.parent.is_symlink():
+            raise CompanionAdapterError("completed-run recovery directory is unsafe")
+        payload = canonical_json_bytes(expected_binding)
+        try:
+            descriptor = os.open(
+                binding_path,
+                os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+                0o600,
+            )
+        except FileExistsError:
+            self._verify_recovery_binding(binding_path, expected_binding)
+            return self._recover_bound_completed(
+                run_id=run_id,
+                prepared=prepared,
+                expected_stage_result_uri=expected_binding["stage_result_uri"],
+            )
+        except OSError as exc:
+            raise CompanionAdapterError(
+                "completed-run recovery binding could not be persisted"
+            ) from exc
+        try:
+            with os.fdopen(descriptor, "wb") as handle:
+                handle.write(payload)
+                handle.flush()
+                os.fsync(handle.fileno())
+        except OSError as exc:
+            raise CompanionAdapterError(
+                "completed-run recovery binding could not be persisted"
+            ) from exc
+        try:
+            directory_descriptor = os.open(binding_path.parent, os.O_RDONLY)
+            try:
+                os.fsync(directory_descriptor)
+            finally:
+                os.close(directory_descriptor)
+        except OSError as exc:
+            raise CompanionAdapterError(
+                "completed-run recovery binding was not durably persisted"
+            ) from exc
+        return None
+
+    def _recover_bound_completed(
+        self,
+        *,
+        run_id: str,
+        prepared: PreparedInspirationRun,
+        expected_stage_result_uri: str,
+    ) -> InspirationRunnerResultLike:
+        if not self.store.exists(expected_stage_result_uri):
+            raise CompanionAdapterError(
+                "bound inspiration execution is incomplete and cannot be retried"
+            )
+        try:
+            stage_payload = self.store.read_bytes(expected_stage_result_uri)
+            stage = InspirationStageResultV1.model_validate_json(stage_payload)
+            if stage_payload != canonical_json_bytes(stage.model_dump(mode="json")):
+                raise ValueError("stage result is not canonical JSON")
+            inspected = self.store.inspect(
+                expected_stage_result_uri,
+                media_type="application/json",
+            )
+            stage_pointer = ArtifactPointerV1.model_validate(
+                {
+                    "uri": inspected.uri,
+                    "sha256": inspected.sha256,
+                    "size_bytes": inspected.size_bytes,
+                    "media_type": inspected.media_type,
+                }
+            )
+            bundle = InspirationBundleV1.model_validate_json(
+                self.store.read_bytes(stage.bundle_artifact.uri)
+            )
+        except (FileNotFoundError, OSError, RuntimeError, TypeError, ValueError) as exc:
+            raise CompanionAdapterError(
+                "bound inspiration stage result is invalid or incomplete"
+            ) from exc
+
+        recovered = _RecoveredInspirationRunnerResult(
+            stage_result=stage,
+            stage_result_artifact=stage_pointer,
+            bundle=bundle,
+        )
+        verified_stage = self._verified_stage_result(run_id, recovered)
+        verified_bundle = self._verified_bundle(verified_stage, bundle)
+        inspiration_input = self._read_strict_artifact(
+            verified_stage.input_snapshot_artifact,
+            InspirationInputV1,
+            label="input snapshot",
+        )
+        effective_policy = self._read_strict_artifact(
+            verified_stage.policy_artifact,
+            InspirationPolicyV1,
+            label="effective policy",
+        )
+        if inspiration_input != prepared.inspiration_input:
+            raise CompanionAdapterError(
+                "completed runner input differs from the approved manifest"
+            )
+        if effective_policy != prepared.policy:
+            raise CompanionAdapterError(
+                "completed runner policy differs from the approved manifest"
+            )
+        if (
+            verified_stage.project_id != prepared.inspiration_input.project_id
+            or verified_stage.request_id != prepared.inspiration_input.request_id
+            or verified_stage.run_id != run_id
+        ):
+            raise CompanionAdapterError(
+                "completed runner result has a different run/request/project identity"
+            )
+        if (
+            verified_bundle.run_id != run_id
+            or verified_bundle.request_id != prepared.inspiration_input.request_id
+            or verified_bundle.outcome != verified_stage.outcome
+        ):
+            raise CompanionAdapterError(
+                "completed bundle differs from its bound stage identity"
+            )
+        if verified_bundle.lineage_artifacts != verified_stage.intermediate_artifacts:
+            raise CompanionAdapterError(
+                "completed bundle lineage differs from the stage closure"
+            )
+        if verified_stage.report_artifact.uri != inspiration_report_uri(run_id):
+            raise CompanionAdapterError("completed report URI is not run-bound")
+        try:
+            self.store.read_bytes(verified_stage.report_artifact.uri).decode("utf-8")
+        except (FileNotFoundError, OSError, UnicodeDecodeError) as exc:
+            raise CompanionAdapterError(
+                "completed report is unavailable or not UTF-8"
+            ) from exc
+        self._verify_stage_directory_closure(run_id, verified_stage, stage_pointer)
+        return recovered
+
+    def _read_strict_artifact(
+        self,
+        pointer: ArtifactPointerV1,
+        model: type[Any],
+        *,
+        label: str,
+    ) -> Any:
+        self._verify_pointer(pointer)
+        try:
+            return model.model_validate_json(self.store.read_bytes(pointer.uri))
+        except (FileNotFoundError, OSError, TypeError, ValueError) as exc:
+            raise CompanionAdapterError(
+                f"completed runner {label} is not a valid strict DTO"
+            ) from exc
+
+    def _verify_stage_directory_closure(
+        self,
+        run_id: str,
+        stage: InspirationStageResultV1,
+        stage_pointer: ArtifactPointerV1,
+    ) -> None:
+        stage_root = self._stage_root(run_id)
+        stage_relative = Path("stages", "inspiration", run_id)
+        declared_pointers = (
+            stage_pointer,
+            stage.input_snapshot_artifact,
+            stage.policy_artifact,
+            stage.bundle_artifact,
+            stage.report_artifact,
+            stage.cost_ledger_artifact,
+            *stage.intermediate_artifacts,
+        )
+        declared_files: set[Path] = set()
+        declared_directories = {stage_relative}
+        for pointer in declared_pointers:
+            relative = Path(pointer.uri.removeprefix("artifact://"))
+            if (
+                not pointer.uri.startswith("artifact://")
+                or relative == stage_relative
+                or stage_relative not in (relative, *relative.parents)
+            ):
+                raise CompanionAdapterError(
+                    "completed stage closure contains an out-of-run artifact"
+                )
+            declared_files.add(relative)
+            parent = relative.parent
+            while parent != stage_relative:
+                declared_directories.add(parent)
+                parent = parent.parent
+
+        actual_files: set[Path] = set()
+        actual_directories = {stage_relative}
+        try:
+            for path in stage_root.rglob("*"):
+                if path.is_symlink():
+                    raise CompanionAdapterError(
+                        "completed stage closure contains a symbolic link"
+                    )
+                relative = path.relative_to(self.store.root)
+                if path.is_file():
+                    actual_files.add(relative)
+                elif path.is_dir():
+                    actual_directories.add(relative)
+                else:
+                    raise CompanionAdapterError(
+                        "completed stage closure contains a non-regular entry"
+                    )
+        except OSError as exc:
+            raise CompanionAdapterError(
+                "completed stage closure could not be enumerated"
+            ) from exc
+        if actual_files != declared_files or actual_directories != declared_directories:
+            raise CompanionAdapterError(
+                "completed stage directory differs from its declared closure"
+            )
+
+    def _verify_recovery_binding(
+        self,
+        binding_path: Path,
+        expected_binding: dict[str, str],
+    ) -> None:
+        if binding_path.is_symlink() or not binding_path.is_file():
+            raise CompanionAdapterError("completed-run recovery binding is unsafe")
+        try:
+            observed = json.loads(binding_path.read_bytes())
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise CompanionAdapterError(
+                "completed-run recovery binding is invalid"
+            ) from exc
+        if observed != expected_binding:
+            raise CompanionAdapterError(
+                "completed-run recovery binding differs from the approved manifest"
+            )
+
+    def _recovery_binding_path(self, run_id: str) -> Path:
+        root = self.store.root
+        path = root / ".gateway" / "inspiration-recovery" / f"{run_id}.json"
+        if path.parent.parent.is_symlink() or path.parent.is_symlink():
+            raise CompanionAdapterError("completed-run recovery path is unsafe")
+        return path
+
+    def _stage_root(self, run_id: str) -> Path:
+        path = self.store.root / "stages" / "inspiration" / run_id
+        if path.is_symlink():
+            raise CompanionAdapterError("inspiration stage path is unsafe")
+        return path
+
+    @staticmethod
+    def _stage_has_any_state(stage_root: Path) -> bool:
+        if not stage_root.exists():
+            return False
+        if stage_root.is_symlink() or not stage_root.is_dir():
+            raise CompanionAdapterError("inspiration stage path is unsafe")
+        try:
+            next(stage_root.iterdir())
+        except StopIteration:
+            return True
+        except OSError as exc:
+            raise CompanionAdapterError("inspiration stage state is unreadable") from exc
+        return True
 
     def project(
         self,
@@ -607,6 +932,12 @@ class HermesFixtureProjector:
             filename="passages.jsonl",
             model=PassageV1,
         )
+        search_hits = self._read_jsonl(
+            stage,
+            run_id=run_id,
+            filename="search_hits.jsonl",
+            model=SearchHitV1,
+        )
         evidence_cards = self._read_jsonl(
             stage,
             run_id=run_id,
@@ -633,11 +964,44 @@ class HermesFixtureProjector:
             bridges=bridges,
             plans=plans,
         )
+        readable_evidence = self._project_readable_evidence(
+            lineage=lineage,
+            passages=passages,
+            evidence_cards=evidence_cards,
+            search_hits=search_hits,
+        )
         fetched_document_count = self._count_fetched_documents(
             stage,
             run_id=run_id,
         )
         ledger = bundle.cost_ledger
+        closure_artifacts = tuple(
+            sorted(
+                (
+                    _gateway_artifact_reference(pointer)
+                    for pointer in (
+                        stage.input_snapshot_artifact,
+                        stage.policy_artifact,
+                        *stage.intermediate_artifacts,
+                        stage.cost_ledger_artifact,
+                        stage.report_artifact,
+                        stage.bundle_artifact,
+                    )
+                ),
+                key=lambda item: item.uri,
+            )
+        )
+        stage_result_reference = _gateway_artifact_reference(
+            runner_result.stage_result_artifact
+        )
+        closure = ArtifactClosureV1(
+            stage_result=stage_result_reference,
+            artifacts=closure_artifacts,
+            closure_sha256=artifact_closure_sha256(
+                stage_result=stage_result_reference,
+                artifacts=closure_artifacts,
+            ),
+        )
         result = GatewayResultRecordV1(
             run_id=run_id,
             report_uri=inspiration_report_uri(run_id),
@@ -649,6 +1013,7 @@ class HermesFixtureProjector:
                 next_validation_steps=bundle.next_validation_steps,
             ),
             evidence_lineage=lineage,
+            readable_evidence=readable_evidence,
             validation_boundaries=(
                 "SEARCH_SUPPORTED records bounded source support, not property validation.",
                 "STRUCTURE_VALID records deterministic structural QC only.",
@@ -665,6 +1030,7 @@ class HermesFixtureProjector:
                 output_tokens=ledger.llm_output_tokens,
                 walltime_ms=ledger.walltime_ms,
             ),
+            artifact_closure=closure,
         )
         warnings = self._bounded_warnings(stage.warnings)
         return ProjectedInspirationResult(
@@ -786,7 +1152,7 @@ class HermesFixtureProjector:
             for line in lines:
                 record = json.loads(line)
                 if not isinstance(record, dict):
-                    raise ValueError("fetch manifest row must be an object")
+                    raise ValueError("fetch manifest row must be an object")  # noqa: TRY004
                 if record.get("schema_version") != "inspiration-fetch-manifest-v1":
                     raise ValueError("unsupported fetch manifest schema")
                 document_id = record.get("document_id")
@@ -945,6 +1311,71 @@ class HermesFixtureProjector:
         return tuple(summaries), lineage
 
     @staticmethod
+    def _project_readable_evidence(
+        *,
+        lineage: tuple[EvidenceReferenceV1, ...],
+        passages: tuple[PassageV1, ...],
+        evidence_cards: tuple[EvidenceCardV1, ...],
+        search_hits: tuple[SearchHitV1, ...],
+    ) -> ReadableEvidenceSetV1:
+        """Project selected lineage to exact, bounded, human-readable excerpts."""
+
+        passage_index = {item.passage_id: item for item in passages}
+        hit_index = {item.hit_id: item for item in search_hits}
+        cards_by_passage: dict[str, list[EvidenceCardV1]] = defaultdict(list)
+        for card in evidence_cards:
+            for passage_id in card.passage_ids:
+                cards_by_passage[passage_id].append(card)
+        selected_passage_ids = tuple(
+            sorted(
+                {
+                    passage_id
+                    for reference in lineage
+                    for passage_id in reference.passage_ids
+                }
+            )
+        )
+        items: list[ReadableEvidenceV1] = []
+        for passage_id in selected_passage_ids[:32]:
+            try:
+                passage = passage_index[passage_id]
+                hit = hit_index[passage.hit_id]
+                cards = cards_by_passage[passage_id]
+            except KeyError as exc:
+                raise CompanionAdapterError(
+                    "readable evidence has an orphaned source reference"
+                ) from exc
+            if not cards:
+                raise CompanionAdapterError(
+                    "readable evidence passage has no evidence card"
+                )
+            excerpt = passage.text[:1_000]
+            items.append(
+                ReadableEvidenceV1(
+                    document_id=passage.document_id,
+                    passage_id=passage.passage_id,
+                    source_title=hit.title,
+                    published_year=hit.published_year,
+                    doi=hit.doi,
+                    canonical_url=hit.canonical_url,
+                    relations=tuple(
+                        sorted({card.relation.value for card in cards})
+                    ),
+                    claim_summaries=tuple(
+                        sorted({card.claim_text for card in cards})
+                    ),
+                    excerpt=excerpt,
+                    excerpt_truncated=len(excerpt) < len(passage.text),
+                    source_passage_sha256=passage.normalized_text_sha256,
+                )
+            )
+        return ReadableEvidenceSetV1(
+            items=tuple(items),
+            total_available=len(selected_passage_ids),
+            truncated=len(selected_passage_ids) > len(items),
+        )
+
+    @staticmethod
     def _bounded_warnings(warnings: tuple[str, ...]) -> tuple[str, ...]:
         if len(warnings) <= 32:
             return warnings
@@ -1036,15 +1467,11 @@ class _TrustedInspirationCompanion(OfflineInspirationCompanionAdapter):
 
 
 class _ApprovalBoundInspirationRunner(InspirationRunner):
-    """Expose every injected execution component to the approval manifest."""
+    """Production marker for the fully approval-bound inspiration runner."""
 
     @property
     def execution_components(self):
-        return (
-            *super().execution_components,
-            self.search_adapter.component,
-            self.vectorizer,
-        )
+        return super().execution_components
 
 
 def resolve_hermes_project_root(
@@ -1248,13 +1675,16 @@ def create_hermes_inspiration_service(
         search_adapter=search_adapter,
         compiler=compiler,
     )
-    runner = _ApprovalBoundInspirationRunner(
-        store=store,
-        search_adapter=search_adapter,
-        transformation_engine=PymatgenTransformationEngine(
+    runner_kwargs: dict[str, Any] = {
+        "store": store,
+        "search_adapter": search_adapter,
+        "transformation_engine": PymatgenTransformationEngine(
             parent_catalog=parent_catalog
         ),
-    )
+    }
+    if monotonic_clock is not None:
+        runner_kwargs["monotonic_clock"] = monotonic_clock
+    runner = _ApprovalBoundInspirationRunner(**runner_kwargs)
     companion = _TrustedInspirationCompanion(
         runner=runner,
         preparer=preparer,

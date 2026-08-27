@@ -10,7 +10,6 @@ property claims.
 from __future__ import annotations
 
 import hashlib
-import json
 import math
 import warnings
 from dataclasses import dataclass
@@ -55,7 +54,6 @@ from material_agent.retrieval.structures import (
     calculate_dimensionality,
     process_structure,
 )
-
 
 PARENT_CATALOG_SCHEMA_VERSION = "inspiration-parent-catalog-v1"
 FLAT_BAND_PARENT_CATALOG_ID = "flat-band-parent-catalog-v1"
@@ -755,9 +753,9 @@ __all__ = [
     "FLAT_BAND_PARENT_CATALOG_ENTRY_COUNT",
     "FLAT_BAND_PARENT_CATALOG_EXPECTED_UNIQUE_OUTPUTS",
     "FLAT_BAND_PARENT_CATALOG_ID",
+    "PARENT_CATALOG_SCHEMA_VERSION",
     "LoadedParentCatalog",
     "LoadedParentCatalogEntry",
-    "PARENT_CATALOG_SCHEMA_VERSION",
     "ParentCatalogArtifactV1",
     "ParentCatalogEntryV1",
     "ParentCatalogIntegrityError",

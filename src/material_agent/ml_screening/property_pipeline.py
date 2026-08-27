@@ -16,7 +16,10 @@ from typing import Literal
 from pydantic import Field, model_validator
 
 from material_agent.ml_screening.alignn_client import AlignnFlowRunner
-from material_agent.ml_screening.alignn_models import AlignnInferenceRequest, AlignnResult
+from material_agent.ml_screening.alignn_models import (
+    AlignnInferenceRequest,
+    AlignnResult,
+)
 from material_agent.ml_screening.models import ArtifactPointer, StrictFrozenModel
 from material_agent.ml_screening.property_client import PropertyPredictionFlowRunner
 from material_agent.ml_screening.property_execution import PropertyPredictionResult
@@ -26,7 +29,6 @@ from material_agent.ml_screening.property_models import (
     PropertyPredictionRequest,
 )
 from material_agent.retrieval.storage import LocalArtifactStore
-
 
 PROPERTY_CHAIN_VERSION = "agent02-post-relaxation-property-chain-v1"
 
@@ -43,7 +45,7 @@ class PropertyPredictionChainRequest(StrictFrozenModel):
     alignn_request: AlignnInferenceRequest
 
     @model_validator(mode="after")
-    def validate_post_relaxation_inputs(self) -> "PropertyPredictionChainRequest":
+    def validate_post_relaxation_inputs(self) -> PropertyPredictionChainRequest:
         if (self.project_id, self.run_id, self.candidate_id) != (
             self.ct_uae_request.project_id,
             self.ct_uae_request.run_id,
@@ -134,11 +136,11 @@ class PostRelaxationPropertyChain:
         # and completion ledgers.  A failure in one must not suppress the other.
         try:
             ct_result = self.ct_uae_flow.execute(request.ct_uae_request)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             errors.append(f"ct-UAE chain step failed: {type(exc).__name__}: {exc}")
         try:
             alignn_result = self.alignn_flow.execute(request.alignn_request)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             errors.append(f"ALIGNN chain step failed: {type(exc).__name__}: {exc}")
 
         successful = sum(

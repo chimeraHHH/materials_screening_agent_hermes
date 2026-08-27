@@ -9,7 +9,6 @@ from pydantic import Field, model_validator
 
 from material_agent.inspiration.models import Identifier, Score, ShortText, StrictModel
 
-
 INSPIRATION_POLICY_VERSION = "inspiration-policy-v1"
 
 
@@ -20,11 +19,14 @@ class SearchExecutionMode(StrEnum):
 
 class SearchBudgetV1(StrictModel):
     max_queries: Annotated[int, Field(ge=1, le=64)] = 12
+    max_physical_requests: Annotated[int, Field(ge=1, le=64)] = 24
     max_direct_queries: Annotated[int, Field(ge=0, le=64)] = 6
     max_bridge_queries: Annotated[int, Field(ge=0, le=64)] = 4
     max_counter_queries: Annotated[int, Field(ge=0, le=64)] = 2
     max_raw_hits: Annotated[int, Field(ge=1, le=10_000)] = 120
     max_unique_documents: Annotated[int, Field(ge=1, le=2_000)] = 60
+    publication_year_from: Annotated[int, Field(ge=1600, le=2200)] | None = None
+    publication_year_to: Annotated[int, Field(ge=1600, le=2200)] | None = None
 
     @model_validator(mode="after")
     def validate_query_budget(self) -> SearchBudgetV1:
@@ -35,8 +37,16 @@ class SearchBudgetV1(StrictModel):
         )
         if allocated > self.max_queries:
             raise ValueError("query-class allocation exceeds max_queries")
+        if self.max_physical_requests < self.max_queries:
+            raise ValueError("physical request budget cannot be below max_queries")
         if self.max_unique_documents > self.max_raw_hits:
             raise ValueError("unique-document budget exceeds raw-hit budget")
+        if (
+            self.publication_year_from is not None
+            and self.publication_year_to is not None
+            and self.publication_year_from > self.publication_year_to
+        ):
+            raise ValueError("publication_year_from exceeds publication_year_to")
         return self
 
 

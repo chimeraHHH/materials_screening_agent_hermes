@@ -10,7 +10,6 @@ from material_agent.orchestrator.graph import OrchestratorGraph
 from material_agent.orchestrator.models import RunStatus
 from material_agent.orchestrator.runtime import OrchestratorRuntime
 
-
 ACCEPTANCE_REQUEST = (
     "从 Materials Project 中寻找同时包含 Si 和 O、带隙为 0.5–1.0 eV、"
     "energy above hull 不超过 0.05 eV/atom 的非金属材料。"

@@ -7,8 +7,9 @@ import hashlib
 import json
 import os
 import tempfile
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 from material_agent.retrieval.models import ArtifactRef
 
@@ -71,13 +72,28 @@ class LocalArtifactStore:
                 handle.write(payload)
                 handle.flush()
                 os.fsync(handle.fileno())
-            os.replace(temporary_name, destination)
-        except Exception:
+            if immutable:
+                try:
+                    # Same-filesystem hard linking is an atomic
+                    # create-if-absent operation.  It closes the race where two
+                    # worker processes both pass the existence check and then
+                    # replace one immutable run artifact with different bytes.
+                    os.link(temporary_name, destination)
+                except FileExistsError:
+                    existing = destination.read_bytes()
+                    if hashlib.sha256(existing).hexdigest() != digest:
+                        raise ArtifactConflictError(
+                            "immutable artifact already exists with different "
+                            f"content: artifact://{relative_path}"
+                        ) from None
+            else:
+                os.replace(temporary_name, destination)
+            self._fsync_directory(destination.parent)
+        finally:
             try:
                 os.unlink(temporary_name)
             except FileNotFoundError:
                 pass
-            raise
 
         return ArtifactRef(
             uri=f"artifact://{relative_path}",
@@ -85,6 +101,17 @@ class LocalArtifactStore:
             size_bytes=len(payload),
             media_type=media_type,
         )
+
+    @staticmethod
+    def _fsync_directory(directory: Path) -> None:
+        """Persist a published directory entry before returning success."""
+
+        flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+        descriptor = os.open(directory, flags)
+        try:
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
 
     def write_bytes(
         self,

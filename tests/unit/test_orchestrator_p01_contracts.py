@@ -7,17 +7,17 @@ import pytest
 from pydantic import ValidationError
 
 from material_agent.orchestrator.models import (
-    ControlOutcomeType,
-    ControlStageOutcome,
     ORCHESTRATOR_CONTRACT_VERSION,
     ORCHESTRATOR_REPORT_VERSION,
     ORCHESTRATOR_STAGE_PLAN_VERSION,
+    STAGE_TO_AGENT,
+    ControlOutcomeType,
+    ControlStageOutcome,
     PreparedStagePlan,
     StageCapability,
-    StageInputValidation,
     StageId,
+    StageInputValidation,
     StageStatus,
-    STAGE_TO_AGENT,
     effective_stage_approval,
     operation_input_sha256_for,
 )

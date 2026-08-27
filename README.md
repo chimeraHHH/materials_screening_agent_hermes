@@ -1,16 +1,37 @@
 # Material Screening Agent
 
+## Full research report
+
+The complete report, **Materials Research Agent: A Hermes-Based Agentic System
+for Evidence-Grounded Materials Hypothesis Generation and Structure
+Exploration**, is available as a
+[PDF](docs/reports/materials-research-agent-full-report/materials-research-agent-full-report.pdf).
+The compile-ready [LaTeX source package](docs/reports/materials-research-agent-full-report/source)
+includes the manuscript sections, bibliography, final figures, and conceptual-figure prompts.
+
+- **Author:** Yiming Hua, Wuhan University
+- **Contact:** cnhym@foxmail.com
+
 This repository implements the durable Orchestrator P0.2 control plane,
 the deterministic single-source public-database retrieval stage, and explicitly
 test-only mock control adapters for the downstream stages described in
 `plans/subagents/material-screening-orchestrator-plan.md` and
 `plans/subagents/material-screening-agent01-plan.md`. It now also contains a
 single-user local Hermes inspiration companion: metadata-first evidence,
-cross-domain mechanism bridges, one deterministic structure operator, run-local
+cross-domain mechanism bridges, a registry of deterministic structure operators, run-local
 deduplication/diversity, and a four-tool persistent MCP Gateway.
 
-The execution plan always contains the ordered
-`retrieval → ml → dft → many_body` routes. Agent 01 is the only default
+The 2026-08-11 opt-in extension adds an Agent01-to-Inspiration LangGraph
+runtime, year-bounded Crossref/OpenAlex search, a SHA-pinned local semantic
+embedding provider, a one-call DeepSeek grounded reranker, a controlled
+Hermes-native evolution profile, and a fail-closed soft-chemistry downstream
+bridge. None of these opt-in paths changes the default four-stage route or
+promotes a hypothesis to scientific evidence.
+
+The historical four-stage controller still understands the ordered
+`retrieval → ml → dft → many_body` route, but the active Hermes scientific
+validation contract is fixed to `ML_ONLY`: it never schedules DFT, SOC-DFT,
+Wannier, or runtime OpenMX electronic preprocessing. Agent 01 is the only default
 production scientific runner. Agent02 has both the P0.2 Fake path and an
 opt-in independent CHGNet worker. It is registered as a production capability
 only when a validated dedicated Worker executable is explicitly configured;
@@ -70,6 +91,244 @@ until a trusted local operator records a one-time grant bound to the request,
 complete interaction, frozen execution manifest, and exact action. See
 [`integrations/hermes/README.md`](integrations/hermes/README.md) for installation,
 approval, crash recovery, and profile commands.
+标准的一键部署与启动步骤见
+[Materials Inspiration 标准部署与启动](docs/materials-inspiration-startup.md)。
+
+The source-controlled production profile pins the durable queued Gateway
+factory. A successful authorized `materials_run_act` atomically consumes the
+grant, enqueues the job, and returns `RUNNING`; an independently supervised
+worker performs the bounded run and Hermes polls `materials_run_get` until a
+terminal state. The synchronous public factory remains a compatibility/testing
+entry point and is not the default profile.
+
+The separate `materials-inspiration-evolution` profile enables Hermes's native
+memory, Skill management, background review, curator, and flat delegation. It
+is read-only with respect to materials runs: only `materials_run_get` and
+`materials_result_get` are exposed, all learning writes require human approval,
+and delegated children inherit no Materials MCP tools. See
+[ADR 0003](docs/adr/0003-hermes-controlled-evolution-profile.md).
+
+### Generic DeepSeek materials research graph
+
+The independent `materials-inspiration-research` profile exposes only
+`materials_generic_research_run`. Unlike the compatibility-only
+`TIS2_TO_TISE2_NARROW_BAND_V1` route, this entry accepts a complete natural
+language materials goal and runs nine bounded DeepSeek V4-Pro roles:
+requirements, query planning, native-search discovery, authoritative literature
+resolution, federated database scouting, mechanism/chemistry, skeptical constraint
+auditing, hypothesis reasoning, and synthesis. Each role uses enabled `high` or `max` thinking and a
+strict multi-round function-tool loop. Provider `reasoning_content` is returned
+only inside the same in-memory tool conversation and is never written to an
+Artifact, SQLite, log, or result.
+
+DeepSeek-native web search returns only `UNRESOLVED_LEAD`. Crossref, OpenAlex,
+Semantic Scholar, arXiv, and OSTI metadata becomes evidence only after the accepted adapter has
+persisted exact raw response bytes and assigned a stable evidence ID. Each
+DOI/corpus anchor can additionally traverse Semantic Scholar recommendations,
+references, and citations with OpenCitations Index/Meta cross-resolution.
+Unpaywall resolves lawful OA locations; a loopback GROBID service (or an
+explicitly pinned local Docling bundle) can turn retrieved PDFs into located
+section/page/sentence evidence and report figures without weakening the source boundary.
+Each
+database query is server-side fanned out to C2DB, Materials Cloud MC3D, public
+NOMAD, and Materials Project when its credential is available; the model cannot
+silently choose only one source. Per-source versions, query fingerprints, empty results, failures,
+credential unavailability, raw records, canonical CIFs, licenses, and local
+filter counts are retained. Canonical structure IDs followed by a strict
+StructureMatcher merge equivalent cross-source records without discarding their
+provenance. Local dimensionality and transition-metal periodic-connectivity
+diagnostics are then applied. These databases do not establish the requested
+flat-band width, Fermi ordering, PDOS orbital weight, or oxidation assignment in
+this path, so those evidence fields remain `UNKNOWN`.
+The database pool is bounded separately from the at-most-eight hypotheses sent
+to deep review. The skeptical evidence role emits only evidence-backed exceptions;
+deterministic code expands the complete evidence matrix with `UNKNOWN` defaults
+and next-verification actions. A separate DeepSeek hypothesis reasoner must then
+predict `LIKELY_PASS` or `LIKELY_FAIL` for every candidate × constraint pair,
+including probability, scientific rationale, physical/chemical basis, assumptions,
+and a decisive falsifier. Synthesis returns a concrete `REASONED_HYPOTHESIS`
+scientific conclusion while `property_verification_complete=false` keeps the
+evidence boundary explicit. Strict-tool schemas are
+projected onto DeepSeek's supported subset and then revalidated against the full
+local Pydantic model. Transport retries, final-JSON repair, physical-search
+budgets, and schema-hashed role/tool-snapshot checkpoints are all receipt-audited.
+If the requirements, query-planning, or native-lead role fails a deterministic
+reference/coverage gate, a separate bounded contract-repair role gets at most
+two attempts to correct only that contract defect. The original and repaired
+hashes, validation error, model receipt, and repair checkpoint are retained;
+the same validator is rerun and the graph still fails closed after two invalid
+repairs. The repair role cannot relax a threshold or manufacture evidence.
+
+The mechanism/chemistry role cannot turn a prose operation into a structure.
+For a concrete idea it must call `compile_reasoned_operation`. DeepSeek uses
+native scientific reasoning to propose a material-specific substitution and
+target valence, strain tensor, vacancy element/fraction,
+intercalation, layer slide, carrier-density scan, electrostatic field,
+magnetic-proximity pair, or two-parent vdW heterostructure.
+The nine registered operator families freeze strict parameter models, priors,
+validators, and run-local scientific rationale. Carrier/gate operations create
+calculation-condition plans, while interface operations hash-bind two resolved
+parent CIFs and require a specialized commensurate-interface builder; neither
+class fabricates an output CIF or promotes a target property.
+Every proposal also carries mechanism, chemistry-prior rationale, and a
+falsifier. Local deterministic
+code freezes that proposal as a run-local hash-pinned operator spec and derives
+equivalence classes, layer partitions, and the vdW-gap-centre coordinate from the
+parent CIF; DeepSeek may propose a bounded in-plane intercalation position, which
+is independently geometry-validated. The global v2 registry contains execution
+kernels and invariants, not a fixed list of scientific candidates. Unvalidated
+coordinates and code are never tool parameters. Generic research keeps every route `PLANNED`; execution has
+separate `PASS`, `REQUIRES_REVIEW`, and `REJECT` outcomes and makes no property claim.
+
+The generic research output can now enter the versioned
+`scientific-validation-loop-v1` handoff instead of the compatibility-only
+single-candidate S-to-Se path. Every ranked research candidate is projected to
+`HypothesisCandidate`; any registered structural or condition execution is
+projected independently to `OperatorResult`. A separate max-thinking DeepSeek
+call inspects the complete bounded runtime capability snapshot and proposes the
+candidate-specific `ModelTaskPlan` contents: models/calculation engines,
+observables, prerequisites, evidence target, rationale and falsifier. Local
+code never adds a scientific task. It only audits structure lineage,
+applicability, backend/weight health, benchmark/evidence ceiling and aggregate
+cost, retaining each rejected proposal with explicit reason codes.
+
+Hash-bound execution receipts become `ScientificEvidence` only within the
+audited task ceiling. The evidence artifact is written before an append-only
+`MODEL_VALIDATION` event enters research memory. A second DeepSeek reasoning
+call may then propose `RETAIN`, `ELIMINATE`, a fully typed
+`CompileReasonedOperationArgsV3` revision, or a higher-evidence route. The local
+feedback audit requires cited evidence already present in memory; elimination
+requires a real L2-or-higher contradiction, so mock, fixture, failed,
+unremembered or `NONE` evidence cannot remove a candidate. The older
+`materials_research_pipeline_run` remains a compatibility regression entry and
+is not the contract used by this generic loop.
+
+Every completed generic run also produces a deterministic Markdown sidecar
+report. It embeds one labelled CIF three-view image per federated candidate and
+a source-resolved comparison of formation energy, energy above hull, and band
+gap. C2DB candidates are enriched from the official GPAW/PBE Plotly band arrays;
+Materials Project candidates use the official line-bandstructure object when it
+is available. The numeric band payload is stored compressed beside the image.
+Missing values and failed endpoints remain visibly `NOT_AVAILABLE` or
+`FETCH_FAILED`; the reporter never synthesizes a band curve or substitutes a
+model prediction for database data. The result exposes `report_artifact_uri`
+and `report_manifest_artifact_uri` in addition to the canonical JSON result.
+
+Validate the new profile and real public evidence boundaries with:
+
+```bash
+.venv/bin/python integrations/hermes/scripts/verify_research_bundle.py
+.venv/bin/python -m pytest -q --run-live-crossref \
+  tests/live/test_live_crossref_inspiration.py \
+  tests/live/test_live_crossref_inspiration_runner.py
+```
+
+The opt-in DeepSeek release Gate needs the research-only key in
+`MATERIAL_AGENT_LLM_API_KEY`, `DEEPSEEK_API_KEY`, or the configured macOS
+Keychain service. It exercises max-thinking multi-round strict tools and the
+native server-side web-search capability:
+
+```bash
+.venv/bin/python -m pytest -q --run-live-llm \
+  tests/live/test_live_deepseek_research_agent.py \
+  tests/live/test_live_generic_research_pipeline.py
+```
+
+The evidence/inference split, failed oversized-schema attempt, compact recovery,
+real candidate predictions, and MCP audit are recorded in the
+[reasoned-hypothesis release run](docs/runs/2026-08-19-hermes-generic-reasoned-hypothesis.md).
+The database fan-out, failure isolation, provenance merge, checkpoint replay,
+and public C2DB/NOMAD smoke are recorded in the
+[federated database release](docs/runs/2026-08-19-hermes-federated-database-layer.md).
+The multi-candidate handoff, real DeepSeek route receipt, deterministic model
+blocking and memory-feedback control test are recorded in the
+[prompt1 scientific-validation-loop report](docs/runs/2026-08-23-prompt1-scientific-validation-loop.md).
+
+The generic MCP call is currently synchronous. Role checkpoints make exact
+replay and recovery bounded, but a durable asynchronous submit/status API and
+fine-grained UI progress projection remain production-stage work.
+
+### Opt-in Agent01 → Inspiration LangGraph runtime
+
+`InspirationCompositeRuntimeV2` resolves an existing Agent01 run from the same
+project workspace, verifies the Requirement, terminal retrieval control result,
+candidate manifest, and every dynamic structure URI/SHA, then executes the
+versioned Inspiration LangGraph. It is an explicit runtime API rather than a
+fifth default `StageId`; there is not yet a CLI wrapper or independent composite
+checkpoint/recovery layer.
+
+### Semantic and historical-literature RAG
+
+Search policies may freeze `publication_year_from/to`. The public search factory
+supports Crossref, OpenAlex, the official arXiv Atom Query API, and OSTI.GOV v1,
+preserves each provider's exact response bytes and provenance, and locally
+rejects records outside the year window. Crossref remains the library default;
+the standard local research launcher uses an accuracy-first profile with 20
+records per provider and selects `crossref+arxiv+osti`, adding OpenAlex
+automatically when `OPENALEX_API_KEY` is available. This lets recent preprints
+and historical DOE/laboratory records complement formal publication metadata.
+The non-DFT research entry can retain up to 320 unique documents and 128
+passages, processes documents by metadata quality before the finite passage
+budget, and may send up to 64 closed passages/evidence cards to DeepSeek for
+grounded reranking. Every multi-source logical query still reserves one physical
+request per selected provider; PDF and full-document retrieval remain disabled.
+
+Real embeddings use an isolated, local-only Sentence Transformers bundle whose
+complete file set, tokenizer, config, dependency lock, model revision, license
+metadata, dimension, and output bytes are SHA-bound. The engineering baseline
+is `all-MiniLM-L6-v2` at commit `1110a243...`; prepare it with
+[`integrations/semantic/bootstrap_local_bundle.py`](integrations/semantic/bootstrap_local_bundle.py).
+Signed hashing remains a lexical baseline and is never renamed as semantic.
+
+DeepSeek is separately available as a bounded grounded reranker/judge. Only
+selected `PassageV1`, `EvidenceCardV1`, and local candidate descriptions are
+sent; every returned candidate and citation must close over those inputs. It is
+not an embedding endpoint and cannot make novelty or validation claims. Enable
+it only through process environment or Keychain:
+
+```bash
+export MATERIAL_AGENT_INSPIRATION_RAG_PROVIDER=deepseek
+export MATERIAL_AGENT_LLM_PROVIDER=deepseek
+export MATERIAL_AGENT_LLM_BASE_URL=https://api.deepseek.com
+export MATERIAL_AGENT_LLM_MODEL=deepseek-v4-pro
+```
+
+### Soft-chemistry downstream bridge
+
+Every proposed output composition first passes the pinned
+`smact-inorganic-prior-policy-v1` gate (`SMACT==4.0.0`). SMACT and its required
+ASE dependency run in an independent `.venv-smact` JSON worker and are forbidden
+from the main `.venv`:
+
+```bash
+.venv/bin/python -m venv --copies .venv-smact
+.venv-smact/bin/python -m pip install -r requirements.lock -r requirements-smact.lock
+.venv-smact/bin/python -m pip install --no-deps -e .
+export MATERIAL_AGENT_SMACT_WORKER_PYTHON="$PWD/.venv-smact/bin/python"
+```
+
+The gate applies the
+ICSD24 occurrence-filtered oxidation-state set, charge neutrality, and the
+Pauling electronegativity heuristic. Missing chemical data, alloys, dependency
+drift, or bounded-search limits return `REQUIRES_REVIEW`; a failed composition
+returns `REJECT`; only `PASS` reaches the legacy substitution execution path. The prior
+decision binds the reviewed worker-lock SHA, remains evidence `NONE`, and is not
+a stability or synthesizability claim. Missing worker configuration fails closed
+as `REQUIRES_REVIEW`.
+
+The legacy registry allowlists the equivalent-site substitution operator and
+validates structure, stoichiometry, explicit oxidation state, charge, and
+registry Artifact identity. The v2 structure-operation registry adds bounded
+strain, vacancy, intercalation, and layer-slide executors with operation-specific
+priors and delta validators; those proposals do not bypass the stricter legacy
+handoff. `SoftChemDownstreamRunner` refuses any
+operator result without exactly one passing SMACT check, then binds the exact
+result to optional CHGNet relaxation, DeepH, and DFT plans.
+Every native health/model/policy/approval/applicability gate is rechecked;
+unavailable capabilities return `BLOCKED` or `NOT_RUN`, mock results cannot
+promote evidence, and DFT submission alone does not claim L3. The currently
+reviewed CHGNet production domain is still only 3D elemental Si, so Ti/Se
+proposals correctly remain blocked pending a reviewed domain extension.
 
 The reproducible fixed-pilot smoke uses the actual MCP stdio subprocess. A full
 replay must use a fresh, empty ignored workspace and a fresh submission ID; an
@@ -276,9 +535,10 @@ Requirement confirmation Gate before it can be frozen.
 
 The default remains `OfflineRequirementParser`; no network or secret-store
 access occurs unless `MATERIAL_AGENT_LLM_PROVIDER=deepseek` is explicitly set.
-The opt-in parser uses DeepSeek's OpenAI-compatible non-streaming Chat
-Completions endpoint with `deepseek-v4-pro`, thinking enabled at `high` effort,
-and JSON Output. Provider output is still local-untrusted input: it is
+The opt-in Stage 0 parser uses DeepSeek's OpenAI-compatible non-streaming Chat
+Completions endpoint with `deepseek-v4-pro`, thinking disabled, and JSON Output.
+The separate generic research graph above owns enabled thinking and multi-round
+tools. Stage 0 provider output is still local-untrusted input: it is
 validated as a `Requirement`, displayed at the existing Requirement
 confirmation Gate, and cannot control the Requirement ID, revision,
 confirmation state, policy version, stage routing, scientific thresholds, or
@@ -402,7 +662,7 @@ material-agent run-stage ml \
   --run-id run-ml
 ```
 
-### Agent02 Fake Adapter and opt-in real CPU worker
+### Agent02 Fake Adapter and opt-in real CPU/MPS/CUDA worker
 
 Agent02's P0.2 Adapter is implemented and covered offline with an explicitly
 registered Fake Worker. It validates immutable Agent01 inputs, freezes native
@@ -465,6 +725,46 @@ absent or invalid configuration leaves `ml` unavailable with remediation.
 The release Gate covers serial Top-5 execution, candidate-level interruption
 recovery, wall time and peak-RSS recording.
 
+Linux/CUDA uses a second independent Python 3.11 environment and the frozen
+`requirements-agent02-cuda.lock`; it does not add CUDA/Torch packages to the
+main environment or change the reviewed CHGNet applicability domain:
+
+```bash
+python3.11 -m venv .venv-agent02-cuda
+.venv-agent02-cuda/bin/python -m pip install \
+  -r requirements-agent02-cuda.lock
+.venv-agent02-cuda/bin/python -m pip check
+
+MATERIAL_AGENT_ML_WORKER_PYTHON="$PWD/.venv-agent02-cuda/bin/python" \
+MATERIAL_AGENT_ML_CUDA_VISIBLE_DEVICES=0 \
+.venv-agent02-cuda/bin/python -m pytest -q -p no:cacheprovider \
+  --run-real-ml tests/real_ml/test_chgnet_cuda.py
+```
+
+The CUDA profile exposes exactly one validated physical GPU index to the
+worker. Health runs the same fixed Si structure on CPU and CUDA and fails if
+energy, force, stress, or magnetic-moment parity exceeds the frozen limits.
+CUDA execution never silently falls back to CPU. Enable this production
+profile explicitly:
+
+```bash
+export MATERIAL_AGENT_ML_WORKER_PYTHON="$PWD/.venv-agent02-cuda/bin/python"
+export MATERIAL_AGENT_ML_EXECUTION_PROFILE=cuda
+export MATERIAL_AGENT_ML_CUDA_VISIBLE_DEVICES=0
+material-agent run-stage ml --workspace workspace --project PROJECT --input stage-input.json
+```
+
+The 2026-08-24 L40S release run passed the full health → immutable plan →
+no-shell worker → hashed CIF/NPZ → `L2_ML_SCREENED` Gate. The exact environment
+fingerprint, parity values, Artifact hashes, limitations, and server receipt
+are recorded in
+[`docs/runs/2026-08-24-agent02-cuda-platform-release.md`](docs/runs/2026-08-24-agent02-cuda-platform-release.md).
+
+The real Uni-HamGNN weights and an official precomputed ZrSiPt graph pair have
+also completed a strict single-L40S `ML_ONLY` smoke run. Exact hashes, runtime,
+output identity, replay tolerance and the still-unmet 2D benchmark gate are in
+[`docs/runs/2026-08-25-uniham-l40s-ml-only-smoke.md`](docs/runs/2026-08-25-uniham-l40s-ml-only-smoke.md).
+
 ### Agent02 DeepH companion flow
 
 Agent02 also provides an independent, opt-in DeepH-pack control bridge. It
@@ -519,6 +819,67 @@ The upstream [DeepH-pack repository](https://github.com/mzjb/DeepH-pack) and
 describe the model/overlap prerequisites. The upstream README/LICENSE and
 `setup.py` currently expose inconsistent license labels; freeze and review a
 specific upstream revision before any production deployment.
+
+### Agent02 Uni-HamGNN SOC-Hamiltonian companion flow
+
+Hermes now has an explicit, opt-in control bridge for
+[Uni-HamGNN](https://github.com/QuantumLab-ZY/HamGNN/tree/main/Uni-HamGNN).
+It does not replace DeepH or modify the frozen CHGNet stage contract, and it is
+not registered as a default Orchestrator capability. The bridge maps the
+upstream command `Uni-HamiltonianPredictor.py --config Input.yaml` into a
+content-addressed, no-shell worker run.
+
+An `agent02-uniham-request-v1` must provide all of these immutable inputs:
+
+- one CIF Artifact used as the structure identity;
+- one hash-verified `universal_model.pkl`, including model source, revision,
+  weights-license metadata and an explicit trust review;
+- separate `non_soc/graph_data.npz` and `soc/graph_data.npz` bundles;
+- a `hermes-graph-manifest.json` beside each NPZ, binding its hash to the same
+  CIF hash and freezing `soc_mode`, OpenMX basis/DFT data identity,
+  graph-generator revision, and `nao_max=26`;
+- the pinned HamGNN source revision and SHA-256 of the exact upstream predictor
+  script.
+
+Both the model and graph NPZ are pickle-bearing executable inputs in the
+upstream implementation. The main Hermes process never opens them; a request
+without `input_trust.trusted_executable_inputs=true` fails validation. Only
+approve artifacts obtained from a reviewed source and matched by SHA-256.
+
+Run the flow in a dedicated HamGNN environment after preparing the strict
+request JSON:
+
+```bash
+.venv/bin/python scripts/run_agent02_uniham_flow.py \
+  --request /absolute/path/to/uniham-request.json \
+  --artifact-root /absolute/path/to/project \
+  --worker-python /absolute/path/to/hamgnn-env/bin/python \
+  --predictor-script /absolute/path/to/HamGNN/Uni-HamGNN/Uni-HamiltonianPredictor.py
+```
+
+The worker supports explicit CPU or one pinned CUDA device and freezes
+`calculate_mae=false`; it neither fabricates ground truth nor silently falls
+back between devices. Under `ML_ONLY`, both graph bundles must already exist in
+a reviewed database/cache: the route may import them but may not generate them
+with OpenMX. The only scientific payload accepted
+from the upstream process is one `output/hamiltonian.npy`; extra files,
+symlinks, path escape, source/input hash drift, mismatched SOC modes, structure
+or basis linkage all fail closed. Successful execution remains
+`evidence_level=NONE`, `benchmark_status=NOT_RUN`, and
+`scientific_conclusion=false` unless a hash-bound held-out benchmark passes the
+configured L2 screening gates. Band calculation, uncertainty-aware topological
+classification and a real 2D benchmark remain separate ML steps; graph
+generation is explicitly outside the no-DFT execution profile.
+
+No HamGNN GPL source, pretrained weight, OpenMX data, or heavy dependency is
+vendored into this repository. The upstream project documents Python 3.9 and
+its dedicated Torch/PyG/e3nn stack; keep that stack outside the default
+Hermes `.venv`.
+
+The project-root Artifact guard detects writes outside the operation sandbox
+but is not an OS-level filesystem sandbox. A real deployment must run the
+hash-reviewed predictor and pickle-bearing inputs in an isolated account or
+container as well as using this control bridge.
 
 ### Agent02 ALIGNN property-prediction companion flow
 
@@ -868,7 +1229,12 @@ Run all offline tests without creating repository-local caches:
 PYTHONDONTWRITEBYTECODE=1 \
 MPLCONFIGDIR=/tmp/material-agent-mpl \
 .venv/bin/python -m pytest -q -p no:cacheprovider
+.venv/bin/ruff check src tests
 ```
+
+The repository pins Ruff 0.16.3 and an explicit high-signal rule set. Intentional
+third-party exception boundaries use line-scoped `noqa`; there is no global lint
+ignore.
 
 The historical P0.1/P0.2 and v1-closeout commits are retained for traceability.
 After the closeout, the development branch added the DeepSeek Stage 0 provider,
@@ -1014,8 +1380,10 @@ cache, live artifact, secret, temporary file, or traceback.
   but there is no default four-stage scientific success path. In particular,
   Agent04 requires an explicit expert-supplied `EffectiveModelPackage`; mock DFT
   output is not converted into a many-body model.
-- Execution is synchronous and single-project. Long-running background workers,
-  multi-user access, and Postgres checkpointing are server-stage work.
+- The Inspiration Gateway now has a durable asynchronous SQLite queue and a
+  single-host fenced worker, while the main Orchestrator CLI remains synchronous
+  and single-project. Multi-host workers, multi-user access, distributed leases,
+  and Postgres checkpointing remain server-stage work.
 - P0 uses at most ten 500-record chunks and reports `PARTIAL` when the
   5,000-record scan ceiling is reached.
 - True cursor-level checkpointing, parallel structure analysis, large-scale

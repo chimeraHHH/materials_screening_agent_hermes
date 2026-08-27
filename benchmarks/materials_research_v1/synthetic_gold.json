@@ -1,0 +1,24 @@
+{
+  "schema_version": "materials-research-benchmark-gold-v1",
+  "benchmark_id": "benchmark-flatband-synthetic-v1",
+  "review_status": "SYNTHETIC_TEST_ONLY",
+  "reviewer_ids": [],
+  "adjudicator_id": null,
+  "cases": [
+    {
+      "case_id": "benchmark-case-flatband",
+      "question": "Find a layered transition-metal material with a Fermi-level flat band.",
+      "gold_dois": ["10.1000/flat"],
+      "required_constraint_kinds": [
+        "electronic_bandwidth",
+        "fermi_ordering",
+        "orbital_character"
+      ],
+      "required_conclusion_terms": ["42 mev", "tis2"],
+      "require_located_fulltext": true,
+      "require_counter_search": true,
+      "require_candidate_second_pass": true
+    }
+  ],
+  "content_sha256": "dce039ffa668ed977d8152c8a848f7516ea74936e4fb259e0acae9977010bf3c"
+}

@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import hashlib
+import http.client
 import json
 import os
+import queue
 import subprocess
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -15,7 +18,6 @@ from typing import Any, Protocol, runtime_checkable
 from urllib.parse import urlparse
 
 from material_agent.orchestrator.models import LLMCallAudit
-
 
 DEEPSEEK_PROVIDER_VERSION = "deepseek-openai-compatible-v2"
 DEEPSEEK_BASE_URL = "https://api.deepseek.com"
@@ -28,10 +30,20 @@ MAX_RESPONSE_BYTES = 1024 * 1024
 class LLMProviderError(RuntimeError):
     """Safe provider failure that never embeds credentials or response bodies."""
 
-    def __init__(self, category: str, message: str, *, retryable: bool) -> None:
+    def __init__(
+        self,
+        category: str,
+        message: str,
+        *,
+        retryable: bool,
+        usage: Mapping[str, int] | None = None,
+        role: str | None = None,
+    ) -> None:
         super().__init__(message)
         self.category = category
         self.retryable = retryable
+        self.usage = dict(usage) if usage is not None else None
+        self.role = role
 
 
 @runtime_checkable
@@ -63,7 +75,7 @@ class LLMProvider(Protocol):
         system_prompt: str,
         user_payload: dict[str, Any],
         prompt_version: str,
-    ) -> "StructuredLLMResponse": ...
+    ) -> StructuredLLMResponse: ...
 
 
 @dataclass(frozen=True)
@@ -137,7 +149,7 @@ class EnvironmentOrKeychainSecretResolver:
 
 
 class UrllibJSONTransport:
-    """Small stdlib-only HTTPS transport with a strict response-size ceiling."""
+    """Small HTTPS transport with strict response-size and wall-clock ceilings."""
 
     def post_json(
         self,
@@ -159,12 +171,27 @@ class UrllibJSONTransport:
             with urllib.request.urlopen(
                 request, timeout=timeout_seconds
             ) as response:
-                content = response.read(max_response_bytes + 1)
+                content = _read_response_with_deadline(
+                    response,
+                    max_bytes=max_response_bytes + 1,
+                    timeout_seconds=timeout_seconds,
+                )
                 status = int(response.status)
         except urllib.error.HTTPError as exc:
-            content = exc.read(max_response_bytes + 1)
+            content = _read_response_with_deadline(
+                exc,
+                max_bytes=max_response_bytes + 1,
+                timeout_seconds=timeout_seconds,
+            )
             status = int(exc.code)
-        except (TimeoutError, urllib.error.URLError, OSError) as exc:
+        except (
+            TimeoutError,
+            urllib.error.URLError,
+            OSError,
+            http.client.HTTPException,
+            AttributeError,
+            ValueError,
+        ) as exc:
             raise LLMProviderError(
                 "TRANSIENT_EXTERNAL",
                 "LLM provider request failed before receiving a valid response",
@@ -177,6 +204,54 @@ class UrllibJSONTransport:
                 retryable=False,
             )
         return status, content
+
+
+def _read_response_with_deadline(
+    response: Any, *, max_bytes: int, timeout_seconds: float
+) -> bytes:
+    """Read a response with a total deadline, not only a socket-idle timeout.
+
+    urllib's socket timeout can be reset indefinitely by a trickling chunked
+    response.  A daemon reader lets the caller close that response and fail
+    safely once the configured wall-clock budget is exhausted.
+    """
+
+    completed: queue.Queue[tuple[bool, bytes | Exception]] = queue.Queue(
+        maxsize=1
+    )
+
+    def read_once() -> None:
+        try:
+            completed.put((True, response.read(max_bytes)))
+        except (
+            TimeoutError,
+            urllib.error.URLError,
+            OSError,
+            http.client.HTTPException,
+            AttributeError,
+            ValueError,
+        ) as exc:
+            completed.put((False, exc))
+
+    reader = threading.Thread(target=read_once, daemon=True)
+    reader.start()
+    try:
+        succeeded, value = completed.get(timeout=timeout_seconds)
+    except queue.Empty as exc:
+        try:
+            response.close()
+        except (OSError, http.client.HTTPException, AttributeError, ValueError):
+            pass
+        raise LLMProviderError(
+            "TRANSIENT_EXTERNAL",
+            "LLM provider response exceeded the total read deadline",
+            retryable=True,
+        ) from exc
+    if not succeeded:
+        assert isinstance(value, Exception)
+        raise value
+    assert isinstance(value, bytes)
+    return value
 
 
 class DeepSeekProvider:

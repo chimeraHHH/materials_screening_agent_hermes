@@ -10,6 +10,9 @@ env_requires:
   - name: MATERIAL_AGENT_PYTHON
     description: "Absolute path to the isolated Materials Gateway Python"
     required: true
+  - name: MATERIAL_AGENT_MCP_BASE_URL
+    description: "Loopback URL of the lifecycle-owned shared Materials MCP Hub"
+    required: true
   - name: MATERIAL_AGENT_WORKSPACE
     description: "Absolute path to the bounded material-agent workspace"
     required: true

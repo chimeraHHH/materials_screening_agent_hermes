@@ -7,8 +7,6 @@ from pathlib import Path
 
 import pytest
 
-from material_agent.retrieval.adapters import InMemoryMaterialsAdapter
-from material_agent.retrieval.models import Requirement, RetrievalPolicy
 from material_agent.ml_screening.models import (
     CandidateProperty,
     EvidenceLevel,
@@ -20,13 +18,18 @@ from material_agent.ml_screening.models import (
 from material_agent.ml_screening.planner import build_ml_stage_plan
 from material_agent.ml_screening.requirement import requirement_view_from_payload
 from material_agent.ml_screening.resources import (
-    default_policy as default_ml_policy,
     artifact_pointer as ml_artifact_pointer,
+)
+from material_agent.ml_screening.resources import (
+    default_policy as default_ml_policy,
+)
+from material_agent.ml_screening.resources import (
     fake_health_snapshot,
     fake_model_spec,
     fake_registry,
 )
-
+from material_agent.retrieval.adapters import InMemoryMaterialsAdapter
+from material_agent.retrieval.models import Requirement, RetrievalPolicy
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures"
 
@@ -62,6 +65,12 @@ def pytest_addoption(parser) -> None:
         default=False,
         help="run opt-in DeepSeek Stage0 LLM release tests",
     )
+    parser.addoption(
+        "--run-live-semantic-rag",
+        action="store_true",
+        default=False,
+        help="run opt-in DeepSeek grounded semantic-RAG release tests",
+    )
 
 
 def pytest_collection_modifyitems(config, items) -> None:
@@ -75,6 +84,9 @@ def pytest_collection_modifyitems(config, items) -> None:
     real_ml_marker = pytest.mark.skip(reason="requires explicit --run-real-ml")
     live_llm_marker = pytest.mark.skip(
         reason="requires explicit --run-live-llm"
+    )
+    live_semantic_rag_marker = pytest.mark.skip(
+        reason="requires explicit --run-live-semantic-rag"
     )
     for item in items:
         if (
@@ -102,6 +114,11 @@ def pytest_collection_modifyitems(config, items) -> None:
             and not config.getoption("--run-live-llm")
         ):
             item.add_marker(live_llm_marker)
+        if (
+            "live_semantic_rag" in item.keywords
+            and not config.getoption("--run-live-semantic-rag")
+        ):
+            item.add_marker(live_semantic_rag_marker)
 
 
 @pytest.fixture

@@ -13,7 +13,7 @@ import re
 from datetime import datetime
 from enum import StrEnum
 from pathlib import PurePosixPath
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import (
     BaseModel,
@@ -23,8 +23,6 @@ from pydantic import (
     field_validator,
     model_validator,
 )
-from typing_extensions import Annotated
-
 
 DEEPH_REQUEST_VERSION = "agent02-deeph-request-v1"
 DEEPH_PLAN_VERSION = "agent02-deeph-plan-v1"

@@ -6,8 +6,12 @@ from dataclasses import dataclass
 from typing import Any
 
 from .models import (
-    ArtifactRef, CandidateDFTInput, ClaimRequest, DFTRequest, DFTTaskSpec,
-    ExecutionMode, ResourceEstimate, TaskType, canonical_hash,
+    ArtifactRef,
+    ClaimRequest,
+    DFTTaskSpec,
+    ResourceEstimate,
+    TaskType,
+    canonical_hash,
 )
 
 SUPPORTED_MOCK_CLAIMS = frozenset({"workflow_lifecycle"})

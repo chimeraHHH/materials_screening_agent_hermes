@@ -7,11 +7,13 @@ history are sufficient for a future controller to persist and reconcile.
 
 from __future__ import annotations
 
+import itertools
+from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 from hashlib import sha256
 from types import MappingProxyType
-from typing import Any, Mapping
+from typing import Any
 
 from .models import (
     EvidenceLevel,
@@ -287,7 +289,7 @@ class MockManyBodyBackend:
     def assert_monotonic_history(self, external_job_ref: ExternalJobRef) -> None:
         history = self.status_history(external_job_ref)
         rank = {JobStatus.CREATED: 0, JobStatus.QUEUED: 1, JobStatus.RUNNING: 2, JobStatus.SUCCEEDED: 3, JobStatus.FAILED: 3, JobStatus.TIMEOUT: 3, JobStatus.CANCELLED: 3}
-        if any(rank[current.status] < rank[previous.status] for previous, current in zip(history, history[1:])):
+        if any(rank[current.status] < rank[previous.status] for previous, current in itertools.pairwise(history)):
             raise MockBackendError(BackendErrorCode.STATUS_REGRESSION, "backend status history regressed")
 
     def _build_result(self, job: _Job) -> ManyBodyBackendResult:

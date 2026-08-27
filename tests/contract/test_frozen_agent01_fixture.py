@@ -10,7 +10,6 @@ from material_agent.retrieval import AGENT01_CONTRACT_VERSION
 from material_agent.retrieval.models import CandidateAuditRecord, StageResultEnvelope
 from material_agent.retrieval.storage import LocalArtifactStore
 
-
 PROJECT_ROOT = Path(__file__).parents[2]
 FIXTURE_ROOT = PROJECT_ROOT / "tests/fixtures"
 CONTRACT_FIXTURE_ROOT = FIXTURE_ROOT / "contracts/agent01-v1"

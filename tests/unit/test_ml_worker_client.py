@@ -13,7 +13,6 @@ from material_agent.ml_screening.worker_client import (
     WorkerProcessError,
 )
 
-
 FIXTURE_ROOT = (
     Path(__file__).parents[1] / "fixtures/contracts/agent02-v1"
 )
@@ -53,9 +52,11 @@ def test_subprocess_client_never_uses_shell(tmp_path: Path) -> None:
             assert timeout == request.limits.wall_time_seconds
             return b"not-json", b""
 
-    with patch("subprocess.Popen", return_value=Process()) as popen:
-        with pytest.raises(WorkerProcessError) as caught:
-            client.run(request)
+    with (
+        patch("subprocess.Popen", return_value=Process()) as popen,
+        pytest.raises(WorkerProcessError) as caught,
+    ):
+        client.run(request)
     assert caught.value.category == "INVALID_WORKER_RESPONSE"
     assert popen.call_args.kwargs["shell"] is False
     assert popen.call_args.kwargs["env"]["PYTHONNOUSERSITE"] == "1"
@@ -82,9 +83,46 @@ def test_subprocess_client_kills_timed_out_worker(tmp_path: Path) -> None:
             self.killed = True
 
     process = Process()
-    with patch("subprocess.Popen", return_value=process):
-        with pytest.raises(WorkerProcessError) as caught:
-            client.run(request)
+    with (
+        patch("subprocess.Popen", return_value=process),
+        pytest.raises(WorkerProcessError) as caught,
+    ):
+        client.run(request)
     assert caught.value.category == "WORKER_TIMEOUT"
     assert process.killed
     assert process.communicate_calls == 2
+
+
+def test_cuda_device_selection_is_strict_and_not_inherited(
+    tmp_path: Path,
+) -> None:
+    with pytest.raises(ValueError, match="one non-negative GPU index"):
+        SubprocessWorkerClient(
+            python_executable=Path("/bin/sh"),
+            artifact_root=tmp_path,
+            package_lock_path=tmp_path / "lock",
+            source_root=tmp_path,
+            cuda_visible_devices="0; touch escaped",
+        )
+    with pytest.raises(ValueError, match="one non-negative GPU index"):
+        SubprocessWorkerClient(
+            python_executable=Path("/bin/sh"),
+            artifact_root=tmp_path,
+            package_lock_path=tmp_path / "lock",
+            source_root=tmp_path,
+            cuda_visible_devices="0,1",
+        )
+
+    request, client = _request_and_client(tmp_path)
+    cuda_resource = request.plan.resource_estimate.model_copy(
+        update={"device_policy": "cuda"}
+    )
+    cuda_plan = request.plan.model_copy(
+        update={
+            "device_policy": "cuda",
+            "resource_estimate": cuda_resource,
+        }
+    )
+    request = request.model_copy(update={"plan": cuda_plan})
+    with pytest.raises(WorkerProcessError, match="explicit validated GPU index"):
+        client.run(request)

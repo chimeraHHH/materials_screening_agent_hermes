@@ -1,8 +1,8 @@
 # Hermes 与灵感生成器实施计划
 
-- 版本：v0.3
-- 日期：2026-08-08
-- 状态：P0.3 fixed-request pilot 已完成；P3.1/P3.2/P3.3 已通过，P3.x 最终 release 进行中
+- 版本：v0.4
+- 日期：2026-08-19
+- 状态：Hermes 通用 DeepSeek 多轮材料研究循环 release Gate 已完成；历史 fixed-request 路径仅作兼容回归
 - 依据：[`docs/system-plan.md`](../../docs/system-plan.md)、
   [`docs/architecture.md`](../../docs/architecture.md)、
   [`ADR-0001`](../../docs/adr/0001-hermes-platform-and-inspiration-boundary.md) 与
@@ -20,6 +20,148 @@
 - [Agent01 计划](material-screening-agent01-plan.md)：候选、结构、检索、去重和来源证据边界。
 
 ## 0. 当前任务与真实基线
+
+### 0.0.3 2026-08-26：正式科学 Benchmark 重启
+
+用户已重新授权启动 Track A/Track B 科学 Benchmark，并明确排除工程 Track C。重启不改变
+既有 fail-closed 边界：当前机器状态仍为 `PILOT_NO_GO`，synthetic fixture、Schema 通过和
+工程回归均不得冒充真实专家金标或性能结果。先关闭 2026-08-11 留下的三项 V3 对抗门禁，
+再从已审计且可合法使用的公开源构建 calibration-only 候选 intake；真实系统跑分必须等待
+自然人专家、COI/校准、私有结构 custody、系统身份和新的独立 `PILOT_GO` 全部闭合。
+
+- [x] 关闭三项历史 V3 adversarial rejection 失败并记录独立定向 Gate；
+- [x] 固定并校验公开源 intake manifest、原始响应哈希、结构哈希和 calibration-only 排除标记；
+- [ ] 构建最多 12 个 calibration cases 与 Track A Pilot 30-case 候选池，完成结构/家族/derivative leakage 审核；
+- [ ] 登记两位独立 reviewer 与一位 distinct adjudicator，完成 COI、校准和工时承诺；
+- [ ] 取得新的独立 `PILOT_GO` 后才执行 Track A R1；
+- [x] Track B 已在首个 development case 上真实审计 250k–600k 公共候选并得到
+  `BUDGET_CALIBRATION_NO_GO`；未触碰 locked case、未计算 CCRR/FEPR；
+- [ ] Track B 重新开启前先冻结新的 evidence 收束/九角色预算合同，再在新的 6-case cohort 上
+  从头校准；只有六例完整九角色 receipts 全部合规才允许成对评分；
+- [ ] Track A/Track B locked 与 Track B-PV 严格按预注册顺序执行，禁止触碰未来 locked labels。
+
+### 0.0.2 2026-08-25：动态科学 DAG 与 evidence feedback
+
+本轮把已有通用 `HypothesisCandidate → ModelTaskPlan → ScientificEvidence → memory`
+骨架升级为真实多阶段执行。DeepSeek 根据目标、候选机理、当前 evidence 和 capability
+snapshot 自主提出二维检查、ML 预弛豫、磁序、non-SOC/SOC、能带/轨道、拓扑和交换/Tc
+任务及其参数；本地 policy 不补写科学路线，只审核可执行性与证据边界。
+
+- [ ] route schema 表达 typed task kind、Artifact 依赖、参数、falsifier 和 claim；
+- [ ] feedback 读取逐 observable、逐 claim 的真实 evidence，而非单一泛化结果指针；
+- [ ] 接受的淘汰、operator revision 或升级任务写入 hash-linked memory，并可生成下一轮 DAG；
+- [ ] live DeepSeek route/feedback 必须保留完整 receipt；网络中断继续 fail closed。
+
+### 0.0.1 2026-08-22：研究契约自动修复与通用操作覆盖
+
+本轮范围由用户明确为三项同时交付：
+
+1. 在现有严格 Schema 与 fail-closed 校验前保留原角色输出，在校验失败后调用一个有界、
+   可审计的 DeepSeek contract-repair agent；首批只覆盖已在六路真实生产测试复现的约束族
+   遗漏、query constraint-ID 覆盖和 native lead 引用错误，不允许修改用户阈值或生成新
+   科学结论；修复结果必须再次通过同一个确定性校验器，并持久化 hash 与调用收据；
+2. 将 run-local reasoned operator 从 substitution/strain/vacancy/intercalation/layer slide
+   扩展到载流子掺杂、静电栅控、磁近邻和 vdW 异质结构型。非结构型操作只编译为计算
+   条件计划，不生成 CIF；异质结构型必须绑定两个真实数据库父结构，未解析 registry、
+   界面间距或层匹配时保持 `PLANNED`/`REQUIRES_REVIEW`，不宣称性质；
+3. 清理仓库 Ruff 历史债务并建立显式、可重复的 lint 配置。机械修复后逐项处理剩余高
+   信号问题；测试/fixture 中有意使用私有 API 或宽异常边界时只允许窄作用域说明，不以
+   全局禁用掩盖错误。
+
+验收标准：自动修复成功、两次失败后继续 fail-closed、修复 checkpoint 可恢复；新增操作
+均有严格参数模型、run-local spec、prior/validator IDs、编译审计和负例；`ruff check src
+tests`、相关定向测试、完整离线 Gate、`pip check` 与 `git diff --check` 可复现通过，或对
+与本轮无关且已存在的阻塞给出精确收据。
+
+实施状态（2026-08-22）：
+
+- [x] research graph v7 新增 `contract_repair` runner 与逐次 `ResearchRepairRecordV1`；只在
+  三类确定性门禁失败后进入，最多两次，保留原/修复 hash、错误、receipt 和可恢复
+  `*-repaired` checkpoint；两次失败抛出原门禁错误，不进入后续科学角色；
+- [x] `softchem-operator-registry-v2` 由 5 类扩到 9 类。载流子与栅控生成无 CIF 的
+  `ReasonedConditionPlanV1`；磁近邻与 vdW 异质结构还绑定两个真实父 CIF、二维诊断和
+  保守失配 prior，专用 builder/计算完成前不产生结构或性质结论；
+- [x] 以 Ruff 0.16.3 对历史高信号集合完成 1050→0 收敛；修复未定义类型、循环闭包、
+  测试包导入、无效表达式、时区兼容写法和导入排序。138 个宽异常/兼容异常类型/异步
+  fixture 边界使用逐行 `noqa`，无全局 ignore；
+- [x] 定向新增能力测试 `54 passed`，跨模块回归 `118 passed`，非 flat-band 完整离线
+  集合 `1184 passed, 20 skipped, 440 deselected`，contract/artifact 独立回归 `13 passed`；
+  `ruff check src tests`、`pip check`、`git diff --check` 与差异密钥模式扫描通过；
+- [ ] 全量单进程 Gate 在修复历史裸 test-module import 后不再 collection-fail，但 private
+  flat-band formal fixture 的单例重放仍超过 8 分钟；一次全量尝试在 34:12 人工终止，终止
+  前 `514 passed, 19 skipped`。该私有 benchmark 的高成本重放和既有
+  `flatband_structure_grouping`/spglib 环境差异继续由其独立 CI shard 跟踪，不影响本轮
+  Hermes contract-repair/operator 证据边界。
+
+### 0.0 2026-08-19 当前任务：通用材料灵感研究循环
+
+本轮明确替代“在固定 TiS2→TiSe2 路径上最小补齐”的做法。目标是在 Hermes 顶层交互与
+材料执行/证据引擎之间建立一个有界、可审计但能自主迭代的 DeepSeek research loop。
+
+实现范围：
+
+1. 新增 provider-neutral agent loop 与 DeepSeek V4-Pro 实现，启用 `high/max` thinking，
+   支持连续多轮严格 function tools；模型的 `reasoning_content` 只在当前调用循环中回传，
+   持久层只保存 final JSON、request/final/tool 参数与结果的 hash、usage 和安全 receipt；
+2. 新增通用研究对象：约束图、query family、search lead、已解析证据、候选假说、逐约束
+   证据矩阵、逐约束概率推理矩阵、反证/缺口和综合报告；每一项必须由 Pydantic 严格校验
+   并有大小上限；
+3. 以多个有明确职责的 DeepSeek 回合完成需求审计、查询扩展、发现、机理/化学评估、
+   skeptic 反证和 synthesis。允许模型多次搜索/查证，不允许自由 shell、任意文件或任意 CIF；
+4. 原生搜索仅发现线索，随后必须通过受控公共适配器或权威数据库 resolver 形成正式证据。
+   无法解析的线索只保留为 `UNRESOLVED_LEAD`，不得支撑约束通过；
+5. research MCP 接受任意受限长度的材料目标；旧 workflow 作为兼容模式保留。新 Hermes
+   research profile 与 production/evolution 隔离，只看见粗粒度研究接口；
+6. 受控结构 transformation、价态/组成/连通性校验与下游 CHGNet/DeepH/DFT Gate 复用现有
+   实现。没有 band/PDOS/费米面数据时，证据 verdict 只能是 `UNKNOWN`，不能由文献摘要或
+   LLM 推断成证据 `PASS`；独立假设层则必须做 `LIKELY_PASS/LIKELY_FAIL` 概率预测。
+
+发布验收：
+
+- [x] 离线 scripted transport 证明至少两轮 tool calls 后生成严格最终 JSON，且 invalid tool、
+  invalid args、超预算、provider 空响应全部 fail closed；
+- [x] Artifact/日志扫描证明没有 `reasoning_content` 或密钥，tool receipt 可精确核验参数/
+  结果 hash；
+- [x] 通用 flat-band prompt 被编译为包含八类用户硬条件的约束图，并生成多 query family；
+- [x] evidence matrix 对每一硬条件给出 `PASS/FAIL/UNKNOWN`、证据引用和下一验证动作；
+- [x] inference matrix 对每个候选×约束给出 `LIKELY_PASS/LIKELY_FAIL`、概率、短科学依据，
+  并在候选级给出机理、关键假设、决定性证伪与最高信息增益计算；
+- [x] Hermes research bundle verifier、MCP discovery/stdio 和既有幂等兼容测试通过；
+- [x] 使用既有科研专用 DeepSeek 密钥完成真实 thinking/tool loop 和通用 prompt 端到端 smoke；
+- [x] 更新 README、架构、主计划和本计划，记录实现、来源、限制与凭据安全边界；
+- [x] 相关定向测试、完整非 flatband 离线 Gate、`pip check`、`git diff --check` 通过。
+
+2026-08-19 实现/实测 checkpoint：新增 `DeepSeekThinkingAgent`、DeepSeek Anthropic-compatible
+原生 web discovery、四源权威 literature tool、C2DB database scout、九角色 research graph、
+严格 candidate × constraint matrix、第二个 MCP tool 和隔离 research profile。Crossref live
+Gate `3 passed`；新 resolver 实机解析 2 records 并保存 raw hash；C2DB exact-formula live smoke
+解析 2 records，raw/CIF hash 闭合且 flat-band/费米/轨道/价态均保持 `UNKNOWN`；非 flatband
+完整 Gate 为 `1107 passed, 4 skipped`，两套 profile verifier、真实 MCP stdio discovery、
+main `.venv` `pip check` 和 diff check 通过。
+
+Superseding live Gate 已使用用户提供的科研专用 key 运行并通过：DeepSeek max-thinking
+多轮 strict tools、原生 server-side web search 与原始中文复杂 prompt 共 `3 passed in
+49.45s`（通用结果命中此前完成的安全检查点）。实测同时驱动 strict-schema 投影、瞬态重试、
+预算降级、最终 JSON 修复、C2DB 24→最多 8 个深评假设分层、稀疏 skeptic 和安全工具快照
+恢复。完整非 flatband Gate 更新为 `1144 passed, 20 skipped, 377 warnings`。
+同一冻结请求随后从真实 MCP stdio 边界调用
+`materials_generic_research_run` 成功：tool discovery 返回固定/通用两项 allowlist，调用
+`isError=false`、run 状态 `SUCCEEDED`、八个旧版角色完整返回且
+`scientific_conclusion=false`。这项历史边界验收复用已完成的不可变 DeepSeek 结果，不重复消耗
+Provider 调用；真实 Provider 计算由前述 live Gate 覆盖。
+
+2026-08-19 灵感推理 superseding checkpoint：用户指出“全 UNKNOWN 没有灵感价值”后，架构
+拆成 evidence audit 与 scientific inference 两层。新增第九角色 `hypothesis_reasoner`，不得
+复制 evidence UNKNOWN，必须对每个 candidate × constraint 输出 `LIKELY_PASS/LIKELY_FAIL`
+和通过概率。首个逐格长文本 schema 在真实运行 25 分钟时主动中止；改为候选级共享机理/
+假设/证伪、逐格短预测，并只读取过滤后的 inference context。复用七个已验证角色检查点后，
+原始中文 prompt 真实 Gate `1 passed in 162.61s`：NbCl2O/TaCl2O 两个低置信候选，20 个证据
+UNKNOWN 与 20 个推理判断并存，其中 7 `LIKELY_PASS`、13 `LIKELY_FAIL`，概率 0.06–0.98；
+MCP stdio 返回非空 `REASONED_HYPOTHESIS` 且 `property_verification_complete=false`；最终非
+flatband 回归为 `1145 passed, 20 skipped, 377 warnings`。
+
+非目标保持不变：不声称 novelty，不用 LLM 伪造能带/PDOS/价态/结构计算，不开放任意代码
+执行，不把 Hermes memory 作为科研状态真源，不把原生搜索摘要直接升级为科学结论。
 
 用户已明确将项目范围升级为一项持续的系统工程：
 
@@ -56,6 +198,79 @@
   非空结果 Gate 已通过；
 - [x] 用户完成一次性 Provider 设备授权；Hermes 自然语言 session 已经真实四工具链路停在
   审批点、消费 MCP 外 grant 并返回非空 hash-verified bundle；MCP smoke 未被用来冒充该项。
+
+### 0.1.1 Agent01 → Inspiration opt-in composite v2（2026-08-11）
+
+- [x] 新增独立 `orchestrator-composite-inspiration-v2` LangGraph builder，不修改冻结的
+  `retrieval → ml → dft → many_body` 路由或 `StageId`；
+- [x] composite request 显式绑定 source run、Requirement revision、Agent01
+  `candidate_manifest`、policy、TagGraph、transformation registry 和可选 search fixture 的
+  URI/SHA；只接受 Agent01 已发布的 `PASS/UNCERTAIN` candidate，并逐结构复核 URI/SHA；
+- [x] 新增显式 `InspirationCompositeRuntimeV2`：从既有 project workspace 的业务库解析
+  Agent01 control result 与 manifest，再冻结 `InspirationInputV1` 并执行注入 runner；
+- [x] unit 覆盖动态 parent 成功路径和 structure hash mismatch fail-closed；integration
+  覆盖真实 Orchestrator fixture run → Agent01 manifest → composite runtime 交接。
+
+当前边界：该 API 尚未接入默认 `OrchestratorRuntime` 或 CLI，不拥有独立持久 checkpoint、
+审批或跨进程恢复语义，也不把 Inspiration 写成第五个业务 stage。它是可调用、可审计的
+opt-in composite 路线，而不是默认生产主链。
+
+### 0.2 Production hardening：持久任务队列（已激活；parent-death P0 未闭合）
+
+本轮 Gate B 将 operator approval 的授权语义与 job 执行账本保持分离，但对异步
+action 强制在同一 approval SQLite `BEGIN IMMEDIATE` 事务中完成 exact grant
+consume 与 durable outbox enqueue，消除“grant 已消费、任务未入队”窗口。
+验收范围为：
+
+- [x] canonical payload hash 绑定的 enqueue 幂等与冲突拒绝；
+- [x] `BEGIN IMMEDIATE` 事务下的原子 claim，以 owner/token/expiry/generation 实现 fencing；
+- [x] heartbeat、小型 canonical JSON checkpoint、complete/fail 与终态响应丢失后幂等重试；
+- [x] 过期 lease 可被新 worker 重领，旧 token 的 heartbeat/checkpoint/terminal write 全部 fail closed；
+- [x] append-only 审计事件、WAL/`synchronous=FULL`、线程和多连接并发/崩溃恢复测试。
+- [x] action job 精确绑定 run/revision、interaction/action 及其 hash、request hash、
+  execution manifest 和完整 grant receipt；worker claim 后全部重验；
+- [x] `QueuedMaterialsGatewayService` 使 `materials_run_act` 请求线程只入队和提交
+  `RUNNING`，`GatewayActionWorker` 独立执行；原 `MaterialsGatewayService` 保持同步兼容；
+- [x] 新增 fixture/public Hermes queued factory 与独立 worker CLI；installed production profile
+  固定 queued factory，真实 fixture
+  companion 的 MCP 集成测试证明 act 先返回 `RUNNING`，worker 后续生成并校验终态 bundle；
+- [x] 覆盖 enqueue 后、runner transition checkpoint 后、Gateway terminal commit 后与 job
+  complete 响应丢失窗口；重启后不重复调用 static runner；
+- [x] 覆盖 companion 已返回但 `TRANSITION_READY` checkpoint 尚未提交的精确窗口；
+  只有显式 `CompletedInspirationRunRecovery` capability 才可重进 companion 以复用完整
+  stage，static 证据为 companion 进入 2 次、runner 仍为 1 次；partial stage 仍人工阻断；
+- [x] lease 必须覆盖冻结的 runner max walltime，后台 heartbeat 续租；本机 POSIX
+  run-scoped process lock 防止新旧 worker 并行写同一 run Artifact namespace；
+- [x] 若旧 worker 可能已进入 runner 但尚无完整 transition checkpoint，自动恢复
+  fail closed 为 `BLOCKED_MANUAL_RECOVERY`，不盲目重跑 Crossref。
+
+定向验证：队列/异步 action 共 `20 passed`；与 Gateway authorization、persistence、
+service、companion、operator approval 及 queued factory integration 合并为 `75 passed`；
+public completed-run recovery 另有 `3 passed`；`compileall`、`git diff --check` 与
+`pip check` 通过。测试包含 spawned-process 原子 claim、多进程 run lock、真实 SQLite
+reopen 与各提交窗口故障注入。
+
+当前 production profile 已固定 queued factory，`production_runtime` 已启动、监督和探测
+worker，readiness/metrics 也绑定同一 queue DB 与运行身份。限制（P0）更新为：action child
+运行在独立 session；parent worker 若被 hard-kill，现有 lifecycle 不能保证立即终止并 reap
+该 child，只能依赖 child 自身 deadline。当前 process lock 仍是单机 POSIX 保证，不是分布式
+锁；partial stage 无 query-level checkpoint 时继续 fail closed，不宣称全链路 crash-safe。
+
+### 0.3 Production hardening：deadline 与物理网络账本（已实现，待全 Gate）
+
+- [x] `InspirationRunner` 使用可注入单调时钟，在查询、抽取、向量、变换、选择、报告和
+  terminal Artifact 校验之间执行硬 deadline 检查；deadline 在中途触发并保留已有 search
+  attempt Artifact，不再只在科学流程结束后检查一次；
+- [x] Crossref adapter/transport 接收剩余 walltime，每个请求 timeout 取配置上限与剩余预算的
+  较小值，pacing/retry 不能跨越 deadline；可注入 clock/sleeper 保留确定性故障回放；
+- [x] 同域 redirect 每一跳形成独立、连续编号的 physical attempt；redirect、retry 和终端
+  response 共同受 `SearchBudgetV1.max_physical_requests` 约束，Gateway compiler 将冻结的
+  physical-attempt ceiling 编入 policy；
+- [x] `CostLedgerV1.walltime_ms` 记录真实单调时钟快照，terminal 返回前再次检查 deadline；
+  固定 clock 的离线 replay 仍逐字节稳定；
+- [x] 定向回归覆盖 redirect 计数/耗尽、timeout 缩短、deadline 阻止 retry、运行中超时与真实
+  walltime 持久化。当前 production public profile 的 body-fetch budget 仍为 0；可选网络正文
+  fetch 只做保守 timeout 分摊，后续发布该能力前仍需把 deadline 深入 fetcher 的每次 sleep/hop。
 
 ## 1. 目标、边界与完成标准
 
@@ -742,3 +957,284 @@ stages/inspiration/<run_id>/
   [`docs/runs/2026-08-08-hermes-final-crossref-approval-pending.md`](../../docs/runs/2026-08-08-hermes-final-crossref-approval-pending.md)。
   最终证据见
   [`docs/runs/2026-08-08-hermes-final-crossref-v2.md`](../../docs/runs/2026-08-08-hermes-final-crossref-v2.md)。
+
+### 2026-08-09：生产部署与可观测性 Gate D checkpoint（历史初始快照）
+
+- 新增 `deploy/materials-inspiration` 单入口和 production lifecycle，覆盖 pinned runtime
+  bootstrap、profile install、dashboard build、`start/stop/status/health/metrics`；Hermes home、
+  PID ownership、日志与计数状态均限定在 operator 指定 workspace 下；
+- Hermes lock 明确 Node `>=22.22.0` 与 `web` extra；本机 Node `20.20.2` 实测在 checkout、
+  Python 环境、profile 和 dashboard 写入前 fail-fast，不能再产生“Python 已装好但前端不可用”
+  的半部署状态；
+- preflight 逐项验证 Python 3.11、Hermes commit/version/clean checkout、source profile、
+  model/provider credential resolution、两个 mode-0600 SQLite DB、真实 MCP stdio exact four
+  tools 和默认 live Crossref connectivity；secret 不进入 CLI、PID record、JSONL 或 metrics；
+- loopback sidecar 暴露 `/healthz`、`/readyz` 和 Prometheus `/metrics`；`stop` 仅对 start marker
+  与 command SHA 同时匹配的 owned PID/process group 发信号；
+- offline production E2E 只替换 production factory 的 injectable HTTP transport，完整验证
+  submit、无 grant 拒绝、operator grant、runner、artifact closure/readable result 与两次 MCP
+  restart；实测 `verified=true`、readable evidence 1、终态诚实为 `PARTIAL`；
+- 定向回归为 `7 passed in 12.45s`。尚未在 Node 22.22+ 主机验证真实 dashboard build/start，
+  未执行 opt-in Crossref live smoke，provider probe 只验证 credential 可解析、不发送付费模型
+  请求；这些条件不得描述为已通过。
+
+后续 superseding checkpoint：Node 22.22 组件 bootstrap/build/start/health/stop 已在隔离
+临时环境验证；production profile 固定 queued factory，lifecycle 统一管理 dashboard、monitor
+与 worker，worker/queue 状态进入 readiness/metrics；安装后 profile closure、严格环境白名单、
+bounded log/event rotation、lifecycle/repository locks、失败回滚和 operator acknowledgement 已
+加入。当前 Gate D 定向回归为 `26 passed`。真实 provider credential/model call 仍未执行，
+parent hard-kill 后独立 action child 的清理仍是 public production P0。
+
+### 2026-08-09：Gate E3 语义向量与混合去重工程契约
+
+- `signed-hashing-v1` 继续明确标记为词法基线；新增 provider-neutral 本地语义 adapter，输入
+  仅限 title、section、selected passage 与 normalized tags，并绑定 exact model/revision、
+  tokenizer/config/model bundle/dependency lock/license SHA 与 dimension；
+- adapter 冻结 provider identity、逐次复核 local bundle，拒绝 remote/synthetic production、
+  漂移、token 超限、维度错误、NaN/Inf、非 L2、float32 不一致及 cache 串线；仓库没有真实
+  pinned bundle，默认 production 明确返回 `SEMANTIC_PRODUCTION_UNAVAILABLE`，不会下载模型或
+  回退成伪语义；
+- 新增 versioned lexical+semantic ranked near-dedup；hybrid 缺 embedding 时默认 fail closed，
+  只有显式开关才记录 lexical fallback，且每次 hybrid 决策保留 lexical-only ablation；现有
+  Passage selector 已复用同一决策核的 lexical-only `1/0` 模式，默认排序和 Jaccard 语义不变；
+- synthetic provider 仅证明工程契约与一次可解释的 hybrid/lexical 决策差异。定向回归
+  `42 passed`，`pip check` 与 `git diff --check` 通过；尚缺真实本地 provider、许可证审核、
+  expert-adjudicated gold set，不能声称语义模型科学有效或完成 E3 production/scientific Gate。
+
+### 2026-08-11：年代窗口与 Crossref/OpenAlex 多源检索契约
+
+- `SearchBudgetV1` 新增可选 `publication_year_from/to`（1600–2200，正向区间），默认
+  `None` 保持既有冻结运行不变；Crossref 请求将窗口编码为 `from-pub-date` /
+  `until-pub-date`，OpenAlex 请求编码为 `from_publication_date` /
+  `to_publication_date`，配置进入 adapter component identity；
+- 新增 OpenAlex Works public adapter：只读取 bounded metadata/abstract fields，API key
+  在调用时从注入 resolver 或 `OPENALEX_API_KEY` 环境变量解析，不进入 component、attempt、
+  raw response 或错误消息；缺 key、非法预算、响应越界和 transport 失败均 fail closed；
+- 新增 `MultiSourceSearchAdapter`，在一个逻辑 query 内显式执行 2–4 个 public provider，
+  要求物理请求预算覆盖全部 provider；canonical envelope 以 base64 + SHA-256 保存每个 child
+  的原始响应 bytes，并由 `parse_multi_source_page` 复核后分别调用 Crossref/OpenAlex 严格
+  parser，不进行静默降级；
+- 定向离线回归：`tests/unit/test_inspiration_search.py` 与
+  `tests/unit/test_inspiration_models.py` 共 `85 passed`；更新两个受影响的 frozen schema hash 后，
+  contract + runner/public-Crossref integration 为 `19 passed`，`pip check` 与
+  `git diff --check` 通过。本 checkpoint 没有发出真实网络请求，
+  也尚未把 multi-source adapter 切入 production Hermes factory；OpenAlex live Gate 仍需要
+  独立的 `OPENALEX_API_KEY` 与显式审批。
+
+### 2026-08-11：DeepSeek bounded semantic RAG judge
+
+- 新增独立 `semantic_rag` 边界并复用现有 `orchestrator.llm.LLMProvider` /
+  `DeepSeekProvider`，没有复制 HTTP/provider 实现；默认返回 disabled，只有
+  `MATERIAL_AGENT_INSPIRATION_RAG_PROVIDER=deepseek` 才构造 provider，密钥继续只由既有
+  environment/macOS Keychain resolver 在调用时解析；
+- provider 输入严格限于 bounded `PassageV1` 文本、`EvidenceCardV1` 的 source assertion 与
+  本地候选描述/ID，不发送 URL、raw document、结构 bytes 或 Artifact 内容；输出必须为 JSON，
+  thinking disabled，不保存 reasoning content；
+- 每个候选必须恰好排序一次，rank 连续，citation 必须闭合到候选自身 EvidenceCard 与其
+  Passage lineage；candidate/passage/evidence 幻觉、Schema 漂移、缺 usage、provider/model audit
+  漂移及 token 超限均 fail closed；receipt 保留 provider/version/model、显式
+  `provider-managed-v4-pro` revision、prompt、request/response hash 与 token usage。该能力是
+  grounded reranker/judge，不冒充 embedding、性质验证或 novelty 结论；
+- 新增 `public_search_adapter_from_environment`：production-compatible 默认仍为 Crossref，只有
+  显式 `MATERIAL_AGENT_INSPIRATION_SEARCH_PROVIDER=crossref+openalex` 且 policy 至少为每 query
+  预留 2 次物理请求时才构造多源 adapter；同一 `SearchBudgetV1` 年份窗口绑定两个 provider；
+- 离线 fake-provider/transport 定向回归 `81 passed`（semantic RAG 4 项、多源/search 77 项）；
+  全部 Inspiration unit + frozen contract + runner/public-Crossref integration 为 `306 passed`，
+  没有调用 DeepSeek、Crossref 或 OpenAlex live API。
+
+### 2026-08-11：版本化软化学 operator registry
+
+- 新增独立 `softchem-operator-registry-v1`，首版只注册既有
+  `SUBSTITUTE_EQUIVALENT_SITE_V1@1`；registry 数据不能声明动态 Python entry point，执行器
+  继续由代码中的显式白名单分支选择；
+- registry canonical JSON、SHA-256、Artifact 大小和 media type 在任何结构操作前校验；
+  registry 漂移或未知 operator/version 均 fail closed；
+- wrapper 复用既有变换执行器的完整等价位点、结构 round-trip、有限值、正体积、最小距离、
+  晶格/坐标保持、允许元素集合、化学计量和显式氧化态/总电荷校验；氧化态未知保持
+  `REQUIRES_REVIEW`，非中性或不允许的化学计量保持 `REJECTED`，均不可进入候选选择；
+- 新增 6 项 registry 定向测试，并与既有 transformation 回归合并为 `20 passed`；该首段当时
+  未接入 CHGNet、DeepH 或 DFT，后续条件交接由下一节记录；科学结论始终固定为 `false`。
+
+### 2026-08-11：软化学下游条件流水线工程契约
+
+- 在 registry 之上新增 `softchem-downstream-plan-v1` 与
+  `softchem-downstream-result-v1`，operation key 绑定 operator result、registry Artifact、
+  Agent02 native plan、DeepH request 与 DFT request hash；绑定内容变化必须重建计划；
+- CHGNet 仅接受现有 `SubprocessWorkerClient` 独立 worker，并重新校验真实冻结模型身份、
+  package lock、model registry、未过期 PASS health、policy Artifact、选中候选、结构/组成身份和
+  applicability/L2 Gate；当前 Ti–S–Se operator 输出会因真实 CHGNet 审计域仅含 3D Si 而
+  `BLOCKED/CHGNET_ELEMENT_DOMAIN_NOT_REVIEWED`，不会绕过适用域；
+- DeepH 仅接受非 mock request、真实模型 bundle、与 CHGNet relaxed structure 精确绑定的 overlap、
+  一致的 interface/basis/DFT software identity 及现有独立 `DeepHSubprocessClient`；即使执行完成，
+  结果证据仍固定 `NONE`、benchmark `NOT_RUN`，不产生科学结论；
+- DFT 复用 Agent03 `evaluate_real_preflight`，要求非 mock VASPilot backend、冻结 REAL request、
+  approved method/resource/evidence policy、exact approval/request/plan hash、健康 backend 和 relaxed
+  structure 绑定；全绿后只做幂等 job submit 并返回 `SUBMITTED`，不把提交或 backend completion
+  表述为 `L3_DFT_VALIDATED`；
+- 缺少任一 binding 或前置输入时显式返回 `BLOCKED`/`NOT_RUN`，mock worker/backend 在调用前被拒绝。
+  本切片新增 7 项下游 plan/Gate 测试；与 registry、原变换、DeepH 和 DFT 控制面定向回归合计
+  `42 passed`。测试不安装 CHGNet/DeepH/VASP，不发起真实科学计算。
+
+### 2026-08-11：真实本地 embedding 与 DeepSeek live RAG superseding checkpoint
+
+- 新增 `SentenceTransformersLocalProvider` 与独立 `semantic` optional dependency；provider
+  只加载绝对本地路径，要求 manifest 精确枚举全部文件并绑定 tokenizer/config/model bundle/
+  dependency lock/model card SHA、模型 revision、dimension，且每次使用前重新复核；禁止远程
+  fallback、`trust_remote_code` 和 synthetic production；
+- 新增可重复 bootstrap，将 `sentence-transformers/all-MiniLM-L6-v2` 固定到 commit
+  `1110a243fdf4706b3f48f1d95db1a4f5529b4d41`，保存本地-only bundle、pinned model card 和
+  dependency lock。该模型只是工程 baseline，不代表材料领域准确率或训练数据/许可已完成
+  专家审计；
+- 本机隔离 `.venv-semantic` 真实 smoke：`sentence-transformers==5.6.1`，本地 bundle 无网络
+  加载成功，输入 token count 61，输出 384 维 float vector、SHA-256 长度 64、L2 平方和
+  `1.0`；provider/revision 与 manifest 一致；
+- DeepSeek grounded RAG 使用用户授权的 process-only secret 做一次显式 live Gate，
+  `1 passed in 4.60s`；候选闭包、Passage/Evidence citation 闭包、固定
+  `deepseek-v4-pro` audit 与 `reasoning_content_persisted=false` 均通过。密钥未写入仓库、配置、
+  fixture 或 Artifact；
+- 尚未完成 OpenAlex live、多源真实网络全链、材料领域 embedding gold/排序指标、专家复核和
+  production Hermes 请求合同扩域，因此 E3 科研/performance Gate 仍不是全绿。
+
+### 2026-08-11：Hermes 标准部署阻塞修复
+
+- 标准 bootstrap 现在只在受管 Hermes checkout 精确位于锁定 commit、且全部状态均为未暂存
+  `package-lock.json` 修改时，从固定 commit 原子恢复 npm 元数据漂移；源码、暂存、未跟踪、
+  删除或重命名状态仍 fail closed，dashboard build、preflight 与正常 stop 后执行同一窄修复，
+  覆盖 TUI 首次 session 延迟生成的 lockfile 漂移；
+- `hermes.lock.json` 增加上游冻结的 `slack` extra，沿用其 `aiohttp==3.14.1`、Slack SDK/Bolt
+  锁定解析；bootstrap 在完成前显式 import `aiohttp`、`APIServerAdapter` 与 `SlackAdapter`，
+  不再让缺依赖环境进入 preflight；
+- production dashboard 增加 DeepSeek credential allowlist，并将当前 Hermes 已退役的
+  `deepseek-chat` / `deepseek-reasoner` 输入别名在写 profile 前统一为
+  `deepseek-v4-flash`，因此 UI 默认模型与实际运行日志使用同一 canonical identity；
+- UI 可见验收进一步发现 `MATERIAL_AGENT_PYTHON` 被 `.resolve()` 展开为底层 CPython、导致
+  session MCP 丢失 Gateway site-packages；部署器现保留 `.venv-gateway/bin/python` 入口并增加
+  回归断言，避免 preflight 可握手但 UI session 无法加载 `material_agent` 的假阳性；
+- 新增 `docs/materials-inspiration-startup.md` 作为唯一标准部署/启动 runbook，覆盖环境、部署、
+  preflight、Run 人工批准、停止/重启和故障处理。新增定向回归覆盖窄 lockfile 修复与拒绝、
+  DeepSeek 模型/密钥边界以及 lock extra；不改变科研 evidence 等级或默认四阶段主链。
+
+### 2026-08-14：共享 MCP Hub、后台科研入口与 canonical 恢复
+
+- production profile 的两个 MCP server 从每 session stdio 子进程切换到同一 loopback
+  Streamable HTTP Hub；Hub 与 queued action worker 同属一个 lifecycle-owned 进程，
+  dashboard/TUI 重连不再复制 watchdog、Gateway MCP 或 research-pipeline MCP。
+- `materials_research_pipeline_run` 首次调用立即返回 `RUNNING`，相同 canonical 请求作为
+  poll；进程内只启动一个 daemon background thread，跨进程用 run lock 串行化，终态
+  immutable result 仍直接幂等返回。
+- Hub/worker 重启后，若终态 Artifact 尚不存在且 Agent01 checkpoint 为 `RUNNING`，入口
+  调用 `OrchestratorRuntime.resume()` 继续，而不再把 RUNNING 折叠成
+  `RUNTIMEERROR_FAILED`；若另一个真实 executor 仍持有 project lock，则保持 RUNNING。
+- 生命周期 stop 在终止 dashboard 前捕获精确 descendant identity，并跨独立 process group
+  回收 TUI Gateway/watchdog/MCP 后代，修复 parent 退出后孤儿残留。
+- 真实 HTTP MCP smoke 从同一 Hub 发现审计 4 tools 与科研 1 tool；非 flatband 完整
+  离线 Gate `1070 passed, 17 skipped`，主环境/Gateway 环境依赖检查与
+  `git diff --check` 通过。未分区全量在 collection 阶段仍被既有 flatband 同目录模块
+  导入问题阻断，未将其误报为本切片回归失败。
+
+### 2026-08-14：自然语言身份、终态一致性与 detached TUI 收口
+
+- `materials_research_pipeline_run` 的 `submission_id` 改为可省略；服务端从规范化 goal、
+  默认/显式 bounds 派生稳定 `auto-*` 身份，canonical hash 额外绑定 implementation
+  revision。用户只描述科研目标，Hermes 不再要求 workflow、submission/run ID 或开关。
+- research Agent01 异常路径在写 immutable `FAILED` 前调用 Orchestrator 的事务封口，run、
+  `stage_runs` 与 `stage_attempts` 同步进入失败；服务启动还会用历史 terminal result 修复
+  遗留的非终态业务投影。terminal run 的 `resume()` 变为只读幂等返回。
+- 标准 dashboard 通过 integration-owned launcher 将 detached PTY/TUI 保留窗口限制为
+  10 秒、reaper 周期限制为 2 秒；不修改 pinned Hermes checkout，也不影响短时浏览器重连。
+- 定向验证：research/Orchestrator/Hermes bundle/production ops `55 passed, 1 skipped`；
+  跨模块 research/Orchestrator/production deployment `99 passed, 1 skipped`；真实 pinned
+  dashboard self-test 返回 TTL=10s、reaper=2s；完整非 flatband Gate
+  `1060 passed, 17 skipped`。标准 stop/deploy 后 health/local_ready/MCP Hub 全部通过，旧
+  `agent01-ed81...` 已从 run `RUNNING` + stage/attempt `RUNNING` 迁移为 run `FAILED` +
+  stage/attempt `PERMANENT_FAILED`，且当前只有 worker、managed dashboard、monitor 三个
+  owned 顶层进程、无 detached TUI。
+
+### 2026-08-11：SMACT 无机化学先验 Gate
+
+- 独立 `.venv-smact` 锁定 `SMACT==4.0.0` 与 `pymatgen==2025.10.7`；SMACT 所需
+  ASE/pandarallel/pathos 等只写入 `requirements-smact.lock`，不进入主环境。主进程通过绝对
+  worker Python、无 shell、限时/限 stdout 的 JSON 子进程调用，并复核 source root、lock SHA、
+  policy/公式/返回 Schema 与 backend identity；
+- 新增 `smact-inorganic-prior-policy-v1` 和审计结果 Schema，冻结 ICSD24 occurrence filter
+  `consensus=3/commonality=medium/include_zero=false`、Pauling、电中性、mixed-valence 与元素/
+  化学计量资源上限；policy 和 backend 版本进入 SHA/结果；
+- `execute_registered_softchem_operator` 的顺序固定为 `SMACT prior Gate → operator registry
+  Artifact/allowlist → transformation`。`REJECT` 不 dispatch registry，缺包/版本漂移、缺数据、
+  全金属/单元素和求解上限统一 `REQUIRES_REVIEW` 并 fail closed；通过结果新增
+  `smact_prior_gate=PASS` validation check；未配置或 worker/lock 漂移统一 review/fail closed；
+- `build_softchem_downstream_plan` 与 runner 再次要求恰好一个 passing SMACT check，直接调用底层
+  transformation 绕过 prior 的结果不能进入 CHGNet/DeepH/DFT。该 prior 固定 evidence `NONE`、
+  `scientific_conclusion=false`，不表示稳定性、可合成性或性质验证；
+- 新增真实 SMACT smoke、NaCl2 reject、alloy review、registry-before/after 顺序及 bypass 阻断测试。
+  定向跨模块回归 `53 passed`；独立 worker 真实集成 `1 passed`；排除已暂停 flatband 研究轨的
+  完整离线回归 `1049 passed, 17 skipped`，主环境 heavy-package isolation 与两套环境
+  `pip check` 均通过。本 checkpoint 不运行 CHGNet、DeepH、DFT 或外部网络科学计算。
+
+### 2026-08-14：arXiv 与 OSTI 公共元数据接入（进行中）
+
+- 范围：在既有 `SearchAdapter`/原始响应 Artifact/SHA-256/年代复核契约内新增 arXiv
+  Query API（Atom）与 OSTI.GOV v1（JSON）adapter、严格 parser、metadata passage
+  extractor，并接入公共 runner 的单源与多源环境工厂；不下载 PDF，不把检索摘要提升为
+  DFT、实验或专家证据。
+- 真实入口：非 DFT `research_pipeline` 继续通过
+  `public_inspiration_runner_from_environment` 调用；组合 provider 模式必须由冻结的物理请求
+  budget 覆盖每个逻辑 query 的全部来源，并保留每个子响应的原始字节与 hash。
+- 验收：离线 unit 覆盖请求构造、年代过滤、Atom/JSON schema drift、跨源 DOI/arXiv 去重、
+  factory budget 与 runner 抽取；各做一次有界 live smoke，随后运行 Inspiration 定向 Gate、
+  `pip check` 与 `git diff --check`。arXiv 与 OSTI 分别提交并推送，不写入任何 API key。
+- arXiv 子步已完成：新增官方 Query API adapter、三秒请求间隔、Atom/DTD fail-closed parser、
+  DOI/arXiv identity、单源/多源 factory 与 provider-neutral 摘要抽取；真实 adapter live gate
+  返回 `1` hit（`3278` bytes，arXiv `2602.01354`），runner 纵切进入 evidence/变换且 PDF/body
+  请求为 `0`。Inspiration unit/contract/public integration 共 `328 passed`；OSTI 子步待完成。
+- OSTI 子步已完成：新增官方 records API adapter、publication-date request/local 双重年代过滤、
+  JSON schema parser、DOE report/abstract/author/subject 映射及 DOI 跨源 identity；真实 adapter
+  live gate 返回 `1` hit（OSTI `3030169`，`6933` bytes、abstract `1637` chars）。真实三源
+  `crossref+arxiv+osti` 单 query envelope 为 `64184` bytes、3 attempts、12 hits/12 unique
+  documents，三个 provider 均命中。非 DFT research entry 将物理请求预算扩为 16，本地 ignored
+  launcher 默认启用三源；排除暂停 flatband 轨的完整离线 Gate 为
+  `1104 passed, 17 skipped`（135.36s）。本任务完成，全文/PDF 与科学结论边界不变。
+
+### 2026-08-14：accuracy-first 文献检索 profile（完成）
+
+- 用户明确本地科研测试不考虑 API/计算成本，以检索准确性与召回率优先；仍保留外部服务
+  协议、证据闭包和“文献支持不等于物性验证”的科学边界。
+- 计划：公共 provider 每 query 从 5 条扩到 20 条；非 DFT research entry 默认启用
+  Crossref+arXiv+OSTI，有 OpenAlex key 时自动加入 OpenAlex；原始 hit/document/passage 上限
+  分别扩至覆盖四源最坏情况，并将 passage 处理顺序从 document hash 改为 metadata quality
+  排名优先，再把最多 64 条闭合 evidence/passages 交给 DeepSeek grounded rerank。
+- 验收：新增 max-results 配置与非法值测试、质量优先 passage 回归、三/四源 budget 回归；
+  运行定向 Inspiration/research tests、真实三源高召回 smoke、排除暂停 flatband 轨的完整离线
+  Gate，随后独立提交并推送。OpenAlex 无 key 时不得伪装已调用。
+- 实际完成：research entry 默认每 provider/query 20 条，最多 320 unique documents、128
+  passages、64 条 closed passage/evidence 进入一次 DeepSeek grounded rerank；document passage
+  消费顺序改为 metadata eligibility/quality 优先，跨源数量只作为稳定 tie-break。无显式模式时
+  使用 Crossref+arXiv+OSTI，只有真实 `OPENALEX_API_KEY` 存在才自动加入 OpenAlex。
+- 真实三源 ×20 smoke：`60 hits`、`57 unique documents`、`59` 有摘要、`48` 有 DOI，
+  envelope `235136` bytes、3 physical attempts；未调用 OpenAlex。定向 Gate `345 passed`，排除
+  暂停 flatband 轨的完整离线 Gate `1109 passed, 17 skipped`（130.83s），依赖/diff/secret
+  checks 通过。canonical implementation revision 升为 `research-pipeline-20260814-r5`。
+
+### 2026-08-23：通用候选与下游证据反馈契约
+
+- Generic Research 的 `MaterialsResearchGraphResultV7` 现可把全部排名候选投影为
+  `HypothesisCandidate`，不再经 compatibility research entry 的 `selected_ids[0]` 或
+  S→Se request 进入新链；候选绑定真实数据库 parent Artifact、元素、维度、文献 evidence
+  与逐候选 unresolved claims。
+- 新增 `DeepSeekScientificLoopReasoner`：route 回合通过一个无参数 strict tool 读取完整、
+  有界 capability snapshot，并输出模型/计算、observable、前置关系、目标证据和 falsifier；
+  feedback 回合读取完整 evidence snapshot，提出 retain/eliminate、typed
+  `CompileReasonedOperationArgsV3` revision 或更高 evidence task。reasoning content 不落盘，
+  receipt 仅保存 hash 和公开调用元数据。
+- `ScientificEvidence` 先写 immutable Artifact，再追加到 Inspiration memory 的
+  `MODEL_VALIDATION` payload。feedback audit 要求 evidence 已在当前 snapshot 中，淘汰还要求
+  real L2+ contradiction；mock、NONE 或未入 memory 的结果均不能驱动候选淘汰。
+- 历史 prompt1 三候选离线纵切通过。真实 route 调用先后暴露 3-call 预算不足、provider
+  malformed tool JSON、8-round finalization 不足和 900 秒 walltime；最终定位到 strict
+  `model_validate(json.loads(...))` 会永久拒绝 JSON array 对应的 tuple 字段，改用
+  `model_validate_json` 后 route live 通过。DeepSeek 对三个候选分别提出 HSE+SOC band/PDOS
+  六约束验证，本地 policy 因 DFT backend 未就绪全部阻断。真实 feedback 回合随后在 provider
+  chunked response 发生 `IncompleteRead`，所以 feedback live Gate 仍未完成。
+- 当前跨模块定向 Gate 为 `65 passed`。全量单进程 Gate 在历史 flat-band/spglib 压力用例
+  长期运行时于 42:01 人工终止；终止前为 `339 passed, 19 skipped` 且无失败，不能据此宣称
+  全量通过。

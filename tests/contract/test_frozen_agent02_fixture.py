@@ -15,7 +15,6 @@ from material_agent.ml_screening.models import (
 from material_agent.ml_screening.worker_protocol import validate_worker_inputs
 from material_agent.retrieval.storage import LocalArtifactStore
 
-
 PROJECT_ROOT = Path(__file__).parents[2]
 FIXTURE_ROOT = PROJECT_ROOT / "tests/fixtures"
 CONTRACT_ROOT = FIXTURE_ROOT / "contracts/agent02-v1"

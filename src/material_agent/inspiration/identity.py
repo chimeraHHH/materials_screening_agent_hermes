@@ -22,7 +22,6 @@ from material_agent.inspiration.models import (
 )
 from material_agent.inspiration.policy import SelectionPolicyV1
 
-
 _IDENTIFIER_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 _COMPOSITION_COMPONENT_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9.+-]{0,31}$")
 

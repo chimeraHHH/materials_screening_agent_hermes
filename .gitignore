@@ -6,9 +6,12 @@
 .venv-gateway/
 .venv-hermes/
 .venv-agent02/
+.venv-smact/
 .venv-alignn/
+.venv-semantic/
 .external/
 .hermes-runtime/
+.materials-inspiration-bootstrap.lock
 __pycache__/
 *.py[cod]
 *.egg-info/
@@ -20,3 +23,12 @@ htmlcov/
 build/
 dist/
 workspace/
+output/
+tmp/
+
+# Research benchmark inputs remain local unless an audited manifest is explicitly
+# versioned.  Do not commit bulk snapshots, article bodies, or local model bundles.
+research-data/raw/
+research-data/cache/
+research-data/processed/
+models/local/

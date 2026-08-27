@@ -4,12 +4,18 @@ from __future__ import annotations
 
 import math
 import re
-from datetime import UTC, datetime
 from enum import StrEnum
 from hashlib import sha256
-from typing import Any, Annotated, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StringConstraints,
+    field_validator,
+    model_validator,
+)
 
 DFT_CONTRACT_VERSION = "agent03-dft-contract-v1"
 Sha256 = Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")]

@@ -9,6 +9,7 @@ section heading, the selected passage text, and normalized tags.
 from __future__ import annotations
 
 import hashlib
+import itertools
 import math
 import re
 import struct
@@ -25,7 +26,6 @@ from material_agent.inspiration.models import (
     canonical_sha256,
 )
 from material_agent.inspiration.policy import EmbeddingBudgetV1
-
 
 SIGNED_HASHING_VECTORIZER_ID = "signed-hashing-v1"
 SIGNED_HASHING_VERSION = "1"
@@ -343,9 +343,9 @@ def _iter_features(
 ) -> Iterator[bytes]:
     for namespace, tokens in token_fields:
         for token in tokens:
-            yield f"{namespace}\x1funigram\x1f{token}".encode("utf-8")
-        for left, right in zip(tokens, tokens[1:]):
-            yield f"{namespace}\x1fbigram\x1f{left}\x1f{right}".encode("utf-8")
+            yield f"{namespace}\x1funigram\x1f{token}".encode()
+        for left, right in itertools.pairwise(tokens):
+            yield f"{namespace}\x1fbigram\x1f{left}\x1f{right}".encode()
 
 
 def _signed_hash_artifact_bytes(

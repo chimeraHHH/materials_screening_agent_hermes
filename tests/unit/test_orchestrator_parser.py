@@ -8,7 +8,6 @@ import pytest
 from material_agent.orchestrator.parser import OfflineRequirementParser
 from material_agent.retrieval.models import Requirement
 
-
 ACCEPTANCE_REQUEST = (
     "从 Materials Project 中寻找同时包含 Si 和 O、带隙为 0.5–1.0 eV、"
     "energy above hull 不超过 0.05 eV/atom 的非金属材料。"

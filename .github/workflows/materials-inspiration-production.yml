@@ -1,0 +1,249 @@
+name: Materials Inspiration Production Gate
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: materials-inspiration-production-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  MPLCONFIGDIR: /tmp/material-agent-mpl
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+  PYTHONDONTWRITEBYTECODE: "1"
+  PYTEST_ADDOPTS: ""
+  UV_NO_PROGRESS: "1"
+
+jobs:
+  production-gate:
+    name: Offline and isolated production gate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    permissions:
+      contents: read
+
+    steps:
+      - name: Check out the exact revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          show-progress: false
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          check-latest: false
+          python-version: "3.11"
+
+      - name: Set up Node 22.22.0
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          check-latest: false
+          node-version: "22.22.0"
+          package-manager-cache: false
+
+      - name: Set up pinned uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          enable-cache: false
+          python-version: "3.11"
+          version: "0.12.3"
+
+      - name: Verify toolchain identities
+        shell: bash
+        run: |
+          set -euo pipefail
+          node_version="$(node --version)"
+          python_version="$(python -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')"
+          uv_version="$(uv --version | awk '{print $2}')"
+          printf 'node=%s python=%s uv=%s\n' "$node_version" "$python_version" "$uv_version"
+          test "$node_version" = "v22.22.0"
+          test "$python_version" = "3.11"
+          test "$uv_version" = "0.12.3"
+
+      - name: Build the locked main environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          uv venv --python "$pythonLocation" .venv
+          uv pip sync --python .venv/bin/python requirements.lock
+          uv pip install --python .venv/bin/python --no-deps --editable .
+
+      - name: Build the locked Gateway environment
+        timeout-minutes: 10
+        shell: bash
+        run: |
+          set -euo pipefail
+          .venv/bin/python integrations/hermes/scripts/bootstrap_gateway_runtime.py
+          test -x .venv-gateway/bin/python
+          PYTHONPATH="$GITHUB_WORKSPACE/src" .venv-gateway/bin/python -c "import mcp, material_agent"
+
+      - name: Verify the Hermes profile bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          .venv/bin/python integrations/hermes/scripts/verify_bundle.py
+
+      - name: Run the complete offline test suite
+        timeout-minutes: 60
+        shell: bash
+        run: |
+          set -euo pipefail
+          .venv/bin/python -m pytest -q -p no:cacheprovider \
+            --ignore-glob='tests/unit/test_flatband_research_*.py'
+
+      - name: Build the pinned Hermes environment
+        timeout-minutes: 20
+        shell: bash
+        run: |
+          set -euo pipefail
+          .venv/bin/python integrations/hermes/scripts/bootstrap_runtime.py
+          test -x .venv-hermes/bin/hermes
+          test -x .venv-hermes/bin/python
+
+      - name: Check all three Python environments
+        shell: bash
+        run: |
+          set -euo pipefail
+          uv pip check --python .venv/bin/python
+          uv pip check --python .venv-gateway/bin/python
+          uv pip check --python .venv-hermes/bin/python
+
+      - name: Run the isolated Gateway MCP gates
+        timeout-minutes: 10
+        shell: bash
+        env:
+          PYTHONPATH: ${{ github.workspace }}/src
+        run: |
+          set -euo pipefail
+          .venv-gateway/bin/python -m pytest -q -p no:cacheprovider \
+            tests/integration/test_gateway_mcp.py::GatewayMcpStdioTest::test_real_stdio_round_trip_exposes_only_the_allowlist \
+            tests/integration/test_gateway_runner_e2e.py::test_real_runner_through_mcp_stdio_survives_process_restart
+
+      - name: Run production static E2E and operations gates
+        timeout-minutes: 15
+        shell: bash
+        run: |
+          set -euo pipefail
+          .venv/bin/python -m pytest -q -p no:cacheprovider \
+            tests/unit/test_hermes_production_ops.py \
+            tests/integration/test_hermes_production_deployment.py
+
+      - name: Compile Python sources
+        shell: bash
+        run: |
+          set -euo pipefail
+          .venv/bin/python -m compileall -q src integrations/hermes/scripts
+
+      - name: Reject committed whitespace errors
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          case "$EVENT_NAME" in
+            pull_request)
+              base_sha="$PR_BASE_SHA"
+              ;;
+            push)
+              base_sha="$PUSH_BEFORE_SHA"
+              ;;
+            workflow_dispatch)
+              git show --check --format= HEAD
+              exit 0
+              ;;
+            *)
+              echo "unsupported workflow event" >&2
+              exit 2
+              ;;
+          esac
+
+          if [[ ! "$base_sha" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "workflow base SHA is invalid" >&2
+            exit 2
+          fi
+          if [[ "$base_sha" == "0000000000000000000000000000000000000000" ]]; then
+            git show --check --format= HEAD
+            exit 0
+          fi
+          git cat-file -e "${base_sha}^{commit}"
+          git diff --check "$base_sha..HEAD"
+
+  research-contract-gate:
+    name: Flat-band research contract gate (${{ matrix.shard }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 210
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - shard: analysis
+            tests: >-
+              tests/unit/test_flatband_research_analysis.py
+              tests/unit/test_flatband_research_statistics.py
+              tests/unit/test_flatband_research_metrics.py
+          - shard: blinding-gold
+            tests: >-
+              tests/unit/test_flatband_research_blinding.py
+              tests/unit/test_flatband_research_gold.py
+          - shard: cases-experts
+            tests: >-
+              tests/unit/test_flatband_research_cases.py
+              tests/unit/test_flatband_research_experts.py
+          - shard: execution
+            tests: tests/unit/test_flatband_research_execution.py
+          - shard: leakage-contracts-structure
+            tests: >-
+              tests/unit/test_flatband_research_contracts.py
+              tests/unit/test_flatband_research_leakage.py
+              tests/unit/test_flatband_research_structure_grouping.py
+
+    steps:
+      - name: Check out the exact revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          show-progress: false
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          check-latest: false
+          python-version: "3.11"
+
+      - name: Set up pinned uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          enable-cache: false
+          python-version: "3.11"
+          version: "0.12.3"
+
+      - name: Build the locked main environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          uv venv --python "$pythonLocation" .venv
+          uv pip sync --python .venv/bin/python requirements.lock
+          uv pip install --python .venv/bin/python --no-deps --editable .
+
+      - name: Run the research contract shard
+        timeout-minutes: 195
+        shell: bash
+        env:
+          PYTHONPATH: tests/unit
+        run: |
+          set -euo pipefail
+          .venv/bin/python -m pytest -q -p no:cacheprovider ${{ matrix.tests }}

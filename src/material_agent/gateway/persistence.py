@@ -9,10 +9,10 @@ from __future__ import annotations
 
 import os
 import sqlite3
+from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 from threading import RLock
-from typing import Iterator
 
 from material_agent.gateway.errors import ConcurrentUpdateError
 from material_agent.gateway.models import (
@@ -22,7 +22,6 @@ from material_agent.gateway.models import (
     gateway_result_sha256,
     terminal_reference,
 )
-
 
 # Version 1 terminal rows did not bind their canonical structured result hash.
 # Such rows cannot be upgraded safely after the fact because doing so would

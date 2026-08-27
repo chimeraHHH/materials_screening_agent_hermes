@@ -168,7 +168,7 @@ def report_to_markdown(report: dict[str, Any], workspace_dir: str | None = None)
         "*   **Energy Above Hull (`e_above_hull`)**: 凸包能量。衡量材料热力学稳定性的核心指标。值为 0 表示材料在热力学基态是绝对稳定的；大于 0 的值表示亚稳态，值越大越容易分解为其他相。",
         "*   **Band Gap**: 带隙。决定材料导电性质的关键物理量，通常以 eV（电子伏特）为单位。",
         "*   **Magnetic Ordering**: 磁序。描述材料内部自旋排列的方式（如 Non-magnetic 非磁性、Ferromagnetic 铁磁性、Antiferromagnetic 反铁磁性等）。",
-        "*   **Total Magnetization**: 总磁矩。晶胞内所有原子磁矩的矢量和，通常以玻尔磁子 ($\mu_B$) 为单位。",
+        r"*   **Total Magnetization**: 总磁矩。晶胞内所有原子磁矩的矢量和，通常以玻尔磁子 ($\mu_B$) 为单位。",
         "",
         "### 3. 晶体学对称性 (Symmetry)",
         "*   **Space Group**: 空间群。用于描述晶体内部三维平移和旋转等所有微观对称操作的数学群（自然界共 230 种），通常用国际表符号（如 $Fm\\bar{3}m$）表示。",

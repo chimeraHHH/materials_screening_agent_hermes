@@ -307,8 +307,8 @@ class DeepHFlowRunner:
             is_mock=response.is_mock,
             warnings=[
                 *response.warnings,
-                "Evidence remains NONE until a separate scientific benchmark "
-                "and applicability review are completed.",
+                ("Evidence remains NONE until a separate scientific benchmark "
+                "and applicability review are completed."),
             ],
             errors=response.errors,
         )

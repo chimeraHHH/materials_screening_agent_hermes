@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass, replace
+from pathlib import Path
 from typing import Any
 
 import pytest
 from pydantic import ValidationError
 
+import material_agent.gateway.companion as companion_module
 from material_agent.gateway.companion import (
     CompanionAdapterError,
     OfflineInspirationCompanionAdapter,
@@ -33,6 +35,10 @@ from material_agent.gateway.models import (
     inspiration_report_uri,
     inspiration_run_id,
 )
+from material_agent.inspiration.component_identity import (
+    EXECUTION_COMPONENT_SOURCE_PATHS,
+    execution_identity_snapshots,
+)
 from material_agent.inspiration.models import (
     ArtifactPointerV1,
     ComponentSnapshotV1,
@@ -56,6 +62,28 @@ def _artifact(name: str, *, payload: bytes | None = None) -> ArtifactPointerV1:
         sha256=hashlib.sha256(content).hexdigest(),
         size_bytes=len(content),
     )
+
+
+def _materialize_execution_identity_tree(root: Path) -> None:
+    (root / "pyproject.toml").parent.mkdir(parents=True, exist_ok=True)
+    (root / "pyproject.toml").write_text(
+        '[project]\nname = "material-screening-agent"\nversion = "1.0.0"\n',
+        encoding="utf-8",
+    )
+    (root / "requirements.lock").write_text(
+        "pydantic==2.12.5\npymatgen==2025.10.7\nspglib==2.7.0\n",
+        encoding="utf-8",
+    )
+    for relative_path in sorted(
+        {
+            path
+            for paths in EXECUTION_COMPONENT_SOURCE_PATHS.values()
+            for path in paths
+        }
+    ):
+        path = root.joinpath(*relative_path.split("/"))
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(f"# {relative_path}\n", encoding="utf-8")
 
 
 def _request(submission_id: str = "submission-companion") -> InspirationRunRequestV1:
@@ -224,6 +252,12 @@ class _Projector:
     def __init__(self, projection: ProjectedInspirationResult) -> None:
         self.projection = projection
         self.calls: list[dict[str, Any]] = []
+        self.recovery_calls: list[dict[str, Any]] = []
+        self.recovered_result: _RunnerResult | None = None
+
+    def recover_or_bind_completed(self, **arguments: Any) -> _RunnerResult | None:
+        self.recovery_calls.append(arguments)
+        return self.recovered_result
 
     def project(self, **arguments: Any) -> ProjectedInspirationResult:
         self.calls.append(arguments)
@@ -293,6 +327,22 @@ def test_start_is_deterministic_and_does_not_execute_the_runner() -> None:
         adapter.start(run_id="inspiration-wrong", request=request)
 
 
+def test_manifest_adds_complete_content_identity_and_ignores_component_order(
+) -> None:
+    request, _adapter, preparer, runner, _projector = _adapter_components()
+    forward = prepared_execution_manifest_sha256(
+        request=request,
+        prepared=preparer.prepared,
+        execution_components=runner.execution_components,
+    )
+    reverse = prepared_execution_manifest_sha256(
+        request=request,
+        prepared=preparer.prepared,
+        execution_components=tuple(reversed(runner.execution_components)),
+    )
+    assert forward == reverse
+
+
 def test_requirement_freeze_prompt_rejects_wrong_input_types() -> None:
     request = _request()
     prepared = _prepared(inspiration_run_id(request.submission_id))
@@ -338,6 +388,36 @@ def test_only_exact_confirmed_approval_executes_once() -> None:
         )
 
 
+def test_exact_completed_recovery_projects_without_calling_runner() -> None:
+    request, adapter, preparer, runner, projector = _adapter_components()
+    run_id = inspiration_run_id(request.submission_id)
+    projector.recovered_result = runner.result
+    started = adapter.start(run_id=run_id, request=request)
+    assert isinstance(started.state, InteractionRequiredStateV1)
+
+    terminal = adapter.act(
+        run_id=run_id,
+        request=request,
+        state=started.state,
+        action=ApproveActionV1(
+            interaction_id=started.state.interaction.interaction_id,
+            confirmed_by_user=True,
+        ),
+    )
+
+    assert isinstance(terminal.state, SucceededStateV1)
+    assert terminal.result is not None
+    assert runner.calls == []
+    assert len(projector.recovery_calls) == 1
+    assert projector.recovery_calls[0]["run_id"] == run_id
+    assert projector.recovery_calls[0]["request"] == request
+    assert projector.recovery_calls[0]["prepared"] == preparer.prepared
+    assert projector.recovery_calls[0]["execution_manifest_sha256"] == (
+        started.state.interaction.input_sha256
+    )
+    assert len(projector.calls) == 1
+
+
 def test_approved_execution_manifest_drift_fails_before_runner() -> None:
     request, adapter, preparer, runner, projector = _adapter_components()
     run_id = inspiration_run_id(request.submission_id)
@@ -370,16 +450,59 @@ def test_transformation_engine_snapshot_drift_fails_before_runner() -> None:
     run_id = inspiration_run_id(request.submission_id)
     started = adapter.start(run_id=run_id, request=request)
     assert isinstance(started.state, InteractionRequiredStateV1)
-    runner.execution_components = (
-        ComponentSnapshotV1(
-            component_id="test-transformation-engine",
-            version="2",
-            implementation_sha256=hashlib.sha256(
-                b"changed-transformation-engine-v2"
-            ).hexdigest(),
-        ),
+    changed_component = ComponentSnapshotV1(
+        component_id="test-transformation-engine",
+        version="2",
+        implementation_sha256=hashlib.sha256(
+            b"changed-transformation-engine-v2"
+        ).hexdigest(),
+    )
+    runner.execution_components = tuple(
+        changed_component
+        if component.component_id == changed_component.component_id
+        else component
+        for component in runner.execution_components
     )
 
+    with pytest.raises(CompanionAdapterError, match="manifest changed"):
+        adapter.act(
+            run_id=run_id,
+            request=request,
+            state=started.state,
+            action=ApproveActionV1(
+                interaction_id=started.state.interaction.interaction_id,
+                confirmed_by_user=True,
+            ),
+        )
+
+    assert runner.calls == []
+    assert projector.calls == []
+
+
+def test_real_source_identity_drift_fails_closed_before_runner(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    request, adapter, _preparer, runner, projector = _adapter_components()
+    run_id = inspiration_run_id(request.submission_id)
+    identity_root = tmp_path / "deployed-checkout"
+    _materialize_execution_identity_tree(identity_root)
+    monkeypatch.setattr(
+        companion_module,
+        "execution_identity_snapshots",
+        lambda: execution_identity_snapshots(project_root=identity_root),
+    )
+    started = adapter.start(run_id=run_id, request=request)
+    assert isinstance(started.state, InteractionRequiredStateV1)
+
+    evidence_source = identity_root.joinpath(
+        *EXECUTION_COMPONENT_SOURCE_PATHS[
+            "inspiration-evidence-implementation"
+        ][0].split("/")
+    )
+    evidence_source.write_bytes(
+        evidence_source.read_bytes() + b"# changed after approval\n"
+    )
     with pytest.raises(CompanionAdapterError, match="manifest changed"):
         adapter.act(
             run_id=run_id,

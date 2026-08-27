@@ -1,0 +1,21 @@
+[
+  {
+    "case_id": "benchmark-case-flatband",
+    "resolved_dois": ["10.1000/flat"],
+    "known_evidence_ids": ["evidence-111111111111111111111111"],
+    "cited_evidence_ids": ["evidence-111111111111111111111111"],
+    "located_fulltext_evidence_ids": ["evidence-111111111111111111111111"],
+    "directly_supported_constraint_kinds": [
+      "electronic_bandwidth",
+      "fermi_ordering",
+      "orbital_character"
+    ],
+    "conclusion": "TiS2 is the lead; the located source reports a 42 meV band.",
+    "native_lead_count": 2,
+    "resolved_native_lead_count": 2,
+    "declared_counter_queries": ["TiS2 instability null result"],
+    "executed_counter_queries": ["TiS2 instability null result"],
+    "candidate_second_pass_triggered": true,
+    "property_verification_complete": false
+  }
+]

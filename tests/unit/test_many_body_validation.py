@@ -7,7 +7,6 @@ from pathlib import Path
 from material_agent.many_body.models import EffectiveModelPackage, package_content_hash
 from material_agent.many_body.validation import ValidationStatus, validate_model_package
 
-
 ROOT = Path(__file__).parents[1] / "fixtures/contracts/agent04-v1"
 
 

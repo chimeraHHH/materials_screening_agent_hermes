@@ -1502,3 +1502,16 @@ Agent 02、Agent 03 和 Agent 04 可在公共契约冻结后使用 fixture 并�
 - [x] 当前工作区离线 Gate `500 passed, 9 skipped`，`pip check`、`git diff --check`
   通过；公开 NOMAD release Gate `1 passed`。本机当前没有可用的 DeepSeek/MP API key，
   因此本轮真实 LLM 与 MP Gate 未成功执行。
+
+### 2026-08-14：C2DB listing 预筛与并发结构下载
+
+- [x] `RetrievalQueryPlan` 新增独立 `predownload_filters`，明确区分远端 pushdown、
+  listing 响应预筛和最终权威 evaluator；C2DB policy 升为
+  `retrieval-policy-c2db-v2`。
+- [x] `exact_formula` 使用 pymatgen composition 在 C2DB table 行上先做约化组成等价
+  比较，再下载结构；最终 evaluator 仍逐候选复核，科学阈值未改变。
+- [x] 剩余 material JSON 以默认 8、最大 32 的有界线程池并发下载；真实 requests
+  路径每个 worker 使用独立 Session，避免共享 Session 的线程状态。
+- [x] 真实公开 TiS2 smoke 返回 5 个结构，完整 metadata/table/material 阶段约
+  `32.062 s`，不再接近原 900 秒 MCP 超时；这是 2026-08-14 当前网络的运行证据，
+  不是固定性能保证。

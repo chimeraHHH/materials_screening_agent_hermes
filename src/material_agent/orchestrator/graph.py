@@ -12,6 +12,8 @@ from langgraph.types import interrupt
 
 from material_agent.orchestrator.identity import Clock, SystemClock
 from material_agent.orchestrator.models import (
+    ORCHESTRATOR_REPORT_VERSION,
+    STAGE_TO_AGENT,
     ApprovalStatus,
     ArtifactPointer,
     ControlError,
@@ -20,7 +22,6 @@ from material_agent.orchestrator.models import (
     ExecutionPlan,
     ExternalJobRecord,
     InteractionType,
-    ORCHESTRATOR_REPORT_VERSION,
     OrchestratorState,
     PendingInteraction,
     PreparedStagePlan,
@@ -32,7 +33,6 @@ from material_agent.orchestrator.models import (
     StageInputValidation,
     StageRoute,
     StageStatus,
-    STAGE_TO_AGENT,
     effective_stage_approval,
 )
 from material_agent.orchestrator.parser import (
@@ -74,7 +74,6 @@ from material_agent.retrieval.storage import (
     LocalArtifactStore,
     canonical_json_bytes,
 )
-
 
 ROUTING_POLICY_VERSION = "orchestrator-routing-policy-v2"
 _EVIDENCE_ORDER = {
@@ -677,7 +676,7 @@ class OrchestratorGraph:
     ) -> dict[str, Any]:
         direct_input = state.get("direct_stage_input")
         if not isinstance(direct_input, dict):
-            raise ValueError("direct-stage run is missing stage input")
+            raise ValueError("direct-stage run is missing stage input")  # noqa: TRY004
         requirement_uri = direct_input["requirement_artifact_uri"]
         requirement_hash = direct_input["requirement_artifact_sha256"]
         if not self.store.exists_with_hash(requirement_uri, requirement_hash):
@@ -1055,7 +1054,7 @@ class OrchestratorGraph:
         runner = self._runner(state, context)
         try:
             validation = runner.validate_input(context)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             validation = StageInputValidation(
                 valid=False,
                 errors=[f"input validation failed ({type(exc).__name__})"],
@@ -1117,7 +1116,7 @@ class OrchestratorGraph:
             else:
                 runner = self._runner(state, context)
                 prepared = runner.prepare(context)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             outcome = (
                 self._invalid_stage_plan_outcome(
                     context, input_ref.sha256, exc
@@ -1154,7 +1153,7 @@ class OrchestratorGraph:
                 prepared.native_plan_sha256,
             ):
                 raise ValueError("native stage plan failed integrity check")
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             outcome = self._invalid_stage_plan_outcome(
                 context, input_ref.sha256, exc
             )
@@ -1469,7 +1468,7 @@ class OrchestratorGraph:
         runner = self._runner(state, context)
         try:
             outcome = runner.start(context, prepared, operation_key)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             outcome = ControlStageOutcome(
                 stage=route.stage,
                 agent_id=route.agent_id,
@@ -1811,9 +1810,7 @@ class OrchestratorGraph:
         candidate_ids = list(state.get("candidate_ids", []))
         if route.stage is StageId.RETRIEVAL:
             candidate_ids = list(outcome.summary.get("candidate_ids", []))
-        if outcome.outcome is ControlOutcomeType.WAITING_EXTERNAL:
-            run_status = RunStatus.PAUSED
-        elif outcome.status in {
+        if outcome.outcome is ControlOutcomeType.WAITING_EXTERNAL or outcome.status in {
             StageStatus.RETRYABLE_FAILED,
             StageStatus.BLOCKED_MISSING_INPUT,
             StageStatus.CAPABILITY_UNAVAILABLE,
@@ -2020,9 +2017,7 @@ class OrchestratorGraph:
                     "errors": [],
                     "is_mock": route.capability.is_mock,
                 }
-        if state.get("retry_decision") == "cancel":
-            final_status = RunStatus.CANCELLED
-        elif user_cancelled_stage and not valid_results:
+        if state.get("retry_decision") == "cancel" or user_cancelled_stage and not valid_results:
             final_status = RunStatus.CANCELLED
         elif user_cancelled_stage and valid_results:
             final_status = RunStatus.PARTIAL
@@ -2030,9 +2025,7 @@ class OrchestratorGraph:
             final_status = RunStatus.PAUSED
         elif required_failure:
             final_status = RunStatus.FAILED
-        elif optional_degraded and valid_results:
-            final_status = RunStatus.PARTIAL
-        elif any(
+        elif optional_degraded and valid_results or any(
             stage["status"] == StageStatus.PARTIAL.value
             for stage in stages.values()
         ):

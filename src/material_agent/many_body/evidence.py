@@ -52,16 +52,15 @@ def assert_evidence_allowed(
         solver_validation_status=solver_validation_status,
         material_linkage_status=material_linkage_status,
     )
-    if requested_level is EvidenceLevel.L4_MANY_BODY_VALIDATED:
-        if (
-            is_mock
-            or package.fixture
-            or (backend_id == "exact-diagonalization" and backend_version is not None and "planned" in backend_version.lower())
-            or model_definition_status is not ModelDefinitionStatus.VALIDATED_MODEL
-            or solver_validation_status not in (SolverValidationStatus.NUMERICALLY_VALIDATED, SolverValidationStatus.BENCHMARK_VALIDATED)
-            or material_linkage_status is not MaterialLinkageStatus.EXPERT_APPROVED
-        ):
-            raise ValueError("L4_MANY_BODY_VALIDATED is not permitted by the Agent04 evidence ceiling")
+    if requested_level is EvidenceLevel.L4_MANY_BODY_VALIDATED and (
+        is_mock
+        or package.fixture
+        or (backend_id == "exact-diagonalization" and backend_version is not None and "planned" in backend_version.lower())
+        or model_definition_status is not ModelDefinitionStatus.VALIDATED_MODEL
+        or solver_validation_status not in (SolverValidationStatus.NUMERICALLY_VALIDATED, SolverValidationStatus.BENCHMARK_VALIDATED)
+        or material_linkage_status is not MaterialLinkageStatus.EXPERT_APPROVED
+    ):
+        raise ValueError("L4_MANY_BODY_VALIDATED is not permitted by the Agent04 evidence ceiling")
     if requested_level.value.startswith("L4") and requested_level is not EvidenceLevel.L4_MANY_BODY_VALIDATED:
         raise ValueError("unsupported L4 evidence declaration")
     if requested_level.value > ceiling.value and requested_level is EvidenceLevel.L5_EXPERT_REVIEWED:

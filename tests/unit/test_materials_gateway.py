@@ -10,6 +10,8 @@ from material_agent.gateway import (
     ActionAuthorizationError,
     ApprovalInteractionV1,
     ApproveActionV1,
+    ArtifactClosureV1,
+    ArtifactReferenceV1,
     CandidateSummaryV1,
     CompanionTransitionV1,
     EvidenceReferenceV1,
@@ -33,12 +35,12 @@ from material_agent.gateway import (
     StaleInteractionError,
     SubmissionConflictError,
     SucceededStateV1,
+    artifact_closure_sha256,
     gateway_result_sha256,
     inspiration_report_uri,
     inspiration_run_id,
 )
 from material_agent.gateway.models import RunActionV1, RunStateV1
-
 
 StartFactory = Callable[[str, InspirationRunRequestV1], CompanionTransitionV1 | dict]
 ActionFactory = Callable[
@@ -103,6 +105,7 @@ def _service(
     repository: InMemoryGatewayRepository | None = None,
     artifacts: InMemoryArtifactStore | None = None,
     max_report_bytes: int = 1_000_000,
+    max_readable_report_chars: int = 24_000,
 ) -> tuple[
     MaterialsGatewayService,
     InMemoryGatewayRepository,
@@ -117,6 +120,7 @@ def _service(
             artifact_reader=artifacts,
             action_authorizer=_AllowAllTestAuthorizer(),
             max_report_bytes=max_report_bytes,
+            max_readable_report_chars=max_readable_report_chars,
         ),
         repository,
         artifacts,
@@ -142,6 +146,7 @@ def _result(
     run_id: str,
     report_uri: str,
     authoritative_sha256: str,
+    artifact_closure: ArtifactClosureV1 | None = None,
 ) -> GatewayResultRecordV1:
     return GatewayResultRecordV1(
         run_id=run_id,
@@ -162,6 +167,57 @@ def _result(
         validation_boundaries=(
             "SEARCH_SUPPORTED is bridge support, not property validation",
             "STRUCTURE_VALID is deterministic structural QC only",
+        ),
+        artifact_closure=artifact_closure,
+    )
+
+
+def _artifact_reference(
+    *, uri: str, payload: bytes, media_type: str
+) -> ArtifactReferenceV1:
+    return ArtifactReferenceV1(
+        uri=uri,
+        sha256=hashlib.sha256(payload).hexdigest(),
+        size_bytes=len(payload),
+        media_type=media_type,
+    )
+
+
+def _closure_for_report(
+    *,
+    run_id: str,
+    report_uri: str,
+    report_payload: bytes,
+    artifacts: InMemoryArtifactStore,
+    extra_artifacts: tuple[ArtifactReferenceV1, ...] = (),
+) -> ArtifactClosureV1:
+    stage_result_uri = f"artifact://stages/inspiration/{run_id}/stage_result.json"
+    stage_result_payload = b'{"schema_version":"fixture-stage-result-v1"}'
+    artifacts.put_bytes(stage_result_uri, stage_result_payload)
+    stage_result = _artifact_reference(
+        uri=stage_result_uri,
+        payload=stage_result_payload,
+        media_type="application/json",
+    )
+    members = tuple(
+        sorted(
+            (
+                _artifact_reference(
+                    uri=report_uri,
+                    payload=report_payload,
+                    media_type="text/markdown",
+                ),
+                *extra_artifacts,
+            ),
+            key=lambda item: item.uri,
+        )
+    )
+    return ArtifactClosureV1(
+        stage_result=stage_result,
+        artifacts=members,
+        closure_sha256=artifact_closure_sha256(
+            stage_result=stage_result,
+            artifacts=members,
         ),
     )
 
@@ -261,6 +317,9 @@ def test_public_state_interaction_and_action_schemas_are_discriminated() -> None
         "properties"
     ]["interaction"]
     assert interaction_schema["discriminator"]["propertyName"] == "kind"
+    assert "execution_manifest_sha256" in view_schema["$defs"][
+        "ApprovalInteractionV1"
+    ]["properties"]
 
 
 def test_run_get_is_read_only_and_never_calls_companion() -> None:
@@ -426,10 +485,17 @@ def test_result_get_verifies_terminal_report_uri_and_authoritative_sha() -> None
     artifacts.put_bytes(report_uri, report)
 
     def completed(run_id: str, _request: InspirationRunRequestV1) -> CompanionTransitionV1:
+        closure = _closure_for_report(
+            run_id=run_id,
+            report_uri=report_uri,
+            report_payload=report,
+            artifacts=artifacts,
+        )
         result = _result(
             run_id=run_id,
             report_uri=report_uri,
             authoritative_sha256=report_sha256,
+            artifact_closure=closure,
         )
         return CompanionTransitionV1(
             state=SucceededStateV1(
@@ -454,8 +520,63 @@ def test_result_get_verifies_terminal_report_uri_and_authoritative_sha() -> None
     assert result.report_uri == report_uri
     assert result.authoritative_sha256 == report_sha256
     assert result.result_sha256 == gateway_result_sha256(result)
+    assert result.readable_report.content == report.decode("utf-8")
+    assert result.readable_report.truncated is False
+    assert result.readable_report.full_content_sha256 == report_sha256
     assert result.bundle.scientific_conclusion is False
     assert result.bundle.selected_candidates[0].target_property_status == "UNKNOWN"
+
+
+def test_result_get_returns_only_a_bounded_verified_report_prefix() -> None:
+    submission_id = "submission-bounded-readable-report"
+    run_id = inspiration_run_id(submission_id)
+    report = b"0123456789abcdefghijklmnopqrstuvwxyz"
+    report_uri = inspiration_report_uri(run_id)
+    report_sha256 = hashlib.sha256(report).hexdigest()
+    artifacts = InMemoryArtifactStore()
+    artifacts.put_bytes(report_uri, report)
+
+    def completed(
+        observed_run_id: str, _request: InspirationRunRequestV1
+    ) -> CompanionTransitionV1:
+        closure = _closure_for_report(
+            run_id=observed_run_id,
+            report_uri=report_uri,
+            report_payload=report,
+            artifacts=artifacts,
+        )
+        result = _result(
+            run_id=observed_run_id,
+            report_uri=report_uri,
+            authoritative_sha256=report_sha256,
+            artifact_closure=closure,
+        )
+        return CompanionTransitionV1(
+            state=SucceededStateV1(
+                report_uri=report_uri,
+                authoritative_sha256=report_sha256,
+                result_sha256=gateway_result_sha256(result),
+            ),
+            result=result,
+        )
+
+    service, _repository, _artifacts = _service(
+        _InMemoryCompanionAdapter(start_factory=completed),
+        artifacts=artifacts,
+        max_readable_report_chars=10,
+    )
+    service.materials_inspiration_run(
+        submission_id=submission_id,
+        goal="Find candidates",
+        constraints=_constraints(),
+    )
+
+    result = service.materials_result_get(run_id=run_id)
+    assert result.readable_report.content == "0123456789"
+    assert result.readable_report.returned_char_count == 10
+    assert result.readable_report.original_char_count == len(report)
+    assert result.readable_report.original_size_bytes == len(report)
+    assert result.readable_report.truncated is True
 
 
 def test_result_get_rejects_tampered_report_bytes() -> None:
@@ -468,10 +589,17 @@ def test_result_get_rejects_tampered_report_bytes() -> None:
     artifacts.put_bytes(report_uri, b"# tampered report\n")
 
     def completed(run_id: str, _request: InspirationRunRequestV1) -> CompanionTransitionV1:
+        closure = _closure_for_report(
+            run_id=run_id,
+            report_uri=report_uri,
+            report_payload=original,
+            artifacts=artifacts,
+        )
         result = _result(
             run_id=run_id,
             report_uri=report_uri,
             authoritative_sha256=expected_sha256,
+            artifact_closure=closure,
         )
         return CompanionTransitionV1(
             state=SucceededStateV1(
@@ -494,6 +622,64 @@ def test_result_get_rejects_tampered_report_bytes() -> None:
 
     with pytest.raises(ResultIntegrityError, match="SHA-256"):
         service.materials_result_get(run_id=submitted.run_id)
+
+
+def test_result_get_rejects_tampered_intermediate_artifact() -> None:
+    submission_id = "submission-intermediate-tampered"
+    run_id = inspiration_run_id(submission_id)
+    report = b"# intact report\n"
+    report_uri = inspiration_report_uri(run_id)
+    report_sha256 = hashlib.sha256(report).hexdigest()
+    intermediate_uri = (
+        f"artifact://stages/inspiration/{run_id}/evidence_cards.jsonl"
+    )
+    expected_intermediate = b'{"relation":"SUPPORT"}\n'
+    artifacts = InMemoryArtifactStore()
+    artifacts.put_bytes(report_uri, report)
+    artifacts.put_bytes(intermediate_uri, b'{"relation":"COUNTER"}\n')
+    intermediate_reference = _artifact_reference(
+        uri=intermediate_uri,
+        payload=expected_intermediate,
+        media_type="application/x-ndjson",
+    )
+
+    def completed(
+        observed_run_id: str, _request: InspirationRunRequestV1
+    ) -> CompanionTransitionV1:
+        closure = _closure_for_report(
+            run_id=observed_run_id,
+            report_uri=report_uri,
+            report_payload=report,
+            artifacts=artifacts,
+            extra_artifacts=(intermediate_reference,),
+        )
+        result = _result(
+            run_id=observed_run_id,
+            report_uri=report_uri,
+            authoritative_sha256=report_sha256,
+            artifact_closure=closure,
+        )
+        return CompanionTransitionV1(
+            state=SucceededStateV1(
+                report_uri=report_uri,
+                authoritative_sha256=report_sha256,
+                result_sha256=gateway_result_sha256(result),
+            ),
+            result=result,
+        )
+
+    service, _repository, _artifacts = _service(
+        _InMemoryCompanionAdapter(start_factory=completed),
+        artifacts=artifacts,
+    )
+    service.materials_inspiration_run(
+        submission_id=submission_id,
+        goal="Find candidates",
+        constraints=_constraints(),
+    )
+
+    with pytest.raises(ResultIntegrityError, match="SHA-256"):
+        service.materials_result_get(run_id=run_id)
 
 
 def test_result_get_rejects_schema_valid_structured_result_tampering() -> None:
@@ -771,10 +957,17 @@ def test_result_get_rejects_nonterminal_run_and_accepts_partial_result() -> None
     artifacts.put_bytes(report_uri, report)
 
     def partial(run_id: str, _request: InspirationRunRequestV1) -> CompanionTransitionV1:
+        closure = _closure_for_report(
+            run_id=run_id,
+            report_uri=report_uri,
+            report_payload=report,
+            artifacts=artifacts,
+        )
         result = _result(
             run_id=run_id,
             report_uri=report_uri,
             authoritative_sha256=report_sha256,
+            artifact_closure=closure,
         )
         return CompanionTransitionV1(
             state=PartialStateV1(

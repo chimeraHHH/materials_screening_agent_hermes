@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import textwrap
 from pathlib import Path
+
+import pytest
 
 from material_agent.gateway import (
     InspirationRunRequestV1,
@@ -15,7 +19,6 @@ from material_agent.gateway import (
 from material_agent.integration.request_compiler import (
     HermesInspirationRequestCompiler,
 )
-
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 SKILL_PATH = (
@@ -26,6 +29,7 @@ SKILL_PATH = (
 SUPPORTED_REQUEST_SHA256 = (
     "0598117ef45e17ec44f328f3effff5722166e2df589b8695ff0ff1c5a25220c6"
 )
+MATERIALS_HUB_URL = "${MATERIAL_AGENT_MCP_BASE_URL}/materials/mcp"
 
 
 def test_hermes_bundle_verifier_binds_nested_budget_guidance() -> None:
@@ -45,6 +49,52 @@ def test_hermes_bundle_verifier_binds_nested_budget_guidance() -> None:
 
     assert completed.returncode == 0, completed.stderr
     assert completed.stdout == "Hermes bundle valid\n"
+
+
+def test_hermes_bundle_verifier_fails_closed_on_shared_hub_url_drift(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = REPOSITORY_ROOT / "integrations" / "hermes"
+    copied = tmp_path / "hermes"
+    shutil.copytree(source, copied, ignore=shutil.ignore_patterns("__pycache__"))
+    config = copied / "profiles" / "materials-inspiration" / "config.yaml"
+    config_text = config.read_text(encoding="utf-8")
+    assert MATERIALS_HUB_URL in config_text
+    config.write_text(
+        config_text.replace(
+            MATERIALS_HUB_URL,
+            "http://127.0.0.1:9999/unmanaged/mcp",
+        ),
+        encoding="utf-8",
+    )
+    verifier_path = source / "scripts" / "verify_bundle.py"
+    spec = importlib.util.spec_from_file_location("queued_bundle_verifier", verifier_path)
+    assert spec is not None and spec.loader is not None
+    verifier = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(verifier)
+    profile = copied / "profiles" / "materials-inspiration"
+    monkeypatch.setattr(verifier, "HERMES_ROOT", copied)
+    monkeypatch.setattr(verifier, "PROFILE_ROOT", profile)
+    monkeypatch.setattr(
+        verifier,
+        "SKILL_PATH",
+        profile / "skills" / "materials-inspiration" / "SKILL.md",
+    )
+    monkeypatch.setattr(
+        verifier,
+        "GATEWAY_CONTRACT_PATH",
+        profile
+        / "skills"
+        / "materials-inspiration"
+        / "references"
+        / "gateway-contract.md",
+    )
+    monkeypatch.setattr(verifier, "SOUL_PATH", profile / "SOUL.md")
+    monkeypatch.setattr(verifier, "HERMES_README_PATH", copied / "README.md")
+
+    with pytest.raises(ValueError, match="shared loopback HTTP Hub"):
+        verifier.verify()
 
 
 def test_skill_example_compiles_the_complete_supported_public_request() -> None:

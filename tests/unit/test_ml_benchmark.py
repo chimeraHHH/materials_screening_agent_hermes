@@ -7,13 +7,13 @@ import pytest
 
 from material_agent.ml_screening.benchmark import (
     AGENT02_BENCHMARK_VERSION,
-    BenchmarkReferenceData,
-    BenchmarkReferenceMetadata,
-    BenchmarkReferenceObservation,
-    BenchmarkReferenceObservable,
     BenchmarkDryRunResult,
     BenchmarkManifest,
     BenchmarkReadinessStatus,
+    BenchmarkReferenceData,
+    BenchmarkReferenceMetadata,
+    BenchmarkReferenceObservable,
+    BenchmarkReferenceObservation,
     ReferenceReadinessStatus,
     canonical_manifest_sha256,
     load_benchmark_manifest,
@@ -21,6 +21,7 @@ from material_agent.ml_screening.benchmark import (
     sha256_bytes,
     validate_reference_readiness,
 )
+
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 MANIFEST_PATH = REPOSITORY_ROOT / "tests/fixtures/benchmarks/agent02-benchmark-v1-si.json"
 STRUCTURE_PATH = REPOSITORY_ROOT / "tests/fixtures/real_ml/si-diamond.cif"

@@ -41,18 +41,12 @@ from material_agent.retrieval.models import (
     SourceMetadata,
     StageInputValidation,
     StageOutcome,
-    StageOutcomeV2,
     StageOutcomeType,
+    StageOutcomeV2,
     StageResult,
     StageResultEnvelope,
     StageResultEnvelopeV2,
     StageStatus,
-)
-from material_agent.retrieval.mp_screening import (
-    DeepEndpoint,
-    MPScreeningSpec,
-    ScreeningIntent,
-    TRANSITION_METAL_ELEMENTS,
 )
 from material_agent.retrieval.mp_deep_screen import (
     DeepFeature,
@@ -62,6 +56,13 @@ from material_agent.retrieval.mp_deep_screen import (
     sampled_bandwidth_ev,
     transition_metal_elements,
 )
+from material_agent.retrieval.mp_report import enrich_published_candidates
+from material_agent.retrieval.mp_screening import (
+    TRANSITION_METAL_ELEMENTS,
+    DeepEndpoint,
+    MPScreeningSpec,
+    ScreeningIntent,
+)
 from material_agent.retrieval.normalizer import (
     add_dimensionality_property,
     apply_task_metadata,
@@ -69,7 +70,6 @@ from material_agent.retrieval.normalizer import (
     collect_origin_task_ids,
     normalize_candidate,
 )
-from material_agent.retrieval.mp_report import enrich_published_candidates
 from material_agent.retrieval.query import (
     QueryPlanningError,
     build_query_plan,
@@ -274,7 +274,7 @@ class RetrievalStageRunner:
         idempotency_payload = (
             f"{stage_input.project_id}:{stage_input.run_id}:"
             f"{query_plan.query_fingerprint}"
-        ).encode("utf-8")
+        ).encode()
         return RetrievalStagePlan(
             context=context,
             query_plan=query_plan,
@@ -488,7 +488,7 @@ class RetrievalStageRunner:
                 MPScreeningSpec.model_validate(self.store.read_json(stage_input.mp_screening_spec_uri))
                 if stage_input.mp_screening_spec_uri else None
             )
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             retryable = _is_retryable(exc)
             category = _error_category(exc, operation="prepare")
             status = (
@@ -615,7 +615,7 @@ class RetrievalStageRunner:
                 operation="resume_raw_response",
                 message=str(exc),
             )
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             retryable = _is_retryable(exc)
             status = (
                 StageStatus.RETRYABLE_FAILED
@@ -870,7 +870,7 @@ class RetrievalStageRunner:
                     ),
                 )
                 stage_warnings.extend(origin_warnings)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001
                 stage_warnings.append(
                     f"origin metadata resolution failed ({type(exc).__name__})"
                 )
@@ -903,7 +903,7 @@ class RetrievalStageRunner:
             candidates, similarity_clusters = annotate_similarity_clusters(
                 candidates, structures
             )
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             similarity_clusters = []
             stage_warnings.append(f"structure clustering failed ({type(exc).__name__})")
 
@@ -1132,7 +1132,7 @@ class RetrievalStageRunner:
                     database_version=database_version,
                     retrieved_at=retrieved_at,
                 ))
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001
                 warnings_out.append(
                     f"{candidate.source_material_id}: deep screening failed ({type(exc).__name__})"
                 )
@@ -1449,7 +1449,7 @@ def _prefilter_adaptive_summary_documents(
         return documents, 0
     retained = [
         document for document in documents
-        if set(str(item) for item in (document.get("elements") or []))
+        if {str(item) for item in (document.get("elements") or [])}
         & TRANSITION_METAL_ELEMENTS
     ]
     return retained, len(documents) - len(retained)

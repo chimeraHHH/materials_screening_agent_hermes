@@ -37,7 +37,6 @@ from material_agent.ml_screening.evidence import (
 )
 from material_agent.ml_screening.models import (
     ArtifactPointer,
-    EvidenceLevel,
     ExecutionStatus,
     MLCandidateResult,
     MLNumericArtifactMetadata,
@@ -57,12 +56,12 @@ from material_agent.ml_screening.numerics import (
     normalize_direct_stress_gpa,
 )
 from material_agent.ml_screening.real_resources import (
-    AGENT02_PACKAGE_LOCK_SHA256,
     CHGNET_ADAPTER_VERSION,
     CHGNET_CHECKPOINT_SHA256,
     CHGNET_MODEL_ID,
     CHGNET_MODEL_NAME,
     CHGNET_PACKAGE_VERSION,
+    package_lock_sha256_for_device,
     real_model_spec,
 )
 from material_agent.ml_screening.resources import (
@@ -72,8 +71,19 @@ from material_agent.ml_screening.resources import (
 from material_agent.ml_screening.runtime import run_with_mps_fallback
 from material_agent.ml_screening.worker_protocol import validate_worker_inputs
 
-
 _PACKAGE_NAMES = ("chgnet", "torch", "pymatgen", "ase", "numpy")
+_CUDA_PACKAGE_NAMES = (
+    "nvidia-cuda-runtime-cu12",
+    "nvidia-cudnn-cu12",
+    "nvidia-cublas-cu12",
+    "triton",
+)
+_CUDA_PARITY_LIMITS = {
+    "energy_ev_atom_abs_diff": 2e-4,
+    "force_ev_angstrom_max_abs_diff": 2e-4,
+    "stress_gpa_max_abs_diff": 2e-3,
+    "magmom_mu_b_max_abs_diff": 2e-4,
+}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -81,7 +91,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--artifact-root", type=Path, required=True)
     parser.add_argument("--package-lock", type=Path, required=True)
     parser.add_argument("--health-structure", type=Path)
-    parser.add_argument("--device", choices=("cpu", "mps"), default="cpu")
+    parser.add_argument(
+        "--device", choices=("cpu", "mps", "cuda"), default="cpu"
+    )
     args = parser.parse_args(argv)
     try:
         if args.health_structure is not None:
@@ -97,7 +109,7 @@ def main(argv: list[str] | None = None) -> int:
                 artifact_root=args.artifact_root,
                 package_lock_path=args.package_lock,
             )
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         # The parent maps nonzero exit and this bounded public diagnostic.  A
         # traceback is intentionally not exposed through the protocol.
         print(
@@ -116,7 +128,8 @@ def build_health_snapshot(
     device: str,
 ) -> ModelHealthSnapshot:
     lock_path = package_lock_path.resolve(strict=True)
-    if _sha256_file(lock_path) != AGENT02_PACKAGE_LOCK_SHA256:
+    expected_lock_sha256 = package_lock_sha256_for_device(device)
+    if _sha256_file(lock_path) != expected_lock_sha256:
         raise ValueError("Agent02 package lock hash mismatch")
     available = _available_devices()
     if device not in available:
@@ -124,21 +137,36 @@ def build_health_snapshot(
     checkpoint = _checkpoint_path()
     if _sha256_file(checkpoint) != CHGNET_CHECKPOINT_SHA256:
         raise ValueError("CHGNet checkpoint hash mismatch")
-    versions = {name: metadata.version(name) for name in _PACKAGE_NAMES}
+    versions = _installed_package_versions(device)
+    _validate_installed_versions_against_lock(
+        lock_path=lock_path,
+        installed_versions=versions,
+    )
     if versions["chgnet"] != CHGNET_PACKAGE_VERSION:
         raise ValueError("installed CHGNet package version differs from registry")
     structure = Structure.from_file(structure_path.resolve(strict=True))
-    with contextlib.redirect_stdout(sys.stderr):
-        model = CHGNet.load(
-            model_name=CHGNET_MODEL_NAME,
-            use_device=device,
-            verbose=False,
-        )
-        prediction = model.predict_structure(structure, task="efsm")
+    prediction = _predict_structure(structure, device)
     _finite_scalar(prediction["e"], "health static energy")
     _finite_array(prediction["f"], (len(structure), 3), "health forces")
     _finite_array(prediction["s"], (3, 3), "health stress")
     _finite_array(prediction["m"], (len(structure),), "health magmoms")
+    parity_metrics = None
+    if device == "cuda":
+        cpu_prediction = _predict_structure(structure, "cpu")
+        parity_metrics = _prediction_parity_metrics(
+            prediction,
+            cpu_prediction,
+        )
+        violations = [
+            metric
+            for metric, limit in _CUDA_PARITY_LIMITS.items()
+            if parity_metrics[metric] > limit
+        ]
+        if violations:
+            raise ValueError(
+                "CUDA health parity exceeded frozen limits: "
+                f"{sorted(violations)}"
+            )
     tested_at = datetime.now(UTC)
     fingerprint = environment_fingerprint_sha256(
         python_version=platform.python_version(),
@@ -147,18 +175,19 @@ def build_health_snapshot(
         architecture=platform.machine(),
         device_policy=device,
         available_devices=available,
-        package_lock_sha256=AGENT02_PACKAGE_LOCK_SHA256,
+        package_lock_sha256=expected_lock_sha256,
     )
     return ModelHealthSnapshot(
         model_id=CHGNET_MODEL_ID,
         checkpoint_sha256=CHGNET_CHECKPOINT_SHA256,
-        package_lock_sha256=AGENT02_PACKAGE_LOCK_SHA256,
+        package_lock_sha256=expected_lock_sha256,
         python_version=platform.python_version(),
         platform=platform.system(),
         architecture=platform.machine(),
         device_policy=device,
         available_devices=available,
         smoke_test_status=SmokeTestStatus.PASS,
+        parity_metrics=parity_metrics,
         tested_at=tested_at,
         expires_at=tested_at + timedelta(days=1),
         installed_package_versions=versions,
@@ -207,8 +236,8 @@ def execute_request(
         candidate_result=result,
         produced_artifacts=produced,
         warnings=[
-            "CHGNet values are MLIP predictions, not formation energies, "
-            "convex-hull stability, DFT, or experimental evidence."
+            ("CHGNet values are MLIP predictions, not formation energies, "
+            "convex-hull stability, DFT, or experimental evidence.")
         ],
     )
     response.validate_against_request(request)
@@ -239,6 +268,8 @@ def _run_candidate(
     ):
         raise ValueError("parsed structure elements differ from frozen input")
 
+    if plan.device_policy == "cuda":
+        torch.cuda.reset_peak_memory_stats()
     execution = run_with_mps_fallback(
         requested_device=plan.device_policy,
         run_once=lambda device: _run_chgnet(structure, device),
@@ -512,6 +543,7 @@ def _run_candidate(
             "fallback_from_device": (
                 "mps" if execution.fallback_warning else None
             ),
+            **_device_runtime_provenance(device),
         },
     )
     lineage = build_structure_lineage(
@@ -520,7 +552,9 @@ def _run_candidate(
         output_structure=ArtifactPointer(
             uri=f"artifact://{output_uri}", sha256=output_hash
         ),
-        model=real_model_spec(),
+        model=real_model_spec(
+            "cuda" if device == "cuda" else "portable"
+        ),
         policy=default_policy(),
         is_mock=False,
     )
@@ -559,12 +593,21 @@ def _run_candidate(
 def _execution_identity(request: WorkerRequest, lock_path: Path):
     from material_agent.ml_screening.models import MLExecutionIdentity
 
-    if _sha256_file(lock_path) != AGENT02_PACKAGE_LOCK_SHA256:
+    expected_lock_sha256 = package_lock_sha256_for_device(
+        request.plan.device_policy
+    )
+    if request.expected_handshake.package_lock_sha256 != expected_lock_sha256:
+        raise ValueError("plan package lock is invalid for requested device")
+    if _sha256_file(lock_path) != expected_lock_sha256:
         raise ValueError("Agent02 package lock hash mismatch")
     checkpoint = _checkpoint_path()
     if _sha256_file(checkpoint) != CHGNET_CHECKPOINT_SHA256:
         raise ValueError("CHGNet checkpoint hash mismatch")
-    versions = {name: metadata.version(name) for name in _PACKAGE_NAMES}
+    versions = _installed_package_versions(request.plan.device_policy)
+    _validate_installed_versions_against_lock(
+        lock_path=lock_path,
+        installed_versions=versions,
+    )
     if versions["chgnet"] != CHGNET_PACKAGE_VERSION:
         raise ValueError("installed CHGNet package version differs from registry")
     available = _available_devices()
@@ -575,12 +618,12 @@ def _execution_identity(request: WorkerRequest, lock_path: Path):
         architecture=platform.machine(),
         device_policy=request.plan.device_policy,
         available_devices=available,
-        package_lock_sha256=AGENT02_PACKAGE_LOCK_SHA256,
+        package_lock_sha256=expected_lock_sha256,
     )
     return MLExecutionIdentity(
         model_id=CHGNET_MODEL_ID,
         checkpoint_sha256=CHGNET_CHECKPOINT_SHA256,
-        package_lock_sha256=AGENT02_PACKAGE_LOCK_SHA256,
+        package_lock_sha256=expected_lock_sha256,
         adapter_version=CHGNET_ADAPTER_VERSION,
         environment_fingerprint_sha256=fingerprint,
         is_mock=False,
@@ -601,7 +644,111 @@ def _available_devices() -> list[str]:
     devices = ["cpu"]
     if torch.backends.mps.is_available():
         devices.append("mps")
+    if torch.cuda.is_available():
+        devices.append("cuda")
     return devices
+
+
+def _installed_package_versions(device: str) -> dict[str, str]:
+    names = list(_PACKAGE_NAMES)
+    if device == "cuda":
+        names.extend(_CUDA_PACKAGE_NAMES)
+    return {name: metadata.version(name) for name in names}
+
+
+def _validate_installed_versions_against_lock(
+    *,
+    lock_path: Path,
+    installed_versions: dict[str, str],
+) -> None:
+    locked: dict[str, str] = {}
+    for raw_line in lock_path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith(("#", "--")) or "==" not in line:
+            continue
+        name, version = line.split("==", 1)
+        locked[_normalized_distribution_name(name)] = version.strip()
+    actual = {
+        _normalized_distribution_name(name): version
+        for name, version in installed_versions.items()
+    }
+    missing: list[str] = []
+    for name in locked:
+        if name in actual:
+            continue
+        try:
+            actual[name] = metadata.version(name)
+        except metadata.PackageNotFoundError:
+            missing.append(name)
+    mismatches = {
+        name: {"installed": actual.get(name), "locked": locked_version}
+        for name, locked_version in locked.items()
+        if actual.get(name) != locked_version
+    }
+    if missing:
+        raise ValueError(
+            "packages required by the Agent02 lock are missing: "
+            f"{sorted(missing)}"
+        )
+    if mismatches:
+        raise ValueError(
+            "installed package versions differ from Agent02 lock: "
+            f"{mismatches}"
+        )
+
+
+def _normalized_distribution_name(name: str) -> str:
+    return name.strip().casefold().replace("_", "-")
+
+
+def _predict_structure(structure: Structure, device: str) -> dict[str, Any]:
+    with contextlib.redirect_stdout(sys.stderr):
+        model = CHGNet.load(
+            model_name=CHGNET_MODEL_NAME,
+            use_device=device,
+            verbose=False,
+        )
+        return model.predict_structure(structure, task="efsm")
+
+
+def _prediction_parity_metrics(
+    accelerated: dict[str, Any],
+    cpu: dict[str, Any],
+) -> dict[str, float]:
+    return {
+        "energy_ev_atom_abs_diff": abs(
+            _finite_scalar(accelerated["e"], "CUDA energy")
+            - _finite_scalar(cpu["e"], "CPU energy")
+        ),
+        "force_ev_angstrom_max_abs_diff": _max_abs_difference(
+            accelerated["f"], cpu["f"], "forces"
+        ),
+        "stress_gpa_max_abs_diff": _max_abs_difference(
+            accelerated["s"], cpu["s"], "stress"
+        ),
+        "magmom_mu_b_max_abs_diff": _max_abs_difference(
+            accelerated["m"], cpu["m"], "magmoms"
+        ),
+    }
+
+
+def _max_abs_difference(left: Any, right: Any, label: str) -> float:
+    left_array = _finite_array(left, None, f"CUDA {label}")
+    right_array = _finite_array(right, None, f"CPU {label}")
+    if left_array.shape != right_array.shape:
+        raise ValueError(f"CPU/CUDA {label} shapes differ")
+    return float(np.max(np.abs(left_array - right_array)))
+
+
+def _device_runtime_provenance(device: str) -> dict[str, Any]:
+    if device != "cuda":
+        return {}
+    return {
+        "cuda_device_name": torch.cuda.get_device_name(0),
+        "torch_cuda_version": torch.version.cuda,
+        "peak_cuda_memory_bytes": int(torch.cuda.max_memory_allocated()),
+        "cuda_visible_device_count": torch.cuda.device_count(),
+    }
 
 
 def _run_chgnet(structure: Structure, device: str) -> tuple[Any, Any]:
@@ -637,7 +784,7 @@ def _run_chgnet(structure: Structure, device: str) -> tuple[Any, Any]:
 def _clear_mps_cache() -> None:
     try:
         torch.mps.empty_cache()
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         # Cache cleanup is best-effort; the subsequent CPU execution remains
         # the sole fallback attempt and will surface any failure itself.
         pass

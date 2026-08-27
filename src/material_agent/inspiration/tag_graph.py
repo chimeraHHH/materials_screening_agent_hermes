@@ -18,10 +18,17 @@ from material_agent.inspiration.models import (
     TagGraphV1,
     TagKind,
     TagRelation,
-    deterministic_id,
 )
 from material_agent.inspiration.policy import SearchBudgetV1
-
+from material_agent.inspiration.retrieval_quality import (
+    CuratedQueryCandidatePoolV1,
+    QueryAllocationAuditV1,
+    QueryCandidateOrigin,
+    QueryCandidateV1,
+    RetrievalQualityError,
+    make_query_candidate,
+    select_and_allocate_query_candidates,
+)
 
 CURATED_FLAT_BAND_GRAPH_ID = "flat-band-cross-domain-v1"
 _ALLOWED_TEMPLATE_FIELDS = {"source", "target", "evidence"}
@@ -35,6 +42,8 @@ class QueryPlanningError(ValueError):
 class QueryPlan:
     queries: tuple[SearchQueryV1, ...]
     skipped_rule_ids: tuple[str, ...] = ()
+    candidate_pool: CuratedQueryCandidatePoolV1 | None = None
+    allocation_audit: QueryAllocationAuditV1 | None = None
 
 
 def curated_flat_band_tag_graph() -> TagGraphV1:
@@ -254,7 +263,7 @@ def plan_tag_queries(
     target_tag_ids: tuple[str, ...],
     budget: SearchBudgetV1,
 ) -> QueryPlan:
-    """Plan direct, bridge, and counter queries within explicit class budgets."""
+    """Plan curated direct, bridge, and counter queries within frozen budgets."""
 
     tags = {tag.tag_id: tag for tag in graph.tags}
     unknown_targets = sorted(set(target_tag_ids) - set(tags))
@@ -262,20 +271,6 @@ def plan_tag_queries(
         raise QueryPlanningError(f"unknown target tags: {unknown_targets!r}")
     if len(set(target_tag_ids)) != len(target_tag_ids) or not target_tag_ids:
         raise QueryPlanningError("target tag IDs must be non-empty and unique")
-
-    queries: list[SearchQueryV1] = []
-    seen_payloads: set[tuple[str, str, str | None]] = set()
-
-    direct_terms = [tags[tag_id].query_terms[0] for tag_id in target_tag_ids]
-    if budget.max_direct_queries:
-        _append_query(
-            queries,
-            seen_payloads=seen_payloads,
-            kind=SearchQueryKind.DIRECT,
-            text=" ".join(direct_terms),
-            tag_ids=tuple(sorted(target_tag_ids)),
-            bridge_rule_id=None,
-        )
 
     matching_rules = sorted(
         (
@@ -285,43 +280,135 @@ def plan_tag_queries(
         ),
         key=lambda rule: rule.bridge_rule_id,
     )
-    skipped: list[str] = []
-    selected_rules: list[tuple[BridgeRuleV1, str]] = []
+    pool = _build_curated_query_candidate_pool(
+        graph,
+        target_tag_ids=target_tag_ids,
+        tags=tags,
+        matching_rules=tuple(matching_rules),
+    )
+    try:
+        queries, allocation_audit = select_and_allocate_query_candidates(
+            pool,
+            max_queries=budget.max_queries,
+            max_physical_requests=budget.max_physical_requests,
+            class_limits={
+                SearchQueryKind.DIRECT: budget.max_direct_queries,
+                SearchQueryKind.BRIDGE: budget.max_bridge_queries,
+                SearchQueryKind.COUNTER: budget.max_counter_queries,
+            },
+        )
+    except RetrievalQualityError as error:
+        raise QueryPlanningError(str(error)) from error
+
+    selected_bridge_rule_ids = {
+        query.bridge_rule_id
+        for query in queries
+        if query.kind is SearchQueryKind.BRIDGE
+    }
+    skipped = tuple(
+        rule.bridge_rule_id
+        for rule in matching_rules
+        if rule.bridge_rule_id not in selected_bridge_rule_ids
+    )
+    return QueryPlan(
+        queries=queries,
+        skipped_rule_ids=skipped,
+        candidate_pool=pool,
+        allocation_audit=allocation_audit,
+    )
+
+
+def _build_curated_query_candidate_pool(
+    graph: TagGraphV1,
+    *,
+    target_tag_ids: tuple[str, ...],
+    tags: dict[str, TagDefinitionV1],
+    matching_rules: tuple[BridgeRuleV1, ...],
+) -> CuratedQueryCandidatePoolV1:
+    """Expand only graph-reviewed terms, templates, and breaking conditions."""
+
+    pool_version = (
+        f"{graph.graph_id}@{graph.graph_version}:curated-query-candidates-v1"
+    )
+    candidates: list[QueryCandidateV1] = []
+    seen_payloads: set[tuple[str, str, str | None]] = set()
+
+    # Align reviewed term variants by index instead of taking a Cartesian
+    # product.  This improves lexical coverage without an unbounded explosion.
+    direct_variant_count = max(
+        len(tags[tag_id].query_terms) for tag_id in target_tag_ids
+    )
+    direct_family_id = f"direct:{'-'.join(sorted(target_tag_ids))}"
+    for term_index in range(direct_variant_count):
+        text = " ".join(
+            tags[tag_id].query_terms[term_index % len(tags[tag_id].query_terms)]
+            for tag_id in target_tag_ids
+        )
+        _append_candidate(
+            candidates,
+            seen_payloads=seen_payloads,
+            pool_version=pool_version,
+            kind=SearchQueryKind.DIRECT,
+            text=text,
+            tag_ids=tuple(sorted(target_tag_ids)),
+            bridge_rule_id=None,
+            family_id=direct_family_id,
+            origin=QueryCandidateOrigin.CURATED_TAG_TERMS,
+            review_basis=f"{graph.graph_id}@{graph.graph_version}:tag-query-terms",
+        )
+
+    rendered_by_rule: dict[str, list[str]] = {}
     for rule in matching_rules:
-        if len(selected_rules) >= budget.max_bridge_queries:
-            skipped.append(rule.bridge_rule_id)
-            continue
-        rendered = _render_rule_query(rule, tags)
-        _append_query(
-            queries,
-            seen_payloads=seen_payloads,
-            kind=SearchQueryKind.BRIDGE,
-            text=rendered,
-            tag_ids=tuple(sorted(rule.suggested_query_tag_ids)),
-            bridge_rule_id=rule.bridge_rule_id,
-        )
-        selected_rules.append((rule, rendered))
+        rendered_by_rule[rule.bridge_rule_id] = []
+        for template_index in range(len(rule.query_templates)):
+            rendered = _render_rule_query(rule, tags, template_index=template_index)
+            rendered_by_rule[rule.bridge_rule_id].append(rendered)
+            _append_candidate(
+                candidates,
+                seen_payloads=seen_payloads,
+                pool_version=pool_version,
+                kind=SearchQueryKind.BRIDGE,
+                text=rendered,
+                tag_ids=tuple(sorted(rule.suggested_query_tag_ids)),
+                bridge_rule_id=rule.bridge_rule_id,
+                family_id=rule.bridge_rule_id,
+                origin=QueryCandidateOrigin.REVIEWED_BRIDGE_TEMPLATE,
+                review_basis=(
+                    f"{rule.bridge_rule_id}@{rule.rule_version}:query-template-"
+                    f"{template_index + 1}"
+                ),
+            )
 
-    # Preserve the reviewed bridge breadth before spending any remaining
-    # class allocation on counter queries.  Query order is execution order,
-    # so interleaving a counter after each bridge could exhaust a total budget
-    # before a later reviewed bridge is reached.
-    for rule, rendered in selected_rules[: budget.max_counter_queries]:
-        counter_text = f"{rendered} failure {rule.breaking_conditions[0]}"
-        _append_query(
-            queries,
-            seen_payloads=seen_payloads,
-            kind=SearchQueryKind.COUNTER,
-            text=counter_text[:512],
-            tag_ids=tuple(sorted(rule.suggested_query_tag_ids)),
-            bridge_rule_id=rule.bridge_rule_id,
-        )
+    for rule in matching_rules:
+        for rendered_index, rendered in enumerate(
+            rendered_by_rule[rule.bridge_rule_id]
+        ):
+            for condition_index, breaking_condition in enumerate(
+                rule.breaking_conditions
+            ):
+                _append_candidate(
+                    candidates,
+                    seen_payloads=seen_payloads,
+                    pool_version=pool_version,
+                    kind=SearchQueryKind.COUNTER,
+                    text=(f"{rendered} failure {breaking_condition}")[:512],
+                    tag_ids=tuple(sorted(rule.suggested_query_tag_ids)),
+                    bridge_rule_id=rule.bridge_rule_id,
+                    family_id=rule.bridge_rule_id,
+                    origin=QueryCandidateOrigin.REVIEWED_BREAKING_CONDITION,
+                    review_basis=(
+                        f"{rule.bridge_rule_id}@{rule.rule_version}:query-template-"
+                        f"{rendered_index + 1}:breaking-condition-{condition_index + 1}"
+                    ),
+                )
 
-    if len(queries) > budget.max_queries:
-        queries = queries[: budget.max_queries]
-    if not queries:
-        raise QueryPlanningError("query budget allocates no executable query class")
-    return QueryPlan(queries=tuple(queries), skipped_rule_ids=tuple(skipped))
+    return CuratedQueryCandidatePoolV1(
+        pool_version=pool_version,
+        graph_id=graph.graph_id,
+        graph_version=graph.graph_version,
+        target_tag_ids=target_tag_ids,
+        candidates=tuple(candidates),
+    )
 
 
 def _tag(
@@ -343,8 +430,10 @@ def _tag(
 def _render_rule_query(
     rule: BridgeRuleV1,
     tags: dict[str, TagDefinitionV1],
+    *,
+    template_index: int = 0,
 ) -> str:
-    template = rule.query_templates[0]
+    template = rule.query_templates[template_index]
     fields = {
         field_name
         for _, field_name, _, _ in string.Formatter().parse(template)
@@ -371,31 +460,32 @@ def _render_rule_query(
     return rendered
 
 
-def _append_query(
-    queries: list[SearchQueryV1],
+def _append_candidate(
+    candidates: list[QueryCandidateV1],
     *,
     seen_payloads: set[tuple[str, str, str | None]],
+    pool_version: str,
     kind: SearchQueryKind,
     text: str,
     tag_ids: tuple[str, ...],
     bridge_rule_id: str | None,
+    family_id: str,
+    origin: QueryCandidateOrigin,
+    review_basis: str,
 ) -> None:
     key = (kind.value, text.casefold(), bridge_rule_id)
     if key in seen_payloads:
         return
     seen_payloads.add(key)
-    payload = {
-        "kind": kind.value,
-        "text": text,
-        "tag_ids": tag_ids,
-        "bridge_rule_id": bridge_rule_id,
-    }
-    queries.append(
-        SearchQueryV1(
-            query_id=deterministic_id("query", payload),
+    candidates.append(
+        make_query_candidate(
+            pool_version=pool_version,
             kind=kind,
             text=text,
             tag_ids=tag_ids,
             bridge_rule_id=bridge_rule_id,
+            family_id=family_id,
+            origin=origin,
+            review_basis=review_basis,
         )
     )

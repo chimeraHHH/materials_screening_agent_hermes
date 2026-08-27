@@ -1,20 +1,20 @@
 from __future__ import annotations
 
-import hashlib
-import json
 import shutil
 from datetime import UTC, datetime
 from pathlib import Path
 
 from material_agent.ml_screening.adapters import FakeMLModelAdapter, FakeMLWorker
-from material_agent.ml_screening.resources import default_policy, fake_health_snapshot, fake_model_spec
+from material_agent.ml_screening.resources import (
+    default_policy,
+    fake_health_snapshot,
+    fake_model_spec,
+)
 from material_agent.ml_screening.runner import Agent02RunnerAdapter
 from material_agent.orchestrator.models import StageCapability, StageId
 from material_agent.orchestrator.runners import StageRunnerRegistry
 from material_agent.orchestrator.runtime import OrchestratorRuntime
-
 from tests.integration.test_orchestrator_p01 import _complete_source_run, _stage_input
-
 
 FIXTURE = Path(__file__).parents[1] / "fixtures/contracts/agent02-v1"
 

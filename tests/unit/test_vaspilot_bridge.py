@@ -15,7 +15,6 @@ from material_agent.dft.protocol import DFTBackend
 from material_agent.dft.runner import DFTStageRunner
 from material_agent.dft.vaspilot_backend import VASPilotBackend
 from material_agent.orchestrator.models import StageStatus
-
 from tests.contract.test_dft_mock_backend import make_request
 from tests.unit.test_dft_runner import _setup
 

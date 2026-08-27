@@ -167,10 +167,52 @@ Gateway 必须满足：
 - Hermes 与主项目使用独立 Python 环境；当前 release record 记录并由 bundle verifier
   校验 profile/Skill/Tool Schema hash，自动绑定到每个 execution manifest 属于 production
   加固项；
-- 当前 SQLite/单项目锁只允许本机单用户、单 Hermes 实例试点。
+- production profile 的所有 dashboard/TUI session 通过一个 loopback Streamable HTTP MCP
+  Hub 复用 Gateway 与 research-pipeline server，不再各自生成 stdio watchdog/MCP 进程；
+- 标准生命周期只拥有 dashboard、Hub/queued-worker 与 monitor 三个顶层进程，停止时按
+  捕获的精确进程身份回收 dashboard 的跨进程组后代；
+- 当前 SQLite/单项目锁只允许本机单用户试点，但同一主机上的多个 Hermes session 可共享
+  单一 Hub，并由 canonical 锁串行化同一科研请求。
 
 Hermes Session、Memory 或自改 Skill 不能保存正式 EvidenceCard、阈值、已接受机制或科学
 结论。正式状态必须写入可校验的材料 Artifact。
+
+### 3.5 通用假设—模型—证据—反馈契约
+
+通用研究图的下游不再复用固定 `TIS2_TO_TISE2_NARROW_BAND_V1` 的单候选 S→Se
+组合逻辑。`scientific-validation-loop-v1` 形成以下版本化链路：
+
+```text
+MaterialsResearchGraphResultV7
+  → HypothesisCandidate[*]
+  → OperatorResult[*]
+  → DeepSeekModelRouteProposal
+  → ModelTaskPlan
+  → ScientificEvidence[*]
+  → InspirationMemoryStore(MODEL_VALIDATION)
+  → DeepSeekFeedbackProposal
+  → FeedbackCycleResult
+```
+
+科学决策与安全决策严格分权：DeepSeek 从目标、候选机理和完整 capability snapshot
+提出模型/计算引擎、observable、依赖、目标证据等级和证伪规则；确定性 policy 不补充、
+替换或排序科学任务，只检查候选/结构 lineage、注册能力、适用元素/维度、backend/权重、
+benchmark/evidence ceiling 和总成本。未知模型、域外结构、缺权重或过预算均保留为
+`BLOCKED` task，而不是静默切换模型。
+
+执行结果必须绑定 approved task、result Artifact 与 evidence ceiling，才能投影成
+`ScientificEvidence`。先写 immutable evidence Artifact，再追加 hash-linked memory event；
+反馈只能引用已经进入该 memory snapshot 的 evidence ID。DeepSeek 可建议保留、淘汰、
+提交新的 typed operator 参数或升级计算，但本地审计要求淘汰至少具有一次真实 L2+ 的
+`CONTRADICTS`，并要求升级任务的目标 evidence level 严格高于现有证据。fixture/mock
+固定为 `NONE`，不能驱动淘汰或性质结论。
+
+受控进化使用独立的 `materials-inspiration-evolution` profile，而不是放宽 production
+profile。该 profile 复用 Hermes 原生 memory、skills、background review、curator 与 flat
+delegation，但 Materials MCP 只开放 `materials_run_get` / `materials_result_get`；所有学习写入
+进入人工审批队列，子 agent 不继承 MCP，runtime lesson 也不能直接修改 source-controlled
+production Skill。晋升必须经过人工 source diff、双 bundle verifier、相关离线测试和受影响的
+科学 Gate；完整决策见 ADR 0003。
 
 ## 4. Orchestrator、状态机与阶段状态
 
@@ -310,6 +352,13 @@ Inspiration 与 read-only Research Advisor 不同：它会创建新的 proposal 
 属于冻结的 `StageId`，也不拥有 Orchestrator checkpoint。其输入必须显式引用已确认
 Requirement、parent candidate/structure 和冻结 policy 的 URI/hash。
 
+`orchestrator-composite-inspiration-v2` 提供一个**显式 opt-in** 的 LangGraph 与 runtime
+API：它从同一 project workspace 的业务库读取既有 Agent01 run，校验 Requirement revision、
+Agent01 control result 和 `candidate_manifest`，再逐个校验动态 parent structure 的 URI/SHA，
+冻结 `InspirationInputV1` 后调用注入的 `InspirationRunner`。该 API 不修改默认
+`OrchestratorRuntime`、四阶段 `ExecutionPlan`/`StageId`、业务 schema 或 checkpoint；当前也
+没有 CLI 自动串联、独立持久 checkpoint 或跨进程恢复语义，因此不能表述为默认五阶段主链。
+
 内部顺序固定为：
 
 ```text
@@ -319,6 +368,7 @@ GoalSeed / curated TagGraph
 → located Passage
 → EvidenceCard
 → validated BridgePacket
+→ pinned SMACT inorganic-composition prior Gate
 → registered deterministic transformation
 → structure validation
 → internal identity resolution
@@ -332,6 +382,16 @@ vectorizer/LLM，且每段必须保存 locator 与原始响应 hash。
 LLM 只能提出严格 `BridgePacket` 和 registry operator 参数；代码负责结构变换、硬约束、
 identity 与 selection。输出固定说明本阶段未执行 novelty/prior-art 判定，proposal 也不继承
 parent 的性质 evidence。
+
+软化学执行路径在 operator registry 之前固定运行
+`smact-inorganic-prior-policy-v1`。SMACT 及其 ASE 硬依赖只安装在独立 `.venv-smact`，主环境
+通过无 shell、限时/限 stdout 的严格 JSON 子进程调用；worker Python 必须由绝对路径显式配置，
+源码路径、依赖 lock 和返回 Schema/identity 均复核。其 SMACT 4.0.0、pymatgen 2025.10.7、
+ICSD24 过滤参数、Pauling、电中性、混合价态和资源上限进入 policy hash；只有携带受审 worker-lock
+SHA 的 `PASS` 可以 dispatch registry。`REJECT` 不生成结构，
+缺数据、全金属体系、版本漂移或组合空间越界均 `REQUIRES_REVIEW`。下游 plan 还会复核 operator
+结果中存在唯一的 `smact_prior_gate=PASS`，防止绕过。该启发式先验固定为 evidence `NONE`，
+不代表热力学稳定、动力学可合成或 DFT 验证。
 
 ### 5.3 Agent 01：公开数据库检索与确定性筛选
 
@@ -379,6 +439,13 @@ parent 的性质 evidence。
 
 真实重型依赖计划通过独立 JSON worker 进程运行；主 Orchestrator 环境不应导入 Torch/CHGNet/ASE。worker 只能在预创建 sandbox 中使用 root-relative 路径，stdout 只返回一份严格 JSON。
 
+CHGNet v1 有两个显式 execution profile：`portable` 使用冻结的 CPU/MPS lock，`cuda`
+使用独立 Linux/CUDA lock。profile、lock hash、health device、plan device 和实际 worker
+device 必须一致。CUDA profile 要求调用进程配置一个经过格式校验的物理 GPU 索引；子进程
+只看到这一张卡。health 对固定结构执行 CPU/CUDA parity，CUDA 不可用、版本/lock 漂移、
+parity 越界或运行时 CUDA 错误均 fail closed，不复用 MPS→CPU 的单次回退政策。设备加速只
+改变执行后端，不改变模型、适用域、QC、证据等级或科学 claim。
+
 当前 CHGNet v1 继续承担结构静态预测和预弛豫。DeepH-pack 以独立 companion flow
 接入 Agent02 包，不复用或修改冻结的 CHGNet v1 原生契约，也暂不注册为默认
 Orchestrator capability。DeepH 不能仅消费 CIF：它还必须接收已训练模型、同一 DFT
@@ -391,6 +458,46 @@ Geometric、e3nn 或 Julia。真实 executable 完成只证明控制流程和 Ar
 晋级。未来若把该 companion flow 并入统一 `StageId.ML`，必须发布 composite/v2
 Agent02 契约并同步 Orchestrator、fixture、contract test 和消费者计划，不能把
 sidecar Artifact 隐式塞入现有 CHGNet plan。
+
+当前 Hermes 科学验证契约固定为 `ML_ONLY`，不能切换为 hybrid/DFT。DeepH 所需 overlap
+只能作为已审核、内容寻址的
+数据库/缓存 Artifact 导入；运行时 OpenMX/ABACUS overlap 生成会被 policy 拒绝。旧的
+hybrid/DFT 控制代码仅保留为历史兼容和隔离测试路径，不进入当前生产候选 DAG。
+
+Uni-HamGNN 也通过独立 companion flow 接入，不修改 CHGNet/DeepH 契约。v1 精确映射
+上游 `Uni-HamiltonianPredictor.py --config Input.yaml`：输入为单个结构、官方兼容的
+`universal_model.pkl`，以及同一结构和同一 OpenMX/NAO basis 生成的 non-SOC/SOC
+两套 `graph_data.npz`。每套 graph 必须带 Hermes sidecar manifest，冻结结构 hash、
+graph hash、SOC mode、DFT_DATA/basis、`nao_max=26` 和 generator revision。
+
+`ML_ONLY` 下这两套 graph 同样必须是预计算输入；`HAMILTONIAN_GRAPH_PREPARATION` 和
+`OVERLAP_MATRIX_GENERATION` 都不允许作为运行时任务。只有 CIF 而没有可信 graph 的候选
+不会触发电子结构程序，而是保持不确定，转交结构直达性质模型或数据库证据路线。
+
+预计算 graph 路线不能无条件接在 CHGNet 预弛豫之后：graph manifest 与原结构 SHA-256
+严格绑定，任何改变坐标或晶格的结构都必须拥有自己对应的 graph。DeepSeek 可动态选择
+“CIF → ML 预弛豫 → 结构直达性质模型”或“原始数据库结构 → 预计算 graph 导入 →
+Uni-HamGNN”，但 deterministic policy 会阻断 relaxed-structure/graph identity 混用。
+
+由于上游对模型 pickle 和 NPZ object graph 都进行 pickle 反序列化，二者属于可执行
+输入，而非普通数据。请求必须记录人工信任复核、模型来源/revision/许可证和所有
+SHA-256；主进程不解析它们。独立 worker 再次验证输入和 predictor script hash，生成
+固定 `calculate_mae=false` 的 YAML，以无 shell argv 执行，并只接收 sandbox 中唯一
+`hamiltonian.npy` 及控制元数据。该 flow 不生成 graph 数据、不下载权重、不计算 band
+或拓扑不变量，也不回退设备；CUDA 必须固定为单张可见 GPU。未 benchmark 的成功结果
+固定为 evidence `NONE`；只有哈希绑定的独立 held-out benchmark 通过速度优先门槛后才可
+作为 L2 候选排序证据，且不构成 Hamiltonian 精度、SOC、能带或拓扑确定性结论。
+
+Hamiltonian 后处理由第二个独立 `uniham-band` worker 执行。request 冻结 Hamiltonian
+operation key/SHA-256、SOC graph/manifest、`band_cal` executable SHA-256、NAO26 和 k 点
+预算；输出 allowlist 精确为一个 DAT、PNG、CIF 及控制 YAML/JSON。DAT 在本地解析后进入
+统一 flat-band validator。缺轨道 projector 时 `orbital_character_passed=null`，只有
+带宽、费米穿越或交点等已解析硬条件失败才产生 `CONTRADICTS`，unknown 不等于 fail。
+
+该 worker 的 Artifact 守卫可以发现 project root 内的 sandbox 越界写入，但 v1
+不是跨平台 OS 文件系统 sandbox。由于 predictor 与 pickle/NPZ 本身可执行，真实部署
+还必须在隔离账户或容器中运行已审查 hash 的上游代码；不能只依赖输出 allowlist
+防御恶意第三方 Artifact。
 
 `agent02-post-relaxation-property-chain-v1` 是同样显式的 companion flow：它接收 MatterSim
 等上游弛豫产生的单一 CIF，校验 ct-UAE 与 ALIGNN 请求指向相同 URI/hash，然后分别调用两
@@ -738,18 +845,121 @@ CLI 规则：
 
 ### 10.1 Hermes Tool 与 beta/pilot 入口
 
-Hermes source-controlled production profile 只允许四个粗粒度工具：
+Hermes source-controlled production profile 允许四个审计工具和两个独立的 DFT 外科研入口：
 
 ```text
 materials_inspiration_run
 materials_run_get
 materials_run_act
 materials_result_get
+materials_research_pipeline_run
+materials_generic_research_run
 ```
 
 `materials_run_act` 使用严格 discriminated union，一次调用最多完成一次澄清、批准、拒绝、
 恢复、重试或取消转换。Tool list 中不得出现任意 Artifact read、shell、自由路径或直接
 DFT/ML/many-body submit。
+
+`materials_research_pipeline_run` 不改变四工具审计合同。它提交一个固定的非 DFT 研究流，
+立即返回 `RUNNING`。公开输入只要求自然语言 `goal`；`submission_id` 可省略并由服务端从
+规范化科学请求派生。canonical identity 同时绑定内部 implementation revision，使修复后的
+部署自动进入新代际，而不会命中修复前的终态失败。后台执行跨进程持有 run lock；Hub
+重启后若终态 Artifact 尚不存在，则从同一 Orchestrator checkpoint 调用 `resume()`。若异常
+越过 LangGraph outcome-recording 边界，Orchestrator 在 research `FAILED` 写入前以一个事务
+将 run、活动 stage 和 attempt 一并封口为失败；启动时还会核对历史 terminal Artifact 并修复
+旧的 RUNNING 投影。终态结果仍以 immutable Artifact 幂等返回。
+
+`materials_generic_research_run` 是通用灵感研究图，不复用固定 TiS2→TiSe2 语义。它将完整
+自然语言目标编译为约束图，并由九个有界 DeepSeek 角色依次完成 query family、原生搜索
+lead、权威文献解析、联邦数据库候选、机理化学、证据反证、假设推理和综合。每个角色在
+`deepseek-v4-pro` 的 `high|max` thinking 下运行严格 function-tool loop；
+`reasoning_content` 只在同一内存会话继续轮次，不进入任何持久状态。DeepSeek 原生搜索只产生
+`UNRESOLVED_LEAD`，必须由 Crossref/OpenAlex/arXiv/OSTI adapter 重新获取并保存原始字节后才
+能形成 evidence。每次数据库调用由服务端强制并行 fan-out 至 C2DB、Materials Cloud MC3D、
+NOMAD 和具备凭据时的 Materials Project，DeepSeek 不能选择只查其中一库。单源的成功、空结果、失败和凭据缺失均以
+receipt 进入最终研究图，失败不连带取消其他源。各源原始记录与 canonical CIF 同样内容寻址；
+先按 canonical structure ID、再以严格 StructureMatcher 做跨库等价去重，同时保留全部 source
+record、数据库版本、query fingerprint、license 和 artifact hash。随后以本地 Larsen
+dimensionality 和 CrystalNN 周期连通性作保守诊断；带宽、费米排序、能带交叉、PDOS 和价态
+没有直接数据时保持 `UNKNOWN`。最终确定性 join 要求每个候选覆盖每条约束，拒绝伪造 ID、
+漏约束和无证据的 `PASS`。
+
+数据库候选池与深评假设集分离：联邦层全角色最多保留 24 个去重结构候选，每个物理查询
+对每个已启用源使用独立配额，机理角色最多晋级
+8 个假设。skeptic 不直接生成完整笛卡尔积，只返回有证据的 `PASS/FAIL` 稀疏例外；确定性
+层为所有遗漏组合生成 `UNKNOWN` 和下一验证动作，并禁止仅凭 metadata/database scalar 将带宽、
+费米排序、带隔离、轨道或价态判为证据 `PASS`。这不是最终灵感输出：独立
+`hypothesis_reasoner` 随后必须对每个 candidate × constraint 给出 `LIKELY_PASS` 或
+`LIKELY_FAIL`、通过概率、公开科学依据、关键假设与决定性证伪条件。synthesist 从该推理矩阵
+产出明确的 `REASONED_HYPOTHESIS` 科学结论，同时保留
+`property_verification_complete=false`。因此“未验证”和“没有可推理的灵感”不再是同一状态。
+角色结果和安全工具快照按输出 Schema hash 检查点化；恢复时悬空证据引用被删除并记录
+normalization，不得冒充旧证据仍有效。为容纳联邦候选扩展后的完整 candidate × constraint
+JSON，DeepSeek agent 的单轮 completion ceiling 为 32768 tokens，总 token、轮次和 walltime
+仍由每角色预算分别限制。
+
+requirements、query strategist 或 native-search review 若分别触发约束族覆盖、精确
+constraint-ID 覆盖或 lead-ID 引用门禁，系统不会直接放宽校验，也不会无限重跑原角色。独立
+`contract_repair` 角色最多尝试两次，只读取原无效对象、确定性错误和允许的真实 ID 集；每次
+保留前后 SHA-256、DeepSeek receipt 和独立 checkpoint，并重新调用同一个校验器。两次仍不
+合法则保持 fail-closed。修复角色不得修改用户阈值、创造证据或新增科学结论。
+
+机理化学角色若提出具体最小结构操作，必须调用 `compile_reasoned_operation`；自由文本操作名
+不能进入 `proposed_registered_transformations`。DeepSeek 通过原生推理提交材料相关的应变张量、
+替换元素/目标价态、空位元素/浓度上限、插层元素/价态/面内分数位置/间隙阈值、目标层/滑移向量、载流子
+浓度扫描、静电场、磁近邻双母体或 vdW 异质结构参数，并同时给出机理、化学
+先验依据和决定性证伪实验；它不能提交未验证的坐标或代码。编译器从 hash-verified CIF 本地推导晶体学等价位点、
+层分组和最大 c 向间隙中心，将 DeepSeek 提出的面内位置与本地推导的 gap 中点组合后执行周期边界、最小距离及结构 delta
+验证，并对所有 reasoned 操作（包括未在旧 substitution registry
+出现过的元素对）产生确定性 `StructureOperationPlanV2`。研究图 v7 同时保存 proposal→candidate binding、两类
+registry SHA-256、编译拒绝原因和 `PLANNED` 状态。
+
+`softchem-operator-registry-v2` 只注册确定性执行内核族和安全不变量，不注册具体科学候选规则。
+每次 DeepSeek tool call 会生成 `RunLocalOperatorSpecV1`，绑定母体、原始 proposal hash、推导参数
+hash、全局 kernel registry hash、科学依据和证伪测试。每个 kernel spec 显式绑定参数 schema、
+允许改变项、必须保持项、化学/几何 prior 和 validator。空位移除比例由 DeepSeek 提出但不能超过
+执行器 50% 安全包络；插层元素和价态由 DeepSeek 提出并检查常见价态，且即使 SMACT 化学计量通过也保持 `REQUIRES_REVIEW`，直到宿主
+还原位点或混合价态得到独立验证；单层结构不能编译层滑移。执行器逐项验证 parent/registry hash、
+参数-算子匹配、完整等价类或层分区、允许的结构 delta、占位、有限数值、正体积、最小距离、
+维度/site budget 和 canonical CIF round-trip。`PASS`、`REQUIRES_REVIEW`、`REJECT` 相互独立，
+任何结构可写性都不能代替价态、稳定性、弛豫或目标能带验证。通用研究阶段仍只编译、不执行。
+编译阶段会先运行不需要外部计算的同一组结构/化学 preflight，`REJECT` 路线不会获得 plan ID；
+保留下来的 v2 plan 则固化 `PASS/REQUIRES_REVIEW` 原因和 validator contract，供报告和重放审计。
+其中五类确定性结构 kernel 可生成 `StructureOperationPlanV2`；载流子掺杂与栅控只生成
+`ReasonedConditionPlanV1` 计算边界，磁近邻与异质结构计划还必须绑定两个 hash-verified 二维
+父结构并通过保守面内失配检查。后四类不会伪造 CIF，统一标记
+`COMPUTATION_OR_INTERFACE_BUILDER_REQUIRED`，等待专用电子结构计算或界面构造器。
+
+通用研究终态同时生成独立 Markdown 图文报告。报告对每个联邦候选从 hash-verified CIF
+本地绘制沿 a/b/c 晶轴的三视图，并按 source record 汇总形成能、凸包距离和带隙；source
+record 契约直接保留 `formation_energy_ev_atom` 与 `energy_above_hull_ev_atom`。能带只从真实
+源对象生成：C2DB adapter 解析材料页公开的 GPAW/PBE Plotly 数值，Materials Project adapter
+读取 line-bandstructure 对象，同时把绘图所用数值压缩归档。没有对应对象或端点失败时，报告
+写入 `NOT_AVAILABLE/FETCH_FAILED` 原因而不补画。Markdown、图片、CIF 链接、原始能带数值和
+manifest 均使用 Artifact URI；图像是报告证据的可视化，不会反向把旧研究图中的 `UNKNOWN`
+改写成 `PASS`。
+
+该 MCP 工具当前仍是同步调用。角色级恢复已经实现，但耐久异步 submit/status、细粒度阶段
+进度和跨 worker lease 尚未接入通用入口，属于生产增强而非当前已完成能力。
+
+独立 `materials-inspiration-research` profile 只暴露这个通用工具。Hermes host 自身的 web、
+browser、shell、file、memory 与 delegation 继续关闭；搜索和材料数据库访问只能发生在上述
+有预算、Schema 和 receipt 的服务端工具内。production/evolution profile 的权限不因此扩大。
+
+Requirement-freeze 交互同时显式返回 `execution_manifest_sha256` 和兼容字段
+`input_sha256`，两者必须完全相同。manifest v2 绑定冻结输入、policy、TagGraph、目标 Tag、
+源码树、构建/lock 文件、实际运行时依赖版本，以及 search/extract/passage/vector/evidence/
+bridge/transform/dedup/selection/report/projector 等完整执行组件；批准后任一内容漂移都必须在
+runner 启动前失败。
+
+`materials_result_get` 仍不是任意 Artifact reader。它先按当前 `run_id` 核对 terminal tuple
+与 canonical result hash，再逐项读取并验证 stage result、报告和所有声明中间 Artifact 的
+URI、字节数和 SHA-256。只有完整闭包通过后，才返回最多 24,000 字符的 Markdown 报告前缀
+（公共 DTO 硬上限 32,000）、最多 32 条每条 1,000 字符的已选证据摘录，以及各自完整内容
+hash、原始长度和显式截断标志。证据摘录只来自结果中已绑定的 document/passage lineage，
+不开放按路径读取其他文件。离线 completed-run verifier 还会从 authoritative Artifacts
+重放 evidence、bridge、selection、ledger、report 和 Gateway projection，检测同步篡改与
+孤儿文件。
 
 当前 Gateway 与审批入口保持显式、进程外调用，不冒充尚未实现的顶层 `material-agent`
 子命令：

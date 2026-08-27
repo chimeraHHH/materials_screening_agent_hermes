@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:materials-screening-agent:flatband-source-catalog-row:v1",
+  "title": "Materials Inspiration Source Catalog Row V1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "source_id",
+    "name",
+    "roles",
+    "decision",
+    "official_urls",
+    "licenses",
+    "redistribution",
+    "access",
+    "source_version",
+    "fields_used",
+    "local_cache_policy",
+    "scientific_ceiling",
+    "rationale",
+    "accessed_at"
+  ],
+  "properties": {
+    "schema_version": {"const": "flatband-source-catalog-row-v1"},
+    "source_id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{2,63}$"},
+    "name": {"type": "string", "minLength": 1, "maxLength": 160},
+    "roles": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "case_seed",
+          "structure",
+          "electronic_structure",
+          "mechanism_seed",
+          "literature_retrieval",
+          "identifier_resolution",
+          "open_access_status",
+          "sensitivity_only"
+        ]
+      }
+    },
+    "decision": {"enum": ["INCLUDE", "CONDITIONAL", "EXCLUDE"]},
+    "official_urls": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"type": "string", "format": "uri", "pattern": "^https://"}
+    },
+    "licenses": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["scope", "expression"],
+        "properties": {
+          "scope": {"type": "string", "minLength": 1, "maxLength": 96},
+          "expression": {
+            "type": "string",
+            "oneOf": [
+              {"enum": ["CC-BY-4.0", "CC-BY-SA-4.0", "CC0-1.0", "MIT"]},
+              {"pattern": "^LicenseRef-[A-Za-z0-9.+-]+$"}
+            ],
+            "maxLength": 96
+          }
+        }
+      }
+    },
+    "redistribution": {"type": "string", "minLength": 1, "maxLength": 320},
+    "access": {"type": "string", "minLength": 1, "maxLength": 320},
+    "source_version": {"type": "string", "minLength": 1, "maxLength": 200},
+    "fields_used": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1, "maxLength": 96}
+    },
+    "local_cache_policy": {"type": "string", "minLength": 1, "maxLength": 320},
+    "scientific_ceiling": {"type": "string", "minLength": 1, "maxLength": 320},
+    "rationale": {"type": "string", "minLength": 1, "maxLength": 640},
+    "accessed_at": {"const": "2026-08-09"}
+  }
+}

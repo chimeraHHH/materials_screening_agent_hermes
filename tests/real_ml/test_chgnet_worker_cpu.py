@@ -29,7 +29,6 @@ from material_agent.ml_screening.resources import (
 )
 from material_agent.ml_screening.worker_client import SubprocessWorkerClient
 
-
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 SOURCE_ROOT = REPOSITORY_ROOT / "src"
 STRUCTURE_FIXTURE = (

@@ -9,7 +9,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from material_agent.ml_screening.property_models import PropertyInputKind, PropertyModelFamily
+from material_agent.ml_screening.property_models import (
+    PropertyInputKind,
+    PropertyModelFamily,
+)
 
 
 @dataclass(frozen=True)

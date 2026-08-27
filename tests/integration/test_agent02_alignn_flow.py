@@ -1,14 +1,20 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import sys
 from pathlib import Path
 
 import pytest
 
-from material_agent.ml_screening.alignn_client import AlignnFlowRunner, AlignnProcessError, AlignnSubprocessClient
-from material_agent.ml_screening.alignn_models import AlignnArtifact, AlignnInferenceRequest
+from material_agent.ml_screening.alignn_client import (
+    AlignnFlowRunner,
+    AlignnProcessError,
+    AlignnSubprocessClient,
+)
+from material_agent.ml_screening.alignn_models import (
+    AlignnArtifact,
+    AlignnInferenceRequest,
+)
 from material_agent.ml_screening.alignn_planner import build_alignn_plan
 from material_agent.retrieval.storage import LocalArtifactStore
 

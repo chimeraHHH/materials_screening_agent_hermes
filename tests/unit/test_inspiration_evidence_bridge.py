@@ -11,12 +11,15 @@ from material_agent.inspiration import (
     SearchHitV1,
 )
 from material_agent.inspiration.bridge import build_search_supported_bridges
-from material_agent.inspiration.evidence import build_evidence_cards
+from material_agent.inspiration.evidence import (
+    build_evidence_cards,
+    classify_evidence_relation,
+)
+from material_agent.inspiration.policy import SearchBudgetV1
 from material_agent.inspiration.tag_graph import (
     curated_flat_band_tag_graph,
     plan_tag_queries,
 )
-from material_agent.inspiration.policy import SearchBudgetV1
 
 
 def artifact(name: str, digest: str) -> ArtifactPointerV1:
@@ -145,6 +148,106 @@ def test_missing_required_mechanism_never_promotes_a_packet() -> None:
 
     assert result.packets == ()
     assert any("destructive-interference" in item.reason for item in result.skipped)
+
+
+def test_negated_bridge_passage_is_counter_not_support() -> None:
+    graph = curated_flat_band_tag_graph()
+    queries = plan_tag_queries(
+        graph,
+        target_tag_ids=("electronic-flat-band",),
+        budget=SearchBudgetV1(
+            max_queries=4,
+            max_direct_queries=1,
+            max_bridge_queries=3,
+            max_counter_queries=0,
+            max_raw_hits=10,
+            max_unique_documents=10,
+        ),
+    ).queries
+    bridge_query = next(
+        query
+        for query in queries
+        if query.bridge_rule_id == "acoustic-resonance-to-electronic-flat-band"
+    )
+    hits = (_hit("negated", bridge_query.query_id, "d"),)
+    passages = (
+        _passage(
+            "negated",
+            text="Local resonance does not cause a flat band in this system.",
+            matched_tags=("local-resonance",),
+            digest="d",
+        ),
+    )
+
+    evidence = build_evidence_cards(
+        graph=graph,
+        queries=queries,
+        hits=hits,
+        passages=passages,
+    )
+    bridges = build_search_supported_bridges(
+        graph=graph,
+        queries=queries,
+        hits=hits,
+        passages=passages,
+        evidence_cards=evidence.cards,
+    )
+
+    assert len(evidence.cards) == 1
+    assert evidence.cards[0].relation.value == "COUNTER"
+    assert bridges.packets == ()
+    assert any(
+        item.bridge_rule_id == bridge_query.bridge_rule_id
+        for item in bridges.skipped
+    )
+
+
+def test_hedged_or_bare_keyword_passages_remain_context() -> None:
+    assert (
+        classify_evidence_relation(
+            "Local resonance might possibly cause a flat band.",
+            counter_query=False,
+        ).value
+        == "CONTEXT"
+    )
+    assert (
+        classify_evidence_relation(
+            "The abstract lists local resonance and flat band keywords.",
+            counter_query=False,
+        ).value
+        == "CONTEXT"
+    )
+    assert (
+        classify_evidence_relation(
+            "A showcase and extrapolation table list both keywords.",
+            counter_query=False,
+        ).value
+        == "CONTEXT"
+    )
+    assert (
+        classify_evidence_relation(
+            "Many measurements demonstrate localization.",
+            counter_query=False,
+        ).value
+        == "SUPPORT"
+    )
+
+
+def test_counter_query_requires_an_explicit_breaking_assertion() -> None:
+    assert (
+        classify_evidence_relation(
+            "Local resonance supports a weakly dispersive branch.",
+            counter_query=True,
+        ).value
+        == "CONTEXT"
+    )
+    assert (
+        classify_evidence_relation(
+            "Path imbalance destroys the local-resonance condition.",
+            counter_query=True,
+        ).value
+        == "COUNTER"
+    )
 
 
 def test_non_mechanism_passage_is_recorded_but_not_promoted() -> None:

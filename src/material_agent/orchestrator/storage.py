@@ -9,9 +9,9 @@ from pathlib import Path
 from typing import Any
 
 from material_agent.orchestrator.models import (
+    ORCHESTRATOR_CONTRACT_VERSION,
     ApprovalStatus,
     ExternalJobRecord,
-    ORCHESTRATOR_CONTRACT_VERSION,
     RunStatus,
     StageExecutionRecord,
     StageId,
@@ -23,7 +23,6 @@ from material_agent.orchestrator.state_machine import (
     validate_run_transition,
     validate_stage_transition,
 )
-
 
 BUSINESS_SCHEMA_VERSION = 2
 LEGACY_BUSINESS_SCHEMA_VERSION = 1
@@ -416,6 +415,148 @@ class OrchestratorRepository:
             stage["agent_id"]: stage["status"] for stage in stages
         }
         return result
+
+    def seal_failed_run(
+        self,
+        run_id: str,
+        *,
+        category: str,
+        operation: str,
+        public_message: str,
+    ) -> None:
+        """Atomically seal a nonterminal run and its active stage as failed.
+
+        This is the durable escape hatch for an exception that crosses the
+        LangGraph invocation boundary before the normal outcome-recording node
+        can run.  Without it, an outer composition can persist a terminal
+        failure while the Orchestrator business tables remain RUNNING.
+        """
+
+        run = self.connection.execute(
+            "SELECT status, current_stage FROM runs WHERE run_id = ?", (run_id,)
+        ).fetchone()
+        if run is None:
+            raise KeyError(f"unknown run: {run_id}")
+        if run["status"] == RunStatus.FAILED.value:
+            return
+        terminal = {
+            RunStatus.SUCCEEDED.value,
+            RunStatus.PARTIAL.value,
+            RunStatus.CANCELLED.value,
+        }
+        if run["status"] in terminal:
+            raise RepositoryConflictError(
+                "cannot seal a successfully completed or cancelled run as failed"
+            )
+        validate_run_transition(run["status"], RunStatus.FAILED.value)
+
+        error = {
+            "category": category,
+            "retryable": False,
+            "operation": operation,
+            "public_message": public_message,
+        }
+        error_json = _json(error)
+        now = _now()
+        current_stage = run["current_stage"]
+        try:
+            self.connection.execute("BEGIN IMMEDIATE")
+            if current_stage:
+                stage = self.connection.execute(
+                    """
+                    SELECT stage, stage_id, agent_id, status, attempt
+                    FROM stage_runs
+                    WHERE run_id = ? AND (stage = ? OR agent_id = ?)
+                    """,
+                    (run_id, current_stage, current_stage),
+                ).fetchone()
+            else:
+                stage = self.connection.execute(
+                    """
+                    SELECT stage, stage_id, agent_id, status, attempt
+                    FROM stage_runs
+                    WHERE run_id = ? AND status IN (?, ?, ?)
+                    ORDER BY updated_at DESC LIMIT 1
+                    """,
+                    (
+                        run_id,
+                        StageStatus.VALIDATING_INPUT.value,
+                        StageStatus.READY.value,
+                        StageStatus.RUNNING.value,
+                    ),
+                ).fetchone()
+            if stage is not None:
+                current_stage = stage["agent_id"] or stage["stage"]
+                if stage["status"] != StageStatus.PERMANENT_FAILED.value:
+                    validate_stage_transition(
+                        stage["status"], StageStatus.PERMANENT_FAILED.value
+                    )
+                    self.connection.execute(
+                        """
+                        UPDATE stage_runs
+                        SET status = ?, error_json = ?, updated_at = ?
+                        WHERE run_id = ? AND stage = ?
+                        """,
+                        (
+                            StageStatus.PERMANENT_FAILED.value,
+                            error_json,
+                            now,
+                            run_id,
+                            stage["stage"],
+                        ),
+                    )
+                    attempt = self.connection.execute(
+                        """
+                        SELECT status FROM stage_attempts
+                        WHERE run_id = ? AND stage_id = ? AND attempt = ?
+                        """,
+                        (run_id, stage["stage_id"], stage["attempt"]),
+                    ).fetchone()
+                    if attempt is not None and attempt["status"] != StageStatus.PERMANENT_FAILED.value:
+                        validate_stage_transition(
+                            attempt["status"], StageStatus.PERMANENT_FAILED.value
+                        )
+                        self.connection.execute(
+                            """
+                            UPDATE stage_attempts
+                            SET status = ?, error_json = ?, updated_at = ?
+                            WHERE run_id = ? AND stage_id = ? AND attempt = ?
+                            """,
+                            (
+                                StageStatus.PERMANENT_FAILED.value,
+                                error_json,
+                                now,
+                                run_id,
+                                stage["stage_id"],
+                                stage["attempt"],
+                            ),
+                        )
+            self.connection.execute(
+                """
+                UPDATE runs
+                SET status = ?, current_stage = NULL, updated_at = ?
+                WHERE run_id = ?
+                """,
+                (RunStatus.FAILED.value, now, run_id),
+            )
+            self.connection.execute(
+                """
+                INSERT OR IGNORE INTO events(
+                    event_key, run_id, event_type, payload_json, created_at
+                ) VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    f"{run_id}:run:sealed-failed:{category}",
+                    run_id,
+                    "RUN_SEALED_FAILED",
+                    _json({"error": error, "stage": current_stage}),
+                    now,
+                ),
+            )
+            self.connection.commit()
+        except Exception:
+            self.connection.rollback()
+            raise
 
     def record_requirement(
         self,

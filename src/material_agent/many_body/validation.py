@@ -10,10 +10,11 @@ from __future__ import annotations
 import hashlib
 import math
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 from urllib.parse import unquote, urlsplit
 
 from pydantic import ValidationError
@@ -73,7 +74,7 @@ class ValidationResult:
 
 
 _MISSING = object()
-_FORBIDDEN_KEY = re.compile(r"(?:shell|command|executable|pickle|expression|python|code)", re.I)
+_FORBIDDEN_KEY = re.compile(r"(?:shell|command|executable|pickle|expression|python|code)", re.IGNORECASE)
 _FORBIDDEN_SUFFIXES = (".pkl", ".pickle", ".npz", ".npy", ".py", ".sh")
 
 
@@ -107,7 +108,7 @@ def validate_model_package(
 
     try:
         package = payload if isinstance(payload, EffectiveModelPackage) else EffectiveModelPackage.model_validate(raw)
-    except (ValidationError, ValueError, TypeError) as exc:
+    except (ValidationError, ValueError, TypeError):
         issue = ValidationIssue(
             field_path="$",
             reason_code="SCHEMA_INVALID",
@@ -206,7 +207,7 @@ def _validate_package_integrity(package: EffectiveModelPackage, raw: Mapping[str
         try:
             artifact_path = _resolve_artifact(uri, artifact_root)
             actual_digest = _sha256_file(artifact_path)
-        except (OSError, ValueError) as exc:
+        except (OSError, ValueError):
             issues.append(ValidationIssue(path, "ARTIFACT_UNAVAILABLE", "declared artifact is missing or unsafe", "Publish the referenced artifact inside the trusted artifact store and keep its URI immutable."))
             continue
         if actual_digest != digest:
@@ -215,9 +216,12 @@ def _validate_package_integrity(package: EffectiveModelPackage, raw: Mapping[str
 
 
 def _validate_revision_linkage(package: EffectiveModelPackage, issues: list[ValidationIssue]) -> None:
-    if package.material_linkage is not None and package.material_linkage.status.value != "NONE":
-        if package.material_linkage.structure_artifact not in package.artifacts:
-            issues.append(ValidationIssue("material_linkage.structure_artifact", "REVISION_ARTIFACT_NOT_DECLARED", "linkage artifact is not part of the package artifact manifest", "Declare the exact immutable artifact reference in artifacts."))
+    if (
+        package.material_linkage is not None
+        and package.material_linkage.status.value != "NONE"
+        and package.material_linkage.structure_artifact not in package.artifacts
+    ):
+        issues.append(ValidationIssue("material_linkage.structure_artifact", "REVISION_ARTIFACT_NOT_DECLARED", "linkage artifact is not part of the package artifact manifest", "Declare the exact immutable artifact reference in artifacts."))
     provenance_ids = {record.provenance_id for record in package.provenance}
     for index, interaction in enumerate(package.interactions):
         if interaction.provenance_id not in provenance_ids:

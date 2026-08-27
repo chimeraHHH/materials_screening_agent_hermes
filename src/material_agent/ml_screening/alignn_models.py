@@ -7,11 +7,16 @@ import json
 from datetime import datetime
 from enum import StrEnum
 from pathlib import PurePosixPath
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator, model_validator
-from typing_extensions import Annotated
-
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StringConstraints,
+    field_validator,
+    model_validator,
+)
 
 ALIGNN_REQUEST_VERSION = "agent02-alignn-request-v1"
 ALIGNN_PLAN_VERSION = "agent02-alignn-plan-v1"
@@ -46,7 +51,7 @@ class AlignnArtifact(AlignnStrictModel):
         return validate_root_relative_path(value)
 
     @model_validator(mode="after")
-    def uri_matches_path(self) -> "AlignnArtifact":
+    def uri_matches_path(self) -> AlignnArtifact:
         if self.artifact_uri != f"artifact://{self.root_relative_path}":
             raise ValueError("artifact URI must match root-relative path")
         return self
@@ -77,7 +82,7 @@ class AlignnInferenceRequest(AlignnStrictModel):
     is_mock: bool = False
 
     @model_validator(mode="after")
-    def validate_input_media_types(self) -> "AlignnInferenceRequest":
+    def validate_input_media_types(self) -> AlignnInferenceRequest:
         if self.input_structure.media_type != "chemical/x-cif":
             raise ValueError("ALIGNN v1 accepts only canonical CIF input")
         if self.model_archive.media_type != "application/zip":
@@ -112,7 +117,7 @@ class AlignnExecutionPlan(AlignnStrictModel):
         return validate_root_relative_path(value)
 
     @model_validator(mode="after")
-    def matches_request(self) -> "AlignnExecutionPlan":
+    def matches_request(self) -> AlignnExecutionPlan:
         if self.operation_key != alignn_operation_key(self.request):
             raise ValueError("ALIGNN operation key differs from frozen request")
         expected = f"stages/agent02/{self.request.run_id}/alignn/{self.operation_key}/worker-output"
@@ -141,7 +146,7 @@ class AlignnWorkerResponse(AlignnStrictModel):
     errors: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
-    def response_consistency(self) -> "AlignnWorkerResponse":
+    def response_consistency(self) -> AlignnWorkerResponse:
         if self.status == "SUCCEEDED" and (self.prediction is None or self.output is None or self.errors):
             raise ValueError("successful ALIGNN response requires prediction and output only")
         if self.status == "FAILED" and not self.errors:

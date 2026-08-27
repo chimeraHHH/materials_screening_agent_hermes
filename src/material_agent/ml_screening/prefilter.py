@@ -16,7 +16,6 @@ from material_agent.ml_screening.models import (
     PreFilterReasonCode,
 )
 
-
 _UNIT_ALIASES = {
     "ev": "eV",
     "electronvolt": "eV",

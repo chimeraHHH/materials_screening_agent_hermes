@@ -1,0 +1,60 @@
+\section{MatEvidence: Federated, Candidate-Linked Evidence}
+\label{sec:matevidence}
+
+\matevidence converts heterogeneous scientific sources into evidence records attached to stable candidate identities.  It combines a nine-role research workflow with deterministic source normalization and candidate--constraint matrix construction.  The language model proposes searches, interprets mechanisms, and develops hypotheses; source adapters and schema validators determine what evidence was actually retrieved and which candidate it describes.
+
+\subsection{Nine-role research workflow}
+
+The workflow decomposes research into nine roles: requirements analysis, query planning, native scholarly search, evidence resolution, database scouting, mechanism and chemistry analysis, skeptical constraint review, hypothesis reasoning, and synthesis.  The roles communicate through structured records rather than a shared untyped transcript.  Query planning emits source and concept queries.  Native search returns candidate papers or database leads.  Evidence resolution obtains persistent identifiers and source metadata.  Database scouting returns normalized structure records.  Mechanism analysis connects candidate modifications to the target constraints.  The skeptic populates evidence verdicts, and the hypothesis reasoner produces a separate inference matrix.  The synthesist constructs the final candidate portfolio and next-step plan.
+
+\begin{table}[t]
+    \centering
+    \caption{\textbf{Roles in the generic materials-research workflow.}}
+    \label{tab:roles}
+    \small
+    \setlength{\tabcolsep}{4pt}
+    \renewcommand{\arraystretch}{1.12}
+    \begin{tabularx}{\linewidth}{>{\raggedright\arraybackslash}p{0.22\linewidth}XX}
+        \toprule
+        \textbf{Role} & \textbf{Question answered} & \textbf{Structured output} \\
+        \midrule
+        Requirements & What is the scientific target? & Constraint graph and ambiguity ledger \\
+        Query planner & Which concepts and sources should be searched? & Source-specific query plan \\
+        Native search & Which papers and records are plausible leads? & Ranked scholarly and database leads \\
+        Evidence resolver & Which persistent objects support the lead? & DOI/arXiv/source records and provenance \\
+        Database scout & Which explicit structures instantiate candidates? & Federated candidate and structure records \\
+        Mechanism/chemistry & Why might a candidate or intervention work? & Mechanism links and proposed operations \\
+        Skeptic & What is directly established for each constraint? & Sparse PASS/FAIL judgements with evidence links \\
+        Hypothesis reasoner & What remains plausible despite missing evidence? & LIKELY\_PASS/LIKELY\_FAIL and falsifiers \\
+        Synthesist & What should be retained and tested next? & Candidate portfolio and validation trajectory \\
+        \bottomrule
+    \end{tabularx}
+\end{table}
+
+The decomposition limits two common failure modes.  First, a search lead cannot become evidence merely because it is semantically relevant: it must be resolved to a stable source object and linked to the correct candidate.  Second, the same model is not asked to propose a hypothesis and then silently certify it.  The skeptic reconstructs direct evidence, while the reasoner states probabilistic scientific expectations and the observations that would falsify them.
+
+\subsection{Federated materials identities}
+
+The current federation includes C2DB, Materials Cloud MC3D, NOMAD, and Materials Project.  Each adapter stores the source namespace, source identifier, retrieval time, native fields, normalization policy, and source artifact.  Structures are canonicalized and content-hashed; composition and structure fingerprints are used to propose cross-source identity links.  The federation retains the original identities even when two records are linked, because database entries can differ in dimensionality, relaxation protocol, magnetic state, or calculation level.
+
+Source fields are not imputed across candidates or databases.  If MC3D contributes a structure but does not expose an energy-above-hull value in the retrieved record, that constraint remains unknown for that source.  If C2DB supplies a PBE band structure, the observation is labelled with its computational origin rather than treated as an experimental fact.  Cross-source links broaden the evidence available to a candidate, but every observation continues to point to the record that produced it.
+
+\subsection{Evidence and inference are separate matrices}
+
+For candidate $m_j$ and constraint $c_i$, the direct evidence matrix contains
+\begin{equation}
+    E_{ij}\in\{\mathrm{PASS},\mathrm{FAIL},\mathrm{UNKNOWN}\}.
+\end{equation}
+A PASS or FAIL requires an evidence record whose scope and value can evaluate the compiled predicate.  UNKNOWN is a first-class outcome: it means that the retrieved artifacts do not decide the constraint.  In parallel, the hypothesis reasoner produces
+\begin{equation}
+    H_{ij}=(v_{ij},p_{ij},a_{ij},f_{ij}),
+\end{equation}
+where $v_{ij}\in\{\mathrm{LIKELY\_PASS},\mathrm{LIKELY\_FAIL}\}$, $p_{ij}$ is a calibrated qualitative or numeric confidence, $a_{ij}$ lists assumptions, and $f_{ij}$ is a decisive falsification target.  The final report can therefore say both that a route is scientifically motivated and that a particular observable remains to be measured or computed.
+
+This dual representation is especially important in early materials exploration.  A promising candidate is not discarded because a specialized property is absent from a database, and an attractive mechanism is not promoted to established evidence.  Instead, missing high-value entries in $E$ become candidate-specific validation tasks in \matdag.
+
+\subsection{Candidate and evidence graphs}
+
+Every evidence record contains a relation to the candidate: identity, analogue, parent, child, mechanism support, constraint observation, or negative discriminator.  These relations form a graph that can express, for example, that a paper motivates orbital-selective flat bands in an oxyhalide family; a database record supplies the NbOCl$_2$ parent structure; a substitution plan generates a related child; and a learned Hamiltonian supplies a bandwidth for that exact child.  The graph prevents evidence about the family from being silently assigned to the generated structure.
+
+The output of \matevidence is a candidate set, the complete candidate--constraint evidence matrix, an independent inference review, and a set of unresolved high-value observables.  These objects provide the input to structure realization and model routing.

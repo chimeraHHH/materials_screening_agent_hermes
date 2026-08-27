@@ -58,16 +58,17 @@ class PropertySubprocessClient:
             raise PropertyProcessError("property output sandbox must not already exist")
         before = capture_artifact_tree(root)
         command = [str(python), str(script), "--artifact-root", str(root)]
-        if request.plan.selected_model.family is PropertyModelFamily.CT_UAE:
-            if self.ct_uae_source_root is not None:
-                command.extend(["--ct-uae-source-root", str(self.ct_uae_source_root.resolve(strict=True))])
+        if (
+            request.plan.selected_model.family is PropertyModelFamily.CT_UAE
+            and self.ct_uae_source_root is not None
+        ):
+            command.extend(["--ct-uae-source-root", str(self.ct_uae_source_root.resolve(strict=True))])
         environment = _worker_environment()
         try:
             completed = subprocess.run(
                 command,
                 input=request.model_dump_json().encode(),
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+                capture_output=True,
                 timeout=request.wall_time_seconds + 5,
                 shell=False,
                 env=environment,

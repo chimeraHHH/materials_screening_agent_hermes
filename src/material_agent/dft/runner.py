@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from datetime import UTC, datetime
 from hashlib import sha256
-from typing import Any, Callable
+from typing import Any
 
 from material_agent.orchestrator.models import (
     ArtifactPointer,
@@ -25,6 +26,12 @@ from material_agent.orchestrator.models import (
 from material_agent.retrieval.models import Requirement
 from material_agent.retrieval.storage import LocalArtifactStore
 
+from .bridge_transport import (
+    BridgeConflictError,
+    BridgeNotFoundError,
+    BridgeProtocolError,
+    BridgeTransportError,
+)
 from .mock_backend import MockDFTBackend
 from .models import (
     ArtifactRef,
@@ -39,13 +46,6 @@ from .models import (
 from .planner import DFTPlanner, StageInputValidator, build_approval_payload
 from .protocol import DFTBackend, RestorableDFTBackend
 from .reporting import render_mock_report
-from .bridge_transport import (
-    BridgeConflictError,
-    BridgeNotFoundError,
-    BridgeProtocolError,
-    BridgeTransportError,
-)
-
 
 _REMEDIATION = {
     "MISSING_INPUT": ["补齐不可变 Requirement、candidate manifest、structure URI 与 SHA-256 后重新创建阶段运行。"],
@@ -246,7 +246,7 @@ class DFTStageRunner:
                 operation["scenario"] = scenario
             self.store.write_json(operation_uri, operation, immutable=True)
             return self._waiting(context, idempotency_key, ref, 0, JobStatus.CREATED)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             return self._failed(context, idempotency_key, "start", exc, prepared=prepared_plan)
 
     def reconcile(
@@ -300,11 +300,11 @@ class DFTStageRunner:
             final_operation = dict(operation)
             final_operation.update({"status": observed.value, "status_sequence": sequence, "result": result_ref.model_dump(mode="json")})
             # Keep the operation ledger append-only: terminal state is a new artifact.
-            terminal_ref = self.store.write_json(
+            self.store.write_json(
                 self._terminal_operation_uri(context, idempotency_key), final_operation, immutable=True
             )
             return self._terminal_outcome(context, idempotency_key, ref, observed, sequence, result_ref, idempotency_key, prepared_plan, result)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             return self._failed(context, idempotency_key, "reconcile", exc, prepared=prepared_plan)
 
     def cancel(self, external_job_ref: str, idempotency_key: str) -> CancelOutcome:

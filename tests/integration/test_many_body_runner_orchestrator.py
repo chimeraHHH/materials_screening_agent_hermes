@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
-from material_agent.many_body.models import package_content_hash
 from material_agent.many_body.mock_backend import MockManyBodyBackend
 from material_agent.many_body.models import EffectiveModelPackage
 from material_agent.many_body.runner import ManyBodyStageRunner
@@ -14,7 +12,6 @@ from material_agent.orchestrator.models import (
     StageId,
 )
 from material_agent.retrieval.storage import LocalArtifactStore
-
 
 FIXTURES = Path(__file__).parents[1] / "fixtures/contracts/agent04-v1"
 

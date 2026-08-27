@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import re
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -50,6 +51,15 @@ class SubprocessWorkerClient:
     package_lock_path: Path
     source_root: Path
     module: str = "material_agent.ml_screening.chgnet_worker"
+    cuda_visible_devices: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.cuda_visible_devices is not None and not re.fullmatch(
+            r"\d+", self.cuda_visible_devices
+        ):
+            raise ValueError(
+                "cuda_visible_devices must be one non-negative GPU index"
+            )
 
     @property
     def is_mock(self) -> bool:
@@ -146,6 +156,13 @@ class SubprocessWorkerClient:
             "PYTHONPATH": str(source_root),
             "LANG": os.environ.get("LANG", "C.UTF-8"),
         }
+        if request.plan.device_policy == "cuda":
+            if self.cuda_visible_devices is None:
+                raise WorkerProcessError(
+                    "WORKER_CONFIGURATION_ERROR",
+                    "CUDA plan requires an explicit validated GPU index",
+                )
+            environment["CUDA_VISIBLE_DEVICES"] = self.cuda_visible_devices
         try:
             process = subprocess.Popen(
                 command,
@@ -155,7 +172,7 @@ class SubprocessWorkerClient:
                 shell=False,
                 env=environment,
             )
-            stdout, stderr = process.communicate(
+            stdout, _stderr = process.communicate(
                 request.model_dump_json().encode("utf-8"),
                 timeout=request.limits.wall_time_seconds,
             )

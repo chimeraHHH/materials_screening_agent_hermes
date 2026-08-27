@@ -1,0 +1,22 @@
+\section{MatEvolve: Persistent Candidate and Workflow Evolution}
+\label{sec:matevolve}
+
+\matevolve closes the research loop.  It reads the candidate-centred artifact graph after retrieval, transformation, and model execution, then decides which scientific objects should be retained, revised, expanded, or scheduled for a more specific test.  Its output is a new portfolio, not a rewritten narrative of the previous run.
+
+\subsection{Candidate lifecycle}
+
+Each candidate occupies a state determined by available artifacts rather than a single scalar score.  A \emph{lead} is linked to a source but may lack a resolved structure.  A \emph{structured hypothesis} has a parent or generated CIF and a complete constraint matrix.  A \emph{screened candidate} has one or more candidate-specific model observations.  A \emph{validation target} has passed the current routing policy and is assigned a higher-specificity computation or experiment.  Candidates can coexist at different stages because open questions often require both broad family exploration and deep validation of a small number of structures.
+
+Portfolio ranking combines constraint priority, direct evidence coverage, inference strength, novelty or route diversity, structural realizability, and validation cost.  The score is used to allocate attention; it does not erase the component judgements.  A candidate with one decisive unresolved constraint may outrank a superficially complete candidate if a low-cost calculation can resolve it.  Conversely, near-duplicate descendants can be clustered so that a portfolio retains chemically and mechanistically distinct routes.
+
+\subsection{Scientific memory}
+
+The materials service uses append-only artifact memory.  Evidence, structures, model tasks, and decisions are immutable records connected by new edges.  Corrections create superseding records rather than altering the observation that informed an earlier decision.  This supports longitudinal analysis: the system can determine which constraint changed, which new artifact caused the change, and whether a descendant improved upon its parent for the intended observable.
+
+At the runtime level, the \texttt{materials-inspiration-evolution} Profile exposes \hermes-native memory, Skills, and bounded delegation while limiting the Materials MCP interface to read-only run and result retrieval.  This Profile can consolidate reusable lessons such as effective query decompositions or validation sequences.  Promotion into a reusable Skill is a separate reviewed operation.  Scientific structures and observations remain owned by the versioned materials service and are referenced rather than copied into unstructured agent memory.
+
+\subsection{Expansion policies}
+
+Expansion is driven by the constraint that most limits a candidate.  If a parent has the desired lattice but excessive bandwidth, the system can propose strain, sliding, or chemical substitution and preserve each branch.  If the band is sufficiently flat but displaced from $E_\mathrm{F}$, carrier doping or gating can be represented without fabricating a new bulk composition.  If ferromagnetism and band inversion occur in separate materials, magnetic proximity or a van der Waals heterostructure becomes an explicit interface route.  When the current evidence cannot distinguish routes, \matevolve retains a diverse set and assigns a discriminator to each.
+
+The stopping condition is likewise artifact-based.  A cycle terminates when its budget is exhausted, no admissible operation or model task can resolve the active constraints, or the requested portfolio and validation plan have been produced.  The terminal result includes unresolved constraints and next actions, allowing a later \hermes session or a researcher to resume from the same state.

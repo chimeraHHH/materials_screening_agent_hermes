@@ -39,7 +39,6 @@ from material_agent.retrieval.structures import (
     process_structure,
 )
 
-
 SUBSTITUTION_OPERATOR_ID = "SUBSTITUTE_EQUIVALENT_SITE_V1"
 SUBSTITUTION_OPERATOR_VERSION = "1"
 SUBSTITUTION_REGISTRY_SCHEMA_VERSION = "inspiration-substitution-registry-v1"
@@ -356,7 +355,7 @@ def _strict_match(first: Structure, second: Structure) -> bool:
     )
     try:
         return bool(matcher.fit(first, second))
-    except Exception:
+    except Exception:  # noqa: BLE001
         return False
 
 
@@ -539,7 +538,7 @@ def _round_trip_matches(artifact_bytes: bytes, expected: Structure) -> bool:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             restored = Structure.from_str(artifact_bytes.decode("utf-8"), fmt="cif")
-    except Exception:
+    except Exception:  # noqa: BLE001
         return False
     if _species_composition(restored) != _species_composition(expected):
         return False
@@ -570,8 +569,8 @@ def _charge_target_species(
         targets = tuple(Element(rule.target_element) for _ in source_species)
         return (
             ValidationStatus.UNKNOWN,
-            "Parent sites have no explicit oxidation states; the substitution "
-            "requires human or downstream charge review.",
+            ("Parent sites have no explicit oxidation states; the substitution "
+            "requires human or downstream charge review."),
             targets,
         )
     if any(value is None for value in oxidation_states):
@@ -621,8 +620,8 @@ def _whole_structure_charge_status(
     if any(value is None for value in oxidation_states):
         return (
             ValidationStatus.UNKNOWN,
-            "At least one output site has no explicit oxidation state; total "
-            "charge cannot be verified.",
+            ("At least one output site has no explicit oxidation state; total "
+            "charge cannot be verified."),
         )
     total_charge = math.fsum(float(value) for value in oxidation_states)
     if not math.isfinite(total_charge) or not math.isclose(
@@ -661,7 +660,7 @@ def _computed_equivalent_site_groups(
                     for group in analyzer.get_symmetrized_structure().equivalent_indices
                 )
             )
-    except Exception:
+    except Exception:  # noqa: BLE001
         return None
     if not groups or {index for group in groups for index in group} != set(
         range(len(structure))
@@ -1122,7 +1121,7 @@ def execute_equivalent_site_substitution(
 
     try:
         artifact_bytes = _serialize_cif(canonical)
-    except Exception as error:
+    except Exception as error:  # noqa: BLE001
         checks.append(
             _check(
                 "canonical_round_trip",

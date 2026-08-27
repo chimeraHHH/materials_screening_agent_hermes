@@ -39,6 +39,7 @@
 | `src/material_agent/orchestrator/` | LangGraph 控制流、控制契约、SQLite/checkpoint、审批、恢复和 runner registry |
 | `src/material_agent/retrieval/` | Agent01：数据源、查询、结构、确定性判定、排序、Artifact 和报告 |
 | `src/material_agent/inspiration/` | 灵感生成器：文献 metadata/Passage、EvidenceCard、TagGraph、受约束 proposal、内部身份和多样性选择 |
+| `src/material_agent/research/` | 隔离的科研 benchmark 契约、指标与统计；不得修改或冒充冻结的 production Inspiration V1 契约 |
 | `src/material_agent/integration/`、`integrations/hermes/` | Hermes Gateway 的严格 DTO/Tool binding，以及固定 profile、Skill、配置和兼容性测试 |
 | `src/material_agent/ml_screening/` | Agent02：轻量原生契约、pre-filter、适用域、计划、数值/worker 校验、Fake 实现和独立 worker 边界 |
 | `src/material_agent/dft/` | Agent03：v1 mock DFT 控制契约、计划、backend 生命周期、runner、非科研报告和结构化 bridge PoC |
@@ -137,8 +138,13 @@ CLI 运行示例以 README 为准。真实 Materials Project 测试仅在明确�
 .venv/bin/python -m pytest tests/live -m live_mp --run-live-mp
 ```
 
-仓库当前未配置 lint、自动格式化或静态类型检查工具，也没有 CI 配置；不要虚构相应
-命令。新增此类工具属于依赖/配置变更，必须单独明确范围。
+仓库以 `ruff==0.16.3` 和 `pyproject.toml` 中显式的高信号规则集运行
+`.venv/bin/ruff check src tests`；有意保留的第三方异常封装、兼容异常类型和异步测试文件
+边界必须使用精确到行的 `noqa`，不得新增全局 ignore。仓库仍未配置自动格式化或静态类型
+检查工具。Materials Inspiration 已有
+`.github/workflows/materials-inspiration-production.yml` 离线 CI workflow，但仓库尚无
+protected branch 或 required-check 证据；不要把 workflow 文件误述为平台发布门已生效，
+也不要虚构未配置的命令。新增此类工具属于依赖/配置变更，必须单独明确范围。
 
 ## 科学严谨性与安全
 

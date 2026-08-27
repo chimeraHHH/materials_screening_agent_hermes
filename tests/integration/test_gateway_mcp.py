@@ -22,6 +22,8 @@ from material_agent.gateway.memory import (
 from material_agent.gateway.models import (
     ApprovalInteractionV1,
     ApproveActionV1,
+    ArtifactClosureV1,
+    ArtifactReferenceV1,
     CompanionTransitionV1,
     GatewayResultRecordV1,
     InspirationBundleSummaryV1,
@@ -30,6 +32,7 @@ from material_agent.gateway.models import (
     RunActionV1,
     RunStateV1,
     SucceededStateV1,
+    artifact_closure_sha256,
     gateway_result_sha256,
     inspiration_report_uri,
     inspiration_request_sha256,
@@ -69,11 +72,37 @@ class _McpFixtureCompanion:
     ) -> CompanionTransitionV1:
         del request, state
         if not isinstance(action, ApproveActionV1):
-            raise AssertionError("the MCP fixture accepts only exact approval")
+            raise AssertionError("the MCP fixture accepts only exact approval")  # noqa: TRY004
         report_payload = b"# MCP fixture inspiration report\n"
         report_uri = inspiration_report_uri(run_id)
         report_sha256 = hashlib.sha256(report_payload).hexdigest()
         self.artifacts.put_bytes(report_uri, report_payload)
+        stage_result_payload = b'{"schema_version":"mcp-fixture-stage-result-v1"}'
+        stage_result_uri = (
+            f"artifact://stages/inspiration/{run_id}/stage_result.json"
+        )
+        self.artifacts.put_bytes(stage_result_uri, stage_result_payload)
+        stage_result_reference = ArtifactReferenceV1(
+            uri=stage_result_uri,
+            sha256=hashlib.sha256(stage_result_payload).hexdigest(),
+            size_bytes=len(stage_result_payload),
+            media_type="application/json",
+        )
+        report_reference = ArtifactReferenceV1(
+            uri=report_uri,
+            sha256=report_sha256,
+            size_bytes=len(report_payload),
+            media_type="text/markdown",
+        )
+        closure_artifacts = (report_reference,)
+        closure = ArtifactClosureV1(
+            stage_result=stage_result_reference,
+            artifacts=closure_artifacts,
+            closure_sha256=artifact_closure_sha256(
+                stage_result=stage_result_reference,
+                artifacts=closure_artifacts,
+            ),
+        )
         result = GatewayResultRecordV1(
             run_id=run_id,
             report_uri=report_uri,
@@ -86,6 +115,7 @@ class _McpFixtureCompanion:
             validation_boundaries=(
                 "The fixture proves protocol behavior, not a scientific result.",
             ),
+            artifact_closure=closure,
         )
         return CompanionTransitionV1(
             state=SucceededStateV1(
@@ -257,7 +287,7 @@ class GatewayMcpStdioTest(unittest.TestCase):
             env=environment,
         )
 
-        with open(os.devnull, "w", encoding="utf-8") as error_log:
+        with open(os.devnull, "w", encoding="utf-8") as error_log:  # noqa: ASYNC230
             async with stdio_client(parameters, errlog=error_log) as streams:
                 async with ClientSession(*streams) as session:
                     await session.initialize()

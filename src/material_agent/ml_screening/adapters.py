@@ -13,7 +13,6 @@ from material_agent.ml_screening.evidence import (
     recommended_downstream_structure_id,
 )
 from material_agent.ml_screening.models import (
-    ApplicabilityStatus,
     ArtifactPointer,
     EvidenceLevel,
     ExecutionStatus,

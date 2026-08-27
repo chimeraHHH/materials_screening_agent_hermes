@@ -50,7 +50,6 @@ from material_agent.inspiration.transformations import (
     substitution_registry_bytes,
 )
 
-
 _ENGINE_SPEC = {
     "adapter": "pymatgen-equivalent-site-substitution-engine-v2",
     "bridge_assignment": {

@@ -276,8 +276,8 @@ class FakeVASPilotBridgeTransport:
                     evidence_level="L1_RETRIEVED",
                     is_mock=True,
                     limitations=(
-                        "Fake Bridge did not execute VASP or produce "
-                        "scientific evidence",
+                        ("Fake Bridge did not execute VASP or produce "
+                        "scientific evidence"),
                     ),
                 )
                 for claim in request.requested_claims

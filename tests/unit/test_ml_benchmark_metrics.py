@@ -15,7 +15,6 @@ from material_agent.ml_screening.benchmark_metrics import (
     load_synthetic_metric_input,
 )
 
-
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 FIXTURE_PATH = (
     REPOSITORY_ROOT

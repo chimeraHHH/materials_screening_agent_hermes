@@ -6,10 +6,15 @@ from dataclasses import dataclass
 from hashlib import sha256
 
 from .models import (
-    CancelResult, ClaimResult, ClaimStatus, DFTRequest, DFTResultEnvelope,
-    DFTTaskResultEnvelope, ExternalJobRef, JobStatus,
+    CancelResult,
+    ClaimResult,
+    ClaimStatus,
+    DFTRequest,
+    DFTResultEnvelope,
+    DFTTaskResultEnvelope,
+    ExternalJobRef,
+    JobStatus,
 )
-
 
 SCENARIOS = frozenset({"mock_success", "mock_backend_failed", "mock_never_finishes", "mock_cancel_queued", "mock_cancel_running", "mock_timeout"})
 

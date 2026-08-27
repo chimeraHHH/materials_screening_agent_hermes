@@ -22,7 +22,6 @@ from material_agent.integration.hermes_service import (
     HERMES_FIXTURE_GOAL,
 )
 
-
 EXPECTED_TOOLS = (
     "materials_inspiration_run",
     "materials_run_get",
@@ -78,7 +77,9 @@ async def _run(
 ) -> dict[str, Any]:
     parameters = _parameters(workspace, project)
     run_id = inspiration_run_id(submission_id)
-    with open(os.devnull, "w", encoding="utf-8") as error_log:
+    with open(  # noqa: ASYNC230 - MCP requires a synchronous stderr stream
+        os.devnull, "w", encoding="utf-8"
+    ) as error_log:
         async with stdio_client(parameters, errlog=error_log) as streams:
             async with ClientSession(*streams) as session:
                 await session.initialize()

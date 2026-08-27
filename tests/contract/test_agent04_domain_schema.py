@@ -1,27 +1,26 @@
 from __future__ import annotations
 
-import json
 import hashlib
+import json
 from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
 
 from material_agent.many_body.models import (
+    ArtifactRef,
+    EffectiveModelPackage,
     EvidenceLevel,
     EvidenceScope,
-    EffectiveModelPackage,
     ManyBodyResultEnvelope,
-    ModelDefinitionStatus,
     MaterialLinkageStatus,
+    ModelDefinitionStatus,
     ProvenanceRecord,
     SolverValidationStatus,
-    ArtifactRef,
     canonical_hash,
     canonical_json,
     package_content_hash,
 )
-
 
 ROOT = Path(__file__).parents[1] / "fixtures/contracts/agent04-v1"
 

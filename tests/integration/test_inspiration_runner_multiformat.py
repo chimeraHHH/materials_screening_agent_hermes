@@ -8,11 +8,11 @@ from pathlib import Path
 import pytest
 
 from material_agent.inspiration.engine import PymatgenTransformationEngine
+from material_agent.inspiration.feedback import TagFeedbackReviewV1
 from material_agent.inspiration.fetch import (
     FixtureDocumentFetcher,
     FixtureFetchResponse,
 )
-from material_agent.inspiration.feedback import TagFeedbackReviewV1
 from material_agent.inspiration.models import (
     ArtifactPointerV1,
     InspirationInputV1,
@@ -53,7 +53,6 @@ from material_agent.inspiration.vectorizer import (
 )
 from material_agent.integration.hermes_service import HermesFixtureProjector
 from material_agent.retrieval.storage import LocalArtifactStore
-
 
 FIXTURE_DIR = Path(__file__).parents[1] / "fixtures" / "inspiration"
 ARTICLE_HOST = "articles.example.test"
@@ -366,6 +365,7 @@ def _run(
         search_adapter=search_adapter,
         document_fetcher=fetcher,
         transformation_engine=PymatgenTransformationEngine(),
+        monotonic_clock=lambda: 100.0,
     )
     result = runner.run(
         inspiration_input=inspiration_input,
@@ -410,6 +410,16 @@ def test_offline_runner_fetches_only_three_insufficient_metadata_bodies_and_repl
     }
     assert "fixture-document-fetcher" in execution_component_ids
     assert "inspiration-tag-feedback-compiler" in execution_component_ids
+    assert "material-agent-build-identity" in execution_component_ids
+    assert "material-agent-execution-source-tree" in execution_component_ids
+    assert "inspiration-extraction-implementation" in execution_component_ids
+    assert "inspiration-passages-implementation" in execution_component_ids
+    assert "inspiration-evidence-implementation" in execution_component_ids
+    assert "inspiration-bridge-implementation" in execution_component_ids
+    assert "inspiration-identity-implementation" in execution_component_ids
+    assert "inspiration-selection-implementation" in execution_component_ids
+    assert "inspiration-report-implementation" in execution_component_ids
+    assert "inspiration-runner-implementation" in execution_component_ids
 
     ledger = first.result.bundle.cost_ledger
     expected_fetch_bytes = sum(

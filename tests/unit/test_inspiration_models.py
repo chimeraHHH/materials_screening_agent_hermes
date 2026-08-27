@@ -6,6 +6,8 @@ import pytest
 from pydantic import ValidationError
 
 from material_agent.inspiration import (
+    REQUIRED_STRUCTURE_NONFAIL_CHECK_IDS,
+    REQUIRED_STRUCTURE_PASS_CHECK_IDS,
     ArtifactPointerV1,
     BridgePacketV1,
     BridgeRuleV1,
@@ -20,8 +22,6 @@ from material_agent.inspiration import (
     PassageLocatorKind,
     PassageLocatorV1,
     PassageV1,
-    REQUIRED_STRUCTURE_NONFAIL_CHECK_IDS,
-    REQUIRED_STRUCTURE_PASS_CHECK_IDS,
     SearchQueryKind,
     SearchQueryV1,
     SubstitutionParametersV1,
@@ -38,6 +38,7 @@ from material_agent.inspiration import (
     hypothesis_signature_sha256_for,
     transformation_route_sha256,
 )
+from material_agent.inspiration.policy import SearchBudgetV1
 
 
 def artifact(name: str, digest: str = "a") -> ArtifactPointerV1:
@@ -46,6 +47,21 @@ def artifact(name: str, digest: str = "a") -> ArtifactPointerV1:
         sha256=digest * 64,
         media_type="application/json",
     )
+
+
+def test_search_budget_accepts_bounded_historical_year_window_and_rejects_reverse() -> None:
+    budget = SearchBudgetV1(
+        publication_year_from=1960,
+        publication_year_to=1990,
+    )
+    assert budget.publication_year_from == 1960
+    assert budget.publication_year_to == 1990
+
+    with pytest.raises(ValidationError):
+        SearchBudgetV1(
+            publication_year_from=1990,
+            publication_year_to=1960,
+        )
 
 
 def required_structure_checks() -> tuple[ValidationCheckV1, ...]:

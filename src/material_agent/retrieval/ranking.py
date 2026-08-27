@@ -11,7 +11,6 @@ from material_agent.retrieval.models import (
     RankingPreference,
 )
 
-
 DECISION_ORDER = {
     Decision.PASS: 0,
     Decision.UNCERTAIN: 1,

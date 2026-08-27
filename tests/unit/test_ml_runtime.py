@@ -47,6 +47,16 @@ def test_cpu_and_unrelated_errors_never_fallback() -> None:
             ),
             clear_mps_cache=lambda: None,
         )
+    with pytest.raises(RuntimeError, match="CUDA out of memory"):
+        run_with_mps_fallback(
+            requested_device="cuda",
+            run_once=lambda _device: (_ for _ in ()).throw(
+                RuntimeError("CUDA out of memory")
+            ),
+            clear_mps_cache=lambda: (_ for _ in ()).throw(
+                AssertionError("CUDA must not use the MPS fallback")
+            ),
+        )
 
 
 @pytest.mark.parametrize(

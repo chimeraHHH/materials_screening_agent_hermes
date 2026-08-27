@@ -5,18 +5,41 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
 import tomllib
 from pathlib import Path
 
+from managed_checkout import ManagedCheckoutError, repair_generated_package_locks
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 INTEGRATION_ROOT = REPO_ROOT / "integrations" / "hermes"
 LOCK_PATH = INTEGRATION_ROOT / "hermes.lock.json"
 SOURCE_ROOT = REPO_ROOT / ".external" / "hermes-agent"
 ENV_ROOT = REPO_ROOT / ".venv-hermes"
+
+
+def parse_runtime_version(value: str) -> tuple[int, int, int]:
+    match = re.fullmatch(r"v?(\d+)\.(\d+)\.(\d+)(?:[-+].*)?", value.strip())
+    if match is None:
+        raise RuntimeError("runtime version has an unexpected format")
+    return tuple(int(part) for part in match.groups())  # type: ignore[return-value]
+
+
+def ensure_node(minimum: str) -> None:
+    """Fail before checkout/install when the dashboard Node floor is unmet."""
+
+    for executable in ("node", "npm"):
+        if shutil.which(executable) is None:
+            raise RuntimeError(f"required executable is unavailable: {executable}")
+    actual = output("node", "--version")
+    if parse_runtime_version(actual) < parse_runtime_version(minimum):
+        raise RuntimeError(
+            f"Hermes dashboard requires Node >= {minimum}, got {actual.lstrip('v')}"
+        )
+    parse_runtime_version(output("npm", "--version"))
 
 
 def run(*args: str, cwd: Path | None = None, env: dict[str, str] | None = None) -> None:
@@ -38,13 +61,25 @@ def ensure_source(repository: str, tag: str, commit: str, version: str) -> None:
     origin = output("git", "remote", "get-url", "origin", cwd=SOURCE_ROOT)
     if origin != repository:
         raise RuntimeError(f"unexpected Hermes origin: {origin}")
-    dirty = output("git", "status", "--porcelain", cwd=SOURCE_ROOT)
-    if dirty:
-        raise RuntimeError("Hermes source checkout is dirty; refusing to replace files")
     try:
         current = output("git", "rev-parse", "HEAD", cwd=SOURCE_ROOT)
     except subprocess.CalledProcessError:
         current = ""
+    dirty = output("git", "status", "--porcelain", cwd=SOURCE_ROOT)
+    if dirty:
+        if current != commit:
+            raise RuntimeError(
+                "Hermes source checkout is dirty and is not at the pinned commit"
+            )
+        try:
+            repaired = repair_generated_package_locks(
+                SOURCE_ROOT,
+                expected_commit=commit,
+            )
+        except ManagedCheckoutError as exc:
+            raise RuntimeError(str(exc)) from exc
+        if repaired:
+            print("Restored npm-generated Hermes lockfile drift: " + ", ".join(repaired))
     run(
         "git",
         "fetch",
@@ -77,6 +112,7 @@ def main() -> int:
     for executable in ("git", "uv"):
         if shutil.which(executable) is None:
             raise RuntimeError(f"required executable is unavailable: {executable}")
+    ensure_node(lock["node_minimum"])
     ensure_source(
         lock["repository"],
         lock["release_tag"],
@@ -97,6 +133,16 @@ def main() -> int:
     for extra in lock["uv_extras"]:
         command.extend(("--extra", extra))
     run(*command, env=sync_env)
+    hermes_python = ENV_ROOT / "bin" / "python"
+    run(
+        str(hermes_python),
+        "-c",
+        (
+            "import aiohttp; "
+            "from gateway.platforms.api_server import APIServerAdapter; "
+            "from plugins.platforms.slack.adapter import SlackAdapter"
+        ),
+    )
     hermes = ENV_ROOT / "bin" / "hermes"
     if not hermes.is_file():
         raise RuntimeError(f"Hermes executable was not installed: {hermes}")
@@ -109,6 +155,6 @@ def main() -> int:
 if __name__ == "__main__":
     try:
         raise SystemExit(main())
-    except (RuntimeError, subprocess.CalledProcessError) as exc:
+    except (RuntimeError, ManagedCheckoutError, subprocess.CalledProcessError) as exc:
         print(f"bootstrap failed: {exc}", file=sys.stderr)
         raise SystemExit(1) from exc

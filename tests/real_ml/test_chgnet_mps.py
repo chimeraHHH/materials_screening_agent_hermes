@@ -9,7 +9,6 @@ import pytest
 
 from material_agent.ml_screening.models import ModelHealthSnapshot
 
-
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 SOURCE_ROOT = REPOSITORY_ROOT / "src"
 STRUCTURE_FIXTURE = REPOSITORY_ROOT / "tests/fixtures/real_ml/si-diamond.cif"

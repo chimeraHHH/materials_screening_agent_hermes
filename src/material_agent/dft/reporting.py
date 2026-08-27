@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from typing import Any
 
-
 MOCK_LIMITATIONS = (
     "仅完成工程控制链验证；未运行真实 DFT/VASP。",
     "没有产生 band gap、总能、磁矩或其他科学数值。",

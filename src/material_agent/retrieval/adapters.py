@@ -2,23 +2,24 @@
 
 from __future__ import annotations
 
-import importlib.metadata
 import csv
 import getpass
 import html
+import importlib.metadata
 import io
+import json
 import math
 import os
 import re
 import subprocess
 import time
-from collections.abc import Sequence
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Protocol
 from urllib.parse import urljoin
 
 import requests
-from pymatgen.core import Element, Lattice, Structure
+from pymatgen.core import Composition, Element, Lattice, Structure
 
 from material_agent.retrieval.models import (
     RetrievalQueryPlan,
@@ -290,7 +291,7 @@ class MaterialsProjectAdapter:
                         material_ids=[material_id], all_fields=True, chunk_size=1, num_chunks=1
                     )
                     result["endpoints"][endpoint] = [_plain_document(item) for item in documents]
-                except Exception as exc:  # report enrichment must be non-fatal
+                except Exception as exc:  # report enrichment must be non-fatal  # noqa: BLE001
                     result["errors"][endpoint] = type(exc).__name__
             if heavy:
                 for key, method_name in (
@@ -301,11 +302,11 @@ class MaterialsProjectAdapter:
                 ):
                     try:
                         result[key] = getattr(client, method_name)(material_id)
-                    except Exception as exc:
+                    except Exception as exc:  # noqa: BLE001
                         result["errors"][key] = type(exc).__name__
                 try:
                     result["charge_density"] = client.get_charge_density_from_material_id(material_id)
-                except Exception as exc:
+                except Exception as exc:  # noqa: BLE001
                     result["errors"]["charge_density"] = type(exc).__name__
         return result
 
@@ -356,7 +357,7 @@ class MaterialsProjectAdapter:
                         result["payloads"][key] = [
                             _plain_document(item) for item in values
                         ]
-                except Exception as exc:
+                except Exception as exc:  # noqa: BLE001
                     # A missing endpoint is evidence missing for this candidate,
                     # never a reason to silently relax a hard constraint.
                     result["errors"][key] = type(exc).__name__
@@ -395,7 +396,7 @@ class NomadAdapter:
         payload = _response_json(response, "NOMAD OpenAPI metadata")
         info = payload.get("info")
         if not isinstance(info, dict) or not isinstance(info.get("version"), str):
-            raise ValueError("NOMAD OpenAPI metadata is missing info.version")
+            raise ValueError("NOMAD OpenAPI metadata is missing info.version")  # noqa: TRY004
         return SourceMetadata(
             database_version=f"api:{info['version']}",
             client_version=importlib.metadata.version("requests"),
@@ -434,10 +435,10 @@ class NomadAdapter:
             payload = _response_json(response, "NOMAD archive query")
             data = payload.get("data")
             if not isinstance(data, list):
-                raise ValueError("NOMAD archive response is missing data[]")
+                raise ValueError("NOMAD archive response is missing data[]")  # noqa: TRY004
             for entry in data:
                 if not isinstance(entry, dict):
-                    raise ValueError("NOMAD archive response contains a non-object entry")
+                    raise ValueError("NOMAD archive response contains a non-object entry")  # noqa: TRY004
                 # Public archive pagination can include incomplete uploads without
                 # ``results.material``.  They cannot yield a canonical structure,
                 # but must not make otherwise valid later records disappear.
@@ -453,7 +454,7 @@ class NomadAdapter:
 
             pagination_payload = payload.get("pagination")
             if not isinstance(pagination_payload, dict):
-                raise ValueError("NOMAD archive response is missing pagination")
+                raise ValueError("NOMAD archive response is missing pagination")  # noqa: TRY004
             next_cursor = pagination_payload.get("next_page_after_value")
             if next_cursor is None:
                 break
@@ -633,7 +634,7 @@ class Mc3dAdapter:
             meta.get("api_version") if isinstance(meta, dict) else None
         )
         if not isinstance(api_version, str):
-            raise ValueError("MC3D OPTIMADE metadata is missing meta.api_version")
+            raise ValueError("MC3D OPTIMADE metadata is missing meta.api_version")  # noqa: TRY004
         return SourceMetadata(
             database_version=f"pbe-v1;optimade:{api_version}",
             client_version=importlib.metadata.version("requests"),
@@ -670,10 +671,10 @@ class Mc3dAdapter:
             params = None
             data = payload.get("data")
             if not isinstance(data, list):
-                raise ValueError("MC3D OPTIMADE response is missing data[]")
+                raise ValueError("MC3D OPTIMADE response is missing data[]")  # noqa: TRY004
             for entry in data:
                 if not isinstance(entry, dict):
-                    raise ValueError("MC3D OPTIMADE data contains a non-object")
+                    raise ValueError("MC3D OPTIMADE data contains a non-object")  # noqa: TRY004
                 mapped = _map_optimade_structure(entry, "mc3d:pbe-v1")
                 mapped["source_response"] = entry
                 documents.append(mapped)
@@ -720,10 +721,20 @@ class C2dbAdapter:
         base_url: str = "https://c2db.fysik.dtu.dk",
         session: requests.Session | None = None,
         timeout_seconds: float = 30.0,
+        max_concurrent_downloads: int = 8,
+        download_session_factory: Callable[[], Any] | None = None,
     ) -> None:
+        if not 1 <= max_concurrent_downloads <= 32:
+            raise ValueError("C2DB max_concurrent_downloads must be between 1 and 32")
         self.base_url = base_url.rstrip("/")
         self.session = session or requests.Session()
         self.timeout_seconds = timeout_seconds
+        self.max_concurrent_downloads = max_concurrent_downloads
+        self.download_session_factory = (
+            download_session_factory
+            if download_session_factory is not None
+            else (requests.Session if session is None else None)
+        )
 
     def metadata(self) -> SourceMetadata:
         response = self.session.get(
@@ -779,21 +790,45 @@ class C2dbAdapter:
                 break
             page += 1
 
-        documents = [self._material(row) for row in rows]
+        rows = [
+            row
+            for row in rows
+            if _c2db_row_matches_predownload_filters(
+                row, plan.predownload_filters
+            )
+        ]
+        if not rows:
+            return []
+        workers = min(self.max_concurrent_downloads, len(rows))
+        with ThreadPoolExecutor(
+            max_workers=workers,
+            thread_name_prefix="c2db-download",
+        ) as executor:
+            documents = list(executor.map(self._material, rows))
         return sorted(documents, key=lambda item: str(item["material_id"]))
 
     def _material(self, row: dict[str, str]) -> dict[str, Any]:
         uid = row["uid"]
-        payload = _response_json(
-            self.session.get(
+        session = (
+            self.download_session_factory()
+            if self.download_session_factory is not None
+            else self.session
+        )
+        close_session = session is not self.session
+        try:
+            response = session.get(
                 f"{self.base_url}/material/{uid}/download/json",
                 timeout=self.timeout_seconds,
-            ),
-            f"C2DB material {uid}",
-        )
+            )
+            payload = _response_json(response, f"C2DB material {uid}")
+        finally:
+            if close_session:
+                close = getattr(session, "close", None)
+                if callable(close):
+                    close()
         atoms = payload.get("1")
         if not isinstance(atoms, dict):
-            raise ValueError(f"C2DB material {uid} is missing atoms record '1'")
+            raise ValueError(f"C2DB material {uid} is missing atoms record '1'")  # noqa: TRY004
         structure = _ase_json_structure(atoms)
         elements = sorted({str(site.specie) for site in structure})
         gap = _optional_float(row.get("band_gap"))
@@ -850,6 +885,50 @@ class C2dbAdapter:
             [],
         )
 
+    def fetch_plotly_bandstructure(self, material_id: str) -> dict[str, Any]:
+        """Return the official PBE band plot embedded in a C2DB material page.
+
+        C2DB currently publishes the numerical band traces as a Plotly JSON
+        object rather than through the structure-download JSON endpoint.  Keep
+        page parsing in the source adapter so report code never depends on HTML
+        layout details or confuses a rendered plot with screening evidence.
+        """
+
+        if not material_id or any(
+            character not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-"
+            for character in material_id
+        ):
+            raise ValueError("C2DB material id is invalid")
+        response = self.session.get(
+            f"{self.base_url}/material/{material_id}",
+            timeout=self.timeout_seconds,
+        )
+        response.raise_for_status()
+        marker = "Plotly.newPlot('bandstructure', graphs, {});"
+        plot_end = response.text.find(marker)
+        if plot_end < 0:
+            raise ValueError("C2DB material page is missing the PBE band plot")
+        assignment = response.text.rfind("var graphs = ", 0, plot_end)
+        if assignment < 0:
+            raise ValueError("C2DB PBE band plot is missing its Plotly data")
+        json_start = assignment + len("var graphs = ")
+        try:
+            graph, _ = json.JSONDecoder().raw_decode(
+                response.text[json_start:plot_end]
+            )
+        except json.JSONDecodeError as exc:
+            raise ValueError("C2DB PBE band Plotly data is invalid JSON") from exc
+        if not isinstance(graph, dict) or not isinstance(graph.get("data"), list):
+            raise TypeError("C2DB PBE band Plotly object is missing data[]")
+        return {
+            "material_id": material_id,
+            "source_url": getattr(
+                response, "url", f"{self.base_url}/material/{material_id}"
+            ),
+            "method": "GPAW/PBE",
+            "plotly": graph,
+        }
+
 
 class TopologicalQuantumChemistryAdapter:
     """Versioned public search/detail API adapter for the TQC database."""
@@ -879,7 +958,7 @@ class TopologicalQuantumChemistryAdapter:
             "TQC search metadata",
         )
         if not isinstance(payload.get("items"), list):
-            raise ValueError("TQC search metadata is missing items[]")
+            raise ValueError("TQC search metadata is missing items[]")  # noqa: TRY004
         return SourceMetadata(
             database_version="api:v4-search;v1-detail",
             client_version=importlib.metadata.version("requests"),
@@ -913,17 +992,17 @@ class TopologicalQuantumChemistryAdapter:
             )
             items = response_payload.get("items")
             if not isinstance(items, list):
-                raise ValueError("TQC search response is missing items[]")
+                raise ValueError("TQC search response is missing items[]")  # noqa: TRY004
             total_pages_raw = response_payload.get("totalPages")
             if not isinstance(total_pages_raw, int) or total_pages_raw < 0:
                 raise ValueError("TQC search response has invalid totalPages")
             total_pages = total_pages_raw
             for item in items:
                 if not isinstance(item, dict):
-                    raise ValueError("TQC search response contains a non-object item")
+                    raise ValueError("TQC search response contains a non-object item")  # noqa: TRY004
                 ids = item.get("similarICSD")
                 if not isinstance(ids, list):
-                    raise ValueError("TQC search item is missing similarICSD[]")
+                    raise ValueError("TQC search item is missing similarICSD[]")  # noqa: TRY004
                 for value in ids:
                     identifier = str(value)
                     search_items.setdefault(identifier, dict(item))
@@ -1149,11 +1228,11 @@ class NimsSuperconAdapter:
         excluded = set(filters.get("exclude_elements", []))
         documents: list[dict[str, Any]] = []
         for values in reader:
-            def value(key: str) -> str:
+            def value(key: str, row: list[str] = values) -> str:
                 index = key_index.get(key)
                 return (
-                    str(values[index]).strip()
-                    if index is not None and index < len(values)
+                    str(row[index]).strip()
+                    if index is not None and index < len(row)
                     else ""
                 )
 
@@ -1351,10 +1430,10 @@ def _matches_pushdown(document: dict[str, Any], filters: dict[str, Any]) -> bool
         return False
     if document.get("deprecated") != filters.get("deprecated", False):
         return False
-    if filters.get("theoretical") is not None:
-        if document.get("theoretical") != filters["theoretical"]:
-            return False
-    return True
+    return (
+        filters.get("theoretical") is None
+        or document.get("theoretical") == filters["theoretical"]
+    )
 
 
 def _in_range(value: Any, bounds: Sequence[float]) -> bool:
@@ -1386,7 +1465,7 @@ def _response_json(response: requests.Response, operation: str) -> dict[str, Any
     except ValueError as exc:
         raise ValueError(f"{operation} returned invalid JSON") from exc
     if not isinstance(payload, dict):
-        raise ValueError(f"{operation} returned a non-object response")
+        raise ValueError(f"{operation} returned a non-object response")  # noqa: TRY004
     return payload
 
 
@@ -1530,12 +1609,12 @@ def _map_optimade_structure(
     if not isinstance(identifier, str) or not identifier:
         raise ValueError("OPTIMADE structure is missing id")
     if not isinstance(attributes, dict):
-        raise ValueError(f"OPTIMADE structure {identifier} is missing attributes")
+        raise ValueError(f"OPTIMADE structure {identifier} is missing attributes")  # noqa: TRY004
     lattice = attributes.get("lattice_vectors")
     positions = attributes.get("cartesian_site_positions")
     species = attributes.get("species_at_sites")
     if not isinstance(lattice, list) or not isinstance(positions, list):
-        raise ValueError(f"OPTIMADE structure {identifier} is missing coordinates")
+        raise ValueError(f"OPTIMADE structure {identifier} is missing coordinates")  # noqa: TRY004
     if not isinstance(species, list) or len(species) != len(positions):
         raise ValueError(f"OPTIMADE structure {identifier} has invalid species")
     try:
@@ -1562,7 +1641,7 @@ def _map_optimade_structure(
             or structure.composition.reduced_formula
         ),
         "elements": sorted(str(value) for value in elements),
-        "nelements": len(set(str(value) for value in elements)),
+        "nelements": len({str(value) for value in elements}),
         "nsites": len(structure),
         "structure": structure.as_dict(),
         "band_gap": None,
@@ -1605,6 +1684,25 @@ def _c2db_params(filters: dict[str, Any]) -> dict[str, str]:
     return params
 
 
+def _c2db_row_matches_predownload_filters(
+    row: Mapping[str, str], filters: Mapping[str, Any]
+) -> bool:
+    """Apply only exact, listing-derived filters before structure downloads."""
+
+    exact_formula = filters.get("exact_formula")
+    if exact_formula is None:
+        return True
+    row_formula = row.get("formula")
+    if not isinstance(exact_formula, str) or not isinstance(row_formula, str):
+        raise ValueError("C2DB exact-formula predownload filter is invalid")  # noqa: TRY004
+    try:
+        expected = Composition(exact_formula).reduced_composition
+        observed = Composition(row_formula).reduced_composition
+    except ValueError as exc:
+        raise ValueError("C2DB table contains an invalid formula") from exc
+    return observed == expected
+
+
 def _parse_c2db_table(
     text: str,
 ) -> tuple[list[dict[str, str]], str, bool]:
@@ -1613,7 +1711,7 @@ def _parse_c2db_table(
         raise ValueError("C2DB table response is missing search session id")
     sid = sid_match.group(1)
     rows: list[dict[str, str]] = []
-    for raw_row in re.findall(r"<tr[^>]*>(.*?)</tr>", text, flags=re.S):
+    for raw_row in re.findall(r"<tr[^>]*>(.*?)</tr>", text, flags=re.DOTALL):
         hrefs = re.findall(r"href=/material/([^ >]+)", raw_row)
         if not hrefs:
             continue
@@ -1622,7 +1720,7 @@ def _parse_c2db_table(
                 re.sub(r"\s+", " ", re.sub(r"<[^>]+>", "", cell))
             ).strip()
             for cell in re.findall(
-                r'<th scope="row">(.*?)</th>', raw_row, flags=re.S
+                r'<th scope="row">(.*?)</th>', raw_row, flags=re.DOTALL
             )
         ]
         if len(cells) < 6:
@@ -1643,7 +1741,7 @@ def _parse_c2db_table(
             r'<li class="page-item disabled">\s*<a class="page-link"\s*'
             rf'hx-get="/table\?sid={re.escape(sid)}&page=\d+"[^>]*title=">"',
             text,
-            flags=re.S,
+            flags=re.DOTALL,
         )
     )
     return rows, sid, has_next
@@ -1654,7 +1752,7 @@ def _ase_json_structure(atoms: dict[str, Any]) -> Structure:
     positions = atoms.get("positions")
     cell = atoms.get("cell")
     if not isinstance(numbers, list) or not isinstance(positions, list):
-        raise ValueError("C2DB atoms record is missing numbers/positions")
+        raise ValueError("C2DB atoms record is missing numbers/positions")  # noqa: TRY004
     if not isinstance(cell, list) or len(numbers) != len(positions):
         raise ValueError("C2DB atoms record has invalid cell or site count")
     try:

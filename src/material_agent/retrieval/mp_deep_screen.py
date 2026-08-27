@@ -7,20 +7,21 @@ cannot support a feature.
 
 from __future__ import annotations
 
+import itertools
 from collections import defaultdict, deque
+from collections.abc import Mapping
 from dataclasses import dataclass
 from math import isfinite
-from typing import Any, Mapping
+from typing import Any
 
 import numpy as np
 from pymatgen.analysis.local_env import CrystalNN
 from pymatgen.core import Element, Structure
 
-
 # Frozen for this policy version; do not derive this set at runtime from a
 # dependency property whose meaning could change after an environment upgrade.
 TRANSITION_METALS: frozenset[str] = frozenset(
-    "Sc Ti V Cr Mn Fe Co Ni Cu Zn Y Zr Nb Mo Tc Ru Rh Pd Ag Cd Hf Ta W Re Os Ir Pt Au Hg Rf Db Sg Bh Hs Mt Ds Rg Cn".split()
+    ["Sc", "Ti", "V", "Cr", "Mn", "Fe", "Co", "Ni", "Cu", "Zn", "Y", "Zr", "Nb", "Mo", "Tc", "Ru", "Rh", "Pd", "Ag", "Cd", "Hf", "Ta", "W", "Re", "Os", "Ir", "Pt", "Au", "Hg", "Rf", "Db", "Sg", "Bh", "Hs", "Mt", "Ds", "Rg", "Cn"]
 )
 
 
@@ -101,7 +102,7 @@ def line_band_crossing_risk(
     efermi = getattr(bandstructure, "efermi", None)
     if not bands or efermi is None:
         return DeepFeature("band_crossing_risk", None, "MISSING", "line_bandstructure")
-    lower, upper = energy_window_ev
+    _lower, upper = energy_window_ev
     risk = 0.0
     inspected = 0
     for spin_bands in bands.values() if isinstance(bands, Mapping) else [bands]:
@@ -109,7 +110,7 @@ def line_band_crossing_risk(
         if array.ndim != 2 or array.shape[0] < 2:
             continue
         relative = array - float(efermi)
-        for first, second in zip(relative[:-1], relative[1:]):
+        for first, second in itertools.pairwise(relative):
             near = np.minimum(np.abs(first), np.abs(second))
             mask = np.isfinite(near) & (near <= upper)
             if not np.any(mask):
@@ -138,7 +139,7 @@ def common_transition_metal_valence(
     common: dict[str, set[int]] = {}
     for symbol in transition_metal_elements(elements):
         try:
-            common[symbol] = set(int(value) for value in Element(symbol).common_oxidation_states)
+            common[symbol] = {int(value) for value in Element(symbol).common_oxidation_states}
         except (TypeError, ValueError):
             common[symbol] = set()
     possible = (
@@ -219,7 +220,7 @@ def periodic_connectivity_score(
     contributors = contributor_elements or set(structure.symbol_set)
     try:
         graph = CrystalNN().get_bonded_structure(structure)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         return DeepFeature("connected_sublattice", None, "MISSING", "crystalnn_periodic_graph", type(exc).__name__)
     nodes = {index for index, site in enumerate(structure) if site.specie.symbol in contributors}
     if not nodes:

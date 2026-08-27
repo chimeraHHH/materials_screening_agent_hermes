@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -41,7 +40,6 @@ from material_agent.ml_screening.resources import (
     fake_registry,
 )
 from material_agent.retrieval.storage import LocalArtifactStore
-
 
 FIXED_TIME = datetime(2026, 7, 26, 0, 0, tzinfo=UTC)
 README_TEXT = """# Agent02 v1 contract fixture

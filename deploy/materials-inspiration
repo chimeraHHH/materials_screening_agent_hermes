@@ -1,0 +1,12 @@
+#!/bin/sh
+set -eu
+
+repository_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+
+if ! command -v uv >/dev/null 2>&1; then
+  echo "production lifecycle failed: uv is required" >&2
+  exit 2
+fi
+
+exec uv run --quiet --no-project --python 3.11 python \
+  "$repository_root/integrations/hermes/scripts/production_runtime.py" "$@"

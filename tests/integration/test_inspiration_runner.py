@@ -20,6 +20,7 @@ from material_agent.inspiration.policy import (
     FetchBudgetV1,
     InspirationPolicyV1,
     PassageBudgetV1,
+    RuntimeBudgetV1,
     SearchBudgetV1,
     SelectionPolicyV1,
     TransformationBudgetV1,
@@ -40,7 +41,6 @@ from material_agent.inspiration.transformations import (
 )
 from material_agent.inspiration.vectorizer import SIGNED_HASHING_SNAPSHOT
 from material_agent.retrieval.storage import LocalArtifactStore
-
 
 FIXTURE_DIR = Path(__file__).parents[1] / "fixtures" / "inspiration"
 
@@ -88,9 +88,29 @@ def _policy() -> InspirationPolicyV1:
     )
 
 
-def _seed_run(root: Path):
+def _frozen_monotonic_clock() -> float:
+    return 100.0
+
+
+class _StepMonotonicClock:
+    def __init__(self, *, step_seconds: float) -> None:
+        self.now = 100.0
+        self.step_seconds = step_seconds
+
+    def __call__(self) -> float:
+        value = self.now
+        self.now += self.step_seconds
+        return value
+
+
+def _seed_run(
+    root: Path,
+    *,
+    policy: InspirationPolicyV1 | None = None,
+    monotonic_clock=_frozen_monotonic_clock,
+):
     store = LocalArtifactStore(root)
-    policy = _policy()
+    policy = policy or _policy()
     graph = curated_flat_band_tag_graph()
     response_bytes = (FIXTURE_DIR / "openalex-acoustic-flat-band.json").read_bytes()
     parent_bytes = (FIXTURE_DIR / "parent-tis2.cif").read_bytes()
@@ -185,6 +205,7 @@ def _seed_run(root: Path):
         store=store,
         search_adapter=adapter,
         transformation_engine=PymatgenTransformationEngine(),
+        monotonic_clock=monotonic_clock,
     )
     result = runner.run(
         inspiration_input=inspiration_input,
@@ -193,6 +214,51 @@ def _seed_run(root: Path):
         target_tag_ids=("electronic-flat-band",),
     )
     return store, runner, result, inspiration_input, policy, graph
+
+
+def test_runner_records_injected_monotonic_walltime_in_terminal_ledger(
+    tmp_path: Path,
+) -> None:
+    clock = _StepMonotonicClock(step_seconds=0.001)
+
+    store, _, result, _, policy, _ = _seed_run(
+        tmp_path / "walltime",
+        monotonic_clock=clock,
+    )
+
+    ledger = result.bundle.cost_ledger
+    persisted = store.read_json(result.stage_result.cost_ledger_artifact.uri)
+    assert ledger.walltime_ms > 0
+    assert ledger.walltime_ms <= policy.runtime.max_walltime_seconds * 1_000
+    assert persisted["walltime_ms"] == ledger.walltime_ms
+
+
+def test_runner_deadline_stops_mid_search_and_persists_partial_attempts(
+    tmp_path: Path,
+) -> None:
+    policy = _policy().model_copy(
+        update={"runtime": RuntimeBudgetV1(max_walltime_seconds=1)}
+    )
+    clock = _StepMonotonicClock(step_seconds=0.2)
+
+    with pytest.raises(InspirationRunnerError) as raised:
+        _seed_run(
+            tmp_path / "deadline",
+            policy=policy,
+            monotonic_clock=clock,
+        )
+
+    assert raised.value.code == "WALLTIME_BUDGET_EXCEEDED"
+    attempts_path = (
+        tmp_path
+        / "deadline"
+        / "stages"
+        / "inspiration"
+        / "run-fixture"
+        / "search_attempts.jsonl"
+    )
+    assert attempts_path.is_file()
+    assert attempts_path.read_text(encoding="utf-8").strip()
 
 
 def _artifact_map(result) -> dict[str, tuple[str, int | None]]:

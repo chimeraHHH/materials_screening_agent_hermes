@@ -18,7 +18,6 @@ from pymatgen.io.cif import CifWriter
 
 from material_agent.retrieval.models import RetrievalPolicy
 
-
 CRYSTAL_NN_PARAMETERS = {
     "weighted_cn": False,
     "cation_anion": False,
@@ -96,7 +95,7 @@ def process_structure(
     if summary_formula:
         try:
             summary_composition = Composition(summary_formula)
-        except Exception:
+        except Exception:  # noqa: BLE001
             flags.append("SOURCE_FORMULA_INVALID")
         else:
             if not _stoichiometry_matches(
@@ -142,7 +141,7 @@ def calculate_dimensionality(structure: Structure) -> DimensionalityResult:
             method=method,
             warnings=warning_messages,
         )
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         return DimensionalityResult(
             value=None,
             method=method,

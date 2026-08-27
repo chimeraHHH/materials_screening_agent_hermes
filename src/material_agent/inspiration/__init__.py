@@ -1,7 +1,14 @@
 """Public contracts for the inspiration companion capability."""
 
+from material_agent.inspiration.contextual_runner import (
+    SemanticScholarContextualInspirationRunnerV3,
+    SemanticScholarContextualSearchAdapter,
+    semantic_scholar_contextual_runner_from_environment,
+)
 from material_agent.inspiration.models import (
     PUBLIC_CONTRACT_MODELS,
+    REQUIRED_STRUCTURE_NONFAIL_CHECK_IDS,
+    REQUIRED_STRUCTURE_PASS_CHECK_IDS,
     ArtifactPointerV1,
     BridgePacketV1,
     BridgeRuleV1,
@@ -21,8 +28,6 @@ from material_agent.inspiration.models import (
     PassageLocatorV1,
     PassageV1,
     PassageVectorV1,
-    REQUIRED_STRUCTURE_NONFAIL_CHECK_IDS,
-    REQUIRED_STRUCTURE_PASS_CHECK_IDS,
     SearchHitV1,
     SearchQueryKind,
     SearchQueryV1,
@@ -65,6 +70,8 @@ from material_agent.inspiration.validation import (
 __all__ = [
     "PUBLIC_CONTRACT_MODELS",
     "PUBLIC_POLICY_MODELS",
+    "REQUIRED_STRUCTURE_NONFAIL_CHECK_IDS",
+    "REQUIRED_STRUCTURE_PASS_CHECK_IDS",
     "ArtifactPointerV1",
     "BridgePacketV1",
     "BridgeRuleV1",
@@ -91,8 +98,6 @@ __all__ = [
     "PassageLocatorV1",
     "PassageV1",
     "PassageVectorV1",
-    "REQUIRED_STRUCTURE_NONFAIL_CHECK_IDS",
-    "REQUIRED_STRUCTURE_PASS_CHECK_IDS",
     "RuntimeBudgetV1",
     "SearchBudgetV1",
     "SearchExecutionMode",
@@ -100,6 +105,8 @@ __all__ = [
     "SearchQueryKind",
     "SearchQueryV1",
     "SelectionPolicyV1",
+    "SemanticScholarContextualInspirationRunnerV3",
+    "SemanticScholarContextualSearchAdapter",
     "StrictModel",
     "SubstitutionParametersV1",
     "TagDefinitionV1",
@@ -116,6 +123,7 @@ __all__ = [
     "canonical_sha256",
     "deterministic_id",
     "hypothesis_signature_sha256_for",
+    "semantic_scholar_contextual_runner_from_environment",
     "transformation_route_sha256",
     "validate_search_supported_bridge",
 ]

@@ -13,11 +13,13 @@ from pymatgen.analysis.structure_matcher import SpeciesComparator, StructureMatc
 from pymatgen.core import Structure
 
 from material_agent.gateway.authorization import RequirementFreezeGrantIssuer
-from material_agent.gateway.mcp_server import GatewayServerSettings, GatewayToolDispatcher
+from material_agent.gateway.mcp_server import (
+    GatewayServerSettings,
+    GatewayToolDispatcher,
+)
 from material_agent.gateway.models import InspirationBudgetV1, InspirationConstraintsV1
 from material_agent.inspiration.parent_catalog import FLAT_BAND_PARENT_CATALOG_ID
 from material_agent.integration.hermes_service import create_hermes_inspiration_service
-
 
 _PROJECT_ID = "hermes-parent-catalog-top5"
 _SUBMISSION_ID = "parent-catalog-top5-submission"
@@ -28,40 +30,40 @@ def _crossref_item(kind: str) -> bytes:
         "direct": (
             "10.5555/catalog-top5.direct",
             "Bounded electronic flat-band metadata context",
-            "An electronic flat band is a bounded metadata target for a layered "
+            ("An electronic flat band is a bounded metadata target for a layered "
             "transition metal material. This source records search context only, "
             "and says that a computed band dispersion is required before any "
-            "material-property conclusion can be made.",
+            "material-property conclusion can be made."),
             ("Electronic flat band",),
         ),
         "acoustic": (
             "10.5555/catalog-top5.acoustic",
             "Acoustic metamaterial local resonance flat band",
-            "An acoustic metamaterial supports a local resonance flat band because "
+            ("An acoustic metamaterial supports a local resonance flat band because "
             "a spectrally identifiable local mode couples weakly to an extended "
             "network. The local resonance mechanism suppresses dispersion while "
             "spectral separation remains controlled, and strong hybridization "
-            "breaks the localized response.",
+            "breaks the localized response."),
             ("Acoustic metamaterial", "Local resonance flat band"),
         ),
         "magnon": (
             "10.5555/catalog-top5.magnon",
             "Frustrated magnetism flat magnon band and line graph localization",
-            "Frustrated magnetism on kagome connectivity realizes line graph flat "
+            ("Frustrated magnetism on kagome connectivity realizes line graph flat "
             "band localization because connectivity-equivalent hopping paths "
             "support a localized eigenvector. The mechanism suppresses dispersion, "
             "while connectivity changes break the localized mode and provide a "
-            "bounded falsification condition.",
+            "bounded falsification condition."),
             ("Frustrated magnetism flat magnon band", "Line graph localization"),
         ),
         "photonic": (
             "10.5555/catalog-top5.photonic",
             "Photonic lattice compact localized state and destructive interference",
-            "A photonic lattice hosts a compact localized state because destructive "
+            ("A photonic lattice hosts a compact localized state because destructive "
             "interference flat band cancellation balances coherent propagation "
             "paths. The compact localized state mechanism confines amplitude, while "
             "path imbalance or disorder breaks destructive interference and supplies "
-            "a bounded falsification condition.",
+            "a bounded falsification condition."),
             ("Photonic lattice", "Destructive interference flat band"),
         ),
     }
@@ -99,10 +101,13 @@ class QueryAwareStaticCrossrefTransport:
         url: str,
         *,
         headers: Mapping[str, str],
-        timeout_seconds: int,
+        timeout_seconds: float,
         max_response_bytes: int,
+        deadline_monotonic: float | None = None,
+        max_physical_requests: int | None = None,
     ) -> bytes:
-        del headers, timeout_seconds
+        del headers, timeout_seconds, deadline_monotonic
+        assert max_physical_requests is None or max_physical_requests >= 1
         parameters = parse_qs(urlsplit(url).query, strict_parsing=True)
         texts = parameters.get("query.bibliographic")
         assert texts is not None and len(texts) == 1

@@ -20,7 +20,6 @@ from material_agent.retrieval.models import (
 )
 from material_agent.retrieval.structures import ProcessedStructure
 
-
 ORIGIN_NAME_ALIASES = {
     "band_gap": ("band_gap", "electronic_structure", "dos"),
     "energy_above_hull": ("energy_above_hull", "energy", "thermo"),
@@ -226,7 +225,7 @@ def add_dimensionality_property(
         source=(
             "derived_from_mp_structure"
             if str(candidate.source_database) == SourceDatabase.MATERIALS_PROJECT.value
-            else f"derived_from_{str(candidate.source_database)}_structure"
+            else f"derived_from_{candidate.source_database!s}_structure"
         ),
         method=method,
         evidence_level=EvidenceLevel.L1_RETRIEVED,
@@ -505,7 +504,7 @@ def _parse_datetime(value: Any) -> datetime | None:
     if isinstance(value, datetime):
         return value if value.tzinfo else value.replace(tzinfo=UTC)
     try:
-        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        parsed = datetime.fromisoformat(str(value))
     except ValueError:
         return None
     return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)

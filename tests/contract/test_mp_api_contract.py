@@ -5,14 +5,12 @@ import subprocess
 from types import SimpleNamespace
 
 import pytest
-
+from mp_api.client import MPRester
 from mp_api.client.routes.materials.summary import SummaryRester
 from mp_api.client.routes.materials.tasks import TaskRester
-from mp_api.client import MPRester
 
 from material_agent.retrieval.adapters import MaterialsProjectAdapter
 from material_agent.retrieval.query import assert_mp_client_contract, build_query_plan
-
 
 MP_SECRET = "super-secret-mp-test-key"
 

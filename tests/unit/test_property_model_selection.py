@@ -5,7 +5,15 @@ import sys
 from pathlib import Path
 
 from material_agent.ml_screening.models import ArtifactPointer
-from material_agent.ml_screening.property_catalog import reviewed_property_model_families
+from material_agent.ml_screening.property_catalog import (
+    reviewed_property_model_families,
+)
+from material_agent.ml_screening.property_client import (
+    PropertyPredictionFlowRunner,
+    PropertyProcessError,
+    PropertySubprocessClient,
+)
+from material_agent.ml_screening.property_execution import build_property_execution_plan
 from material_agent.ml_screening.property_models import (
     PropertyCapability,
     PropertyInputKind,
@@ -17,8 +25,6 @@ from material_agent.ml_screening.property_models import (
     PropertyPredictionRequest,
     select_property_model,
 )
-from material_agent.ml_screening.property_execution import build_property_execution_plan
-from material_agent.ml_screening.property_client import PropertyPredictionFlowRunner, PropertyProcessError, PropertySubprocessClient
 from material_agent.ml_screening.property_worker import execute
 from material_agent.retrieval.storage import LocalArtifactStore
 
@@ -178,7 +184,9 @@ def test_flow_persists_failed_response_and_is_idempotent(tmp_path) -> None:
         def run(self, worker_request):
             self.calls += 1
             plan = worker_request.plan
-            from material_agent.ml_screening.property_execution import PropertyWorkerResponse
+            from material_agent.ml_screening.property_execution import (
+                PropertyWorkerResponse,
+            )
 
             return PropertyWorkerResponse(
                 operation_key=plan.operation_key,

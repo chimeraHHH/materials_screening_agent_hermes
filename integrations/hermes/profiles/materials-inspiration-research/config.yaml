@@ -1,0 +1,98 @@
+_config_version: 33
+
+gateway:
+  api_server:
+    enabled: true
+    host: 127.0.0.1
+    port: 8643
+    max_concurrent_runs: 1
+
+platform_toolsets:
+  cli:
+    - materials_research
+  api_server:
+    - materials_research
+
+plugins:
+  enabled: []
+
+agent:
+  disabled_toolsets:
+    - web
+    - browser
+    - terminal
+    - file
+    - code_execution
+    - vision
+    - video
+    - image_gen
+    - video_gen
+    - bfl
+    - x_search
+    - tts
+    - stt
+    - skills
+    - todo
+    - memory
+    - context_engine
+    - session_search
+    - clarify
+    - delegation
+    - cronjob
+    - homeassistant
+    - spotify
+    - discord
+    - discord_admin
+    - yuanbao
+    - computer_use
+    - google_meet
+    - a2a
+
+memory:
+  memory_enabled: false
+  user_profile_enabled: false
+  write_approval: true
+
+skills:
+  write_approval: true
+  guard_agent_created: true
+
+approvals:
+  mode: manual
+  timeout: 300
+
+security:
+  allow_private_urls: false
+  allow_lazy_installs: false
+
+tool_loop_guardrails:
+  warnings_enabled: true
+  hard_stop_enabled: true
+  warn_after:
+    exact_failure: 2
+    same_tool_failure: 3
+    idempotent_no_progress: 2
+  hard_stop_after:
+    exact_failure: 5
+    same_tool_failure: 8
+    idempotent_no_progress: 5
+  loop_caps:
+    max_web_searches: 0
+    max_subagents: 1
+
+mcp_servers:
+  materials_research:
+    url: "${MATERIAL_AGENT_MCP_BASE_URL}/research/mcp"
+    enabled: true
+    timeout: 14400
+    connect_timeout: 30
+    supports_parallel_tool_calls: false
+    tools:
+      include:
+        - materials_generic_research_run
+      resources: false
+      prompts: false
+    sampling:
+      enabled: false
+    elicitation:
+      enabled: false

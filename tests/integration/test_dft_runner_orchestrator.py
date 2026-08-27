@@ -12,7 +12,6 @@ from material_agent.dft.vaspilot_backend import VASPilotBackend
 from material_agent.orchestrator.models import StageCapability, StageId
 from material_agent.orchestrator.runners import StageRunnerRegistry
 from material_agent.orchestrator.runtime import OrchestratorRuntime
-
 from tests.integration.test_orchestrator_p01 import _complete_source_run, _stage_input
 
 
