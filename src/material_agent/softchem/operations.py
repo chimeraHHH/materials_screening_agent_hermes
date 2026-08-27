@@ -924,7 +924,45 @@ def evaluate_structure_operation_prior(
             reasons.append(f"EXPLICIT_CHARGE_{charge_decision.value}")
     elif isinstance(parameters, ReasonedIntercalationParametersV1):
         _, gap = largest_c_gap(parent_structure)
-        if gap < parameters.minimum_parent_gap_angstrom:
+        host_layers = layer_groups(parent_structure)
+        inserted_index = len(proposed_structure) - 1
+        nearest_host_distance = min(
+            proposed_structure.get_distance(inserted_index, index)
+            for index in range(len(parent_structure))
+        )
+        intercalant_radius = Element(parameters.intercalant).atomic_radius
+        host_radii = tuple(
+            radius
+            for site in parent_structure
+            if (radius := Element(_bare_element(site)).atomic_radius) is not None
+        )
+        coordination_limit = (
+            1.5
+            * (
+                float(intercalant_radius)
+                + max(float(radius) for radius in host_radii)
+            )
+            if intercalant_radius is not None and host_radii
+            else 4.0
+        )
+        if len(host_layers) < 2:
+            decision = OperationPriorDecision.REJECT
+            reasons.extend(
+                (
+                    "INTERCALATION_REQUIRES_MULTILAYER_PARENT",
+                    "ISOLATED_INTERCALANT_IN_VACUUM",
+                    "PERIODIC_VACUUM_NOT_VDW_INTERLAYER_GAP",
+                )
+            )
+        elif nearest_host_distance > coordination_limit:
+            decision = OperationPriorDecision.REJECT
+            reasons.extend(
+                (
+                    "ISOLATED_INTERCALANT_IN_VACUUM",
+                    "INTERCALANT_HOST_COORDINATION_FAILED",
+                )
+            )
+        elif gap < parameters.minimum_parent_gap_angstrom:
             decision = OperationPriorDecision.REJECT
             reasons.append("PARENT_GAP_BELOW_3_ANGSTROM")
         else:
@@ -954,7 +992,9 @@ def evaluate_structure_operation_prior(
                     "INTERCALANT_COMMON_VALENCE_PASS"
                     if common_valence
                     else "INTERCALANT_UNCOMMON_VALENCE",
+                    "INTERCALANT_HOST_COORDINATION_PASS",
                     "REASONED_VDW_GAP_SITE",
+                    "TRUE_INTERLAYER_GAP_CLASSIFICATION",
                     f"SMACT_{smact.value}",
                 )
             )

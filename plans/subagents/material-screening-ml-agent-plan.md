@@ -44,6 +44,130 @@ schema 或数据库迁移；Fake/fixture 保持 `is_mock=true` 和最高 L1；�
 
 当前状态：**第 8.1–8.5 节的 P1 工程接入已完成。主环境仍不安装或导入 Torch/CHGNet/ASE；当且仅当显式 Worker 配置、lock 和 model card 校验通过时，真实 Agent02 production capability 才注册。**
 
+### 纯 ML 动态科学 DAG 的 Agent02 范围（2026-08-25，进行中）
+
+当前生产链不再调用 Agent03/DFT。Agent02 负责二维结构诊断后的 ML 预弛豫、磁性/电子
+proxy 与可选 Hamiltonian 预测；Hamiltonian 模型只能消费数据库或缓存中已有的可信电子图，
+不能在运行时生成 OpenMX/ABACUS 输入。需要补齐：
+
+- [x] capability 显式声明 task kind、输入/输出 Artifact kind、是否 k-resolved、是否输出
+  wavefunction/Hamiltonian、是否显式 SOC 和 claim ceiling；
+- [ ] CHGNet CUDA 结果作为 typed `RELAXED_STRUCTURE` Artifact 进入 DAG，不能继续把原输入
+  CIF 冒充为前序任务输出；
+- [x] `ML_ONLY` policy 阻断 DFT、SOC-DFT、运行时 overlap/graph 生成和 L3 证据；只有可信
+  预计算电子输入可进入 learned-Hamiltonian 推理；
+- [ ] Uni-HamGNN/DeepH 只有真实权重、匹配 graph/overlap、benchmark 和 hash 通过后才输出
+  typed Hamiltonian Artifact；控制桥成功仍保持 `NONE`；
+- [x] GPU worker 的 device、lock、weight、runtime provenance 和 Artifact hash 进入统一
+  execution receipt，CUDA 错误不静默降级。
+
+### CHGNet Linux/CUDA 平台化（2026-08-24，已完成）
+
+范围：把已在 WHU L40S 上完成的真实 CHGNet 0.3.0 静态预测和结构弛豫从裸上游
+probe 提升为 Agent02 的正式 CUDA execution profile。保持现有 CPU/MPS profile、模型 ID、
+科学适用域和 L2 判定不变；不得以 CUDA 可执行为理由把二维材料、Pd/P/S 或平带性质加入
+已审核适用域。
+
+验收：
+
+- [x] `cuda` 进入显式 model spec、health、plan 和 worker device contract，CUDA 错误不静默
+  fallback 到 CPU；
+- [x] 独立 Linux/CUDA lock、checkpoint hash、实际包版本、CUDA 可用性和单卡选择全部
+  fail closed；
+- [x] health 同时执行 CPU/CUDA 静态 parity，并冻结能量、力、应力和磁矩误差阈值；
+- [x] worker 子进程只接受经过格式校验的单一 `CUDA_VISIBLE_DEVICES` 索引，不继承任意外部环境；
+- [x] 在真实 L40S 上通过 health → immutable plan → no-shell worker → CIF/NPZ Artifact →
+  `L2_ML_SCREENED` 的 Si 端到端 Gate，并保存运行/验证证据；
+- [x] CPU/MPS 回归、Agent02 contract/integration、改动文件 Ruff、依赖、diff 与密钥扫描通过；完整
+  全仓 Gate 若仍受历史 flat-band/spglib 压力轨阻塞，必须准确记录而不得误报。
+
+发布收据：轻量控制面/重型 worker 分环境的真实 L40S Gate `1 passed in 5.84s`，
+production factory 返回 `registered=true, is_mock=false`，Agent02 定向回归 `198 passed`；CUDA
+lock SHA-256 为 `5001cfffd380e8ea1f61bb0e2a8590456f22dca2039af2b82638908aa5d89f56`。
+完整数值、环境指纹、Artifact hash 和保留边界见
+[`docs/runs/2026-08-24-agent02-cuda-platform-release.md`](../../docs/runs/2026-08-24-agent02-cuda-platform-release.md)。
+全仓 pytest 在 `334 passed, 20 skipped` 后停留于既有 flat-band 大型压力轨并人工中止；
+全仓 Ruff 的 33 项既有债务不在本次改动文件内，均未误报为全仓通过。
+
+2026-08-25 后续纯 ML scientific-DAG 工作已清理上述 33 项 Ruff 债务；当前
+`ruff check .` 与 `git diff --check` 通过。全量 pytest 再次运行 14:57，在大型研究契约
+压力轨中于 `350 passed, 20 skipped` 后人工终止且无失败；ML/DAG/运维相关定向回归为
+`85 passed, 1 skipped`。
+
+### 通用 DeepSeek 路线到模型任务审计（2026-08-23）
+
+新增跨模块 `scientific-validation-loop-v1`，但不修改冻结 CHGNet stage 契约。DeepSeek
+拥有科学路线内容：模型 ID、observable、任务依赖、evidence target、rationale 和
+falsifier；Agent02/本地 policy 只根据运行时 `ModelCapability` snapshot 审计结构输入、
+元素/维度适用域、backend/weight、benchmark/evidence ceiling 和成本。policy 不做 fallback
+选模，也不把 ct-UAE band gap、CHGNet relaxation、Uni-HamGNN Hamiltonian 或 DeepH
+Hamiltonian误当作平带验证。
+
+Approved execution receipt 只能在 task ceiling 内产生 `ScientificEvidence`；fixture/mock
+固定 `NONE`。历史 prompt1 回归显示：Si-only CHGNet 对 Pd/P/S 二维候选因元素和维度双重
+阻断，缺权重 Uni-HamGNN 因 backend/weight/evidence 阻断，未注册模型明确阻断；只有调用方
+提供且已审计的 DFT band/PDOS capability 才能批准对应电子约束任务。该测试验证路由与审计
+契约，不表示真实 DFT、Uni-HamGNN 或平带性质已经执行。
+
+### Uni-HamGNN SOC Hamiltonian companion 接入（已完成控制桥，2026-08-22）
+
+范围：暂停 Hermes SOC benchmark 的新增实现，先增加一个与 CHGNet/DeepH 冻结契约
+隔离的 Uni-HamGNN companion flow。它只接受显式、内容寻址的结构、官方兼容的
+non-SOC/SOC `graph_data.npz` 输入目录和 `universal_model.pkl`，在独立 HamGNN
+Python 3.9 环境中运行固定的 `Uni-HamiltonianPredictor.py --config Input.yaml`。
+主环境不得导入 Torch、PyG、e3nn 或 HamGNN；不复制上游 GPL 源码、环境包或模型
+权重到本仓库，也不注册为默认 Orchestrator capability。
+
+安全与科学边界：
+
+- 上游通过 pickle 反序列化模型；因此真实请求必须把模型来源、上游 revision、文件
+  SHA-256、权重许可证/使用条款和 `trusted_executable_inputs=true` 冻结，缺任一项即
+  fail closed。pickle 只在独立 worker 内加载，不能由 Hermes 主进程解析；
+- non-SOC 与 SOC graph bundle 必须各自包含唯一 `graph_data.npz`，并通过 Hermes
+  sidecar manifest 绑定同一结构 hash、OpenMX/NAO basis 身份、`nao_max` 和正确的
+  SOC mode；不从 CIF 猜测或伪造这些 DFT/预处理输入；
+- v1 只执行 SOC Hamiltonian inference，固定 `calculate_mae=false`。没有 ground-truth
+  标签时不得输出 MAE；band、拓扑不变量、拓扑绝缘体分类和 benchmark 不在本次范围；
+- 即使真实 worker 成功，结果仍固定为 `evidence_level=NONE`、
+  `benchmark_status=NOT_RUN`、`scientific_conclusion=false`，仅表示模型进程完成且
+  Artifact 完整性通过；
+- 上游预测脚本和模型 pickle 都属于可执行信任边界。入口脚本必须为绝对路径、普通
+  文件并绑定调用方提供的 SHA-256；worker 以无 shell 固定 argv 调用，输出只能写入
+  operation sandbox，Artifact root 内的额外文件、symlink、越界写入或 hash 漂移
+  全部拒绝。v1 尚未提供跨平台 OS 级文件系统 sandbox，因此已审查的 predictor
+  script hash 和隔离账户/容器仍是阻止上游代码写项目外路径的部署前置。
+
+本任务验收：严格 request/plan/worker/result 契约；双 graph manifest 与模型/入口
+hash 复核；受控 YAML 生成；无 shell 的隔离 subprocess；只接收唯一
+`hamiltonian.npy` 的输出 allowlist；fixture 跨进程成功、篡改、路径逃逸、pickle
+信任 Gate 和幂等恢复测试；README/架构边界更新；Agent02 定向测试、ruff、完整离线
+Gate、`pip check` 和 `git diff --check` 通过。真实运行仍依赖课题组获得并批准的官方
+权重、明确的权重许可证、兼容的 OpenMX graph 数据与独立环境，在这些输入到位前不
+宣称真实 Uni-HamGNN 已执行。
+
+实现结果：已新增 `agent02-uniham-{request,plan,worker,result}-v1`、双 graph
+manifest 契约、纯 stdlib Python 3.9 worker、无 shell client、幂等 completion ledger
+和 `scripts/run_agent02_uniham_flow.py`。上游 predictor stdout/stderr 被丢弃，不进入
+内存 Artifact 或科研报告；唯一 ML payload 为通过 magic/header、路径、大小和 hash
+复核的 `output/hamiltonian.npy`。主包导出仅包含轻量 Pydantic/planner，不导入重型
+依赖。本次只以 `is_mock=true` fixture predictor 跑通跨进程控制流，没有下载或执行
+真实 GPL 源码副本、权重、OpenMX 或 graph 数据。
+
+验证结果：Uni-HamGNN 新增测试 `7 passed`；连同 DeepH 和冻结 Agent02 契约的定向
+回归 `23 passed`；排除用户已暂停的 flat-band research benchmark/contract 压力套件
+后，全仓离线回归 `1188 passed, 20 skipped`。未排除的完整 Gate 运行 35 分 48 秒后
+在既有 flat-band research 压力用例中人工终止，终止前 `335 passed, 19 skipped`、
+无失败，故不得记录为完整 Gate 通过。全仓 Ruff、`pip check`、`git diff --check` 和
+secret 扫描通过。
+
+2026-08-25 真实执行增量：官方 Zenodo Uni-HamGNN 2.1 权重与 ZrSiPt 预计算双 graph
+已在 WHU 单张 L40S 上通过严格 worker。运行时明确观测 `torch 2.10.0+cu128`、一个可见
+GPU 和 `NVIDIA L40S`，输出 `(490, 2704)`/`float32` Hamiltonian SHA-256 为
+`ca6ec76289ef247f79831373adc33ffd7d05f5e70b85800de8ad5ff676d7909d`。本次没有生成
+OpenMX 输入或调用 DFT；尚无独立二维 held-out benchmark，因此 evidence 仍为 `NONE`。
+完整收据见
+[`docs/runs/2026-08-25-uniham-l40s-ml-only-smoke.md`](../../docs/runs/2026-08-25-uniham-l40s-ml-only-smoke.md)。
+
 ### ALIGNN 性质预测 companion 接入（进行中，2026-07-30）
 
 范围：新增与冻结 CHGNet v1 独立的、显式触发的 ALIGNN property-prediction
@@ -1939,6 +2063,15 @@ CHGNet 官方仓库已说明其实现迁移到 MatGL，原仓库进入有限维�
 - 与数据库/DFT 数据冲突时的报告规则。
 
 模型扩展不得改变 v1 已冻结的 Candidate、PropertyValue、StageResultEnvelope 和结构 lineage 语义。
+
+### P1.6 Uni-HamGNN scientific DAG bridge
+
+- [x] 预计算 non-SOC/SOC graph 通过 descriptor Artifact 导入，不在 Hermes 内生成；
+- [x] 远程 Uni-HamGNN request、operation key、模型/graph/结构 hash 与单卡 CUDA 身份冻结；
+- [x] Hamiltonian 输出回收至本地 Artifact store，并写入 ScientificEvidence/research memory；
+- [x] 未 benchmark 的真实结果保持 `NONE / INCONCLUSIVE`；
+- [x] 增加 ML Hamiltonian 到 SOC 能带和 50 meV 平带判定的正式 DAG 后处理节点；
+- [ ] 接入轨道 projector 与概率拓扑/磁性模型，缺失输出必须保持 `UNRESOLVED`。
 
 ## 11. 明确假设
 

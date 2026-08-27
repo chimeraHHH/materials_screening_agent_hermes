@@ -56,7 +56,9 @@ class FlakyTransport(ScriptedTransport):
         return super().post_json(**kwargs)
 
 
-def envelope(message: dict[str, Any], finish: str, *, tokens: int = 10) -> dict[str, Any]:
+def envelope(
+    message: dict[str, Any], finish: str, *, tokens: int = 10
+) -> dict[str, Any]:
     return {
         "model": "deepseek-v4-pro",
         "choices": [{"message": message, "finish_reason": finish}],
@@ -158,14 +160,18 @@ def test_multiround_thinking_tools_and_receipt_do_not_persist_reasoning() -> Non
     assert "json" in transport.payloads[0]["messages"][0]["content"]
     assert transport.payloads[0]["reasoning_effort"] == "max"
     assert transport.payloads[0]["tools"][0]["function"]["strict"] is True
-    assert transport.payloads[1]["messages"][2]["reasoning_content"] == "private chain one"
+    assert (
+        transport.payloads[1]["messages"][2]["reasoning_content"] == "private chain one"
+    )
     assert transport.payloads[1]["messages"][3]["role"] == "tool"
 
 
 def test_provider_schema_projects_to_deepseek_strict_subset() -> None:
-    schema = build_agent(ScriptedTransport([])).tools["lookup"].provider_schema()[
-        "function"
-    ]["parameters"]
+    schema = (
+        build_agent(ScriptedTransport([]))
+        .tools["lookup"]
+        .provider_schema()["function"]["parameters"]
+    )
     assert schema["required"] == ["query"]
     assert schema["additionalProperties"] is False
     assert "minLength" not in schema["properties"]["query"]
@@ -176,11 +182,19 @@ def test_rejects_unknown_tool_without_executing_anything() -> None:
     call = tool_call("call-x", "x")
     call["function"]["name"] = "shell"
     transport = ScriptedTransport(
-        [envelope({"role": "assistant", "content": None, "tool_calls": [call]}, "tool_calls")]
+        [
+            envelope(
+                {"role": "assistant", "content": None, "tool_calls": [call]},
+                "tool_calls",
+            )
+        ]
     )
     with pytest.raises(LLMProviderError, match="unavailable tool") as error:
         build_agent(transport).run(
-            system_prompt="JSON", user_payload={}, prompt_version="test", final_model=Final
+            system_prompt="JSON",
+            user_payload={},
+            prompt_version="test",
+            final_model=Final,
         )
     assert error.value.category == "INVALID_RESPONSE"
 
@@ -218,8 +232,7 @@ def test_rejects_invalid_tool_arguments_locally() -> None:
     )
     assert result.receipt.tool_calls[0].status == "FAILED"
     assert (
-        result.receipt.tool_calls[0].error_category
-        == "TOOL_ARGUMENT_VALIDATION_FAILED"
+        result.receipt.tool_calls[0].error_category == "TOOL_ARGUMENT_VALIDATION_FAILED"
     )
     assert result.receipt.tool_calls[1].status == "SUCCEEDED"
 
@@ -228,38 +241,162 @@ def test_round_budget_fails_closed() -> None:
     transport = ScriptedTransport(
         [
             envelope(
-                {"role": "assistant", "content": None, "tool_calls": [tool_call("c1", "a")]},
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [tool_call("c1", "a")],
+                },
                 "tool_calls",
             ),
             envelope(
-                {"role": "assistant", "content": None, "tool_calls": [tool_call("c2", "b")]},
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [tool_call("c2", "b")],
+                },
                 "tool_calls",
             ),
         ]
     )
     with pytest.raises(LLMProviderError, match="round budget") as error:
         build_agent(transport, max_rounds=2).run(
-            system_prompt="JSON", user_payload={}, prompt_version="test", final_model=Final
+            system_prompt="JSON",
+            user_payload={},
+            prompt_version="test",
+            final_model=Final,
         )
     assert error.value.category == "BUDGET_EXHAUSTED"
+
+
+def test_single_call_inspection_tool_forces_finalization_after_one_use() -> None:
+    transport = ScriptedTransport(
+        [
+            envelope(
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [tool_call("c1", "evidence")],
+                },
+                "tool_calls",
+            ),
+            envelope(
+                {
+                    "role": "assistant",
+                    "content": json.dumps(
+                        {"answer": "finalized", "evidence_ids": ["ev-evidence"]}
+                    ),
+                },
+                "stop",
+            ),
+        ]
+    )
+    agent = DeepSeekThinkingAgent(
+        secret_resolver=Secret(),
+        tools=(
+            DeepSeekFunctionTool(
+                name="lookup",
+                description="Read a fixed evidence bundle once.",
+                arguments_model=Args,
+                handler=lambda args: {"evidence_id": f"ev-{args.query}"},
+                max_calls_per_run=1,
+            ),
+        ),
+        transport=transport,
+    )
+
+    result = agent.run(
+        system_prompt="Inspect once, then return JSON.",
+        user_payload={},
+        prompt_version="single-call-v1",
+        final_model=Final,
+    )
+
+    assert result.final.answer == "finalized"
+    assert transport.payloads[0]["tool_choice"] == "auto"
+    assert transport.payloads[1]["tool_choice"] == "none"
+
+
+def test_dynamic_tool_saturation_forces_finalization_at_scientific_target() -> None:
+    transport = ScriptedTransport(
+        [
+            envelope(
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [tool_call("c1", "candidate")],
+                },
+                "tool_calls",
+            ),
+            envelope(
+                {
+                    "role": "assistant",
+                    "content": json.dumps(
+                        {"answer": "target reached", "evidence_ids": ["ev-candidate"]}
+                    ),
+                },
+                "stop",
+            ),
+        ]
+    )
+    state = {"compiled": 0}
+
+    def compile_candidate(args: Args) -> dict[str, str]:
+        state["compiled"] += 1
+        return {"evidence_id": f"ev-{args.query}"}
+
+    agent = DeepSeekThinkingAgent(
+        secret_resolver=Secret(),
+        tools=(
+            DeepSeekFunctionTool(
+                name="lookup",
+                description="Compile candidates until the bounded target is reached.",
+                arguments_model=Args,
+                handler=compile_candidate,
+                saturation_predicate=lambda: state["compiled"] >= 1,
+            ),
+        ),
+        transport=transport,
+    )
+
+    result = agent.run(
+        system_prompt="Compile only the bounded target, then return JSON.",
+        user_payload={},
+        prompt_version="dynamic-saturation-v1",
+        final_model=Final,
+    )
+
+    assert result.final.answer == "target reached"
+    assert state["compiled"] == 1
+    assert transport.payloads[0]["tool_choice"] == "auto"
+    assert transport.payloads[1]["tool_choice"] == "none"
 
 
 def test_final_schema_failure_exhausts_bounded_repair_rounds() -> None:
     transport = ScriptedTransport(
         [
             envelope(
-                {"role": "assistant", "content": None, "tool_calls": [tool_call("c1", "a")]},
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [tool_call("c1", "a")],
+                },
                 "tool_calls",
             ),
             envelope(
-                {"role": "assistant", "content": json.dumps({"answer": "x", "extra": 1})},
+                {
+                    "role": "assistant",
+                    "content": json.dumps({"answer": "x", "extra": 1}),
+                },
                 "stop",
             ),
         ]
     )
     with pytest.raises(LLMProviderError, match="round budget"):
         build_agent(transport, max_rounds=2).run(
-            system_prompt="JSON", user_payload={}, prompt_version="test", final_model=Final
+            system_prompt="JSON",
+            user_payload={},
+            prompt_version="test",
+            final_model=Final,
         )
 
 
@@ -307,9 +444,7 @@ def test_agent_retries_transient_transport_failure_and_audits_it() -> None:
             envelope(
                 {
                     "role": "assistant",
-                    "content": json.dumps(
-                        {"answer": "x", "evidence_ids": ["ev-a"]}
-                    ),
+                    "content": json.dumps({"answer": "x", "evidence_ids": ["ev-a"]}),
                 },
                 "stop",
             ),
@@ -374,3 +509,37 @@ def test_tool_budget_failure_is_returned_to_model_for_safe_degradation() -> None
     assert "provider details must not leak" not in tool_message
     assert "mark gaps UNKNOWN" in tool_message
     assert transport.payloads[1]["tool_choice"] == "none"
+
+
+def test_total_token_budget_failure_preserves_safe_provider_usage() -> None:
+    transport = ScriptedTransport(
+        [
+            envelope(
+                {
+                    "role": "assistant",
+                    "content": json.dumps({"answer": "x", "evidence_ids": []}),
+                },
+                "stop",
+                tokens=550,
+            )
+        ]
+    )
+    agent = build_agent(transport)
+    agent.budget = agent.budget.model_copy(update={"max_total_tokens": 1_000})
+
+    with pytest.raises(LLMProviderError, match="total token budget") as caught:
+        agent.run(
+            system_prompt="JSON",
+            user_payload={},
+            prompt_version="test",
+            final_model=Final,
+            require_tool_call=False,
+        )
+
+    assert caught.value.category == "BUDGET_EXHAUSTED"
+    assert caught.value.usage == {
+        "prompt_tokens": 550,
+        "completion_tokens": 550,
+        "reasoning_tokens": 275,
+        "total_tokens": 1_100,
+    }

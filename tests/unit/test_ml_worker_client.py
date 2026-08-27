@@ -91,3 +91,38 @@ def test_subprocess_client_kills_timed_out_worker(tmp_path: Path) -> None:
     assert caught.value.category == "WORKER_TIMEOUT"
     assert process.killed
     assert process.communicate_calls == 2
+
+
+def test_cuda_device_selection_is_strict_and_not_inherited(
+    tmp_path: Path,
+) -> None:
+    with pytest.raises(ValueError, match="one non-negative GPU index"):
+        SubprocessWorkerClient(
+            python_executable=Path("/bin/sh"),
+            artifact_root=tmp_path,
+            package_lock_path=tmp_path / "lock",
+            source_root=tmp_path,
+            cuda_visible_devices="0; touch escaped",
+        )
+    with pytest.raises(ValueError, match="one non-negative GPU index"):
+        SubprocessWorkerClient(
+            python_executable=Path("/bin/sh"),
+            artifact_root=tmp_path,
+            package_lock_path=tmp_path / "lock",
+            source_root=tmp_path,
+            cuda_visible_devices="0,1",
+        )
+
+    request, client = _request_and_client(tmp_path)
+    cuda_resource = request.plan.resource_estimate.model_copy(
+        update={"device_policy": "cuda"}
+    )
+    cuda_plan = request.plan.model_copy(
+        update={
+            "device_policy": "cuda",
+            "resource_estimate": cuda_resource,
+        }
+    )
+    request = request.model_copy(update={"plan": cuda_plan})
+    with pytest.raises(WorkerProcessError, match="explicit validated GPU index"):
+        client.run(request)

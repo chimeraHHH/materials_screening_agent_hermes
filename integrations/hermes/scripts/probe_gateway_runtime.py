@@ -28,7 +28,6 @@ from material_agent.integration.hermes_service import (
     OPERATOR_APPROVAL_DATABASE_NAME,
 )
 
-
 EXPECTED_TOOLS = (
     "materials_inspiration_run",
     "materials_run_get",
@@ -69,7 +68,9 @@ async def _probe_mcp_inner(*, workspace: Path, project: str) -> tuple[str, ...]:
         cwd=str(Path(__file__).resolve().parents[3]),
         env=dict(os.environ),
     )
-    with open(os.devnull, "w", encoding="utf-8") as error_log:
+    with open(  # noqa: ASYNC230 - MCP requires a synchronous stderr stream
+        os.devnull, "w", encoding="utf-8"
+    ) as error_log:
         async with stdio_client(parameters, errlog=error_log) as streams:
             async with ClientSession(*streams) as session:
                 await session.initialize()

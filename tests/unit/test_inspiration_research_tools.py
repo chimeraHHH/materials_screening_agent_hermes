@@ -430,7 +430,9 @@ def test_federated_candidate_tool_merges_sources_and_preserves_failures(
         },
         max_calls=1,
     )
-    result = state.as_tool().handler(
+    tool = state.as_tool()
+    assert tool.max_calls_per_run == 1
+    result = tool.handler(
         FederatedCandidateSearchArgsV1(
             required_elements=("Ti",),
             excluded_elements=(),

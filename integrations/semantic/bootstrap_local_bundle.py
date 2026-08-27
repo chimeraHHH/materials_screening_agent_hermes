@@ -14,7 +14,6 @@ from pathlib import Path
 from huggingface_hub import hf_hub_download
 from sentence_transformers import SentenceTransformer
 
-
 MODEL_ID = "sentence-transformers/all-MiniLM-L6-v2"
 MODEL_REVISION = "1110a243fdf4706b3f48f1d95db1a4f5529b4d41"
 SCHEMA_VERSION = "sentence-transformers-local-bundle-v1"

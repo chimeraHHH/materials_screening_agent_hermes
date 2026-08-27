@@ -19,7 +19,6 @@ from production_ops import (
     read_json,
 )
 
-
 _LOOPBACK_HOSTS = frozenset({"127.0.0.1", "::1", "localhost"})
 
 

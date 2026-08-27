@@ -1,0 +1,6 @@
+# Agent02 Linux/CUDA worker profile. Install only in its dedicated Python 3.11
+# environment; never install this stack into the lightweight Hermes runtime.
+--extra-index-url https://download.pytorch.org/whl/cu128
+chgnet==0.4.2
+torch==2.10.0
+pydantic==2.12.5

@@ -177,6 +177,36 @@ Gateway 必须满足：
 Hermes Session、Memory 或自改 Skill 不能保存正式 EvidenceCard、阈值、已接受机制或科学
 结论。正式状态必须写入可校验的材料 Artifact。
 
+### 3.5 通用假设—模型—证据—反馈契约
+
+通用研究图的下游不再复用固定 `TIS2_TO_TISE2_NARROW_BAND_V1` 的单候选 S→Se
+组合逻辑。`scientific-validation-loop-v1` 形成以下版本化链路：
+
+```text
+MaterialsResearchGraphResultV7
+  → HypothesisCandidate[*]
+  → OperatorResult[*]
+  → DeepSeekModelRouteProposal
+  → ModelTaskPlan
+  → ScientificEvidence[*]
+  → InspirationMemoryStore(MODEL_VALIDATION)
+  → DeepSeekFeedbackProposal
+  → FeedbackCycleResult
+```
+
+科学决策与安全决策严格分权：DeepSeek 从目标、候选机理和完整 capability snapshot
+提出模型/计算引擎、observable、依赖、目标证据等级和证伪规则；确定性 policy 不补充、
+替换或排序科学任务，只检查候选/结构 lineage、注册能力、适用元素/维度、backend/权重、
+benchmark/evidence ceiling 和总成本。未知模型、域外结构、缺权重或过预算均保留为
+`BLOCKED` task，而不是静默切换模型。
+
+执行结果必须绑定 approved task、result Artifact 与 evidence ceiling，才能投影成
+`ScientificEvidence`。先写 immutable evidence Artifact，再追加 hash-linked memory event；
+反馈只能引用已经进入该 memory snapshot 的 evidence ID。DeepSeek 可建议保留、淘汰、
+提交新的 typed operator 参数或升级计算，但本地审计要求淘汰至少具有一次真实 L2+ 的
+`CONTRADICTS`，并要求升级任务的目标 evidence level 严格高于现有证据。fixture/mock
+固定为 `NONE`，不能驱动淘汰或性质结论。
+
 受控进化使用独立的 `materials-inspiration-evolution` profile，而不是放宽 production
 profile。该 profile 复用 Hermes 原生 memory、skills、background review、curator 与 flat
 delegation，但 Materials MCP 只开放 `materials_run_get` / `materials_result_get`；所有学习写入
@@ -409,6 +439,13 @@ SHA 的 `PASS` 可以 dispatch registry。`REJECT` 不生成结构，
 
 真实重型依赖计划通过独立 JSON worker 进程运行；主 Orchestrator 环境不应导入 Torch/CHGNet/ASE。worker 只能在预创建 sandbox 中使用 root-relative 路径，stdout 只返回一份严格 JSON。
 
+CHGNet v1 有两个显式 execution profile：`portable` 使用冻结的 CPU/MPS lock，`cuda`
+使用独立 Linux/CUDA lock。profile、lock hash、health device、plan device 和实际 worker
+device 必须一致。CUDA profile 要求调用进程配置一个经过格式校验的物理 GPU 索引；子进程
+只看到这一张卡。health 对固定结构执行 CPU/CUDA parity，CUDA 不可用、版本/lock 漂移、
+parity 越界或运行时 CUDA 错误均 fail closed，不复用 MPS→CPU 的单次回退政策。设备加速只
+改变执行后端，不改变模型、适用域、QC、证据等级或科学 claim。
+
 当前 CHGNet v1 继续承担结构静态预测和预弛豫。DeepH-pack 以独立 companion flow
 接入 Agent02 包，不复用或修改冻结的 CHGNet v1 原生契约，也暂不注册为默认
 Orchestrator capability。DeepH 不能仅消费 CIF：它还必须接收已训练模型、同一 DFT
@@ -421,6 +458,46 @@ Geometric、e3nn 或 Julia。真实 executable 完成只证明控制流程和 Ar
 晋级。未来若把该 companion flow 并入统一 `StageId.ML`，必须发布 composite/v2
 Agent02 契约并同步 Orchestrator、fixture、contract test 和消费者计划，不能把
 sidecar Artifact 隐式塞入现有 CHGNet plan。
+
+当前 Hermes 科学验证契约固定为 `ML_ONLY`，不能切换为 hybrid/DFT。DeepH 所需 overlap
+只能作为已审核、内容寻址的
+数据库/缓存 Artifact 导入；运行时 OpenMX/ABACUS overlap 生成会被 policy 拒绝。旧的
+hybrid/DFT 控制代码仅保留为历史兼容和隔离测试路径，不进入当前生产候选 DAG。
+
+Uni-HamGNN 也通过独立 companion flow 接入，不修改 CHGNet/DeepH 契约。v1 精确映射
+上游 `Uni-HamiltonianPredictor.py --config Input.yaml`：输入为单个结构、官方兼容的
+`universal_model.pkl`，以及同一结构和同一 OpenMX/NAO basis 生成的 non-SOC/SOC
+两套 `graph_data.npz`。每套 graph 必须带 Hermes sidecar manifest，冻结结构 hash、
+graph hash、SOC mode、DFT_DATA/basis、`nao_max=26` 和 generator revision。
+
+`ML_ONLY` 下这两套 graph 同样必须是预计算输入；`HAMILTONIAN_GRAPH_PREPARATION` 和
+`OVERLAP_MATRIX_GENERATION` 都不允许作为运行时任务。只有 CIF 而没有可信 graph 的候选
+不会触发电子结构程序，而是保持不确定，转交结构直达性质模型或数据库证据路线。
+
+预计算 graph 路线不能无条件接在 CHGNet 预弛豫之后：graph manifest 与原结构 SHA-256
+严格绑定，任何改变坐标或晶格的结构都必须拥有自己对应的 graph。DeepSeek 可动态选择
+“CIF → ML 预弛豫 → 结构直达性质模型”或“原始数据库结构 → 预计算 graph 导入 →
+Uni-HamGNN”，但 deterministic policy 会阻断 relaxed-structure/graph identity 混用。
+
+由于上游对模型 pickle 和 NPZ object graph 都进行 pickle 反序列化，二者属于可执行
+输入，而非普通数据。请求必须记录人工信任复核、模型来源/revision/许可证和所有
+SHA-256；主进程不解析它们。独立 worker 再次验证输入和 predictor script hash，生成
+固定 `calculate_mae=false` 的 YAML，以无 shell argv 执行，并只接收 sandbox 中唯一
+`hamiltonian.npy` 及控制元数据。该 flow 不生成 graph 数据、不下载权重、不计算 band
+或拓扑不变量，也不回退设备；CUDA 必须固定为单张可见 GPU。未 benchmark 的成功结果
+固定为 evidence `NONE`；只有哈希绑定的独立 held-out benchmark 通过速度优先门槛后才可
+作为 L2 候选排序证据，且不构成 Hamiltonian 精度、SOC、能带或拓扑确定性结论。
+
+Hamiltonian 后处理由第二个独立 `uniham-band` worker 执行。request 冻结 Hamiltonian
+operation key/SHA-256、SOC graph/manifest、`band_cal` executable SHA-256、NAO26 和 k 点
+预算；输出 allowlist 精确为一个 DAT、PNG、CIF 及控制 YAML/JSON。DAT 在本地解析后进入
+统一 flat-band validator。缺轨道 projector 时 `orbital_character_passed=null`，只有
+带宽、费米穿越或交点等已解析硬条件失败才产生 `CONTRADICTS`，unknown 不等于 fail。
+
+该 worker 的 Artifact 守卫可以发现 project root 内的 sandbox 越界写入，但 v1
+不是跨平台 OS 文件系统 sandbox。由于 predictor 与 pickle/NPZ 本身可执行，真实部署
+还必须在隔离账户或容器中运行已审查 hash 的上游代码；不能只依赖输出 allowlist
+防御恶意第三方 Artifact。
 
 `agent02-post-relaxation-property-chain-v1` 是同样显式的 companion flow：它接收 MatterSim
 等上游弛豫产生的单一 CIF，校验 ct-UAE 与 ALIGNN 请求指向相同 URI/hash，然后分别调用两

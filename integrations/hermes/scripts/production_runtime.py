@@ -14,14 +14,14 @@ import stat
 import subprocess
 import sys
 import time
+from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from threading import Lock
-from typing import Any, Iterator
+from typing import Any
 
 from managed_checkout import ManagedCheckoutError, repair_generated_package_locks
-
 from production_ops import (
     PID_SCHEMA_VERSION,
     ProductionOpsError,
@@ -30,15 +30,14 @@ from production_ops import (
     gateway_queue_snapshot,
     metrics_snapshot,
     owned_process_alive,
-    process_identity,
     probe_http_json,
+    process_identity,
     prometheus_metrics,
     read_json,
     rotate_bounded_file,
     utc_now,
     write_json_atomic,
 )
-
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 BOOTSTRAP_LOCK = REPOSITORY_ROOT / ".materials-inspiration-bootstrap.lock"
@@ -382,7 +381,7 @@ class Settings:
         return self.ops_dir / "gateway-worker.log"
 
     @classmethod
-    def from_args(cls, args: argparse.Namespace, *, require_model: bool) -> "Settings":
+    def from_args(cls, args: argparse.Namespace, *, require_model: bool) -> Settings:
         if not args.workspace:
             raise ProductionRuntimeError(
                 "--workspace or MATERIAL_AGENT_WORKSPACE is required"

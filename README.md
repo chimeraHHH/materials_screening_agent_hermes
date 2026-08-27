@@ -28,8 +28,10 @@ Hermes-native evolution profile, and a fail-closed soft-chemistry downstream
 bridge. None of these opt-in paths changes the default four-stage route or
 promotes a hypothesis to scientific evidence.
 
-The execution plan always contains the ordered
-`retrieval → ml → dft → many_body` routes. Agent 01 is the only default
+The historical four-stage controller still understands the ordered
+`retrieval → ml → dft → many_body` route, but the active Hermes scientific
+validation contract is fixed to `ML_ONLY`: it never schedules DFT, SOC-DFT,
+Wannier, or runtime OpenMX electronic preprocessing. Agent 01 is the only default
 production scientific runner. Agent02 has both the P0.2 Fake path and an
 opt-in independent CHGNet worker. It is registered as a production capability
 only when a validated dedicated Worker executable is explicitly configured;
@@ -178,6 +180,29 @@ kernels and invariants, not a fixed list of scientific candidates. Unvalidated
 coordinates and code are never tool parameters. Generic research keeps every route `PLANNED`; execution has
 separate `PASS`, `REQUIRES_REVIEW`, and `REJECT` outcomes and makes no property claim.
 
+The generic research output can now enter the versioned
+`scientific-validation-loop-v1` handoff instead of the compatibility-only
+single-candidate S-to-Se path. Every ranked research candidate is projected to
+`HypothesisCandidate`; any registered structural or condition execution is
+projected independently to `OperatorResult`. A separate max-thinking DeepSeek
+call inspects the complete bounded runtime capability snapshot and proposes the
+candidate-specific `ModelTaskPlan` contents: models/calculation engines,
+observables, prerequisites, evidence target, rationale and falsifier. Local
+code never adds a scientific task. It only audits structure lineage,
+applicability, backend/weight health, benchmark/evidence ceiling and aggregate
+cost, retaining each rejected proposal with explicit reason codes.
+
+Hash-bound execution receipts become `ScientificEvidence` only within the
+audited task ceiling. The evidence artifact is written before an append-only
+`MODEL_VALIDATION` event enters research memory. A second DeepSeek reasoning
+call may then propose `RETAIN`, `ELIMINATE`, a fully typed
+`CompileReasonedOperationArgsV3` revision, or a higher-evidence route. The local
+feedback audit requires cited evidence already present in memory; elimination
+requires a real L2-or-higher contradiction, so mock, fixture, failed,
+unremembered or `NONE` evidence cannot remove a candidate. The older
+`materials_research_pipeline_run` remains a compatibility regression entry and
+is not the contract used by this generic loop.
+
 Every completed generic run also produces a deterministic Markdown sidecar
 report. It embeds one labelled CIF three-view image per federated candidate and
 a source-resolved comparison of formation energy, energy above hull, and band
@@ -215,6 +240,9 @@ real candidate predictions, and MCP audit are recorded in the
 The database fan-out, failure isolation, provenance merge, checkpoint replay,
 and public C2DB/NOMAD smoke are recorded in the
 [federated database release](docs/runs/2026-08-19-hermes-federated-database-layer.md).
+The multi-candidate handoff, real DeepSeek route receipt, deterministic model
+blocking and memory-feedback control test are recorded in the
+[prompt1 scientific-validation-loop report](docs/runs/2026-08-23-prompt1-scientific-validation-loop.md).
 
 The generic MCP call is currently synchronous. Role checkpoints make exact
 replay and recovery bounded, but a durable asynchronous submit/status API and
@@ -634,7 +662,7 @@ material-agent run-stage ml \
   --run-id run-ml
 ```
 
-### Agent02 Fake Adapter and opt-in real CPU worker
+### Agent02 Fake Adapter and opt-in real CPU/MPS/CUDA worker
 
 Agent02's P0.2 Adapter is implemented and covered offline with an explicitly
 registered Fake Worker. It validates immutable Agent01 inputs, freezes native
@@ -697,6 +725,46 @@ absent or invalid configuration leaves `ml` unavailable with remediation.
 The release Gate covers serial Top-5 execution, candidate-level interruption
 recovery, wall time and peak-RSS recording.
 
+Linux/CUDA uses a second independent Python 3.11 environment and the frozen
+`requirements-agent02-cuda.lock`; it does not add CUDA/Torch packages to the
+main environment or change the reviewed CHGNet applicability domain:
+
+```bash
+python3.11 -m venv .venv-agent02-cuda
+.venv-agent02-cuda/bin/python -m pip install \
+  -r requirements-agent02-cuda.lock
+.venv-agent02-cuda/bin/python -m pip check
+
+MATERIAL_AGENT_ML_WORKER_PYTHON="$PWD/.venv-agent02-cuda/bin/python" \
+MATERIAL_AGENT_ML_CUDA_VISIBLE_DEVICES=0 \
+.venv-agent02-cuda/bin/python -m pytest -q -p no:cacheprovider \
+  --run-real-ml tests/real_ml/test_chgnet_cuda.py
+```
+
+The CUDA profile exposes exactly one validated physical GPU index to the
+worker. Health runs the same fixed Si structure on CPU and CUDA and fails if
+energy, force, stress, or magnetic-moment parity exceeds the frozen limits.
+CUDA execution never silently falls back to CPU. Enable this production
+profile explicitly:
+
+```bash
+export MATERIAL_AGENT_ML_WORKER_PYTHON="$PWD/.venv-agent02-cuda/bin/python"
+export MATERIAL_AGENT_ML_EXECUTION_PROFILE=cuda
+export MATERIAL_AGENT_ML_CUDA_VISIBLE_DEVICES=0
+material-agent run-stage ml --workspace workspace --project PROJECT --input stage-input.json
+```
+
+The 2026-08-24 L40S release run passed the full health → immutable plan →
+no-shell worker → hashed CIF/NPZ → `L2_ML_SCREENED` Gate. The exact environment
+fingerprint, parity values, Artifact hashes, limitations, and server receipt
+are recorded in
+[`docs/runs/2026-08-24-agent02-cuda-platform-release.md`](docs/runs/2026-08-24-agent02-cuda-platform-release.md).
+
+The real Uni-HamGNN weights and an official precomputed ZrSiPt graph pair have
+also completed a strict single-L40S `ML_ONLY` smoke run. Exact hashes, runtime,
+output identity, replay tolerance and the still-unmet 2D benchmark gate are in
+[`docs/runs/2026-08-25-uniham-l40s-ml-only-smoke.md`](docs/runs/2026-08-25-uniham-l40s-ml-only-smoke.md).
+
 ### Agent02 DeepH companion flow
 
 Agent02 also provides an independent, opt-in DeepH-pack control bridge. It
@@ -751,6 +819,67 @@ The upstream [DeepH-pack repository](https://github.com/mzjb/DeepH-pack) and
 describe the model/overlap prerequisites. The upstream README/LICENSE and
 `setup.py` currently expose inconsistent license labels; freeze and review a
 specific upstream revision before any production deployment.
+
+### Agent02 Uni-HamGNN SOC-Hamiltonian companion flow
+
+Hermes now has an explicit, opt-in control bridge for
+[Uni-HamGNN](https://github.com/QuantumLab-ZY/HamGNN/tree/main/Uni-HamGNN).
+It does not replace DeepH or modify the frozen CHGNet stage contract, and it is
+not registered as a default Orchestrator capability. The bridge maps the
+upstream command `Uni-HamiltonianPredictor.py --config Input.yaml` into a
+content-addressed, no-shell worker run.
+
+An `agent02-uniham-request-v1` must provide all of these immutable inputs:
+
+- one CIF Artifact used as the structure identity;
+- one hash-verified `universal_model.pkl`, including model source, revision,
+  weights-license metadata and an explicit trust review;
+- separate `non_soc/graph_data.npz` and `soc/graph_data.npz` bundles;
+- a `hermes-graph-manifest.json` beside each NPZ, binding its hash to the same
+  CIF hash and freezing `soc_mode`, OpenMX basis/DFT data identity,
+  graph-generator revision, and `nao_max=26`;
+- the pinned HamGNN source revision and SHA-256 of the exact upstream predictor
+  script.
+
+Both the model and graph NPZ are pickle-bearing executable inputs in the
+upstream implementation. The main Hermes process never opens them; a request
+without `input_trust.trusted_executable_inputs=true` fails validation. Only
+approve artifacts obtained from a reviewed source and matched by SHA-256.
+
+Run the flow in a dedicated HamGNN environment after preparing the strict
+request JSON:
+
+```bash
+.venv/bin/python scripts/run_agent02_uniham_flow.py \
+  --request /absolute/path/to/uniham-request.json \
+  --artifact-root /absolute/path/to/project \
+  --worker-python /absolute/path/to/hamgnn-env/bin/python \
+  --predictor-script /absolute/path/to/HamGNN/Uni-HamGNN/Uni-HamiltonianPredictor.py
+```
+
+The worker supports explicit CPU or one pinned CUDA device and freezes
+`calculate_mae=false`; it neither fabricates ground truth nor silently falls
+back between devices. Under `ML_ONLY`, both graph bundles must already exist in
+a reviewed database/cache: the route may import them but may not generate them
+with OpenMX. The only scientific payload accepted
+from the upstream process is one `output/hamiltonian.npy`; extra files,
+symlinks, path escape, source/input hash drift, mismatched SOC modes, structure
+or basis linkage all fail closed. Successful execution remains
+`evidence_level=NONE`, `benchmark_status=NOT_RUN`, and
+`scientific_conclusion=false` unless a hash-bound held-out benchmark passes the
+configured L2 screening gates. Band calculation, uncertainty-aware topological
+classification and a real 2D benchmark remain separate ML steps; graph
+generation is explicitly outside the no-DFT execution profile.
+
+No HamGNN GPL source, pretrained weight, OpenMX data, or heavy dependency is
+vendored into this repository. The upstream project documents Python 3.9 and
+its dedicated Torch/PyG/e3nn stack; keep that stack outside the default
+Hermes `.venv`.
+
+The project-root Artifact guard detects writes outside the operation sandbox
+but is not an OS-level filesystem sandbox. A real deployment must run the
+hash-reviewed predictor and pickle-bearing inputs in an isolated account or
+container as well as using this control bridge.
 
 ### Agent02 ALIGNN property-prediction companion flow
 

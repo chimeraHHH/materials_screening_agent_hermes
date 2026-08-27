@@ -84,7 +84,7 @@ mcp_servers:
   materials_research:
     url: "${MATERIAL_AGENT_MCP_BASE_URL}/research/mcp"
     enabled: true
-    timeout: 1800
+    timeout: 14400
     connect_timeout: 30
     supports_parallel_tool_calls: false
     tools:

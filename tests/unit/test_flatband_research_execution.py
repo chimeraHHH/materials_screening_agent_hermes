@@ -3617,6 +3617,9 @@ def test_formal_v3_execution_rejects_alternate_prebudget_same_universes(
             original.current_candidate_pool_context
         ),
         calibration_context=original.calibration_context,
+        structure_union_replay_release=(
+            original.structure_union_replay_release
+        ),
         sealed_at="2026-08-09T20:40:31+08:00",
     )
     assert alternate.current_candidate_pool_context == (

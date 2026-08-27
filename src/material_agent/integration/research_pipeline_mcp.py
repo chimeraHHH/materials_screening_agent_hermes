@@ -63,12 +63,20 @@ class ResearchPipelineDispatcher:
                 raise ResearchPipelineDispatchError(
                     "generic research service is unavailable"
                 )
+            run_for_tool = getattr(selected_service, "run_for_tool", None)
             submit = getattr(selected_service, "submit", None)
-            result = (
-                submit(request)
-                if callable(submit)
-                else selected_service.run(request)
-            )
+            if tool_name == GENERIC_RESEARCH_TOOL_NAME:
+                if not callable(run_for_tool):
+                    raise ResearchPipelineDispatchError(
+                        "generic research compact receipt is unavailable"
+                    )
+                result = run_for_tool(request)
+            else:
+                result = (
+                    submit(request)
+                    if callable(submit)
+                    else selected_service.run(request)
+                )
         except Exception as exc:  # noqa: BLE001
             code = getattr(exc, "code", None) or getattr(exc, "category", None)
             label = str(code or type(exc).__name__)

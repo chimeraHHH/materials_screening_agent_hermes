@@ -14,7 +14,6 @@ import json
 import sys
 from collections.abc import Sequence
 
-
 PTY_IDLE_TTL_SECONDS = 10.0
 PTY_REAPER_INTERVAL_SECONDS = 2.0
 

@@ -21,6 +21,37 @@
 
 ## 0. 当前任务与真实基线
 
+### 0.0.3 2026-08-26：正式科学 Benchmark 重启
+
+用户已重新授权启动 Track A/Track B 科学 Benchmark，并明确排除工程 Track C。重启不改变
+既有 fail-closed 边界：当前机器状态仍为 `PILOT_NO_GO`，synthetic fixture、Schema 通过和
+工程回归均不得冒充真实专家金标或性能结果。先关闭 2026-08-11 留下的三项 V3 对抗门禁，
+再从已审计且可合法使用的公开源构建 calibration-only 候选 intake；真实系统跑分必须等待
+自然人专家、COI/校准、私有结构 custody、系统身份和新的独立 `PILOT_GO` 全部闭合。
+
+- [x] 关闭三项历史 V3 adversarial rejection 失败并记录独立定向 Gate；
+- [x] 固定并校验公开源 intake manifest、原始响应哈希、结构哈希和 calibration-only 排除标记；
+- [ ] 构建最多 12 个 calibration cases 与 Track A Pilot 30-case 候选池，完成结构/家族/derivative leakage 审核；
+- [ ] 登记两位独立 reviewer 与一位 distinct adjudicator，完成 COI、校准和工时承诺；
+- [ ] 取得新的独立 `PILOT_GO` 后才执行 Track A R1；
+- [x] Track B 已在首个 development case 上真实审计 250k–600k 公共候选并得到
+  `BUDGET_CALIBRATION_NO_GO`；未触碰 locked case、未计算 CCRR/FEPR；
+- [ ] Track B 重新开启前先冻结新的 evidence 收束/九角色预算合同，再在新的 6-case cohort 上
+  从头校准；只有六例完整九角色 receipts 全部合规才允许成对评分；
+- [ ] Track A/Track B locked 与 Track B-PV 严格按预注册顺序执行，禁止触碰未来 locked labels。
+
+### 0.0.2 2026-08-25：动态科学 DAG 与 evidence feedback
+
+本轮把已有通用 `HypothesisCandidate → ModelTaskPlan → ScientificEvidence → memory`
+骨架升级为真实多阶段执行。DeepSeek 根据目标、候选机理、当前 evidence 和 capability
+snapshot 自主提出二维检查、ML 预弛豫、磁序、non-SOC/SOC、能带/轨道、拓扑和交换/Tc
+任务及其参数；本地 policy 不补写科学路线，只审核可执行性与证据边界。
+
+- [ ] route schema 表达 typed task kind、Artifact 依赖、参数、falsifier 和 claim；
+- [ ] feedback 读取逐 observable、逐 claim 的真实 evidence，而非单一泛化结果指针；
+- [ ] 接受的淘汰、operator revision 或升级任务写入 hash-linked memory，并可生成下一轮 DAG；
+- [ ] live DeepSeek route/feedback 必须保留完整 receipt；网络中断继续 fail closed。
+
 ### 0.0.1 2026-08-22：研究契约自动修复与通用操作覆盖
 
 本轮范围由用户明确为三项同时交付：
@@ -1183,3 +1214,27 @@ parent hard-kill 后独立 action child 的清理仍是 public production P0。
   envelope `235136` bytes、3 physical attempts；未调用 OpenAlex。定向 Gate `345 passed`，排除
   暂停 flatband 轨的完整离线 Gate `1109 passed, 17 skipped`（130.83s），依赖/diff/secret
   checks 通过。canonical implementation revision 升为 `research-pipeline-20260814-r5`。
+
+### 2026-08-23：通用候选与下游证据反馈契约
+
+- Generic Research 的 `MaterialsResearchGraphResultV7` 现可把全部排名候选投影为
+  `HypothesisCandidate`，不再经 compatibility research entry 的 `selected_ids[0]` 或
+  S→Se request 进入新链；候选绑定真实数据库 parent Artifact、元素、维度、文献 evidence
+  与逐候选 unresolved claims。
+- 新增 `DeepSeekScientificLoopReasoner`：route 回合通过一个无参数 strict tool 读取完整、
+  有界 capability snapshot，并输出模型/计算、observable、前置关系、目标证据和 falsifier；
+  feedback 回合读取完整 evidence snapshot，提出 retain/eliminate、typed
+  `CompileReasonedOperationArgsV3` revision 或更高 evidence task。reasoning content 不落盘，
+  receipt 仅保存 hash 和公开调用元数据。
+- `ScientificEvidence` 先写 immutable Artifact，再追加到 Inspiration memory 的
+  `MODEL_VALIDATION` payload。feedback audit 要求 evidence 已在当前 snapshot 中，淘汰还要求
+  real L2+ contradiction；mock、NONE 或未入 memory 的结果均不能驱动候选淘汰。
+- 历史 prompt1 三候选离线纵切通过。真实 route 调用先后暴露 3-call 预算不足、provider
+  malformed tool JSON、8-round finalization 不足和 900 秒 walltime；最终定位到 strict
+  `model_validate(json.loads(...))` 会永久拒绝 JSON array 对应的 tuple 字段，改用
+  `model_validate_json` 后 route live 通过。DeepSeek 对三个候选分别提出 HSE+SOC band/PDOS
+  六约束验证，本地 policy 因 DFT backend 未就绪全部阻断。真实 feedback 回合随后在 provider
+  chunked response 发生 `IncompleteRead`，所以 feedback live Gate 仍未完成。
+- 当前跨模块定向 Gate 为 `65 passed`。全量单进程 Gate 在历史 flat-band/spglib 压力用例
+  长期运行时于 42:01 人工终止；终止前为 `339 passed, 19 skipped` 且无失败，不能据此宣称
+  全量通过。

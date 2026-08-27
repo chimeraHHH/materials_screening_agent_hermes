@@ -12,7 +12,6 @@ from pathlib import Path
 
 import yaml
 
-
 EXPECTED_TOOLS = (
     "materials_inspiration_run",
     "materials_run_get",

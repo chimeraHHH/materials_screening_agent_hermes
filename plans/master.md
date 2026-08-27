@@ -13,7 +13,95 @@
 > [Agent 04 计划](subagents/material-screening-agent04-plan.md)中明确记录的状态更新。当前可运行能力以 README、源码、配置和测试为准。
 > 只有这些仓库文档明确确认完成的事项才标为 `[x]`；无法确认的事项保持 `[ ]`。
 
-状态基准日期：2026-08-22
+状态基准日期：2026-08-25
+
+### 2026-08-26 当前增量：科学 Benchmark 重启（不含 Track C）
+
+用户已明确重新启动科学 Benchmark，并排除工程 Track C。当前执行顺序以
+`group_meeting_full_report_20260826/benchmark_plan_20260826.md` 的 Track A、Track B 与
+Track B-PV 为上层 claim 计划，以仓库内 `flatband-benchmark-20260809` 的 V3 契约、预注册、
+标注和统计实现为 Track A 权威执行边界。2026-08-26 已关闭历史三项 V3 对抗门禁，并完成
+真实公开源候选 intake、Fermi 纠偏、结构去重和 calibration-only 私有 custody。机器状态仍保持
+`PILOT_NO_GO`：下一步闭合自然人专家、电子结构/derivative 人审、COI、Pilot full-pool
+私有 custody、系统身份与独立 readiness review；只有新的 `PILOT_GO` 可启动 30-case R1。
+Track B 已在首个 development-only FEDERATED_DATABASE case 上完成公共预算候选审计：250k、
+350k、400k、450k、500k、600k 均未稳定闭合，终态为 `BUDGET_CALIBRATION_NO_GO`。不得继续
+自动调参、不得查看未来 locked case，也不得启动 Full Loop / No-Feedback 成对评分；重新开启前
+必须先冻结新的 evidence 收束合同和独立预算依据，再在新的 6-case cohort 上从头校准。
+
+### 2026-08-25 当前增量：纯 ML 动态科学筛选 DAG 与 GPU 执行
+
+用户选择速度/效率优先并明确不需要 DFT。当前目标链为 DeepSeek 原生科学推理生成动态
+`ModelTaskPlan` DAG，覆盖数据库/文献候选、二维结构检查、CHGNet/ML 预弛豫、磁性倾向、
+结构直达性质模型，以及在已有可信预计算图时的 non-SOC/SOC learned-Hamiltonian 推理；
+平带、SOC、拓扑和磁性均输出校准的不确定性/排序证据，再写回 research memory。运行时
+DFT、SOC-DFT、Wannier 和 OpenMX/ABACUS 电子输入生成全部退出生产链。
+
+- [x] 修复现有 DAG 只转发原结构指针而不消费前序真实 Artifact 的缺口；冻结 task kind、
+  typed input/output Artifact、observable/claim 兼容性、依赖和执行收据；
+- [x] 增加二维结构、磁序枚举、平带、SOC、拓扑和 Tc proxy 的参数模型与 validator；
+- [x] 保持 DeepSeek 决定科学路线和参数，policy 只审计 capability、适用域、权重、预算、
+  审批、收敛和证据 ceiling，不用硬编码路线替代模型推理；
+- [x] 科学验证契约固定为 `ML_ONLY`，阻断 DFT、SOC-DFT、磁态总能、运行时 overlap/电子 graph 生成与 L3
+  证据；learned-Hamiltonian 仅可消费可信预计算输入，默认筛选阈值改为速度优先；
+- [x] 接通 Uni-HamGNN 单卡 CUDA 真实权重推理；每个远端任务有冻结输入、日志、设备
+  provenance、Artifact hash 和可恢复 operation key；
+- [x] 在真实 GPU 服务器完成一个官方 ZrSiPt 预计算图小体系 smoke；没有合法 VASP/POTCAR 时
+  不再寻找 DFT 替代，而使用官方预计算图或结构直达 ML 模型；
+- [x] 把真实 ZrSiPt operation 接入
+  `PRECOMPUTED_ELECTRONIC_INPUT_IMPORT → ML_HAMILTONIAN_SOC → BAND_ORBITAL_ANALYSIS`，
+  严格 band worker 输出 DAT/PNG/CIF，三条 evidence 写回 memory；自动测得最近带宽
+  `0.827865 eV` 并以 `NONE/CONTRADICTS` 标记不满足 50 meV；
+- [x] DeepSeek route/feedback 系统边界显式固定为纯 ML；更高证据请求只能指向已注册
+  ML ensemble、检索到的实验/文献证据或人工复核。校准性质 executor 同时支持一级单模型
+  和二级 `ML_ENSEMBLE_VALIDATION`，避免把所有临界项永久保留为 unknown；
+- [x] 两次真实 DeepSeek route-only 复核发现并修复 capability 缺少通用必需输入声明的
+  问题；新增 `required_input_artifact_kinds` 后，DeepSeek 自动为 band 节点补齐 graph 与
+  Hamiltonian 前序依赖，三节点全部通过审计且零 DFT。最终 route SHA-256 为
+  `b387b6ef945beffd7527630dfe47bf0158de70a65205979ebb6742c030c42d99`；
+- [x] 完成真实 memory→DeepSeek feedback 回合：速度优先 policy 允许真实 ML/数据库硬反证
+  淘汰搜索池候选，但正向结论仍受 benchmark 与 L2 ceiling 约束；ZrSiPt control feedback
+  receipt 为 `e78d03b0b08a6135fd694bd2c08c2b92bc9920207cac0833f35c6a0e28e3a679`；
+- [x] 用历史 prompt1 的三个真实 C2DB CIF/能带跑通 9 节点纯数据库/本地判据 DAG、真实
+  DeepSeek route、memory 写回和真实 feedback。修正 C2DB `E−E_VBM` 能量参考后，三个母相
+  均因带宽明显超过 50 meV 被移出当前搜索池；轨道投影缺失保持 unresolved。route/feedback
+  receipt 分别为 `339139df7fb6c08374a2ab25cff17248990e706d98b7abd161f5b2cae250db03` 与
+  `3d4bfb34be4645b74a18d4b4ef37d6fde8e78c365ca561b5b1358b295d556bdf`；
+- [x] 清理全仓 Ruff 新暴露的 33 项历史债务，`ruff check .` 与 `git diff --check` 通过；
+  全量 pytest 因既有大型 flat-band 契约压力轨耗时在 `350 passed, 20 skipped` 后人工终止，
+  无失败；本次 ML/DAG/运维定向 Gate `85 passed, 1 skipped`；
+- [ ] 完成 vdW 铁磁（Tc>30 K）+拓扑绝缘体 case 的纯数据库/ML 回归；不把 CHGNet、
+  Hamiltonian 或 proxy 越级表述为确定的平带、拓扑或磁基态证明。
+
+### 2026-08-24 当前增量：Agent02 Linux/CUDA 平台化
+
+- [x] 将已在 WHU L40S 上验证的 CHGNet CUDA 上游执行纳入正式 Agent02 profile；完成
+  独立 lock、单卡隔离、health/parity、worker Artifact/L2 Gate 与真实服务器发布收据；
+- [x] 保持科学适用域仍为已审核的周期性三维 Si，不把 GPU 可执行性误写成二维过渡金属、
+  平带、SOC、拓扑或稳定性验证。
+
+### 2026-08-23 当前增量：文献候选到 ML 证据反馈闭环
+
+- [x] 新增通用 `HypothesisCandidate → OperatorResult → ModelTaskPlan →
+  ScientificEvidence` 契约；Generic Research 的全部排名候选均可进入同一 handoff，固定
+  TiS2/S→Se 单候选 research entry 仅保留兼容回归角色；
+- [x] 新增 DeepSeek 原生路线与反馈 reasoner。模型负责提出模型/计算、observable、前置、
+  evidence target 和 falsifier；确定性 policy 只审计 lineage、适用域、backend/权重、
+  benchmark/evidence ceiling 与成本，不补写科学路线；
+- [x] ScientificEvidence 先落 immutable Artifact，再以 `MODEL_VALIDATION` 事件写入
+  append-only research memory；下一轮 DeepSeek 可提出淘汰、typed operator revision 或
+  更高等级计算，确定性审计拒绝 mock/NONE/未入 memory 的淘汰依据；
+- [x] 复用历史二维过渡金属平带 case 的 Pd3P2S8 strain、Li-intercalated Pd3P2S8 和
+  Li-deficient LiP2PdS6 三候选完成多候选、模型域/权重阻断及三类反馈 action 回归；相关
+  跨模块定向 Gate `65 passed`，Ruff、`pip check`、`git diff --check` 通过；完整离线 Gate
+  在历史 flat-band/spglib 压力用例长期运行时于 42:01 人工终止，终止前为
+  `339 passed, 19 skipped` 且无失败，故不标记全量通过；
+- [x] 修复 DeepSeek strict final JSON 的 array→tuple 验证缺陷后，历史三候选 route live Gate
+  通过并保留真实 receipt hash；DeepSeek 为三个候选各提出覆盖六项电子约束的 HSE+SOC
+  band/PDOS 路线，本地 policy 因 DFT backend 未就绪将三项均明确阻断；
+- [ ] feedback live 回合在 provider chunked response 中断后以 `IncompleteRead` fail closed；
+  离线 memory→feedback→audit 纵切已通过，但不得描述为完整 live feedback pass。真实模型
+  execution、DFT backend 与实验/专家证据仍是后续科学 Gate。
 
 ### 2026-08-22 当前增量：自动修复、操作覆盖与 lint 收敛
 

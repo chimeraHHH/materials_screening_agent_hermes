@@ -10,7 +10,6 @@ from pathlib import Path
 
 import yaml
 
-
 REPO_ROOT = Path(__file__).resolve().parents[3]
 HERMES_ROOT = REPO_ROOT / "integrations" / "hermes"
 PROFILE_ROOT = HERMES_ROOT / "profiles" / "materials-inspiration-evolution"

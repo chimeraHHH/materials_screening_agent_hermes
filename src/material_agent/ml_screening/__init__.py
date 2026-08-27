@@ -1,7 +1,7 @@
 """Deterministic Agent02 contracts and planning primitives.
 
 This package intentionally has no imports of torch, chgnet, or ase.  The
-CHGNet and DeepH execution paths remain behind independent subprocess
+CHGNet, DeepH, and Uni-HamGNN execution paths remain behind subprocess
 boundaries.
 """
 
@@ -73,6 +73,12 @@ from material_agent.ml_screening.property_models import (
     PropertyPredictionRequest,
     select_property_model,
 )
+from material_agent.ml_screening.uniham_models import (
+    UniHamExecutionPlan,
+    UniHamInferenceRequest,
+    UniHamResult,
+)
+from material_agent.ml_screening.uniham_planner import build_uniham_plan
 
 __all__ = [
     "AGENT02_CONTRACT_VERSION",
@@ -123,10 +129,14 @@ __all__ = [
     "PropertyWorkerResponse",
     "SelectionMode",
     "SelectionStatus",
+    "UniHamExecutionPlan",
+    "UniHamInferenceRequest",
+    "UniHamResult",
     "build_alignn_plan",
     "build_deeph_plan",
     "build_ml_stage_plan",
     "build_property_execution_plan",
+    "build_uniham_plan",
     "reviewed_property_model_families",
     "select_property_model",
 ]

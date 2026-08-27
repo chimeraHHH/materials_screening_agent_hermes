@@ -29,7 +29,6 @@ from material_agent.integration.queued_gateway import (
     worker_from_service,
 )
 
-
 EXPECTED_TOOLS = (
     "materials_inspiration_run",
     "materials_run_get",
@@ -187,7 +186,9 @@ async def _submit(
     *, workspace: Path, project: str, submission_id: str
 ) -> dict[str, Any]:
     with anyio.fail_after(30):
-        with open(os.devnull, "w", encoding="utf-8") as error_log:
+        with open(  # noqa: ASYNC230 - MCP requires a synchronous stderr stream
+            os.devnull, "w", encoding="utf-8"
+        ) as error_log:
             async with stdio_client(
                 _parameters(workspace, project), errlog=error_log
             ) as streams:
@@ -231,7 +232,9 @@ async def _enqueue(
     *, workspace: Path, project: str, run_id: str, interaction_id: str
 ) -> dict[str, Any]:
     with anyio.fail_after(30):
-        with open(os.devnull, "w", encoding="utf-8") as error_log:
+        with open(  # noqa: ASYNC230 - MCP requires a synchronous stderr stream
+            os.devnull, "w", encoding="utf-8"
+        ) as error_log:
             async with stdio_client(
                 _parameters(workspace, project), errlog=error_log
             ) as streams:
@@ -290,7 +293,9 @@ def _run_worker(*, workspace: Path, project: str) -> dict[str, Any]:
 
 async def _finish(*, workspace: Path, project: str, run_id: str) -> dict[str, Any]:
     with anyio.fail_after(30):
-        with open(os.devnull, "w", encoding="utf-8") as error_log:
+        with open(  # noqa: ASYNC230 - MCP requires a synchronous stderr stream
+            os.devnull, "w", encoding="utf-8"
+        ) as error_log:
             async with stdio_client(
                 _parameters(workspace, project), errlog=error_log
             ) as streams:
@@ -323,7 +328,9 @@ async def _finish(*, workspace: Path, project: str, run_id: str) -> dict[str, An
 
 async def _recover(*, workspace: Path, project: str, run_id: str) -> dict[str, Any]:
     with anyio.fail_after(30):
-        with open(os.devnull, "w", encoding="utf-8") as error_log:
+        with open(  # noqa: ASYNC230 - MCP requires a synchronous stderr stream
+            os.devnull, "w", encoding="utf-8"
+        ) as error_log:
             async with stdio_client(
                 _parameters(workspace, project), errlog=error_log
             ) as streams:

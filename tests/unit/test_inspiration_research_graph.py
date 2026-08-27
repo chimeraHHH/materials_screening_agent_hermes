@@ -11,6 +11,7 @@ from material_agent.inspiration.deepseek_agent import (
     DeepSeekFunctionTool,
 )
 from material_agent.inspiration.research_graph import (
+    MAX_RESEARCH_GOAL_CHARACTERS,
     CandidateConstraintMatrixRowV1,
     CandidateHypothesisV1,
     CandidateInferenceRowV1,
@@ -45,9 +46,12 @@ from material_agent.inspiration.research_graph import (
     _normalize_candidate_retrieval_references,
     _normalize_evidence_review_references,
     _normalize_executed_counter_queries,
+    _normalize_native_lead_references,
     _normalize_sparse_skeptic_references,
     _normalize_synthesis,
     _validate_query_constraint_refs,
+    normalize_research_goal,
+    research_goal_forbids_dft,
 )
 from material_agent.orchestrator.models import StrictModel
 
@@ -349,6 +353,7 @@ def test_generic_research_director_separates_evidence_unknowns_from_inference() 
             resolver_queries=("layered transition metal flat band",),
         ),
     ]
+    captured_user_payloads: dict[str, Mapping[str, Any]] = {}
 
     class FakeRunner:
         def __init__(self, role: str, tools: tuple[DeepSeekFunctionTool, ...]) -> None:
@@ -356,7 +361,7 @@ def test_generic_research_director_separates_evidence_unknowns_from_inference() 
             self.tools = tools
 
         def run(self, **kwargs: Any) -> DeepSeekAgentResultV1[Any]:
-            del kwargs
+            captured_user_payloads[self.role] = kwargs["user_payload"]
             if self.role == "contract_repair":
                 args_model = self.tools[0].arguments_model
                 self.tools[0].handler(args_model(sections=("repair_context",)))
@@ -376,10 +381,10 @@ def test_generic_research_director_separates_evidence_unknowns_from_inference() 
                 section = {
                     "requirements_analyst": "goal",
                     "query_strategist": "constraints",
-                    "mechanism_chemist": "evidence",
-                    "skeptic": "candidates",
-                    "hypothesis_reasoner": "skeptic_review",
-                    "synthesist": "skeptic_review",
+                    "mechanism_chemist": "mechanism_context",
+                    "skeptic": "skeptic_context",
+                    "hypothesis_reasoner": "inference_context",
+                    "synthesist": "synthesis_context",
                 }[self.role]
                 args_model = self.tools[0].arguments_model
                 self.tools[0].handler(args_model(sections=(section,)))
@@ -404,22 +409,55 @@ def test_generic_research_director_separates_evidence_unknowns_from_inference() 
         checkpoint_save=lambda role, _result: saved_checkpoint_roles.append(role),
     )
     result = director.run(
-        "搜索层状过渡金属二维平带材料，并逐项验证费米面、轨道、价态与连通子晶格。"
+        "搜索层状过渡金属二维平带材料，并逐项验证费米面、轨道、价态与连通子晶格，"
+        "且禁止使用 DFT。"
     )
 
     assert len(result.roles) == 9
-    assert len(result.repairs) == 3
+    assert len(result.repairs) == 2
     assert all(item.status == "ACCEPTED" for item in result.repairs)
     assert [item.defect_code for item in result.repairs] == [
         "CONSTRAINT_COVERAGE",
         "QUERY_CONSTRAINT_REFERENCES",
-        "NATIVE_LEAD_REFERENCES",
     ]
     assert {
         "requirements_analyst-repaired",
         "query_strategist-repaired",
-        "native_search_scout-repaired",
     }.issubset(saved_checkpoint_roles)
+    assert result.deterministic_normalizations == (
+        "DROPPED_DANGLING_NATIVE_LEAD_REFERENCES",
+        "REMOVED_DFT_NEXT_COMPUTATIONS_FOR_EXPLICIT_NO_DFT_GOAL",
+    )
+    assert result.synthesis.required_next_computations == ()
+    assert set(
+        captured_user_payloads["native_search_scout"][
+            "validated_research_state"
+        ]
+    ) == {"goal", "constraints", "query_plan"}
+    assert set(
+        captured_user_payloads["evidence_researcher"][
+            "validated_research_state"
+        ]
+    ) == {"constraints", "query_plan", "native_leads"}
+    assert set(
+        captured_user_payloads["database_scout"]["validated_research_state"]
+    ) == {"goal", "constraints", "query_plan"}
+    assert (
+        captured_user_payloads["database_scout"]["state_projection_policy"]
+        == "REQUIRED_SECTIONS_ONLY_V1"
+    )
+    assert captured_user_payloads["hypothesis_reasoner"][
+        "available_state_sections"
+    ] == ("inference_context",)
+    assert captured_user_payloads["mechanism_chemist"][
+        "available_state_sections"
+    ] == ("mechanism_context",)
+    assert captured_user_payloads["skeptic"]["available_state_sections"] == (
+        "skeptic_context",
+    )
+    assert captured_user_payloads["synthesist"]["available_state_sections"] == (
+        "synthesis_context",
+    )
     assert {item.kind for item in result.constraints.constraints} >= {
         ConstraintKind.DIMENSIONALITY,
         ConstraintKind.ELECTRONIC_BANDWIDTH,
@@ -482,6 +520,105 @@ def test_synthesis_join_is_completed_deterministically() -> None:
     normalized, changes = _normalize_synthesis(synthesis, candidate, review)
     assert normalized.unresolved_hard_constraints == ("candidate-x:constraint-x",)
     assert changes == ("CANONICALIZED_UNKNOWN_CONSTRAINT_JOIN",)
+
+
+def test_explicit_no_dft_goal_strips_dft_next_computations_with_audit() -> None:
+    candidate = CandidateSetV1(
+        candidates=(
+            CandidateHypothesisV1(
+                candidate_id="candidate-no-dft",
+                material_name="No-DFT candidate",
+                hypothesis="A bounded hypothesis.",
+                mechanism="A mechanism requiring ML validation.",
+            ),
+        )
+    )
+    review = SkepticReviewV1(
+        matrix=(
+            CandidateConstraintMatrixRowV1(
+                candidate_id="candidate-no-dft",
+                assessments=(
+                    ConstraintAssessmentV1(
+                        constraint_id="constraint-band",
+                        verdict="UNKNOWN",
+                        rationale="No direct evidence.",
+                        next_verification="Run an allowed ML band check.",
+                    ),
+                ),
+            ),
+        ),
+        global_failure_modes=("The hypothesis may fail.",),
+    )
+    synthesis = ResearchSynthesisV1(
+        ranked_candidate_ids=("candidate-no-dft",),
+        recommendation="Retain only as a hypothesis.",
+        scientific_conclusion="This remains a falsifiable hypothesis.",
+        unresolved_hard_constraints=("candidate-no-dft:constraint-band",),
+        required_next_computations=(
+            "Run DFT band structure and projected density of states.",
+            "Run the permitted learned-Hamiltonian band check.",
+        ),
+    )
+
+    normalized, changes = _normalize_synthesis(
+        synthesis,
+        candidate,
+        review,
+        goal="Use database, literature, and ML only; no DFT or DFT fallback.",
+    )
+
+    assert normalized.required_next_computations == (
+        "Run the permitted learned-Hamiltonian band check.",
+    )
+    assert changes == (
+        "REMOVED_DFT_NEXT_COMPUTATIONS_FOR_EXPLICIT_NO_DFT_GOAL",
+    )
+    assert research_goal_forbids_dft("Do not use DFT; keep the route ML-only.")
+    assert research_goal_forbids_dft("本任务不需要 DFT，只允许机器学习。")
+
+
+def test_dft_next_computation_is_preserved_without_an_explicit_ban() -> None:
+    candidate = CandidateSetV1(
+        candidates=(
+            CandidateHypothesisV1(
+                candidate_id="candidate-dft-allowed",
+                material_name="DFT-allowed candidate",
+                hypothesis="A bounded hypothesis.",
+                mechanism="A mechanism requiring validation.",
+            ),
+        )
+    )
+    review = SkepticReviewV1(
+        matrix=(
+            CandidateConstraintMatrixRowV1(
+                candidate_id="candidate-dft-allowed",
+                assessments=(
+                    ConstraintAssessmentV1(
+                        constraint_id="constraint-band",
+                        verdict="FAIL",
+                        rationale="Direct evidence falsifies the constraint.",
+                    ),
+                ),
+            ),
+        ),
+        global_failure_modes=("The hypothesis may fail.",),
+    )
+    synthesis = ResearchSynthesisV1(
+        ranked_candidate_ids=("candidate-dft-allowed",),
+        recommendation="Retain only as a hypothesis.",
+        scientific_conclusion="This remains a falsifiable hypothesis.",
+        required_next_computations=("Run DFT band structure.",),
+    )
+
+    normalized, changes = _normalize_synthesis(
+        synthesis,
+        candidate,
+        review,
+        goal="Compare ML and DFT validation routes.",
+    )
+
+    assert normalized.required_next_computations == ("Run DFT band structure.",)
+    assert changes == ()
 
 
 def test_inference_prediction_is_not_an_unknown_evidence_verdict() -> None:
@@ -739,6 +876,78 @@ def test_contract_repair_fails_closed_after_two_invalid_attempts() -> None:
     assert [item.status for item in repairs] == ["REJECTED", "REJECTED"]
 
 
+def test_contract_repair_profile_can_fail_closed_after_one_attempt() -> None:
+    graph = constraints()
+    invalid_plan = incomplete_query_plan(graph)
+    tool = DeepSeekFunctionTool(
+        name="fixture_tool",
+        description="Fixture-only state reader.",
+        arguments_model=SearchArgs,
+        handler=lambda args: {"query": args.query},
+    )
+
+    class InvalidRepairRunner:
+        def run(self, **kwargs: Any) -> DeepSeekAgentResultV1[Any]:
+            del kwargs
+            return DeepSeekAgentResultV1(
+                final=invalid_plan,
+                receipt=receipt("contract-repair-invalid"),
+            )
+
+    director = MaterialsResearchDirector(
+        runner_factory=lambda _role, _tools: InvalidRepairRunner(),
+        native_search_tool=tool,
+        native_leads_snapshot=lambda: (),
+        authoritative_search_tool=tool,
+        evidence_snapshot=lambda: (),
+        database_search_tool=tool,
+        database_candidates_snapshot=lambda: (),
+        database_federation_snapshot=lambda: DatabaseFederationAuditV1(),
+        max_contract_repair_attempts=1,
+    )
+    repairs = []
+    with pytest.raises(ValueError, match="contract repair exhausted"):
+        director._repair_invalid_role_output(
+            target_role="query_strategist",
+            defect_code="QUERY_CONSTRAINT_REFERENCES",
+            final_model=ResearchQueryPlanV1,
+            value=invalid_plan,
+            validator=lambda item: _validate_query_constraint_refs(item, graph),
+            authoritative_context={"constraints": graph.model_dump(mode="json")},
+            repairs=repairs,
+        )
+    assert [item.status for item in repairs] == ["REJECTED"]
+
+
+def test_native_lead_normalization_drops_only_dangling_review_references() -> None:
+    review = DiscoveryReviewV1(
+        useful_lead_ids=("lead-known", "lead-dangling"),
+        rejected_lead_ids=("lead-rejected",),
+        resolver_queries=("fractional valence Lieb lattice",),
+    )
+    normalized, changes = _normalize_native_lead_references(
+        review,
+        (
+            {"lead_id": "lead-known", "title": "known"},
+            {"lead_id": "lead-rejected", "title": "rejected"},
+        ),
+    )
+
+    assert normalized.useful_lead_ids == ("lead-known",)
+    assert normalized.rejected_lead_ids == ("lead-rejected",)
+    assert changes == ("DROPPED_DANGLING_NATIVE_LEAD_REFERENCES",)
+
+
 def test_lead_resolution_ledger_capacity_covers_large_federated_runs() -> None:
     schema = MaterialsResearchGraphResultV7.model_json_schema()
     assert schema["properties"]["lead_evidence_resolutions"]["maxItems"] == 1_024
+
+
+def test_research_goal_capacity_matches_outer_hermes_contract() -> None:
+    complete_goal = "fractional-valence Lieb-lattice constraint " * 140
+
+    assert len(complete_goal) > 4_000
+    assert normalize_research_goal(complete_goal) == complete_goal.strip()
+
+    with pytest.raises(ValueError, match=str(MAX_RESEARCH_GOAL_CHARACTERS)):
+        normalize_research_goal("x" * (MAX_RESEARCH_GOAL_CHARACTERS + 1))

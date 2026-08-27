@@ -13,11 +13,10 @@ from pathlib import Path
 import yaml
 
 from material_agent.gateway.models import InspirationRunRequestV1
+from material_agent.inspiration.policy import SearchExecutionMode
 from material_agent.integration.request_compiler import (
     HermesInspirationRequestCompiler,
 )
-from material_agent.inspiration.policy import SearchExecutionMode
-
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 HERMES_ROOT = REPO_ROOT / "integrations" / "hermes"

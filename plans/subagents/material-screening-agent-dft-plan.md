@@ -35,6 +35,21 @@
    专家审批和结构化 VASPilot/Slurm bridge Gate。
 4. 在这些 P2 Gate 通过前，不实现或注册真实 DFT backend。
 
+### 动态电子结构 DAG 的 Agent03 范围（2026-08-25，进行中）
+
+用户已明确要求把 non-SOC/SOC、能带/轨道、Wannier/拓扑和交换/Tc 纳入真实任务链并在
+GPU 服务器执行。本轮不把既有 mock/VASPilot PoC 误作后端；先以服务器 package check
+选择真实求解器。若 VASP/POTCAR/Slurm 不可用，可采用经验证的开源 DFT backend，但必须
+保持唯一状态真源、冻结方法、赝势许可、人工审批、收敛和 Artifact Gate。
+
+- [ ] 发布 task-kind/typed Artifact 契约：磁序集合、non-SOC ground state、SOC/non-SOC
+  band、orbital projection、wavefunction/Wannier Hamiltonian、topology 和 exchange/Tc；
+- [ ] 实现依赖真实前序 Artifact 的远端执行与恢复，禁止 planner 用输入结构替代 DFT 输出；
+- [ ] 实现结构、电子、自洽、k 点/截断能、SOC、Wannier 和磁态相对能的分层收敛验证；
+- [ ] 只有真实计算、parser、domain validator、claim compatibility 和 hash 全部通过时才可
+  发布逐 claim L3；未安装求解器、缺赝势、缺权重或缺拓扑输入时保持 blocked；
+- [ ] 形成 GPU 服务器 package-check、计算日志、输出、验证和科学 claim 的持久收据。
+
 ### 本次非 VASP 完善范围（2026-07-30）
 
 在没有 VASP、POTCAR、Slurm 或真实 bridge 服务的条件下，只补齐可脱离这些

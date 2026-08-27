@@ -17,7 +17,6 @@ from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-
 EVENT_SCHEMA_VERSION = "materials-inspiration-ops-event-v1"
 PID_SCHEMA_VERSION = "materials-inspiration-process-set-v3"
 METRICS_SCHEMA_VERSION = "materials-inspiration-metrics-v2"
@@ -916,20 +915,28 @@ def prometheus_metrics(snapshot: dict[str, Any]) -> str:
         f"materials_inspiration_worker_pid {int(snapshot['worker']['pid'])}",
         "# HELP materials_inspiration_worker_identity_match Whether the worker PID start marker and command hash match the ownership record.",
         "# TYPE materials_inspiration_worker_identity_match gauge",
-        "materials_inspiration_worker_identity_match "
-        f"{1 if snapshot['worker']['identity_match'] else 0}",
+        (
+            "materials_inspiration_worker_identity_match "
+            f"{1 if snapshot['worker']['identity_match'] else 0}"
+        ),
         "# HELP materials_inspiration_runtime_binding_match Whether process ownership is bound to the expected workspace, project, databases, and Artifact root.",
         "# TYPE materials_inspiration_runtime_binding_match gauge",
-        "materials_inspiration_runtime_binding_match "
-        f"{1 if snapshot['runtime_binding_match'] else 0}",
+        (
+            "materials_inspiration_runtime_binding_match "
+            f"{1 if snapshot['runtime_binding_match'] else 0}"
+        ),
         "# HELP materials_inspiration_gateway_database_up Whether the Gateway DB passes quick_check.",
         "# TYPE materials_inspiration_gateway_database_up gauge",
-        "materials_inspiration_gateway_database_up "
-        f"{1 if snapshot['database']['integrity'] else 0}",
+        (
+            "materials_inspiration_gateway_database_up "
+            f"{1 if snapshot['database']['integrity'] else 0}"
+        ),
         "# HELP materials_inspiration_queue_database_up Whether the approval/outbox DB passes quick_check and queue schema validation.",
         "# TYPE materials_inspiration_queue_database_up gauge",
-        "materials_inspiration_queue_database_up "
-        f"{1 if snapshot['queue']['integrity'] else 0}",
+        (
+            "materials_inspiration_queue_database_up "
+            f"{1 if snapshot['queue']['integrity'] else 0}"
+        ),
         "# HELP materials_inspiration_queue_jobs Current durable Gateway jobs by state.",
         "# TYPE materials_inspiration_queue_jobs gauge",
     ]
@@ -943,12 +950,16 @@ def prometheus_metrics(snapshot: dict[str, Any]) -> str:
         [
         "# HELP materials_inspiration_queue_oldest_ready_age_seconds Age of the oldest READY action job.",
         "# TYPE materials_inspiration_queue_oldest_ready_age_seconds gauge",
-        "materials_inspiration_queue_oldest_ready_age_seconds "
-        f"{float(snapshot['queue']['oldest_ready_age_seconds']):.3f}",
+        (
+            "materials_inspiration_queue_oldest_ready_age_seconds "
+            f"{float(snapshot['queue']['oldest_ready_age_seconds']):.3f}"
+        ),
         "# HELP materials_inspiration_queue_oldest_running_lease_age_seconds Age since the oldest RUNNING lease update or heartbeat.",
         "# TYPE materials_inspiration_queue_oldest_running_lease_age_seconds gauge",
-        "materials_inspiration_queue_oldest_running_lease_age_seconds "
-        f"{float(snapshot['queue']['oldest_running_lease_age_seconds']):.3f}",
+        (
+            "materials_inspiration_queue_oldest_running_lease_age_seconds "
+            f"{float(snapshot['queue']['oldest_running_lease_age_seconds']):.3f}"
+        ),
         "# HELP materials_inspiration_queue_failed_jobs Number of terminal failed jobs.",
         "# TYPE materials_inspiration_queue_failed_jobs gauge",
         f"materials_inspiration_queue_failed_jobs {int(snapshot['queue']['failed_count'])}",
@@ -957,12 +968,16 @@ def prometheus_metrics(snapshot: dict[str, Any]) -> str:
         f"materials_inspiration_queue_blocked_jobs {int(snapshot['queue']['blocked_count'])}",
         "# HELP materials_inspiration_queue_acknowledged_blocked_total Number of retained manual-recovery failures acknowledged by an operator.",
         "# TYPE materials_inspiration_queue_acknowledged_blocked_total gauge",
-        "materials_inspiration_queue_acknowledged_blocked_total "
-        f"{int(snapshot['queue']['acknowledged_blocked_total'])}",
+        (
+            "materials_inspiration_queue_acknowledged_blocked_total "
+            f"{int(snapshot['queue']['acknowledged_blocked_total'])}"
+        ),
         "# HELP materials_inspiration_queue_expired_running_leases Number of RUNNING jobs with expired leases.",
         "# TYPE materials_inspiration_queue_expired_running_leases gauge",
-        "materials_inspiration_queue_expired_running_leases "
-        f"{int(snapshot['queue']['expired_running_count'])}",
+        (
+            "materials_inspiration_queue_expired_running_leases "
+            f"{int(snapshot['queue']['expired_running_count'])}"
+        ),
         "# HELP materials_inspiration_local_ready Whether all local production readiness gates pass.",
         "# TYPE materials_inspiration_local_ready gauge",
         f"materials_inspiration_local_ready {1 if snapshot['readiness']['ok'] else 0}",

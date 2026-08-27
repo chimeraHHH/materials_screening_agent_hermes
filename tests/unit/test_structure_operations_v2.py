@@ -459,7 +459,7 @@ def test_vacancy_prior_rejects_excessive_complete_class(tmp_path: Path) -> None:
     assert "VACANCY_FRACTION_EXCEEDS_PROPOSED_LIMIT" in result.prior.reason_codes
 
 
-def test_reasoned_gap_intercalation_executes_with_smact_receipt(
+def test_reasoned_gap_intercalation_rejects_isolated_atom_in_monolayer_vacuum(
     tmp_path: Path,
 ) -> None:
     store = LocalArtifactStore(tmp_path / "artifacts")
@@ -481,26 +481,38 @@ def test_reasoned_gap_intercalation_executes_with_smact_receipt(
             **_REASONING,
         )
     )
-    assert compiled["status"] == "COMPILED"
-    plan = state.audit_snapshot().plans[0]
+    assert compiled["status"] == "REJECTED"
+    assert compiled["reason_code"] == "OPERATION_PRIOR_REJECTED"
     parent = Structure.from_str(cif.decode(), fmt="cif")
+    proposal = CompileReasonedOperationArgsV3(
+        candidate_id="candidate-mg-tis2",
+        database_candidate_id=candidate.database_candidate_id,
+        operation_kind="INTERCALATION",
+        intercalant="Mg",
+        intercalant_oxidation_state=2.0,
+        intercalation_site_a_fraction=0.29,
+        intercalation_site_b_fraction=0.61,
+        minimum_parent_gap_angstrom=4.2,
+        **_REASONING,
+    )
+    plan = compile_reasoned_structure_operation_plans(
+        database_candidate=candidate,
+        parent_structure=parent,
+        parent_artifact_bytes=cif,
+        proposal=proposal,
+    )[0]
     result = execute_registered_structure_operation(
         execution_request_from_compiled_operation_plan(plan),
         parent_structure=parent,
         parent_artifact_bytes=cif,
         smact_evaluator=_PassingSmact(),
     )
-    assert result.plan.status == "REQUIRES_REVIEW"
-    assert result.output_structure is not None
-    assert result.output_structure.composition["Mg"] == 1
-    magnesium_site = next(
-        site for site in result.output_structure if site.specie.symbol == "Mg"
-    )
-    assert getattr(magnesium_site.specie, "oxi_state", None) is None
-    assert magnesium_site.frac_coords[0] == pytest.approx(0.29)
-    assert magnesium_site.frac_coords[1] == pytest.approx(0.61)
-    assert result.prior.smact_decision == "PASS"
-    assert "HOST_REDOX_ASSIGNMENT_REQUIRED" in result.prior.reason_codes
+    assert result.plan.status == "REJECTED"
+    assert result.output_structure is None
+    assert result.prior.smact_decision is None
+    assert "INTERCALATION_REQUIRES_MULTILAYER_PARENT" in result.prior.reason_codes
+    assert "ISOLATED_INTERCALANT_IN_VACUUM" in result.prior.reason_codes
+    assert "PERIODIC_VACUUM_NOT_VDW_INTERLAYER_GAP" in result.prior.reason_codes
 
 
 def test_layer_slide_requires_multilayer_and_compiles_derived_partition(

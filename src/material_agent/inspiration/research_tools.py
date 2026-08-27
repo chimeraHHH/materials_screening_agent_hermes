@@ -1111,6 +1111,7 @@ class FederatedCandidateSearchState:
             ),
             arguments_model=FederatedCandidateSearchArgsV1,
             handler=self._handle,
+            max_calls_per_run=self.max_calls,
         )
 
     def snapshot(self) -> tuple[DatabaseCandidateV1, ...]:

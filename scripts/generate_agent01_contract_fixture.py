@@ -31,7 +31,6 @@ from material_agent.retrieval.structures import (
     process_structure,
 )
 
-
 FIXED_TIME = datetime(2026, 7, 26, 0, 0, tzinfo=UTC)
 
 

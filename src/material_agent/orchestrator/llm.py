@@ -30,10 +30,20 @@ MAX_RESPONSE_BYTES = 1024 * 1024
 class LLMProviderError(RuntimeError):
     """Safe provider failure that never embeds credentials or response bodies."""
 
-    def __init__(self, category: str, message: str, *, retryable: bool) -> None:
+    def __init__(
+        self,
+        category: str,
+        message: str,
+        *,
+        retryable: bool,
+        usage: Mapping[str, int] | None = None,
+        role: str | None = None,
+    ) -> None:
         super().__init__(message)
         self.category = category
         self.retryable = retryable
+        self.usage = dict(usage) if usage is not None else None
+        self.role = role
 
 
 @runtime_checkable

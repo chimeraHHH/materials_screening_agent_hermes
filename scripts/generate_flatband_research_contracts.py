@@ -28,6 +28,11 @@ from material_agent.research.flatband_blinding import (
     PrivateIdentityMapV2,
     ReviewerManifestV2,
 )
+from material_agent.research.flatband_campaign import (
+    FlatBandCampaignReleaseV1,
+    LocalSensitivityNotRunReleaseV1,
+    LockedExecutionPlanV1,
+)
 from material_agent.research.flatband_cases import (
     CandidateEligibilityAssignmentReleaseV3,
     CandidatePoolReleaseV3,
@@ -70,6 +75,14 @@ from material_agent.research.flatband_gold import (
 from material_agent.research.flatband_ingress import (
     SourceCatalogCheckpointReleaseV1,
 )
+from material_agent.research.flatband_leakage import (
+    LeakageComponentReleaseV3,
+    LeakageRoundClosureContextV3,
+    MechanismLineageAssignmentCurationReleaseV3,
+    MechanismLineageAssignmentV3,
+    MechanismLineageCurationReleaseV3,
+    MechanismLineageRegistryV3,
+)
 from material_agent.research.flatband_lifecycle import (
     ClaimSupportReleaseV1,
     DevelopmentFusionGateReleaseV1,
@@ -85,29 +98,13 @@ from material_agent.research.flatband_lifecycle import (
     PublicReleaseAuthorizationV1,
     ReleaseAuthorityPolicyV1,
     ReleaseControlAttestationV1,
-    ScientificReviewReleaseV1,
     ScientificReviewerAttestationV1,
     ScientificReviewerIdentityAttestationV1,
+    ScientificReviewReleaseV1,
 )
-from material_agent.research.flatband_leakage import (
-    LeakageComponentReleaseV3,
-    LeakageRoundClosureContextV3,
-    MechanismLineageAssignmentV3,
-    MechanismLineageAssignmentCurationReleaseV3,
-    MechanismLineageCurationReleaseV3,
-    MechanismLineageRegistryV3,
-)
-from material_agent.research.flatband_source_policy import (
-    CaseSourcePolicyAttestationV2,
-)
-from material_agent.research.flatband_structure_grouping import (
-    StructureGroupingPrivateEvidenceReleaseV2,
-    StructureGroupingUnionReplayReleaseV2,
-)
-from material_agent.research.flatband_workflow import PilotRoundArtifactsV3
 from material_agent.research.flatband_main import (
-    MainCapacityPolicyV1,
     MainCandidatePoolReleaseV1,
+    MainCapacityPolicyV1,
     MainEligibilityReleaseV1,
     MainFrozenCaseReleaseV1,
     MainPhaseAuthorizationReleaseV1,
@@ -131,12 +128,14 @@ from material_agent.research.flatband_main_gold import (
     MainRawLabelV1,
     MainReviewerManifestV1,
 )
-from material_agent.research.flatband_campaign import (
-    FlatBandCampaignReleaseV1,
-    LocalSensitivityNotRunReleaseV1,
-    LockedExecutionPlanV1,
+from material_agent.research.flatband_source_policy import (
+    CaseSourcePolicyAttestationV2,
 )
-
+from material_agent.research.flatband_structure_grouping import (
+    StructureGroupingPrivateEvidenceReleaseV2,
+    StructureGroupingUnionReplayReleaseV2,
+)
+from material_agent.research.flatband_workflow import PilotRoundArtifactsV3
 
 PUBLIC_PROTOCOL_ROOTS: tuple[type[BaseModel], ...] = (
     BenchmarkSplitManifestV2,

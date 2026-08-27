@@ -25,7 +25,7 @@ Novelty is outside scope.
 - [x] Complete the user manual review of definitions, workload, alpha thresholds, E2 selection, OOD meaning, guardrails, and COI (AI-assisted review adopted by the user, 2026-08-10); adopt the preregistration v0.5 / annotation-guide v0.6 / plan revisions
 - [x] Run the post-adoption independent protocol red team (FAIL: B1/B2 plus ten majors); withdraw the binary downgrade mode and apply the v0.6/v0.7 repairs (2026-08-10)
 - [x] Run the third-round independent red team (10/12 repairs verified, FAIL on residual N1); apply the v0.7/v0.8 repairs for N1/N2 and minors N3-N8 (2026-08-10)
-- [ ] Close the three failing V3 adversarial rejection tests recorded by the 2026-08-11 partitioned gate (`437 passed, 3 failed`); research track paused by user decision for MVP priority
+- [x] Close the three failing V3 adversarial rejection tests recorded by the 2026-08-11 partitioned gate (`437 passed, 3 failed`): overlapping full-candidate-pool, alternate pre-budget universe, and foreign structure-union-root rejection all passed in independent targeted replays on 2026-08-26
 - [ ] Close and freeze case, reviewer-safe packet, judgment, evidence, bridge, candidate, execution-matrix, blinding, run-ledger, final-gold, duplicate-release, expert-registry, and adjudication schemas
 - [ ] Freeze annotation manual with positive, negative, borderline, and conflict examples
 - [ ] Freeze primary/secondary metrics, paired tests, multiplicity correction, missing-data policy, and stop rules

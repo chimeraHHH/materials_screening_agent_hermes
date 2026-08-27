@@ -5,14 +5,15 @@ from __future__ import annotations
 import getpass
 import hashlib
 import os
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import Field, ValidationError, model_validator
 
 from material_agent.inspiration.deepseek_agent import (
     DeepSeekAgentBudgetV1,
+    DeepSeekAgentReceiptV1,
     DeepSeekAgentResultV1,
     DeepSeekThinkingAgent,
 )
@@ -34,6 +35,7 @@ from material_agent.inspiration.opencitations import (
 from material_agent.inspiration.operator_planning import OperatorPlanningToolState
 from material_agent.inspiration.policy import SearchBudgetV1
 from material_agent.inspiration.research_graph import (
+    MAX_RESEARCH_GOAL_CHARACTERS,
     MaterialsResearchDirector,
     MaterialsResearchGraphResultV7,
     research_graph_sha256,
@@ -74,7 +76,33 @@ from material_agent.retrieval.storage import LocalArtifactStore
 GENERIC_RESEARCH_TOOL_NAME = "materials_generic_research_run"
 GENERIC_RESEARCH_REQUEST_SCHEMA_VERSION = "materials-generic-research-run-v1"
 GENERIC_RESEARCH_RESULT_SCHEMA_VERSION = "materials-generic-research-run-v7"
-GENERIC_RESEARCH_IMPLEMENTATION_REVISION = "generic-research-20260822-r19"
+GENERIC_RESEARCH_TOOL_RECEIPT_SCHEMA_VERSION = (
+    "materials-generic-research-tool-receipt-v1"
+)
+GENERIC_RESEARCH_IMPLEMENTATION_REVISION = "generic-research-20260826-r25"
+GENERIC_RESEARCH_TOOL_RECEIPT_MAX_BYTES = 16_384
+RESEARCH_ROLE_RESPONSE_TIMEOUT_SECONDS = 600.0
+RESEARCH_ROLE_MAX_ATTEMPTS = 2
+ResearchRoleBudgetFactory = Callable[..., DeepSeekAgentBudgetV1]
+ResearchRoleReceiptCallback = Callable[[str, DeepSeekAgentReceiptV1], None]
+
+
+class _ReceiptObservingRoleRunner:
+    def __init__(
+        self,
+        *,
+        role: str,
+        runner: DeepSeekThinkingAgent,
+        callback: ResearchRoleReceiptCallback,
+    ) -> None:
+        self.role = role
+        self.runner = runner
+        self.callback = callback
+
+    def run(self, **kwargs: Any) -> DeepSeekAgentResultV1[Any]:
+        result = self.runner.run(**kwargs)
+        self.callback(self.role, result.receipt)
+        return result
 
 
 def research_role_budget(
@@ -189,7 +217,10 @@ class GenericResearchRunRequestV1(StrictModel):
         max_length=64,
         pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$",
     )
-    goal: str = Field(min_length=10, max_length=4_000)
+    # Complex materials goals must preserve every hard constraint, negation and
+    # evidence boundary. 4k truncated valid Hermes task contracts in practice;
+    # 12k remains bounded while fitting the current DeepSeek context budgets.
+    goal: str = Field(min_length=10, max_length=MAX_RESEARCH_GOAL_CHARACTERS)
     publication_year_from: int = Field(default=1960, ge=1600, le=2200)
     publication_year_to: int = Field(default=2026, ge=1600, le=2200)
     reasoning_effort: Literal["high", "max"] = "high"
@@ -210,7 +241,7 @@ class GenericResearchRunResultV7(StrictModel):
     schema_version: Literal["materials-generic-research-run-v7"] = (
         GENERIC_RESEARCH_RESULT_SCHEMA_VERSION
     )
-    implementation_revision: Literal["generic-research-20260822-r19"] = (
+    implementation_revision: Literal["generic-research-20260826-r25"] = (
         GENERIC_RESEARCH_IMPLEMENTATION_REVISION
     )
     run_id: str
@@ -229,6 +260,123 @@ class GenericResearchRunResultV7(StrictModel):
     property_verification_complete: Literal[False] = False
 
 
+class GenericResearchToolCountsV1(StrictModel):
+    """Bounded terminal counts; detailed rows remain in the canonical artifact."""
+
+    constraint_count: int = Field(ge=0, le=1_024)
+    discovery_reference_count: int = Field(ge=0, le=2_048)
+    resolved_evidence_count: int = Field(ge=0, le=1_024)
+    database_candidate_count: int = Field(ge=0, le=1_024)
+    hypothesis_candidate_count: int = Field(ge=0, le=128)
+    unknown_constraint_count: int = Field(ge=0, le=262_144)
+    required_next_computation_count: int = Field(ge=0, le=1_024)
+    role_count: int = Field(ge=0, le=64)
+    repair_count: int = Field(ge=0, le=64)
+    deterministic_normalization_count: int = Field(ge=0, le=128)
+
+
+class GenericResearchToolReceiptV1(StrictModel):
+    """Compact MCP response pinning the complete durable research artifacts."""
+
+    schema_version: Literal["materials-generic-research-tool-receipt-v1"] = (
+        GENERIC_RESEARCH_TOOL_RECEIPT_SCHEMA_VERSION
+    )
+    implementation_revision: Literal["generic-research-20260826-r25"] = (
+        GENERIC_RESEARCH_IMPLEMENTATION_REVISION
+    )
+    run_id: str = Field(min_length=1, max_length=64)
+    submission_id: str = Field(min_length=1, max_length=64)
+    request_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    status: Literal["SUCCEEDED"] = "SUCCEEDED"
+    cache_hit: bool
+    canonical_result_artifact_uri: str = Field(
+        min_length=12, max_length=512, pattern=r"^artifact://"
+    )
+    canonical_result_artifact_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    canonical_result_size_bytes: int = Field(ge=1, le=64_000_000)
+    research_graph_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    report_artifact_uri: str = Field(
+        min_length=12, max_length=512, pattern=r"^artifact://"
+    )
+    report_artifact_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    report_manifest_artifact_uri: str = Field(
+        min_length=12, max_length=512, pattern=r"^artifact://"
+    )
+    report_manifest_artifact_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    counts: GenericResearchToolCountsV1
+    scientific_conclusion_status: Literal["REASONED_HYPOTHESIS"] = (
+        "REASONED_HYPOTHESIS"
+    )
+    property_verification_complete: Literal[False] = False
+
+
+def build_generic_research_tool_receipt(
+    result: GenericResearchRunResultV7,
+    *,
+    cache_hit: bool,
+    canonical_result_artifact_sha256: str | None = None,
+    canonical_result_size_bytes: int | None = None,
+    report_artifact_sha256: str,
+    report_manifest_artifact_sha256: str,
+) -> GenericResearchToolReceiptV1:
+    """Project a large canonical result into one bounded, hash-pinned receipt."""
+
+    payload = result.model_dump(mode="json")
+    canonical_payload = canonical_json_bytes(payload)
+    graph = payload["research_graph"]
+    discovery = graph["discovery_review"]
+    skeptic_matrix = graph["skeptic_review"]["matrix"]
+    counts = GenericResearchToolCountsV1(
+        constraint_count=len(graph["constraints"]["constraints"]),
+        discovery_reference_count=len(
+            set(discovery["useful_lead_ids"])
+            | set(discovery["rejected_lead_ids"])
+        ),
+        resolved_evidence_count=len(graph["resolved_evidence"]),
+        database_candidate_count=len(graph["database_candidates"]),
+        hypothesis_candidate_count=len(graph["candidates"]["candidates"]),
+        unknown_constraint_count=sum(
+            1
+            for row in skeptic_matrix
+            for assessment in row["assessments"]
+            if assessment["verdict"] == "UNKNOWN"
+        ),
+        required_next_computation_count=len(
+            graph["synthesis"]["required_next_computations"]
+        ),
+        role_count=len(graph["roles"]),
+        repair_count=len(graph["repairs"]),
+        deterministic_normalization_count=len(
+            graph["deterministic_normalizations"]
+        ),
+    )
+    receipt = GenericResearchToolReceiptV1(
+        run_id=payload["run_id"],
+        submission_id=payload["submission_id"],
+        request_sha256=payload["request_sha256"],
+        cache_hit=cache_hit,
+        canonical_result_artifact_uri=payload["result_artifact_uri"],
+        canonical_result_artifact_sha256=(
+            canonical_result_artifact_sha256
+            or hashlib.sha256(canonical_payload).hexdigest()
+        ),
+        canonical_result_size_bytes=(
+            canonical_result_size_bytes or len(canonical_payload)
+        ),
+        research_graph_sha256=payload["research_graph_sha256"],
+        report_artifact_uri=payload["report_artifact_uri"],
+        report_artifact_sha256=report_artifact_sha256,
+        report_manifest_artifact_uri=payload["report_manifest_artifact_uri"],
+        report_manifest_artifact_sha256=report_manifest_artifact_sha256,
+        counts=counts,
+        scientific_conclusion_status=payload["scientific_conclusion_status"],
+        property_verification_complete=payload["property_verification_complete"],
+    )
+    if len(canonical_json_bytes(receipt)) > GENERIC_RESEARCH_TOOL_RECEIPT_MAX_BYTES:
+        raise ValueError("generic research tool receipt exceeds its byte ceiling")
+    return receipt
+
+
 def generic_research_tool_manifest() -> tuple[dict[str, object], ...]:
     return (
         {
@@ -241,7 +389,7 @@ def generic_research_tool_manifest() -> tuple[dict[str, object], ...]:
                 "boundaries."
             ),
             "inputSchema": GenericResearchRunRequestV1.model_json_schema(),
-            "outputSchema": GenericResearchRunResultV7.model_json_schema(),
+            "outputSchema": GenericResearchToolReceiptV1.model_json_schema(),
             "readOnly": False,
         },
     )
@@ -256,6 +404,11 @@ class GenericMaterialsResearchService:
         workspace: Path | str,
         project_id: str,
         environment: Mapping[str, str] | None = None,
+        role_budget_factory: ResearchRoleBudgetFactory | None = None,
+        execution_profile_id: str | None = None,
+        max_contract_repair_attempts: int = 2,
+        max_total_contract_repairs: int = 6,
+        role_receipt_callback: ResearchRoleReceiptCallback | None = None,
     ) -> None:
         selected = dict(os.environ if environment is None else environment)
         suffix = "-generic-research"
@@ -264,27 +417,29 @@ class GenericMaterialsResearchService:
         self.project_root = Path(project["project_root"])
         self.store = LocalArtifactStore(self.project_root)
         self.environment = selected
+        self.role_budget_factory = role_budget_factory or research_role_budget
+        if execution_profile_id is not None and not (
+            3 <= len(execution_profile_id) <= 128
+            and all(
+                character.isalnum() or character in "._-"
+                for character in execution_profile_id
+            )
+        ):
+            raise ValueError("execution profile ID is invalid")
+        self.execution_profile_id = execution_profile_id
+        if not 1 <= max_contract_repair_attempts <= 2:
+            raise ValueError("contract repair attempts must be 1 or 2")
+        self.max_contract_repair_attempts = max_contract_repair_attempts
+        if not 1 <= max_total_contract_repairs <= 6:
+            raise ValueError("total contract repairs must be between 1 and 6")
+        self.max_total_contract_repairs = max_total_contract_repairs
+        self.role_receipt_callback = role_receipt_callback
 
     def run(
         self, request: GenericResearchRunRequestV1 | Mapping[str, object]
     ) -> GenericResearchRunResultV7:
-        selected = GenericResearchRunRequestV1.model_validate(request)
-        semantic_request = selected.model_dump(mode="json", exclude={"submission_id"})
-        semantic_sha = hashlib.sha256(
-            canonical_json_bytes(semantic_request)
-        ).hexdigest()
-        if selected.submission_id is None:
-            selected = selected.model_copy(
-                update={"submission_id": f"auto-{semantic_sha[:24]}"}
-            )
-        identity = {
-            "implementation_revision": GENERIC_RESEARCH_IMPLEMENTATION_REVISION,
-            "request": selected.model_dump(mode="json"),
-        }
-        request_sha = hashlib.sha256(canonical_json_bytes(identity)).hexdigest()
-        run_id = f"generic-{request_sha[:24]}"
-        result_path = f"generic_research/{run_id}/result.json"
-        result_uri = f"artifact://{result_path}"
+        selected, request_sha, run_id, result_uri = self._identity(request)
+        result_path = result_uri.removeprefix("artifact://")
         if self.store.exists(result_uri):
             cached = GenericResearchRunResultV7.model_validate_json(
                 canonical_json_bytes(self.store.read_json(result_uri))
@@ -463,17 +618,26 @@ class GenericMaterialsResearchService:
             )
 
         def runner_factory(role, tools):
-            return DeepSeekThinkingAgent(
+            runner = DeepSeekThinkingAgent(
                 secret_resolver=resolver,
                 tools=tools,
-                budget=research_role_budget(
+                budget=self.role_budget_factory(
                     role=role,
                     requested_rounds=selected.max_agent_rounds_per_role,
                     native_search_calls=selected.max_native_search_calls,
                     authoritative_calls=authoritative_calls,
                 ),
                 reasoning_effort=selected.reasoning_effort,
-                timeout_seconds=1_800,
+                timeout_seconds=RESEARCH_ROLE_RESPONSE_TIMEOUT_SECONDS,
+                max_attempts=RESEARCH_ROLE_MAX_ATTEMPTS,
+                audit_role=role,
+            )
+            if self.role_receipt_callback is None:
+                return runner
+            return _ReceiptObservingRoleRunner(
+                role=role,
+                runner=runner,
+                callback=self.role_receipt_callback,
             )
 
         graph = MaterialsResearchDirector(
@@ -493,6 +657,8 @@ class GenericMaterialsResearchService:
             transformation_audit_snapshot=operator_planning_state.audit_snapshot,
             checkpoint_load=checkpoint_load,
             checkpoint_save=checkpoint_save,
+            max_contract_repair_attempts=self.max_contract_repair_attempts,
+            max_total_contract_repairs=self.max_total_contract_repairs,
         ).run(selected.goal)
         result = GenericResearchRunResultV7(
             run_id=run_id,
@@ -512,6 +678,79 @@ class GenericMaterialsResearchService:
             result_path, result.model_dump(mode="json"), immutable=True
         )
         return result
+
+    def run_for_tool(
+        self, request: GenericResearchRunRequestV1 | Mapping[str, object]
+    ) -> GenericResearchToolReceiptV1:
+        """Run or reuse the graph while returning only a transport-safe receipt."""
+
+        selected, _request_sha, _run_id, result_uri = self._identity(request)
+        cache_hit = self.store.exists(result_uri)
+        result = self.run(selected)
+        canonical_ref = self.store.inspect(
+            result.result_artifact_uri, media_type="application/json"
+        )
+        expected_result_sha = hashlib.sha256(
+            canonical_json_bytes(result.model_dump(mode="json"))
+        ).hexdigest()
+        if canonical_ref.sha256 != expected_result_sha:
+            raise ValueError("generic research canonical result hash mismatch")
+        report_ref = (
+            self.store.inspect(result.report_artifact_uri, media_type="text/markdown")
+            if result.report_artifact_uri is not None
+            else None
+        )
+        manifest_ref = (
+            self.store.inspect(
+                result.report_manifest_artifact_uri, media_type="application/json"
+            )
+            if result.report_manifest_artifact_uri is not None
+            else None
+        )
+        if report_ref is None or manifest_ref is None:
+            raise ValueError("generic research report artifacts are unavailable")
+        return build_generic_research_tool_receipt(
+            result,
+            cache_hit=cache_hit,
+            canonical_result_artifact_sha256=canonical_ref.sha256,
+            canonical_result_size_bytes=canonical_ref.size_bytes,
+            report_artifact_sha256=report_ref.sha256,
+            report_manifest_artifact_sha256=manifest_ref.sha256,
+        )
+
+    def _identity(
+        self,
+        request: GenericResearchRunRequestV1 | Mapping[str, object],
+    ) -> tuple[GenericResearchRunRequestV1, str, str, str]:
+        selected = GenericResearchRunRequestV1.model_validate(request)
+        semantic_request = selected.model_dump(mode="json", exclude={"submission_id"})
+        semantic_sha = hashlib.sha256(
+            canonical_json_bytes(semantic_request)
+        ).hexdigest()
+        if selected.submission_id is None:
+            selected = selected.model_copy(
+                update={"submission_id": f"auto-{semantic_sha[:24]}"}
+            )
+        identity = {
+            "implementation_revision": GENERIC_RESEARCH_IMPLEMENTATION_REVISION,
+            "request": selected.model_dump(mode="json"),
+        }
+        if self.execution_profile_id is not None:
+            identity["execution_profile_id"] = self.execution_profile_id
+        if self.max_contract_repair_attempts != 2:
+            identity["max_contract_repair_attempts"] = (
+                self.max_contract_repair_attempts
+            )
+        if self.max_total_contract_repairs != 6:
+            identity["max_total_contract_repairs"] = self.max_total_contract_repairs
+        request_sha = hashlib.sha256(canonical_json_bytes(identity)).hexdigest()
+        run_id = f"generic-{request_sha[:24]}"
+        return (
+            selected,
+            request_sha,
+            run_id,
+            f"artifact://generic_research/{run_id}/result.json",
+        )
 
     def _with_report(
         self, result: GenericResearchRunResultV7

@@ -4,8 +4,11 @@ import hashlib
 from importlib import metadata
 from pathlib import Path
 
+import pytest
+
 from material_agent.ml_screening.models import ModelCard
 from material_agent.ml_screening.real_resources import (
+    AGENT02_CUDA_PACKAGE_LOCK_SHA256,
     AGENT02_PACKAGE_LOCK_SHA256,
     CHGNET_CHECKPOINT_SHA256,
     real_model_card,
@@ -20,6 +23,13 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 def test_real_resources_are_lightweight_and_hash_bound() -> None:
     lock_bytes = (REPOSITORY_ROOT / "requirements-agent02.lock").read_bytes()
     assert hashlib.sha256(lock_bytes).hexdigest() == AGENT02_PACKAGE_LOCK_SHA256
+    cuda_lock_bytes = (
+        REPOSITORY_ROOT / "requirements-agent02-cuda.lock"
+    ).read_bytes()
+    assert (
+        hashlib.sha256(cuda_lock_bytes).hexdigest()
+        == AGENT02_CUDA_PACKAGE_LOCK_SHA256
+    )
     card = ModelCard.model_validate_json(
         (
             REPOSITORY_ROOT
@@ -32,6 +42,13 @@ def test_real_resources_are_lightweight_and_hash_bound() -> None:
     assert model.checkpoint_sha256 == CHGNET_CHECKPOINT_SHA256
     assert not model.is_mock
     assert not real_registry().models[0].is_mock
+    cuda_model = real_model_spec("cuda")
+    assert cuda_model.package_lock_sha256 == AGENT02_CUDA_PACKAGE_LOCK_SHA256
+    assert cuda_model.package_lock_uri.endswith("requirements-agent02-cuda.lock")
+    assert cuda_model.supported_devices == ["cuda"]
+    assert real_model_spec().supported_devices == ["cpu", "mps"]
+    with pytest.raises(ValueError, match="unsupported Agent02 execution profile"):
+        real_model_spec("gpu")  # type: ignore[arg-type]
     for package in ("torch", "chgnet", "ase"):
         try:
             metadata.version(package)

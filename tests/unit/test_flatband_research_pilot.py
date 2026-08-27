@@ -288,7 +288,10 @@ def test_top_level_rejects_model_copy_foreign_structure_union_root() -> None:
 
     with pytest.raises(
         (ValidationError, ValueError),
-        match="structure union|union.*SHA-256|union release|pre-budget",
+        match=(
+            "structure union|union.*SHA-256|union release|"
+            "union_release_sha256|pre-budget"
+        ),
     ):
         assert_formal_pilot_closure_v3(
             **{

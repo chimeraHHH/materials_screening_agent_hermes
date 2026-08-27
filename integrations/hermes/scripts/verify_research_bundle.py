@@ -10,7 +10,6 @@ from pathlib import Path
 
 import yaml
 
-
 REPO_ROOT = Path(__file__).resolve().parents[3]
 HERMES_ROOT = REPO_ROOT / "integrations" / "hermes"
 PROFILE_ROOT = HERMES_ROOT / "profiles" / "materials-inspiration-research"
@@ -64,6 +63,8 @@ def verify() -> None:
     server = config.get("mcp_servers", {}).get("materials_research", {})
     if server.get("url") != "${MATERIAL_AGENT_MCP_BASE_URL}/research/mcp":
         raise ValueError("research MCP URL drifted")
+    if server.get("timeout") != 14_400:
+        raise ValueError("research MCP timeout must cover the bounded nine-role run")
     if server.get("tools", {}).get("include") != EXPECTED_TOOLS:
         raise ValueError("research MCP allowlist drifted")
     if server.get("tools", {}).get("resources") is not False or server.get("tools", {}).get("prompts") is not False:

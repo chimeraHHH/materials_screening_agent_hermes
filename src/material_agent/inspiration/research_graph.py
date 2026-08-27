@@ -30,6 +30,56 @@ from material_agent.softchem.operations import (
 )
 
 MATERIALS_RESEARCH_GRAPH_VERSION = "materials-inspiration-research-graph-v7"
+MAX_RESEARCH_GOAL_CHARACTERS = 12_000
+_EXPLICIT_NO_DFT_PATTERNS = (
+    re.compile(
+        r"\b(?:no|without|exclude(?:s|d)?|forbid(?:s|den)?|prohibit(?:s|ed)?|"
+        r"skip)\s+(?:any\s+)?(?:dft|density[- ]functional[- ]theory)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:dft|density[- ]functional[- ]theory)[- ]free\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:dft|density[- ]functional[- ]theory)\s+(?:is\s+)?"
+        r"(?:forbidden|excluded|prohibited|not\s+allowed)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:do|must)\s+not\s+(?:use|run|call|request|perform)\s+"
+        r"(?:any\s+)?(?:dft|density[- ]functional[- ]theory)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"(?:不能|不可|不得|禁止|无需|排除|跳过|不)\s*"
+        r"(?:使用|需要|要|做|调用|允许|采用)?\s*"
+        r"(?:任何)?\s*(?:DFT|密度泛函|第一性原理)",
+        re.IGNORECASE,
+    ),
+)
+_DFT_COMPUTATION_PATTERN = re.compile(
+    r"\bDFT\b|density[- ]functional[- ]theory|密度泛函|第一性原理",
+    re.IGNORECASE,
+)
+
+
+def normalize_research_goal(goal: str) -> str:
+    """Normalize one complete, bounded research contract without truncation."""
+
+    selected = " ".join(goal.split())
+    if not 10 <= len(selected) <= MAX_RESEARCH_GOAL_CHARACTERS:
+        raise ValueError(
+            "research goal must contain 10 to "
+            f"{MAX_RESEARCH_GOAL_CHARACTERS} characters"
+        )
+    return selected
+
+
+def research_goal_forbids_dft(goal: str) -> bool:
+    """Recognize only explicit no-DFT wording; absence of DFT is not a ban."""
+
+    return any(pattern.search(goal) is not None for pattern in _EXPLICIT_NO_DFT_PATTERNS)
 
 
 class ConstraintKind(StrEnum):
@@ -675,11 +725,13 @@ class ReadStateArgsV1(StrictModel):
             "inference_context",
             "synthesis_context",
             "repair_context",
+            "mechanism_context",
+            "skeptic_context",
         ],
         ...,
     ] = Field(
         min_length=1,
-        max_length=14,
+        max_length=16,
         description="One or more required_state_sections to read in a single call.",
     )
 
@@ -715,7 +767,13 @@ class MaterialsResearchDirector:
         | None = None,
         checkpoint_save: Callable[[str, DeepSeekAgentResultV1[Any]], None]
         | None = None,
+        max_contract_repair_attempts: int = 2,
+        max_total_contract_repairs: int = 6,
     ) -> None:
+        if not 1 <= max_contract_repair_attempts <= 2:
+            raise ValueError("contract repair attempts must be 1 or 2")
+        if not 1 <= max_total_contract_repairs <= 6:
+            raise ValueError("total contract repairs must be between 1 and 6")
         self.runner_factory = runner_factory
         self.native_search_tool = native_search_tool
         self.native_leads_snapshot = native_leads_snapshot
@@ -734,12 +792,12 @@ class MaterialsResearchDirector:
         self.database_federation_snapshot = database_federation_snapshot
         self.checkpoint_load = checkpoint_load
         self.checkpoint_save = checkpoint_save
+        self.max_contract_repair_attempts = max_contract_repair_attempts
+        self.max_total_contract_repairs = max_total_contract_repairs
         self._pending_checkpoints: dict[str, DeepSeekAgentResultV1[Any]] = {}
 
     def run(self, goal: str) -> MaterialsResearchGraphResultV7:
-        selected_goal = " ".join(goal.split())
-        if not 10 <= len(selected_goal) <= 4_000:
-            raise ValueError("research goal must contain 10 to 4000 characters")
+        selected_goal = normalize_research_goal(goal)
         state: dict[str, Any] = {"goal": {"text": selected_goal}}
         records: list[ResearchRoleRecordV1] = []
         repairs: list[ResearchRepairRecordV1] = []
@@ -786,6 +844,10 @@ class MaterialsResearchDirector:
             tools=(self.native_search_tool,),
         )
         native_leads = tuple(self.native_leads_snapshot())
+        discovery, discovery_normalizations = _normalize_native_lead_references(
+            discovery, native_leads
+        )
+        deterministic_normalizations.extend(discovery_normalizations)
         discovery = self._repair_invalid_role_output(
             target_role="native_search_scout",
             defect_code="NATIVE_LEAD_REFERENCES",
@@ -836,6 +898,13 @@ class MaterialsResearchDirector:
         state["database_candidates"] = tuple(
             item.model_dump(mode="json") for item in database_candidates
         )
+        state["mechanism_context"] = _build_mechanism_context(
+            constraints,
+            evidence_review,
+            evidence,
+            database_review,
+            database_candidates,
+        )
 
         candidates = self._run_role(
             "mechanism_chemist",
@@ -868,6 +937,13 @@ class MaterialsResearchDirector:
             item.model_dump(mode="json") for item in lead_resolutions
         )
         state["candidate_retrieval"] = candidate_retrieval.model_dump(mode="json")
+        state["skeptic_context"] = _build_skeptic_context(
+            constraints,
+            candidates,
+            candidate_retrieval,
+            evidence,
+            database_candidates,
+        )
 
         sparse_skeptic = self._run_role(
             "skeptic",
@@ -936,7 +1012,7 @@ class MaterialsResearchDirector:
 
         synthesis = self._run_role("synthesist", ResearchSynthesisV1, state, records)
         synthesis, synthesis_normalizations = _normalize_synthesis(
-            synthesis, candidates, skeptic
+            synthesis, candidates, skeptic, goal=selected_goal
         )
         deterministic_normalizations.extend(synthesis_normalizations)
         _validate_synthesis(synthesis, candidates, skeptic)
@@ -989,8 +1065,10 @@ class MaterialsResearchDirector:
         except ValueError as exc:
             validation_error = str(exc)[:1_000]
 
+        if len(repairs) >= self.max_total_contract_repairs:
+            raise ValueError("contract repair total budget exhausted")
         current = value
-        for attempt in range(1, 3):
+        for attempt in range(1, self.max_contract_repair_attempts + 1):
             repair_state: dict[str, Any] = {
                 "repair_context": {
                     "target_role": target_role,
@@ -1065,11 +1143,12 @@ class MaterialsResearchDirector:
         tools: tuple[DeepSeekFunctionTool, ...] | None = None,
     ) -> Any:
         external_tool_role = tools is not None
-        selected_tools = tools or (self._state_tool(state),)
         required_sections = _required_state_sections(role, tuple(state))
+        role_state = {section: state[section] for section in required_sections}
+        selected_tools = tools or (self._state_tool(role_state),)
         user_payload: dict[str, Any] = {
             "role": role,
-            "available_state_sections": tuple(state),
+            "available_state_sections": tuple(role_state),
             "required_state_sections": required_sections,
             "output_schema": final_model.model_json_schema(),
             "evidence_policy": (
@@ -1081,8 +1160,12 @@ class MaterialsResearchDirector:
         }
         if external_tool_role:
             # External search tools cannot also expose the local state reader;
-            # inline the validated planning state for those bounded roles.
-            user_payload["validated_research_state"] = state
+            # inline only the validated sections that this role is required to read.
+            # Inlining the accumulated state repeats unrelated evidence and candidate
+            # payloads on every external-tool round and makes token use scale with the
+            # full history rather than with the role's scientific input contract.
+            user_payload["validated_research_state"] = role_state
+            user_payload["state_projection_policy"] = "REQUIRED_SECTIONS_ONLY_V1"
         result = (
             self.checkpoint_load(role, final_model)
             if self.checkpoint_load is not None
@@ -1237,18 +1320,8 @@ def _required_state_sections(role: str, available: tuple[str, ...]) -> tuple[str
         "native_search_scout": ("goal", "constraints", "query_plan"),
         "evidence_researcher": ("constraints", "query_plan", "native_leads"),
         "database_scout": ("goal", "constraints", "query_plan"),
-        "mechanism_chemist": (
-            "constraints",
-            "evidence",
-            "database_candidates",
-        ),
-        "skeptic": (
-            "constraints",
-            "evidence",
-            "candidate_retrieval",
-            "database_candidates",
-            "candidates",
-        ),
+        "mechanism_chemist": ("mechanism_context",),
+        "skeptic": ("skeptic_context",),
         "hypothesis_reasoner": ("inference_context",),
         "synthesist": ("synthesis_context",),
         "contract_repair": ("repair_context",),
@@ -1371,6 +1444,181 @@ def _build_inference_context(
             "Evidence UNKNOWN is an input uncertainty, not an allowed hypothesis "
             "prediction. Make a falsifiable probabilistic prediction for every pair."
         ),
+    }
+
+
+def _compact_evidence_records(
+    evidence: tuple[ResolvedEvidenceV1, ...],
+    preferred_ids: tuple[str, ...],
+    *,
+    max_records: int,
+) -> list[Mapping[str, Any]]:
+    """Keep bounded direct-evidence excerpts while preserving stable identities."""
+
+    by_id = {item.evidence_id: item for item in evidence}
+    ordered_ids = list(dict.fromkeys(preferred_ids))
+    ordered_ids.extend(
+        item.evidence_id
+        for item in evidence
+        if item.evidence_id not in ordered_ids
+    )
+    return [
+        {
+            "evidence_id": item.evidence_id,
+            "title": item.title[:400],
+            "published_year": item.published_year,
+            "doi": item.doi,
+            "abstract_excerpt": (
+                item.abstract_excerpt[:800]
+                if item.abstract_excerpt is not None
+                else None
+            ),
+            "supported_constraint_ids": item.supported_constraint_ids,
+            "evidence_scope": item.evidence_scope,
+            "full_text_spans": [
+                {
+                    "section_path": span.section_path,
+                    "page_numbers": span.page_numbers,
+                    "text_excerpt": span.text_excerpt[:800],
+                    "locator": span.locator[:400],
+                }
+                for span in item.full_text_spans[:2]
+            ],
+        }
+        for evidence_id in ordered_ids[:max_records]
+        if (item := by_id.get(evidence_id)) is not None
+    ]
+
+
+def _compact_database_records(
+    candidates: tuple[DatabaseCandidateV1, ...],
+    preferred_ids: tuple[str, ...],
+    *,
+    max_records: int,
+) -> list[Mapping[str, Any]]:
+    """Project auditable database facts without raw response payloads."""
+
+    by_id = {item.database_candidate_id: item for item in candidates}
+    ordered_ids = list(dict.fromkeys(preferred_ids))
+    ordered_ids.extend(
+        item.database_candidate_id
+        for item in candidates
+        if item.database_candidate_id not in ordered_ids
+    )
+    return [
+        {
+            "database_candidate_id": item.database_candidate_id,
+            "canonical_structure_id": item.canonical_structure_id,
+            "formula": item.formula,
+            "elements": item.elements,
+            "transition_metals": item.transition_metals,
+            "band_gap_ev": item.band_gap_ev,
+            "dimensionality": item.dimensionality,
+            "dimensionality_status": item.dimensionality_status,
+            "connected_transition_metal_sublattice_proxy": (
+                item.connected_transition_metal_sublattice_proxy
+            ),
+            "connectivity_status": item.connectivity_status,
+            "source_records": [
+                {
+                    "source_database": source.source_database,
+                    "source_material_id": source.source_material_id,
+                    "source_database_version": source.source_database_version,
+                    "band_gap_ev": source.band_gap_ev,
+                    "formation_energy_ev_atom": source.formation_energy_ev_atom,
+                    "energy_above_hull_ev_atom": source.energy_above_hull_ev_atom,
+                }
+                for source in item.source_records[:4]
+            ],
+            "evidence_boundary": item.evidence_boundary,
+        }
+        for candidate_id in ordered_ids[:max_records]
+        if (item := by_id.get(candidate_id)) is not None
+    ]
+
+
+def _build_mechanism_context(
+    constraints: ConstraintGraphV1,
+    evidence_review: EvidenceReviewV1,
+    evidence: tuple[ResolvedEvidenceV1, ...],
+    database_review: DatabaseCandidateReviewV1,
+    database_candidates: tuple[DatabaseCandidateV1, ...],
+) -> Mapping[str, Any]:
+    """Build a bounded mechanism-design input from the reviewed evidence pool."""
+
+    return {
+        "constraints": constraints.model_dump(mode="json"),
+        "evidence_review": evidence_review.model_dump(mode="json"),
+        "evidence_records": _compact_evidence_records(
+            evidence,
+            evidence_review.selected_evidence_ids,
+            max_records=32,
+        ),
+        "database_review": database_review.model_dump(mode="json"),
+        "database_records": _compact_database_records(
+            database_candidates,
+            database_review.selected_database_candidate_ids,
+            max_records=32,
+        ),
+        "projection": {
+            "policy": "REVIEW_SELECTED_FIRST_V1",
+            "max_evidence_records": 32,
+            "max_database_records": 32,
+            "scientific_boundary": (
+                "Only projected direct evidence may support evidence_ids; database "
+                "metadata cannot establish flat-band or orbital conclusions."
+            ),
+        },
+    }
+
+
+def _build_skeptic_context(
+    constraints: ConstraintGraphV1,
+    candidates: CandidateSetV1,
+    candidate_retrieval: CandidateLiteratureRetrievalV1,
+    evidence: tuple[ResolvedEvidenceV1, ...],
+    database_candidates: tuple[DatabaseCandidateV1, ...],
+) -> Mapping[str, Any]:
+    """Build a candidate-linked, bounded falsification input for the skeptic."""
+
+    evidence_ids = tuple(
+        dict.fromkeys(
+            (
+                *(
+                    evidence_id
+                    for candidate in candidates.candidates
+                    for evidence_id in candidate.evidence_ids
+                ),
+                *candidate_retrieval.new_evidence_ids,
+            )
+        )
+    )
+    database_ids = tuple(
+        dict.fromkeys(
+            database_id
+            for candidate in candidates.candidates
+            for database_id in candidate.database_candidate_ids
+        )
+    )
+    return {
+        "constraints": constraints.model_dump(mode="json"),
+        "candidates": candidates.model_dump(mode="json"),
+        "candidate_retrieval": candidate_retrieval.model_dump(mode="json"),
+        "candidate_linked_evidence": _compact_evidence_records(
+            evidence, evidence_ids, max_records=32
+        ),
+        "candidate_linked_database_records": _compact_database_records(
+            database_candidates, database_ids, max_records=32
+        ),
+        "projection": {
+            "policy": "CANDIDATE_LINKED_FIRST_V1",
+            "max_evidence_records": 32,
+            "max_database_records": 32,
+            "scientific_boundary": (
+                "Return sparse PASS/FAIL only for direct projected support; all other "
+                "candidate-constraint pairs are deterministically expanded to UNKNOWN."
+            ),
+        },
     }
 
 
@@ -1528,6 +1776,24 @@ def _validate_native_lead_refs(
     selected = set(review.useful_lead_ids) | set(review.rejected_lead_ids)
     if not selected <= known:
         raise ValueError("native-search review references an unknown lead")
+
+
+def _normalize_native_lead_references(
+    review: DiscoveryReviewV1, leads: tuple[Mapping[str, Any], ...]
+) -> tuple[DiscoveryReviewV1, tuple[str, ...]]:
+    """Remove dangling lead IDs without changing any retrieved lead or its content."""
+
+    known = {item.get("lead_id") for item in leads}
+    useful = tuple(item for item in review.useful_lead_ids if item in known)
+    rejected = tuple(item for item in review.rejected_lead_ids if item in known)
+    if useful == review.useful_lead_ids and rejected == review.rejected_lead_ids:
+        return review, ()
+    return (
+        review.model_copy(
+            update={"useful_lead_ids": useful, "rejected_lead_ids": rejected}
+        ),
+        ("DROPPED_DANGLING_NATIVE_LEAD_REFERENCES",),
+    )
 
 
 def _validate_executed_counter_queries(
@@ -1947,6 +2213,8 @@ def _normalize_synthesis(
     synthesis: ResearchSynthesisV1,
     candidates: CandidateSetV1,
     review: SkepticReviewV1,
+    *,
+    goal: str | None = None,
 ) -> tuple[ResearchSynthesisV1, tuple[str, ...]]:
     """Deterministically complete exact join fields without inventing science."""
 
@@ -1969,10 +2237,22 @@ def _normalize_synthesis(
         normalizations.append("COMPLETED_CANDIDATE_RANKING_JOIN")
     if set(unknown_pairs) != set(synthesis.unresolved_hard_constraints):
         normalizations.append("CANONICALIZED_UNKNOWN_CONSTRAINT_JOIN")
+    required_next_computations = synthesis.required_next_computations
+    if goal is not None and research_goal_forbids_dft(goal):
+        required_next_computations = tuple(
+            item
+            for item in required_next_computations
+            if _DFT_COMPUTATION_PATTERN.search(item) is None
+        )
+        if required_next_computations != synthesis.required_next_computations:
+            normalizations.append(
+                "REMOVED_DFT_NEXT_COMPUTATIONS_FOR_EXPLICIT_NO_DFT_GOAL"
+            )
     normalized = synthesis.model_copy(
         update={
             "ranked_candidate_ids": tuple(ranked),
             "unresolved_hard_constraints": tuple(unknown_pairs),
+            "required_next_computations": required_next_computations,
         }
     )
     return normalized, tuple(normalizations)

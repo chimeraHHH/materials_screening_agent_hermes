@@ -42,9 +42,7 @@ class DeepSeekAgentBudgetV1(StrictModel):
     max_rounds: int = Field(default=24, ge=2, le=40)
     max_tool_calls: int = Field(default=36, ge=1, le=96)
     max_tool_result_bytes: int = Field(default=128_000, ge=256, le=1_000_000)
-    max_total_tool_result_bytes: int = Field(
-        default=1_000_000, ge=256, le=8_000_000
-    )
+    max_total_tool_result_bytes: int = Field(default=1_000_000, ge=256, le=8_000_000)
     max_final_response_bytes: int = Field(default=256_000, ge=256, le=1_000_000)
     max_completion_tokens_per_round: int = Field(default=32_768, ge=256, le=32_768)
     max_total_tokens: int = Field(default=240_000, ge=1_000, le=1_000_000)
@@ -65,7 +63,9 @@ class DeepSeekToolCallReceiptV1(StrictModel):
     @model_validator(mode="after")
     def validate_error_state(self) -> DeepSeekToolCallReceiptV1:
         if self.status == "SUCCEEDED" and self.error_category is not None:
-            raise ValueError("successful tool receipts cannot contain an error category")
+            raise ValueError(
+                "successful tool receipts cannot contain an error category"
+            )
         if self.status == "FAILED" and not self.error_category:
             raise ValueError("failed tool receipts require an error category")
         return self
@@ -115,6 +115,8 @@ class DeepSeekFunctionTool:
     description: str
     arguments_model: type[BaseModel]
     handler: Callable[[BaseModel], BaseModel | Mapping[str, Any]]
+    max_calls_per_run: int | None = None
+    saturation_predicate: Callable[[], bool] | None = None
 
     def __post_init__(self) -> None:
         if not _TOOL_NAME.fullmatch(self.name):
@@ -123,6 +125,17 @@ class DeepSeekFunctionTool:
             raise ValueError("tool description must contain 1 to 1024 characters")
         if not issubclass(self.arguments_model, BaseModel):
             raise TypeError("arguments_model must be a Pydantic model class")
+        if self.max_calls_per_run is not None and not 1 <= self.max_calls_per_run <= 64:
+            raise ValueError("max_calls_per_run must be between 1 and 64")
+        if self.saturation_predicate is not None and not callable(
+            self.saturation_predicate
+        ):
+            raise TypeError("saturation_predicate must be callable")
+
+    def is_saturated(self, call_count: int) -> bool:
+        return (
+            self.max_calls_per_run is not None and call_count >= self.max_calls_per_run
+        ) or (self.saturation_predicate is not None and self.saturation_predicate())
 
     def provider_schema(self) -> dict[str, Any]:
         return {
@@ -156,6 +169,7 @@ class DeepSeekThinkingAgent:
         retry_base_seconds: float = 0.5,
         sleeper: Callable[[float], None] = time.sleep,
         monotonic: Callable[[], float] = time.monotonic,
+        audit_role: str | None = None,
     ) -> None:
         if base_url.rstrip("/") != DEEPSEEK_BASE_URL:
             raise ValueError(f"base_url must be exactly {DEEPSEEK_BASE_URL}")
@@ -183,6 +197,7 @@ class DeepSeekThinkingAgent:
         self.retry_base_seconds = retry_base_seconds
         self.sleeper = sleeper
         self.monotonic = monotonic
+        self.audit_role = audit_role
 
     def run(
         self,
@@ -246,6 +261,14 @@ class DeepSeekThinkingAgent:
 
         for round_index in range(1, self.budget.max_rounds + 1):
             self._check_walltime(started)
+            call_count_by_tool = {
+                name: sum(receipt.tool_name == name for receipt in tool_receipts)
+                for name in self.tools
+            }
+            all_tools_saturated = all(
+                tool.is_saturated(call_count_by_tool[name])
+                for name, tool in self.tools.items()
+            )
             request_payload = {
                 "model": self.model_id,
                 "messages": messages,
@@ -255,7 +278,8 @@ class DeepSeekThinkingAgent:
                 "tools": [tool.provider_schema() for tool in self.tools.values()],
                 "tool_choice": (
                     "none"
-                    if any(
+                    if all_tools_saturated
+                    or any(
                         (
                             receipt.status == "FAILED"
                             and receipt.error_category == "BUDGET_EXHAUSTED"
@@ -301,6 +325,8 @@ class DeepSeekThinkingAgent:
                     "BUDGET_EXHAUSTED",
                     "DeepSeek agent exceeded the total token budget",
                     retryable=False,
+                    usage=usage_totals,
+                    role=self.audit_role,
                 )
 
             tool_calls = message.get("tool_calls", [])
@@ -322,11 +348,14 @@ class DeepSeekThinkingAgent:
                             "BUDGET_EXHAUSTED",
                             "DeepSeek agent exceeded the tool-call budget",
                             retryable=False,
+                            role=self.audit_role,
                         )
                     call_id, name, arguments_bytes, arguments = _parse_tool_call(call)
                     tool = self.tools.get(name)
                     if tool is None:
                         raise _invalid("DeepSeek requested an unavailable tool")
+                    if tool.is_saturated(call_count_by_tool[name]):
+                        raise _invalid("DeepSeek exceeded a tool's per-run call limit")
                     tool_status: Literal["SUCCEEDED", "FAILED"] = "SUCCEEDED"
                     error_category: str | None = None
                     try:
@@ -388,6 +417,7 @@ class DeepSeekThinkingAgent:
                             "BUDGET_EXHAUSTED",
                             "one research tool result exceeded its byte budget",
                             retryable=False,
+                            role=self.audit_role,
                         )
                     total_tool_bytes += len(result_bytes)
                     if total_tool_bytes > self.budget.max_total_tool_result_bytes:
@@ -395,6 +425,7 @@ class DeepSeekThinkingAgent:
                             "BUDGET_EXHAUSTED",
                             "research tool results exceeded the total byte budget",
                             retryable=False,
+                            role=self.audit_role,
                         )
                     tool_receipts.append(
                         DeepSeekToolCallReceiptV1(
@@ -402,13 +433,16 @@ class DeepSeekThinkingAgent:
                             round_index=round_index,
                             tool_call_id=call_id,
                             tool_name=name,
-                            arguments_sha256=hashlib.sha256(arguments_bytes).hexdigest(),
+                            arguments_sha256=hashlib.sha256(
+                                arguments_bytes
+                            ).hexdigest(),
                             result_sha256=hashlib.sha256(result_bytes).hexdigest(),
                             result_bytes=len(result_bytes),
                             status=tool_status,
                             error_category=error_category,
                         )
                     )
+                    call_count_by_tool[name] += 1
                     messages.append(
                         {
                             "role": "tool",
@@ -465,9 +499,10 @@ class DeepSeekThinkingAgent:
                     "BUDGET_EXHAUSTED",
                     "DeepSeek final response exceeded its byte budget",
                     retryable=False,
+                    role=self.audit_role,
                 )
             try:
-                final_payload = json.loads(content)
+                json.loads(content)
             except json.JSONDecodeError:
                 finalization_retries += 1
                 messages.append(
@@ -481,7 +516,11 @@ class DeepSeekThinkingAgent:
                 )
                 continue
             try:
-                final = final_model.model_validate(final_payload)
+                # Validate from the JSON representation so strict tuple fields accept
+                # JSON arrays while still rejecting Python lists supplied directly.
+                # ``json.loads`` followed by strict ``model_validate`` makes a valid
+                # provider response impossible for every tuple-bearing contract.
+                final = final_model.model_validate_json(content)
             except ValidationError as exc:
                 finalization_retries += 1
                 issues = [
@@ -517,11 +556,16 @@ class DeepSeekThinkingAgent:
                     request_sha256_by_round=tuple(request_hashes),
                     response_sha256_by_round=tuple(response_hashes),
                     transport_attempts_by_round=tuple(transport_attempts),
-                    transport_retry_count=sum(transport_attempts) - len(transport_attempts),
+                    transport_retry_count=sum(transport_attempts)
+                    - len(transport_attempts),
                     finalization_retry_count=finalization_retries,
                     prompt_tokens=usage_totals["prompt_tokens"] if usage_seen else None,
-                    completion_tokens=usage_totals["completion_tokens"] if usage_seen else None,
-                    reasoning_tokens=usage_totals["reasoning_tokens"] if usage_seen else None,
+                    completion_tokens=usage_totals["completion_tokens"]
+                    if usage_seen
+                    else None,
+                    reasoning_tokens=usage_totals["reasoning_tokens"]
+                    if usage_seen
+                    else None,
                     total_tokens=usage_totals["total_tokens"] if usage_seen else None,
                     final_response_sha256=hashlib.sha256(final_bytes).hexdigest(),
                 ),
@@ -531,6 +575,8 @@ class DeepSeekThinkingAgent:
             "BUDGET_EXHAUSTED",
             "DeepSeek agent exhausted its round budget before a final answer",
             retryable=False,
+            usage=usage_totals if usage_seen else None,
+            role=self.audit_role,
         )
 
     def _post_with_retry(
@@ -544,9 +590,7 @@ class DeepSeekThinkingAgent:
 
         for attempt in range(1, self.max_attempts + 1):
             self._check_walltime(started)
-            remaining = self.budget.max_walltime_seconds - (
-                self.monotonic() - started
-            )
+            remaining = self.budget.max_walltime_seconds - (self.monotonic() - started)
             try:
                 status, body = self.transport.post_json(
                     # Strict tools are exposed through the beta route.
@@ -586,7 +630,11 @@ def _parse_agent_envelope(
     if not isinstance(payload, dict) or payload.get("model") != expected_model:
         raise _invalid("DeepSeek returned an invalid model envelope")
     choices = payload.get("choices")
-    if not isinstance(choices, list) or len(choices) != 1 or not isinstance(choices[0], dict):
+    if (
+        not isinstance(choices, list)
+        or len(choices) != 1
+        or not isinstance(choices[0], dict)
+    ):
         raise _invalid("DeepSeek must return exactly one choice")
     message = choices[0].get("message")
     finish_reason = choices[0].get("finish_reason")
@@ -640,7 +688,10 @@ def _parse_tool_call(
     raw_arguments = function.get("arguments")
     if not isinstance(name, str) or not _TOOL_NAME.fullmatch(name):
         raise _invalid("DeepSeek returned an invalid tool name")
-    if not isinstance(raw_arguments, str) or len(raw_arguments.encode("utf-8")) > 128_000:
+    if (
+        not isinstance(raw_arguments, str)
+        or len(raw_arguments.encode("utf-8")) > 128_000
+    ):
         raise _invalid("DeepSeek returned invalid or oversized tool arguments")
     try:
         arguments = json.loads(raw_arguments)

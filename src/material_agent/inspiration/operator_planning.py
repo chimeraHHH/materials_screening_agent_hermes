@@ -118,28 +118,22 @@ class CompileReasonedOperationArgsV3(StrictModel):
     slide_a_fraction: float | None = None
     slide_b_fraction: float | None = None
     carrier_type: Literal["ELECTRON", "HOLE"] | None = None
-    carriers_per_primitive_cell: float | None = Field(
-        default=None, gt=0.0, le=2.0
-    )
+    carriers_per_primitive_cell: float | None = Field(default=None, gt=0.0, le=2.0)
     sample_charge_states: tuple[float, ...] | None = Field(
         default=None, min_length=2, max_length=16
     )
-    electric_field_v_per_angstrom: float | None = Field(
-        default=None, ge=-1.0, le=1.0
-    )
+    electric_field_v_per_angstrom: float | None = Field(default=None, ge=-1.0, le=1.0)
     field_direction: Literal["C_POSITIVE", "C_NEGATIVE"] | None = None
     minimum_vacuum_angstrom: float | None = Field(default=None, ge=12.0, le=50.0)
-    interface_separation_angstrom: float | None = Field(
-        default=None, ge=2.0, le=8.0
-    )
+    interface_separation_angstrom: float | None = Field(default=None, ge=2.0, le=8.0)
     relative_twist_degrees: float | None = Field(default=None, ge=-30.0, le=30.0)
     maximum_lattice_mismatch_percent: float | None = Field(
         default=None, gt=0.0, le=10.0
     )
     maximum_supercell_area_factor: int | None = Field(default=None, ge=1, le=64)
-    magnetization_alignment: Literal[
-        "PARALLEL", "ANTIPARALLEL", "SCAN_BOTH"
-    ] | None = None
+    magnetization_alignment: Literal["PARALLEL", "ANTIPARALLEL", "SCAN_BOTH"] | None = (
+        None
+    )
     interface_registry: str | None = Field(default=None, min_length=1, max_length=64)
     scientific_rationale: str = Field(min_length=10, max_length=2_000)
     expected_mechanism: str = Field(min_length=5, max_length=1_000)
@@ -408,8 +402,7 @@ def compile_reasoned_structure_operation_plans(
     registry_sha256 = softchem_registry_sha256(operator_registry)
     partner_pointer = (
         _parent_pointer(partner_database_candidate, partner_artifact_bytes)
-        if partner_database_candidate is not None
-        and partner_artifact_bytes is not None
+        if partner_database_candidate is not None and partner_artifact_bytes is not None
         else None
     )
 
@@ -711,12 +704,8 @@ def compile_reasoned_structure_operation_plans(
             assert proposal.magnetization_alignment is not None
             parameters = MagneticProximityParametersV1(
                 operator_spec_id="pending-spec",
-                partner_database_candidate_id=(
-                    proposal.partner_database_candidate_id
-                ),
-                interface_separation_angstrom=(
-                    proposal.interface_separation_angstrom
-                ),
+                partner_database_candidate_id=(proposal.partner_database_candidate_id),
+                interface_separation_angstrom=(proposal.interface_separation_angstrom),
                 relative_twist_degrees=proposal.relative_twist_degrees,
                 maximum_lattice_mismatch_percent=(
                     proposal.maximum_lattice_mismatch_percent
@@ -730,19 +719,13 @@ def compile_reasoned_structure_operation_plans(
             assert proposal.maximum_supercell_area_factor is not None
             parameters = VdwHeterostructureParametersV1(
                 operator_spec_id="pending-spec",
-                partner_database_candidate_id=(
-                    proposal.partner_database_candidate_id
-                ),
-                interface_separation_angstrom=(
-                    proposal.interface_separation_angstrom
-                ),
+                partner_database_candidate_id=(proposal.partner_database_candidate_id),
+                interface_separation_angstrom=(proposal.interface_separation_angstrom),
                 relative_twist_degrees=proposal.relative_twist_degrees,
                 maximum_lattice_mismatch_percent=(
                     proposal.maximum_lattice_mismatch_percent
                 ),
-                maximum_supercell_area_factor=(
-                    proposal.maximum_supercell_area_factor
-                ),
+                maximum_supercell_area_factor=(proposal.maximum_supercell_area_factor),
                 interface_registry=proposal.interface_registry,
             )
             changed = "planned commensurate vdW interface construction"
@@ -763,9 +746,7 @@ def compile_reasoned_structure_operation_plans(
         plans.append(
             make_condition_plan(
                 **common,
-                partner_candidate_id=(
-                    partner_database_candidate.database_candidate_id
-                ),
+                partner_candidate_id=(partner_database_candidate.database_candidate_id),
                 partner_structure_id=(
                     partner_database_candidate.canonical_structure_id
                 ),
@@ -873,9 +854,7 @@ class OperatorPlanningToolState:
         self._calls = 0
         self._plans: dict[
             str,
-            TransformationPlanV1
-            | StructureOperationPlanV2
-            | ReasonedConditionPlanV1,
+            TransformationPlanV1 | StructureOperationPlanV2 | ReasonedConditionPlanV1,
         ] = {}
         self._bindings: dict[str, TransformationPlanBindingV1] = {}
         self._rejections: list[TransformationCompileRejectionV3] = []
@@ -897,6 +876,61 @@ class OperatorPlanningToolState:
             ),
             arguments_model=CompileReasonedOperationArgsV3,
             handler=self._handle,
+        )
+
+    def as_compact_tool(self) -> DeepSeekFunctionTool:
+        """Expose the compiler without returning full plans into LLM context.
+
+        Complete plans remain in ``audit_snapshot`` and checkpoints.  The model
+        receives only the identifiers and prior outcome needed for selection.
+        """
+
+        def handle(arguments: CompileReasonedOperationArgsV3) -> Mapping[str, Any]:
+            result = dict(self._handle(arguments))
+            if result.get("status") != "COMPILED":
+                return result
+            plan_ids = tuple(
+                item["plan_id"]
+                for item in result.get("plans", ())
+                if isinstance(item, Mapping) and "plan_id" in item
+            )
+            audit_plans = {item.plan_id: item for item in self.audit_snapshot().plans}
+            summaries = []
+            for plan_id in plan_ids:
+                plan = audit_plans[plan_id]
+                summaries.append(
+                    {
+                        "plan_id": plan.plan_id,
+                        "parent_candidate_id": plan.parent_candidate_id,
+                        "operator_id": plan.operator_id,
+                        "operator_spec_id": plan.operator_spec.operator_spec_id,
+                        "compile_prior_decision": plan.compile_prior_decision,
+                        "compile_prior_reason_codes": (plan.compile_prior_reason_codes),
+                        "creates_structure_cif": isinstance(
+                            plan, StructureOperationPlanV2
+                        ),
+                        "scientific_conclusion": False,
+                    }
+                )
+            return {
+                "status": "COMPILED",
+                "candidate_id": result["candidate_id"],
+                "database_candidate_id": result["database_candidate_id"],
+                "plans": tuple(summaries),
+                "execution_boundary": result["execution_boundary"],
+                "scientific_conclusion": False,
+            }
+
+        base = self.as_tool()
+        return DeepSeekFunctionTool(
+            name=base.name,
+            description=(
+                base.description
+                + " The tool returns compact plan summaries; full hash-pinned plans "
+                "are stored outside the model context."
+            )[:1_024],
+            arguments_model=CompileReasonedOperationArgsV3,
+            handler=handle,
         )
 
     def audit_snapshot(self) -> RegisteredTransformationAuditV3:
@@ -944,8 +978,7 @@ class OperatorPlanningToolState:
 
     def _handle(
         self,
-        arguments: CompileReasonedOperationArgsV3
-        | CompileRegisteredSubstitutionArgsV1,
+        arguments: CompileReasonedOperationArgsV3 | CompileRegisteredSubstitutionArgsV1,
     ) -> Mapping[str, Any]:
         with self._lock:
             if self._calls >= self.max_calls:
@@ -976,7 +1009,9 @@ class OperatorPlanningToolState:
         ):
             return self._reject(arguments, "UNKNOWN_PARTNER_DATABASE_CANDIDATE")
         legacy_substitution = isinstance(arguments, CompileRegisteredSubstitutionArgsV1)
-        operation_kind = "SUBSTITUTION" if legacy_substitution else arguments.operation_kind
+        operation_kind = (
+            "SUBSTITUTION" if legacy_substitution else arguments.operation_kind
+        )
         rule_id = arguments.substitution_rule_id if legacy_substitution else None
         if legacy_substitution and not any(
             item.rule_id == rule_id for item in self.substitution_registry.rules
@@ -990,9 +1025,7 @@ class OperatorPlanningToolState:
             partner_payload = None
             partner_structure = None
             if partner is not None:
-                partner_payload = self.store.read_bytes(
-                    partner.structure_artifact_uri
-                )
+                partner_payload = self.store.read_bytes(partner.structure_artifact_uri)
                 with warnings.catch_warnings():
                     warnings.simplefilter("ignore")
                     partner_structure = Structure.from_str(
@@ -1039,9 +1072,7 @@ class OperatorPlanningToolState:
             return self._reject(arguments, reason)
         compile_priors: dict[str, Mapping[str, Any]] = {}
         accepted_plans: list[
-            TransformationPlanV1
-            | StructureOperationPlanV2
-            | ReasonedConditionPlanV1
+            TransformationPlanV1 | StructureOperationPlanV2 | ReasonedConditionPlanV1
         ] = []
         rejected_prior_reasons: list[str] = []
         try:
@@ -1119,8 +1150,7 @@ class OperatorPlanningToolState:
 
     def _reject(
         self,
-        arguments: CompileReasonedOperationArgsV3
-        | CompileRegisteredSubstitutionArgsV1,
+        arguments: CompileReasonedOperationArgsV3 | CompileRegisteredSubstitutionArgsV1,
         reason_code: str,
         *,
         detail: str | None = None,

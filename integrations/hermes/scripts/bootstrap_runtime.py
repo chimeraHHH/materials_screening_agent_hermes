@@ -14,7 +14,6 @@ from pathlib import Path
 
 from managed_checkout import ManagedCheckoutError, repair_generated_package_locks
 
-
 REPO_ROOT = Path(__file__).resolve().parents[3]
 INTEGRATION_ROOT = REPO_ROOT / "integrations" / "hermes"
 LOCK_PATH = INTEGRATION_ROOT / "hermes.lock.json"

@@ -76,6 +76,7 @@ class DownstreamMemoryStage(StrEnum):
     CHGNET = "CHGNET"
     DEEPH = "DEEPH"
     DFT = "DFT"
+    MODEL_VALIDATION = "MODEL_VALIDATION"
 
 
 class PaperAnchorMemoryV1(StrictModel):
@@ -149,7 +150,30 @@ class DownstreamOutcomeMemoryV1(StrictModel):
     stage: DownstreamMemoryStage
     outcome: Identifier
     evidence_level: Identifier
+    model_id: Identifier | None = None
+    model_task_id: Identifier | None = None
+    evidence_id: Identifier | None = None
+    reason_codes: Annotated[tuple[Identifier, ...], Field(max_length=64)] = ()
+    source_artifact_sha256: Annotated[
+        str | None, Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    ] = None
     scientific_conclusion: Literal[False] = False
+
+    @model_validator(mode="after")
+    def validate_model_outcome(self) -> DownstreamOutcomeMemoryV1:
+        values = (self.model_id, self.model_task_id, self.evidence_id)
+        if self.stage is DownstreamMemoryStage.MODEL_VALIDATION:
+            if not all(values) or self.source_artifact_sha256 is None:
+                raise ValueError(
+                    "model validation memory requires model, task, evidence and artifact"
+                )
+        elif any(values) or self.source_artifact_sha256 is not None:
+            raise ValueError(
+                "legacy downstream stages cannot carry model-validation linkage"
+            )
+        if self.reason_codes != tuple(sorted(set(self.reason_codes))):
+            raise ValueError("downstream reason codes must be sorted and unique")
+        return self
 
 
 MemoryPayloadV1 = Annotated[
